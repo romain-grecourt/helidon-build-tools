@@ -16,12 +16,12 @@
 
 package io.helidon.build.userflow;
 
-import freemarker.template.TemplateException;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+
+import freemarker.template.TemplateException;
+import io.helidon.build.userflow.Expression.ParserException;
 
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -84,7 +84,7 @@ public class UserFlowProcessMojo extends AbstractMojo {
         UserFlow userFlow;
         try {
              userFlow = UserFlow.create(descriptor);
-        } catch (IOException ex) {
+        } catch (IOException | ParserException ex) {
             throw new MojoExecutionException("An error occurred whiled creating the user flow model", ex);
         }
 
