@@ -30,7 +30,8 @@ import io.helidon.build.userflow.ExpressionSyntaxTree.Xor;
 
 /**
  * Simple expression supporting logical operators with text literal and variables. The logical operators have no precedence, the
- * order is the declared order, parenthesis must be used to express a different order.
+ * order is the declared order, parenthesis must be used to express a different order. The expression is parsed into a syntax tree
+ * that can be accessed using {@link #tree()}.
  */
 public final class Expression {
 
@@ -46,6 +47,14 @@ public final class Expression {
         private ParserException(String message) {
             super(message);
         }
+
+        /**
+         * Create a new exception.
+         * @param message error message
+         */
+        private ParserException(String message, Throwable cause) {
+            super(message, cause);
+        }
     }
 
     /**
@@ -56,7 +65,7 @@ public final class Expression {
     }
 
     /**
-     * The condition operators.
+     * The conditional expression operators.
      */
     private static enum Operator {
 
@@ -78,7 +87,7 @@ public final class Expression {
                 case OR:
                     return "||";
                 case XOR:
-                    return "^";
+                    return "^^";
                 default:
                     throw new IllegalStateException("Unkown operator");
             }
@@ -86,23 +95,72 @@ public final class Expression {
     }
 
     /**
-     * Internal scope represents a partially constructed tree.
-     * I.e one operand and one operator.
+     * Logical operation. An unresolved operation has a non {@code null} operator, and a node representing the {@code left}
+     * operand. If the operator takes a single operand, the node will be {@code null}. An operation is resolved with
+     * {@link #resolve(ExpressionSyntaxTree)}, by passing a {@code right} operand. A resolved operation has a {@code null}
+     * operator and a node of type {@link ConditionalExpression} that represents the operation with the proper operand(s).
      */
-    private static final class Scope {
+    private static final class InfixOperation {
 
         final int index;
         Operator operator;
         ExpressionSyntaxTree node;
 
-        Scope(int index) {
+        /**
+         * Create a new operation.
+         * @param index source index
+         */
+        InfixOperation(int index) {
             this.index = index;
+        }
+
+        /**
+         * Complete this operation with the given operand.
+         *
+         * @param right right operand
+         */
+        void resolve(ExpressionSyntaxTree right) throws ParserException {
+            ExpressionSyntaxTree newNode;
+            try {
+                switch (operator) {
+                    case NOT:
+                        newNode = new Not(right.asExpression());
+                        break;
+                    case IS:
+                        newNode = new Is(node.asExpression(), right.asExpression());
+                        break;
+                    case IS_NOT:
+                        newNode = new IsNot(node.asExpression(), right.asExpression());
+                        break;
+                    case AND:
+                        newNode = new And(node.asExpression(), right.asExpression());
+                        break;
+                    case OR:
+                        newNode = new Or(node.asExpression(), right.asExpression());
+                        break;
+                    case XOR:
+                        newNode = new Xor(node.asExpression(), right.asExpression());
+                        break;
+                    case EQUAL:
+                        newNode = new Equal(node.asValue(), right.asValue());
+                        break;
+                    case NOT_EQUAL:
+                        newNode = new NotEqual(node.asValue(), right.asValue());
+                        break;
+                    default:
+                        throw new IllegalStateException("Unkown operator: " + operator);
+                }
+            } catch (ClassCastException ex) {
+                throw new ParserException("Internal parser error", ex);
+            }
+            operator = null; // marks the operation as resolved
+            node = newNode;
         }
     }
 
     private final String rawExpr;
     private final ExpressionSyntaxTree tree;
-    private final Stack<Scope> stack;
+    private final Stack<InfixOperation> stack;
     private State state;
     private StringBuilder value;
     private int index;
@@ -130,27 +188,27 @@ public final class Expression {
     }
 
     /**
-     * Return the node of the current scope.
+     * Return the node of the current operation.
      * @param op operator used to customize the exception thrown
      * @return ExpressionSyntaxTree
      * @throws ParserException if node is {@code null}
      */
     private ExpressionSyntaxTree lastOperand(Operator op) throws ParserException {
-        ExpressionSyntaxTree node = stack.peek().node;
-        if (node == null) {
+        InfixOperation operation = stack.peek();
+        if (operation.node == null) {
             throw new ParserException(String.format(
                     "No left operand found for operator '%s' at index: %d",
                     op, index));
         }
-        return node;
+        return operation.node;
     }
 
     /**
-     * Enforce that the last operand is a {@code Condition}.
+     * Enforce that the left operand is an expression.
      * @param op operator used to customize the exception thrown
      * @throws ParserException if there is no left operand or if it is a {@code Value}
      */
-    private void checkLeftcondition(Operator op) throws ParserException {
+    private void checkOperandExpression(Operator op) throws ParserException {
         ExpressionSyntaxTree operand = lastOperand(op);
         if (operand.isValue()) {
             throw new ParserException(String.format(
@@ -163,7 +221,7 @@ public final class Expression {
      * Enforce that there are more characters to parse.
      * @throws ParserException if there are no more characters to parse
      */
-    private void checkEndOfExpression() throws ParserException {
+    private void checkNotEndOfExpression() throws ParserException {
         if (index + 1 >= rawExpr.length()) {
             throw new ParserException("Cannot parse, end of expression");
         }
@@ -174,12 +232,12 @@ public final class Expression {
      * @param op the next expected character
      * @throws ParserException if the next character is not the expected one
      */
-    private void checkNextOperatorChar(char op) throws ParserException {
-        checkEndOfExpression();
+    private void checkNextCharacter(char op) throws ParserException {
+        checkNotEndOfExpression();
         char c = rawExpr.charAt(++index);
         if (c != op) {
             throw new ParserException(String.format(
-                    "Invalid character '%c' found at index: %d, expecting :'%c'",
+                    "Invalid '%c' character found at index: %d, expecting :'%c'",
                     c, index, op));
         }
     }
@@ -216,68 +274,39 @@ public final class Expression {
     }
 
     /**
-     * Finalize the given scope with a 'right' operand.
-     * @param scope the scope
-     * @param right right operand
-     * @return Condition
-     */
-    private void finalizeScope(Scope scope, ExpressionSyntaxTree right) {
-        ExpressionSyntaxTree newNode;
-        switch (scope.operator) {
-            case NOT:
-                newNode = new Not(right.asCondition());
-                break;
-            case IS:
-                newNode = new Is(scope.node.asCondition(), right.asCondition());
-                break;
-            case IS_NOT:
-                newNode = new IsNot(scope.node.asCondition(), right.asCondition());
-                break;
-            case AND:
-                newNode = new And(scope.node.asCondition(), right.asCondition());
-                break;
-            case OR:
-                newNode = new Or(scope.node.asCondition(), right.asCondition());
-                break;
-            case XOR:
-                newNode = new Xor(scope.node.asCondition(), right.asCondition());
-                break;
-            case EQUAL:
-                newNode = new Equal(scope.node.asValue(), right.asValue());
-                break;
-            case NOT_EQUAL:
-                newNode = new NotEqual(scope.node.asValue(), right.asValue());
-                break;
-            default:
-                throw new IllegalStateException("Unkown operator: " + scope.operator);
-        }
-        scope.operator = null; // marks a scope as finalized
-        scope.node = newNode;
-    }
-
-    /**
-     * Process a variable.
+     * Finalize a variable.
      * @throws ParserException if the resulting variable name is empty
      */
-    private void processVariable() throws ParserException {
+    private void finalizeVariable() throws ParserException {
         if (state == State.VARIABLE) {
-            Scope scope = stack.peek();
+            InfixOperation operation = stack.peek();
             String name = value.toString();
             if (name.isEmpty()) {
-                throw new ParserException("Invalid empty variable at index: " + scope.index);
+                throw new ParserException("Invalid empty variable at index: " + operation.index);
             }
             Variable variable = new Variable(value.toString());
-            if (scope.node == null) {
-                scope.node = variable;
-            } else if (scope.node.isValue()) {
-                finalizeScope(scope, variable);
+            if (operation.node == null) {
+                operation.node = variable;
+            } else if (operation.node.isValue()) {
+                operation.resolve(variable);
             } else {
-                scope = new Scope(index);
-                scope.node = variable;
-                stack.push(scope);
+                operation = new InfixOperation(index);
+                operation.node = variable;
+                stack.push(operation);
             }
             value = null;
             state = State.CONDITION;
+        }
+    }
+
+    /**
+     * Check that the operator is not set in the current operation.
+     * @param op operator
+     * @throws ParserException if the operator of the current operation is already set
+     */
+    private void checkOperatorNotSet(char c) throws ParserException {
+        if (stack.peek().operator != null) {
+            invalidCharacter(c);
         }
     }
 
@@ -286,7 +315,7 @@ public final class Expression {
      * @param c character to test
      * @return {@code true} if valid, {@code false} otherwise
      */
-    private boolean isValidVariableCharacter(char c) {
+    private static boolean isValidVariableCharacter(char c) {
         return (int) c == 45 // -
                 || (int) c == 46 // .
                 || (int) c == 95 // _
@@ -295,27 +324,46 @@ public final class Expression {
     }
 
     /**
-     * Merge the next scopes if there is more than one, or return the one scope.
-     * @return Scope
-     * @throws ParserException if the first scope isn't finalized
+     * Resolve the next operations if there is more than one, or return the one operation.
+     * @return InfixOperation
+     * @throws ParserException if the first operation is not completed
      */
-    private Scope merge() throws ParserException {
-        Scope right = stack.pop();
-        if (right.operator != null) {
+    private InfixOperation resolveOperation() throws ParserException {
+        InfixOperation current = stack.pop();
+        if (current.operator != null) {
             throw new ParserException(String.format(
                     "No right operand found for operator '%s' at index: ",
-                    right.operator, right.index));
+                    current.operator, current.index));
         }
         if (stack.isEmpty()) {
-            return right;
+            return current;
         }
-        Scope left = stack.peek();
-        if (left.operator == null && left.node == null) {
-            left.node = right.node;
+        InfixOperation next = stack.peek();
+        if (next.operator == null && next.node == null) {
+            next.node = current.node;
         } else {
-            finalizeScope(left, right.node);
+            next.resolve(current.node);
         }
-        return left;
+        return next;
+    }
+
+    /**
+     * Process a binary operator.
+     * @param c the current character
+     * @param op the operator
+     * @param o the next expected character
+     * @throws ParserException if an error occurs
+     */
+    private void processBinaryOperator(char c, Operator op, char o) throws ParserException {
+        if (state != State.CONSTANT) {
+            finalizeVariable();
+            checkOperatorNotSet(c);
+            checkNextCharacter(o);
+            checkOperandExpression(op);
+            stack.peek().operator = op;
+        } else {
+            appendValue(c);
+        }
     }
 
     /**
@@ -325,33 +373,33 @@ public final class Expression {
      */
     ExpressionSyntaxTree parse() throws ParserException {
         int brackets = 0;
-        stack.push(new Scope(index));
+        stack.push(new InfixOperation(index));
         for (; index < rawExpr.length(); index++) {
             char c = rawExpr.charAt(index);
             switch (c) {
                 case ('('):
                     if (state != State.CONSTANT) {
                         brackets++;
-                        stack.push(new Scope(index));
+                        stack.push(new InfixOperation(index));
                     } else {
                         appendValue(c);
                     }
                     break;
                 case (')'):
                     if (state != State.CONSTANT) {
-                        processVariable();
+                        finalizeVariable();
                         int size = stack.size();
                         if (--brackets < 0 || size <= 1) {
                             throw new ParserException("Unmatched ')' found at index: " + index);
                         }
-                        merge();
+                        resolveOperation();
                     } else {
                         appendValue(c);
                     }
                     break;
                 case (' '):
                     if (state != State.CONSTANT) {
-                        processVariable();
+                        finalizeVariable();
                     } else {
                         appendValue(c);
                     }
@@ -371,12 +419,12 @@ public final class Expression {
                 case ('"'):
                     if (state == State.CONSTANT) {
                         checkValueState();
-                        Scope scope = stack.peek();
+                        InfixOperation operation = stack.peek();
                         Literal constant = new Literal(value.toString());
-                        if (scope.node == null) {
-                            scope.node = constant;
+                        if (operation.node == null) {
+                            operation.node = constant;
                         } else {
-                            finalizeScope(scope, constant);
+                            operation.resolve(constant);
                         }
                         value = null;
                         state = State.CONDITION;
@@ -390,7 +438,7 @@ public final class Expression {
                     }
                 case('\\'):
                     if (state == State.CONSTANT) {
-                        checkEndOfExpression();
+                        checkNotEndOfExpression();
                         char next = rawExpr.charAt(index + 1);
                         if ('"' == next) {
                             c = '"';
@@ -401,11 +449,9 @@ public final class Expression {
                     break;
                 case ('='):
                     if (state != State.CONSTANT) {
-                        processVariable();
-                        if (stack.peek().operator == Operator.EQUAL) {
-                            invalidCharacter(c);
-                        }
-                        checkNextOperatorChar('=');
+                        finalizeVariable();
+                        checkOperatorNotSet(c);
+                        checkNextCharacter('=');
                         if (lastOperand(Operator.EQUAL).isValue()) {
                             stack.peek().operator = Operator.EQUAL;
                         } else {
@@ -416,50 +462,22 @@ public final class Expression {
                     }
                     break;
                 case ('^'):
-                    if (state != State.CONSTANT) {
-                        processVariable();
-                        if (stack.peek().operator == Operator.XOR) {
-                            invalidCharacter(c);
-                        }
-                        checkLeftcondition(Operator.XOR);
-                        stack.peek().operator = Operator.XOR;
-                    } else {
-                        appendValue(c);
-                    }
+                    processBinaryOperator(c, Operator.XOR, '^');
                     break;
                 case ('&'):
-                    if (state != State.CONSTANT) {
-                        processVariable();
-                        if (stack.peek().operator == Operator.AND) {
-                            invalidCharacter(c);
-                        }
-                        checkNextOperatorChar('&');
-                        checkLeftcondition(Operator.AND);
-                        stack.peek().operator = Operator.AND;
-                    } else {
-                        appendValue(c);
-                    }
+                    processBinaryOperator(c, Operator.AND, '&');
                     break;
                 case ('|'):
-                    if (state != State.CONSTANT) {
-                        processVariable();
-                        if (stack.peek().operator == Operator.OR) {
-                            invalidCharacter(c);
-                        }
-                        checkNextOperatorChar('|');
-                        checkLeftcondition(Operator.OR);
-                        stack.peek().operator = Operator.OR;
-                    } else {
-                        appendValue(c);
-                    }
+                    processBinaryOperator(c, Operator.OR, '|');
                     break;
                 case ('!'):
                     if (state != State.CONSTANT) {
-                        processVariable();
-                        checkEndOfExpression();
+                        finalizeVariable();
+                        checkNotEndOfExpression();
                         char next = rawExpr.charAt(index + 1);
                         switch (next) {
                             case '=':
+                                checkOperatorNotSet(c);
                                 index++;
                                 if (lastOperand(Operator.NOT_EQUAL).isValue()) {
                                     stack.peek().operator = Operator.NOT_EQUAL;
@@ -468,9 +486,9 @@ public final class Expression {
                                 }
                                 break;
                             case '(':
-                                Scope scope = new Scope(index);
-                                scope.operator = Operator.NOT;
-                                stack.push(scope);
+                                InfixOperation operation = new InfixOperation(index);
+                                operation.operator = Operator.NOT;
+                                stack.push(operation);
                                 break;
                             default:
                                 invalidCharacter(c);
@@ -490,11 +508,11 @@ public final class Expression {
         if (brackets != 0) {
             throw new ParserException("Unmatched '(' found");
         }
-        processVariable();
+        finalizeVariable();
         while(stack.size() >= 1) {
-            Scope root = merge();
+            InfixOperation operation = resolveOperation();
             if (stack.isEmpty()) {
-                return root.node;
+                return operation.node;
             }
         }
         throw new ParserException("Invalid state");

@@ -52,10 +52,10 @@ public class ExpressionTest {
         assertThat(tree.asValue().isLiteral(), is(equalTo(true)));
         assertThat(tree.asValue().asLiteral().value(), is(equalTo("foo")));
 
-        tree = new Expression("\"$foo==$bar&&($bob!=$alice)^$red==$black\"").tree();
+        tree = new Expression("\"$foo==$bar&&($bob!=$alice)^^$red==$black\"").tree();
         assertThat(tree.isValue(), is(equalTo(true)));
         assertThat(tree.asValue().isLiteral(), is(equalTo(true)));
-        assertThat(tree.asValue().value(), is(equalTo("$foo==$bar&&($bob!=$alice)^$red==$black")));
+        assertThat(tree.asValue().value(), is(equalTo("$foo==$bar&&($bob!=$alice)^^$red==$black")));
 
         tree = new Expression("\"\\\"\"").tree();
         assertThat(tree.isValue(), is(equalTo(true)));
@@ -108,42 +108,42 @@ public class ExpressionTest {
     @Test
     public void testNotEqualWithLiterals() throws ParserException {
         ExpressionSyntaxTree tree = new Expression("\"foo\" != \"bar\"").tree();
-        assertThat(tree.isCondition(), is(equalTo(true)));
-        assertThat(tree.asCondition().isNotEqual(), is(equalTo(true)));
-        assertThat(tree.asCondition().asNotEqual().left().isLiteral(), is(equalTo(true)));
-        assertThat(tree.asCondition().asNotEqual().left().value(), is(equalTo("foo")));
-        assertThat(tree.asCondition().asNotEqual().right().isLiteral(), is(equalTo(true)));
-        assertThat(tree.asCondition().asNotEqual().right().value(), is(equalTo("bar")));
+        assertThat(tree.isExpression(), is(equalTo(true)));
+        assertThat(tree.asExpression().isNotEqual(), is(equalTo(true)));
+        assertThat(tree.asExpression().asNotEqual().left().isLiteral(), is(equalTo(true)));
+        assertThat(tree.asExpression().asNotEqual().left().value(), is(equalTo("foo")));
+        assertThat(tree.asExpression().asNotEqual().right().isLiteral(), is(equalTo(true)));
+        assertThat(tree.asExpression().asNotEqual().right().value(), is(equalTo("bar")));
     }
 
     @Test
     public void testNotEqualWithVariables() throws ParserException {
         ExpressionSyntaxTree tree = new Expression("$a != $b").tree();
-        assertThat(tree.isCondition(), is(equalTo(true)));
-        assertThat(tree.asCondition().isNotEqual(), is(equalTo(true)));
-        assertThat(tree.asCondition().asNotEqual().left().isVariable(), is(equalTo(true)));
-        assertThat(tree.asCondition().asNotEqual().left().value(), is(equalTo("a")));
-        assertThat(tree.asCondition().asNotEqual().right().isVariable(), is(equalTo(true)));
-        assertThat(tree.asCondition().asNotEqual().right().value(), is(equalTo("b")));
+        assertThat(tree.isExpression(), is(equalTo(true)));
+        assertThat(tree.asExpression().isNotEqual(), is(equalTo(true)));
+        assertThat(tree.asExpression().asNotEqual().left().isVariable(), is(equalTo(true)));
+        assertThat(tree.asExpression().asNotEqual().left().value(), is(equalTo("a")));
+        assertThat(tree.asExpression().asNotEqual().right().isVariable(), is(equalTo(true)));
+        assertThat(tree.asExpression().asNotEqual().right().value(), is(equalTo("b")));
     }
 
     @Test
     public void testBracketedValueOperand() throws ParserException {
         ExpressionSyntaxTree tree = new Expression("($a) == ($b)").tree();
-        assertThat(tree.isCondition(), is(equalTo(true)));
-        assertThat(tree.asCondition().isEqual(), is(equalTo(true)));
-        assertThat(tree.asCondition().asEqual().left().isVariable(), is(equalTo(true)));
-        assertThat(tree.asCondition().asEqual().left().value(), is(equalTo("a")));
-        assertThat(tree.asCondition().asEqual().right().isVariable(), is(equalTo(true)));
-        assertThat(tree.asCondition().asEqual().right().value(), is(equalTo("b")));
+        assertThat(tree.isExpression(), is(equalTo(true)));
+        assertThat(tree.asExpression().isEqual(), is(equalTo(true)));
+        assertThat(tree.asExpression().asEqual().left().isVariable(), is(equalTo(true)));
+        assertThat(tree.asExpression().asEqual().left().value(), is(equalTo("a")));
+        assertThat(tree.asExpression().asEqual().right().isVariable(), is(equalTo(true)));
+        assertThat(tree.asExpression().asEqual().right().value(), is(equalTo("b")));
     }
 
     @Test
     public void testComplex() throws ParserException {
         ExpressionSyntaxTree tree = new Expression("$a != $b || ($c == $d && $e == $f)").tree();
-        assertThat(tree.isCondition(), is(equalTo(true)));
-        assertThat(tree.asCondition().isOr(), is(equalTo(true)));
-        Or or = tree.asCondition().asOr();
+        assertThat(tree.isExpression(), is(equalTo(true)));
+        assertThat(tree.asExpression().isOr(), is(equalTo(true)));
+        Or or = tree.asExpression().asOr();
         assertThat(or.left().isNotEqual(), is(equalTo(true)));
         assertThat(or.left().asNotEqual().left().isVariable(), is(equalTo(true)));
         assertThat(or.left().asNotEqual().left().value(), is(equalTo("a")));
@@ -182,9 +182,9 @@ public class ExpressionTest {
     @Test
     public void testIsNot() throws ParserException {
         ExpressionSyntaxTree tree = new Expression("($a == \"foo\") != ($b == \"bar\")").tree();
-        assertThat(tree.isCondition(), is(equalTo(true)));
-        assertThat(tree.asCondition().isIsNot(), is(equalTo(true)));
-        IsNot isNot = tree.asCondition().asIsNot();
+        assertThat(tree.isExpression(), is(equalTo(true)));
+        assertThat(tree.asExpression().isIsNot(), is(equalTo(true)));
+        IsNot isNot = tree.asExpression().asIsNot();
         assertThat(isNot.left().isEqual(), is(equalTo(true)));
         assertThat(isNot.left().asEqual().left().isVariable(), is(equalTo(true)));
         assertThat(isNot.left().asEqual().left().value(), is(equalTo("a")));
@@ -200,9 +200,9 @@ public class ExpressionTest {
     @Test
     public void testIs() throws ParserException {
         ExpressionSyntaxTree tree = new Expression("($a == \"foo\") == ($b == \"bar\")").tree();
-        assertThat(tree.isCondition(), is(equalTo(true)));
-        assertThat(tree.asCondition().isIs(), is(equalTo(true)));
-        Is is = tree.asCondition().asIs();
+        assertThat(tree.isExpression(), is(equalTo(true)));
+        assertThat(tree.asExpression().isIs(), is(equalTo(true)));
+        Is is = tree.asExpression().asIs();
         assertThat(is.left().isEqual(), is(equalTo(true)));
         assertThat(is.left().asEqual().left().isVariable(), is(equalTo(true)));
         assertThat(is.left().asEqual().left().value(), is(equalTo("a")));
@@ -217,10 +217,10 @@ public class ExpressionTest {
 
     @Test
     public void testXor() throws ParserException {
-        ExpressionSyntaxTree tree = new Expression("($a == \"foo\") ^ ($b == \"bar\")").tree();
-        assertThat(tree.isCondition(), is(equalTo(true)));
-        assertThat(tree.asCondition().isXor(), is(equalTo(true)));
-        Xor xor = tree.asCondition().asXor();
+        ExpressionSyntaxTree tree = new Expression("($a == \"foo\") ^^ ($b == \"bar\")").tree();
+        assertThat(tree.isExpression(), is(equalTo(true)));
+        assertThat(tree.asExpression().isXor(), is(equalTo(true)));
+        Xor xor = tree.asExpression().asXor();
         assertThat(xor.left().isEqual(), is(equalTo(true)));
         assertThat(xor.left().asEqual().left().isVariable(), is(equalTo(true)));
         assertThat(xor.left().asEqual().left().value(), is(equalTo("a")));
@@ -236,9 +236,9 @@ public class ExpressionTest {
     @Test
     public void testNot() throws ParserException {
         ExpressionSyntaxTree tree = new Expression("!($a == \"foo\")").tree();
-        assertThat(tree.isCondition(), is(equalTo(true)));
-        assertThat(tree.asCondition().isNot(), is(equalTo(true)));
-        Not not = tree.asCondition().asNot();
+        assertThat(tree.isExpression(), is(equalTo(true)));
+        assertThat(tree.asExpression().isNot(), is(equalTo(true)));
+        Not not = tree.asExpression().asNot();
         assertThat(not.right().isEqual(), is(equalTo(true)));
         assertThat(not.right().asEqual().left().isVariable(), is(equalTo(true)));
         assertThat(not.right().asEqual().left().value(), is(equalTo("a")));
@@ -249,9 +249,9 @@ public class ExpressionTest {
     @Test
     public void testComplexNot() throws ParserException {
         ExpressionSyntaxTree tree = new Expression("$a == \"foo\" && !($b == \"bar\")").tree();
-        assertThat(tree.isCondition(), is(equalTo(true)));
-        assertThat(tree.asCondition().isAnd(), is(equalTo(true)));
-        And and = tree.asCondition().asAnd();
+        assertThat(tree.isExpression(), is(equalTo(true)));
+        assertThat(tree.asExpression().isAnd(), is(equalTo(true)));
+        And and = tree.asExpression().asAnd();
         assertThat(and.left().isEqual(), is(equalTo(true)));
         assertThat(and.left().asEqual().left().isVariable(), is(equalTo(true)));
         assertThat(and.left().asEqual().left().value(), is(equalTo("a")));
@@ -267,9 +267,9 @@ public class ExpressionTest {
     @Test
     public void testFlatAnd() throws ParserException {
         ExpressionSyntaxTree tree = new Expression("$c == $d && $e == $f").tree();
-        assertThat(tree.isCondition(), is(equalTo(true)));
-        assertThat(tree.asCondition().isAnd(), is(equalTo(true)));
-        And and = tree.asCondition().asAnd();
+        assertThat(tree.isExpression(), is(equalTo(true)));
+        assertThat(tree.asExpression().isAnd(), is(equalTo(true)));
+        And and = tree.asExpression().asAnd();
         assertThat(and.left().isEqual(), is(equalTo(true)));
         assertThat(and.left().asEqual().left().isVariable(), is(equalTo(true)));
         assertThat(and.left().asEqual().left().value(), is(equalTo("c")));
@@ -285,9 +285,9 @@ public class ExpressionTest {
     @Test
     public void testEqualIsEqual() throws ParserException {
         ExpressionSyntaxTree tree = new Expression("($a == \"foo\") == ($b == \"bar\")").tree();
-        assertThat(tree.isCondition(), is(equalTo(true)));
-        assertThat(tree.asCondition().isIs(), is(equalTo(true)));
-        Is is = tree.asCondition().asIs();
+        assertThat(tree.isExpression(), is(equalTo(true)));
+        assertThat(tree.asExpression().isIs(), is(equalTo(true)));
+        Is is = tree.asExpression().asIs();
         assertThat(is.left().isEqual(), is(equalTo(true)));
         assertThat(is.left().asEqual().left().isVariable(), is(equalTo(true)));
         assertThat(is.left().asEqual().left().value(), is(equalTo("a")));
@@ -303,9 +303,9 @@ public class ExpressionTest {
     @Test
     public void testFlatAndAnd() throws ParserException {
         ExpressionSyntaxTree tree = new Expression("$a == \"foo\" && $b == \"bar\" && $c == \"foobar\"").tree();
-        assertThat(tree.isCondition(), is(equalTo(true)));
-        assertThat(tree.asCondition().isAnd(), is(equalTo(true)));
-        And and = tree.asCondition().asAnd();
+        assertThat(tree.isExpression(), is(equalTo(true)));
+        assertThat(tree.asExpression().isAnd(), is(equalTo(true)));
+        And and = tree.asExpression().asAnd();
         assertThat(and.left().isEqual(), is(equalTo(true)));
         assertThat(and.left().asEqual().left().isVariable(), is(equalTo(true)));
         assertThat(and.left().asEqual().left().value(), is(equalTo("a")));
@@ -325,9 +325,9 @@ public class ExpressionTest {
     @Test
     public void testFlatAndOr() throws ParserException {
         ExpressionSyntaxTree tree = new Expression("$a == \"foo\" && $b == \"bar\" || $c == \"foobar\"").tree();
-        assertThat(tree.isCondition(), is(equalTo(true)));
-        assertThat(tree.asCondition().isAnd(), is(equalTo(true)));
-        And and = tree.asCondition().asAnd();
+        assertThat(tree.isExpression(), is(equalTo(true)));
+        assertThat(tree.asExpression().isAnd(), is(equalTo(true)));
+        And and = tree.asExpression().asAnd();
         assertThat(and.left().isEqual(), is(equalTo(true)));
         assertThat(and.left().asEqual().left().isVariable(), is(equalTo(true)));
         assertThat(and.left().asEqual().left().value(), is(equalTo("a")));
@@ -368,7 +368,7 @@ public class ExpressionTest {
         }
 
         try {
-            new Expression("$a == $b ^^ $c == $d)");
+            new Expression("$a == $b ^^^ $c == $d)");
             fail("An exception should have been thrown");
         } catch (ParserException ex) {
             assertThat(ex.getMessage(), is(startsWith("Invalid '^' character found")));
@@ -381,7 +381,54 @@ public class ExpressionTest {
             assertThat(ex.getMessage(), is(startsWith("Invalid '!' character found")));
         }
 
-        // TODO test single char for AND, OR, IS, EQUAL, IS_NOT, NOT_EQUAL
+        try {
+            new Expression("$a = $b");
+            fail("An exception should have been thrown");
+        } catch (ParserException ex) {
+            assertThat(ex.getMessage(), is(startsWith("Invalid ' ' character found")));
+        }
+
+        try {
+            new Expression("$a !!= $b");
+            fail("An exception should have been thrown");
+        } catch (ParserException ex) {
+            assertThat(ex.getMessage(), is(startsWith("Invalid '!' character found")));
+        }
+
+        try {
+            new Expression("$a !== $b");
+            fail("An exception should have been thrown");
+        } catch (ParserException ex) {
+            assertThat(ex.getMessage(), is(startsWith("Invalid '=' character found")));
+        }
+
+        try {
+            new Expression("($a == \"foo\") = ($b == \"foo\")");
+            fail("An exception should have been thrown");
+        } catch (ParserException ex) {
+            assertThat(ex.getMessage(), is(startsWith("Invalid ' ' character found")));
+        }
+
+        try {
+            new Expression("$a | $b");
+            fail("An exception should have been thrown");
+        } catch (ParserException ex) {
+            assertThat(ex.getMessage(), is(startsWith("Invalid ' ' character found")));
+        }
+
+        try {
+            new Expression("$a & $b");
+            fail("An exception should have been thrown");
+        } catch (ParserException ex) {
+            assertThat(ex.getMessage(), is(startsWith("Invalid ' ' character found")));
+        }
+
+        try {
+            new Expression("$a ^ $b");
+            fail("An exception should have been thrown");
+        } catch (ParserException ex) {
+            assertThat(ex.getMessage(), is(startsWith("Invalid ' ' character found")));
+        }
     }
 
     @Test
@@ -393,7 +440,26 @@ public class ExpressionTest {
             assertThat(ex.getMessage(), is(startsWith("No left operand found for operator")));
         }
 
-        // TODO add more use-case
+        try {
+            new Expression("== $b");
+            fail("An exception should have been thrown");
+        } catch (ParserException ex) {
+            assertThat(ex.getMessage(), is(startsWith("No left operand found for operator")));
+        }
+
+        try {
+            new Expression("== \"foo\" && $b == \"bar\"");
+            fail("An exception should have been thrown");
+        } catch (ParserException ex) {
+            assertThat(ex.getMessage(), is(startsWith("No left operand found for operator")));
+        }
+
+        try {
+            new Expression("$a == \"foo\" && == \"bar\"");
+            fail("An exception should have been thrown");
+        } catch (ParserException ex) {
+            assertThat(ex.getMessage(), is(startsWith("Invalid '=' character found")));
+        }
     }
 
     @Test
@@ -420,7 +486,7 @@ public class ExpressionTest {
             new Expression("$a == \"foo\" && $b == || $c == \"bar\"");
             fail("An exception should have been thrown");
         } catch (ParserException ex) {
-            assertThat(ex.getMessage(), is(startsWith("Invalid left operand found for operator")));
+            assertThat(ex.getMessage(), is(startsWith("Invalid '|' character found")));
         }
         try {
             new Expression("$a == \"foo\" && ($b ==) || $c == \"bar\"");

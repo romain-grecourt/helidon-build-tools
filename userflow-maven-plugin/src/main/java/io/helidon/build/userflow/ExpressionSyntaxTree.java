@@ -21,19 +21,19 @@ package io.helidon.build.userflow;
 public interface ExpressionSyntaxTree {
 
     /**
-     * Test if this instance is an condition.
-     * @return {@code true} if an condition, {@code false} otherwise
+     * Test if this instance is a conditional expression.
+     * @return {@code true} if a conditional expression, {@code false} otherwise
      */
-    default boolean isCondition() {
-        return this instanceof Condition;
+    default boolean isExpression() {
+        return this instanceof ConditionalExpression;
     }
 
     /**
-     * Get this instance as an condition.
+     * Get this instance as a {@link ConditionalExpression}.
      * @return Expression
      */
-    default Condition asCondition() {
-        return (Condition) this;
+    default ConditionalExpression asExpression() {
+        return (ConditionalExpression) this;
     }
 
     /**
@@ -45,12 +45,26 @@ public interface ExpressionSyntaxTree {
     }
 
     /**
-     * Get this instance as a value.
+     * Get this instance as a {@link Value}.
      * @return Value
      */
     default Value asValue() {
         return (Value) this;
     }
+
+    /**
+     * All node types.
+     */
+    enum NodeType {
+        VARIABLE, LITERAL, AND, OR, XOR, NOT, IS, IS_NOT, EQUAL, NOT_EQUAL;
+    }
+
+    /**
+     * Get the type of this node.
+     *
+     * @return NodeType
+     */
+    NodeType type();
 
     /**
      * Represents literal text values, either as a variable or constant.
@@ -76,7 +90,7 @@ public interface ExpressionSyntaxTree {
         }
 
         /**
-         * Get this instance as a variable.
+         * Get this instance as a {@link Variable}.
          * @return Variable
          */
         public Variable asVariable() {
@@ -92,7 +106,7 @@ public interface ExpressionSyntaxTree {
         }
 
         /**
-         * Get this instance as a literal.
+         * Get this instance as a {@link Literal}.
          * @return Literal
          */
         public Literal asLiteral() {
@@ -121,6 +135,11 @@ public interface ExpressionSyntaxTree {
         Variable(String value) {
             super(value);
         }
+
+        @Override
+        public NodeType type() {
+            return NodeType.VARIABLE;
+        }
     }
 
     /**
@@ -135,23 +154,93 @@ public interface ExpressionSyntaxTree {
         Literal(String value) {
             super(value);
         }
+
+        @Override
+        public NodeType type() {
+            return NodeType.LITERAL;
+        }
+    }
+
+    /**
+     * Operation with one operand.
+     */
+    public interface UnaryOperation {
+
+        /**
+         * Get the right operand
+         * @return ExpressionSyntaxTree
+         */
+        public ExpressionSyntaxTree right();
+    }
+
+    /**
+     * Operation with two operands.
+     */
+    public interface BinaryOperation {
+
+        /**
+         * Get the left operand
+         * @return ExpressionSyntaxTree
+         */
+        public ExpressionSyntaxTree left();
+
+        /**
+         * Get the right operand
+         * @return ExpressionSyntaxTree
+         */
+        public ExpressionSyntaxTree right();
     }
 
     /**
      * Logical expression of named variables and text literal.
      */
-    public static abstract class Condition implements ExpressionSyntaxTree {
+    public static abstract class ConditionalExpression implements ExpressionSyntaxTree {
 
         /**
-         * Test if this instance is an {@code AND} condition.
-         * @return {@code true} if an {@code AND} condition, {@code false} otherwise
+         * Test if this expression has one operand.
+         *
+         * @return {@code true} if instance accepts one operand, {@code false} otherwise
+         */
+        public boolean isUnaryOperation() {
+            return this instanceof UnaryOperation;
+        }
+
+        /**
+         * Get this instance as a {@link UnaryOperation}.
+         *
+         * @return UnaryOperation
+         */
+        public UnaryOperation asUnaryOperation() {
+            return (UnaryOperation) this;
+        }
+
+        /**
+         * Test if this conditional expression has two operands.
+         *
+         * @return {@code true} if instance accepts two operands, {@code false} otherwise
+         */
+        public boolean isBinaryOperation() {
+            return this instanceof BinaryOperation;
+        }
+
+        /**
+         * Get this instance as a {@link BinaryOperation}.
+         * @return BinaryOperation
+         */
+        public BinaryOperation asBinaryOperation() {
+            return (BinaryOperation) this;
+        }
+
+        /**
+         * Test if this instance is a {@code AND} expression.
+         * @return {@code true} if a {@code AND} expression, {@code false} otherwise
          */
         public boolean isAnd(){
             return (this instanceof And);
         }
 
         /**
-         * Get this instance as an {@code AND} condition.
+         * Get this instance as a {@link And} expression.
          * @return And
          */
         public And asAnd() {
@@ -159,15 +248,15 @@ public interface ExpressionSyntaxTree {
         }
 
         /**
-         * Test if this instance is an {@code OR} condition.
-         * @return {@code true} if an {@code OR} condition, {@code false} otherwise
+         * Test if this instance is a {@code OR} expression.
+         * @return {@code true} if a {@code OR} expression, {@code false} otherwise
          */
         public boolean isOr() {
             return (this instanceof Or);
         }
 
         /**
-         * Get this instance as an {@code OR} condition.
+         * Get this instance as a {@link Or} expression.
          * @return Or
          */
         public Or asOr() {
@@ -175,15 +264,15 @@ public interface ExpressionSyntaxTree {
         }
 
         /**
-         * Test if this instance is an {@code XOR} condition.
-         * @return {@code true} if an {@code XOR} condition, {@code false} otherwise
+         * Test if this instance is a {@code XOR} expression.
+         * @return {@code true} if a {@code XOR} expression, {@code false} otherwise
          */
         public boolean isXor() {
             return (this instanceof Xor);
         }
 
         /**
-         * Get this instance as an {@code XOR} condition.
+         * Get this instance as an {@link Xor} expression.
          *
          * @return Xor
          */
@@ -192,15 +281,15 @@ public interface ExpressionSyntaxTree {
         }
 
         /**
-         * Test if this instance is an {@code IS} condition.
-         * @return {@code true} if an {@code IS} condition, {@code false} otherwise
+         * Test if this instance is a {@code IS} expression.
+         * @return {@code true} if a {@code IS} expression, {@code false} otherwise
          */
         public boolean isIs() {
             return (this instanceof Is);
         }
 
         /**
-         * Get this instance as an {@code IS} condition.
+         * Get this instance as an {@link Is} expression.
          *
          * @return Is
          */
@@ -209,16 +298,16 @@ public interface ExpressionSyntaxTree {
         }
 
         /**
-         * Test if this instance is an {@code IS_NOT} condition.
+         * Test if this instance is a {@code IS_NOT} expression.
          *
-         * @return {@code true} if an {@code IS_NOT} condition, {@code false} otherwise
+         * @return {@code true} if a {@code IS_NOT} expression, {@code false} otherwise
          */
         public boolean isIsNot() {
             return (this instanceof IsNot);
         }
 
         /**
-         * Get this instance as an {@code IS_NOT} condition.
+         * Get this instance as a {@link IsNot} expression.
          *
          * @return IsNot
          */
@@ -227,15 +316,15 @@ public interface ExpressionSyntaxTree {
         }
 
         /**
-         * Test if this instance is an {@code EQUAL} condition.
-         * @return {@code true} if an {@code EQUAL} condition, {@code false} otherwise
+         * Test if this instance is a {@code EQUAL} expression.
+         * @return {@code true} if a {@code EQUAL} expression, {@code false} otherwise
          */
         public boolean isEqual() {
             return (this instanceof Equal);
         }
 
         /**
-         * Get this instance as an {@code EQUAL} condition.
+         * Get this instance as a {@link Equal} expression.
          *
          * @return Equal
          */
@@ -244,15 +333,15 @@ public interface ExpressionSyntaxTree {
         }
 
         /**
-         * Test if this instance is an {@code NOT_EQUAL} condition.
-         * @return {@code true} if an {@code NOT_EQUAL} condition, {@code false} otherwise
+         * Test if this instance is a {@code NOT_EQUAL} expression.
+         * @return {@code true} if a {@code NOT_EQUAL} expression, {@code false} otherwise
          */
         public boolean isNotEqual() {
             return (this instanceof NotEqual);
         }
 
         /**
-         * Get this instance as an {@code NOT_EQUAL} condition.
+         * Get this instance as a {@link NotEqual} expression.
          *
          * @return NotEqual
          */
@@ -261,15 +350,15 @@ public interface ExpressionSyntaxTree {
         }
 
         /**
-         * Test if this instance is an {@code NOT} condition.
-         * @return {@code true} if an {@code NOT} condition, {@code false} otherwise
+         * Test if this instance is a {@code NOT} expression.
+         * @return {@code true} if an {@code NOT} expression, {@code false} otherwise
          */
         public boolean isNot() {
             return (this instanceof Not);
         }
 
         /**
-         * Get this instance as an {@code NOT} condition.
+         * Get this instance as a {@link Not} expression.
          *
          * @return Not
          */
@@ -279,164 +368,194 @@ public interface ExpressionSyntaxTree {
     }
 
     /**
-     * This condition represents the logical negation of a sub condition.
+     * This expression represents the logical negation of an expression.
      */
-    public final class Not extends Condition {
+    public final class Not extends ConditionalExpression implements UnaryOperation {
 
-        private final Condition right;
+        private final ConditionalExpression right;
 
-        Not(Condition expr) {
+        Not(ConditionalExpression expr) {
             this.right = expr;
         }
 
-        /**
-         * Get the right condition operand.
-         * @return Condition
-         */
-        public Condition right() {
+        @Override
+        public ConditionalExpression right() {
             return right;
+        }
+
+        @Override
+        public NodeType type() {
+            return NodeType.NOT;
         }
     }
 
     /**
-     * Base class for conditions having two sub conditions.
+     * Base class for expression with two operands.
      */
-    public static abstract class LeftRightCondition extends Condition {
+    public static abstract class BinaryConditionalExpression extends ConditionalExpression implements BinaryOperation {
 
-        private final Condition left;
-        private final Condition right;
+        private final ConditionalExpression left;
+        private final ConditionalExpression right;
 
-        LeftRightCondition(Condition left, Condition right) {
+        BinaryConditionalExpression(ConditionalExpression left, ConditionalExpression right) {
             this.left = left;
             this.right = right;
         }
 
         /**
-         * Get the left condition operand.
+         * Get the left operand.
          * @return Condition
          */
-        public Condition left(){
+        @Override
+        public ConditionalExpression left(){
             return left;
         }
 
         /**
-         * Get the right condition operand.
+         * Get the right operand.
          * @return Condition
          */
-        public Condition right() {
+        @Override
+        public ConditionalExpression right() {
             return right;
         }
     }
 
     /**
-     * This condition represents an equality between two sub conditions.
+     * This expression represents an equality between two expressions.
      */
-    public static final class Is extends LeftRightCondition {
+    public static final class Is extends BinaryConditionalExpression {
 
-        Is(Condition left, Condition right) {
+        Is(ConditionalExpression left, ConditionalExpression right) {
             super(left, right);
+        }
+
+        @Override
+        public NodeType type() {
+            return NodeType.IS;
         }
     }
 
     /**
-     * This condition represents an inequality between two sub conditions.
+     * This expression represents an inequality between two expressions.
      */
-    public static final class IsNot extends LeftRightCondition {
+    public static final class IsNot extends BinaryConditionalExpression {
 
-        IsNot(Condition left, Condition right) {
+        IsNot(ConditionalExpression left, ConditionalExpression right) {
             super(left, right);
+        }
+
+        @Override
+        public NodeType type() {
+            return NodeType.IS_NOT;
         }
     }
 
     /**
-     * This condition represents a logical AND between two sub conditions.
+     * This expression represents a logical AND between two expressions.
      */
-    public static final class And extends LeftRightCondition {
+    public static final class And extends BinaryConditionalExpression {
 
-        And(Condition left, Condition right) {
+        And(ConditionalExpression left, ConditionalExpression right) {
             super(left, right);
+        }
+
+        @Override
+        public NodeType type() {
+            return NodeType.AND;
         }
     }
 
     /**
-     * This condition represents a logical OR between two sub conditions.
+     * This expression represents a logical OR between two expressions.
      */
-    public static final class Or extends LeftRightCondition {
+    public static final class Or extends BinaryConditionalExpression {
 
-        Or(Condition left, Condition right) {
+        Or(ConditionalExpression left, ConditionalExpression right) {
             super(left, right);
+        }
+
+        @Override
+        public NodeType type() {
+            return NodeType.OR;
         }
     }
 
     /**
-     * This condition represents a logical OR between two sub conditions.
+     * This expression represents a logical OR between two expressions.
      */
-    public static final class Xor extends LeftRightCondition {
+    public static final class Xor extends BinaryConditionalExpression {
 
-        Xor(Condition left, Condition right) {
+        Xor(ConditionalExpression left, ConditionalExpression right) {
             super(left, right);
+        }
+
+        @Override
+        public NodeType type() {
+            return NodeType.XOR;
         }
     }
 
     /**
-     * This condition represents the equality of two values.
+     * Base class for value expression with two operands.
      */
-    public static final class Equal extends Condition {
+    public static abstract class BinaryValueExpression extends ConditionalExpression implements BinaryOperation {
 
         private final Value left;
         private final Value right;
+
+        BinaryValueExpression(Value left, Value right) {
+            this.left = left;
+            this.right = right;
+        }
+
+        /**
+         * Get the left value operand.
+         * @return Value
+         */
+        @Override
+        public Value left() {
+            return left;
+        }
+
+        /**
+         * Get the right value operand.
+         *
+         * @return Value
+         */
+        @Override
+        public Value right() {
+            return right;
+        }
+    }
+
+    /**
+     * This expression represents the equality of two values.
+     */
+    public static final class Equal extends BinaryValueExpression {
 
         Equal(Value left, Value right) {
-            this.right = right;
-            this.left = left;
+            super(left, right);
         }
 
-        /**
-         * Get the left value operand.
-         * @return Value
-         */
-        public Value left() {
-            return left;
-        }
-
-        /**
-         * Get the right value operand.
-         *
-         * @return Value
-         */
-        public Value right() {
-            return right;
+        @Override
+        public NodeType type() {
+            return NodeType.EQUAL;
         }
     }
 
     /**
-     * This condition represents the inequality of two values.
+     * This expression represents the inequality of two values.
      */
-    public static final class NotEqual extends Condition {
-
-        private final Value left;
-        private final Value right;
+    public static final class NotEqual extends BinaryValueExpression {
 
         NotEqual(Value left, Value right) {
-            this.right = right;
-            this.left = left;
+            super(left, right);
         }
 
-        /**
-         * Get the left value operand.
-         * @return Value
-         */
-        public Value left() {
-            return left;
-        }
-
-        /**
-         * Get the right value operand.
-         *
-         * @return Value
-         */
-        public Value right() {
-            return right;
+        @Override
+        public NodeType type() {
+            return NodeType.NOT_EQUAL;
         }
     }
 }
