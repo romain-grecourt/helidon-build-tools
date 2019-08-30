@@ -17,16 +17,16 @@ package io.helidon.build.userflow;
 
 import java.util.Stack;
 
-import io.helidon.build.userflow.ExpressionSyntaxTree.And;
-import io.helidon.build.userflow.ExpressionSyntaxTree.Literal;
-import io.helidon.build.userflow.ExpressionSyntaxTree.Equal;
-import io.helidon.build.userflow.ExpressionSyntaxTree.Is;
-import io.helidon.build.userflow.ExpressionSyntaxTree.IsNot;
-import io.helidon.build.userflow.ExpressionSyntaxTree.Not;
-import io.helidon.build.userflow.ExpressionSyntaxTree.NotEqual;
-import io.helidon.build.userflow.ExpressionSyntaxTree.Or;
-import io.helidon.build.userflow.ExpressionSyntaxTree.Variable;
-import io.helidon.build.userflow.ExpressionSyntaxTree.Xor;
+import io.helidon.build.userflow.AbstratSyntaxTree.And;
+import io.helidon.build.userflow.AbstratSyntaxTree.Literal;
+import io.helidon.build.userflow.AbstratSyntaxTree.Equal;
+import io.helidon.build.userflow.AbstratSyntaxTree.Is;
+import io.helidon.build.userflow.AbstratSyntaxTree.IsNot;
+import io.helidon.build.userflow.AbstratSyntaxTree.Not;
+import io.helidon.build.userflow.AbstratSyntaxTree.NotEqual;
+import io.helidon.build.userflow.AbstratSyntaxTree.Or;
+import io.helidon.build.userflow.AbstratSyntaxTree.Variable;
+import io.helidon.build.userflow.AbstratSyntaxTree.Xor;
 
 /**
  * Simple expression supporting logical operators with text literal and variables. The logical operators have no precedence, the
@@ -95,16 +95,16 @@ public final class Expression {
     }
 
     /**
-     * Logical operation. An unresolved operation has a non {@code null} operator, and a node representing the {@code left}
+     * Infix operation. An unresolved operation has a non {@code null} operator, and a node representing the {@code left}
      * operand. If the operator takes a single operand, the node will be {@code null}. An operation is resolved with
-     * {@link #resolve(ExpressionSyntaxTree)}, by passing a {@code right} operand. A resolved operation has a {@code null}
-     * operator and a node of type {@link ConditionalExpression} that represents the operation with the proper operand(s).
+     * {@link #resolve(AbstractSyntaxTree)}, by passing a {@code right} operand. A resolved operation has a {@code null}
+     * operator and a node of type {@link LogicalExpression} that represents the operation with the proper operand(s).
      */
     private static final class InfixOperation {
 
         final int index;
         Operator operator;
-        ExpressionSyntaxTree node;
+        AbstratSyntaxTree node;
 
         /**
          * Create a new operation.
@@ -119,8 +119,8 @@ public final class Expression {
          *
          * @param right right operand
          */
-        void resolve(ExpressionSyntaxTree right) throws ParserException {
-            ExpressionSyntaxTree newNode;
+        void resolve(AbstratSyntaxTree right) throws ParserException {
+            AbstratSyntaxTree newNode;
             try {
                 switch (operator) {
                     case NOT:
@@ -159,7 +159,7 @@ public final class Expression {
     }
 
     private final String rawExpr;
-    private final ExpressionSyntaxTree tree;
+    private final AbstratSyntaxTree tree;
     private final Stack<InfixOperation> stack;
     private State state;
     private StringBuilder value;
@@ -181,19 +181,19 @@ public final class Expression {
 
     /**
      * Get the syntax tree.
-     * @return ExpressionSyntaxTree
+     * @return AbstractSyntaxTree
      */
-    public ExpressionSyntaxTree tree() {
+    public AbstratSyntaxTree tree() {
         return tree;
     }
 
     /**
      * Return the node of the current operation.
      * @param op operator used to customize the exception thrown
-     * @return ExpressionSyntaxTree
+     * @return AbstractSyntaxTree
      * @throws ParserException if node is {@code null}
      */
-    private ExpressionSyntaxTree lastOperand(Operator op) throws ParserException {
+    private AbstratSyntaxTree lastOperand(Operator op) throws ParserException {
         InfixOperation operation = stack.peek();
         if (operation.node == null) {
             throw new ParserException(String.format(
@@ -209,7 +209,7 @@ public final class Expression {
      * @throws ParserException if there is no left operand or if it is a {@code Value}
      */
     private void checkOperandExpression(Operator op) throws ParserException {
-        ExpressionSyntaxTree operand = lastOperand(op);
+        AbstratSyntaxTree operand = lastOperand(op);
         if (operand.isValue()) {
             throw new ParserException(String.format(
                     "Invalid left operand found for operator '%s' at index: %d",
@@ -371,7 +371,7 @@ public final class Expression {
      * @return Condition
      * @throws ParserException if an error occurs during parsing
      */
-    ExpressionSyntaxTree parse() throws ParserException {
+    AbstratSyntaxTree parse() throws ParserException {
         int brackets = 0;
         stack.push(new InfixOperation(index));
         for (; index < rawExpr.length(); index++) {

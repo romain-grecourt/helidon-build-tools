@@ -16,12 +16,12 @@
 package io.helidon.build.userflow;
 
 import io.helidon.build.userflow.Expression.ParserException;
-import io.helidon.build.userflow.ExpressionSyntaxTree.And;
-import io.helidon.build.userflow.ExpressionSyntaxTree.Is;
-import io.helidon.build.userflow.ExpressionSyntaxTree.IsNot;
-import io.helidon.build.userflow.ExpressionSyntaxTree.Not;
-import io.helidon.build.userflow.ExpressionSyntaxTree.Or;
-import io.helidon.build.userflow.ExpressionSyntaxTree.Xor;
+import io.helidon.build.userflow.AbstratSyntaxTree.And;
+import io.helidon.build.userflow.AbstratSyntaxTree.Is;
+import io.helidon.build.userflow.AbstratSyntaxTree.IsNot;
+import io.helidon.build.userflow.AbstratSyntaxTree.Not;
+import io.helidon.build.userflow.AbstratSyntaxTree.Or;
+import io.helidon.build.userflow.AbstratSyntaxTree.Xor;
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.CoreMatchers.equalTo;
@@ -37,7 +37,7 @@ public class ExpressionTest {
 
     @Test
     public void testLiteral() throws ParserException {
-        ExpressionSyntaxTree tree = new Expression("\"foo\"").tree();
+        AbstratSyntaxTree tree = new Expression("\"foo\"").tree();
         assertThat(tree.isValue(), is(equalTo(true)));
         assertThat(tree.asValue().isLiteral(), is(equalTo(true)));
         assertThat(tree.asValue().value(), is(equalTo("foo")));
@@ -65,7 +65,7 @@ public class ExpressionTest {
 
     @Test
     public void testVariable() throws ParserException {
-        ExpressionSyntaxTree tree = new Expression("$foo").tree();
+        AbstratSyntaxTree tree = new Expression("$foo").tree();
         assertThat(tree.isValue(), is(equalTo(true)));
         assertThat(tree.asValue().isVariable(), is(equalTo(true)));
         assertThat(tree.asValue().value(), is(equalTo("foo")));
@@ -107,7 +107,7 @@ public class ExpressionTest {
 
     @Test
     public void testNotEqualWithLiterals() throws ParserException {
-        ExpressionSyntaxTree tree = new Expression("\"foo\" != \"bar\"").tree();
+        AbstratSyntaxTree tree = new Expression("\"foo\" != \"bar\"").tree();
         assertThat(tree.isExpression(), is(equalTo(true)));
         assertThat(tree.asExpression().isNotEqual(), is(equalTo(true)));
         assertThat(tree.asExpression().asNotEqual().left().isLiteral(), is(equalTo(true)));
@@ -118,7 +118,7 @@ public class ExpressionTest {
 
     @Test
     public void testNotEqualWithVariables() throws ParserException {
-        ExpressionSyntaxTree tree = new Expression("$a != $b").tree();
+        AbstratSyntaxTree tree = new Expression("$a != $b").tree();
         assertThat(tree.isExpression(), is(equalTo(true)));
         assertThat(tree.asExpression().isNotEqual(), is(equalTo(true)));
         assertThat(tree.asExpression().asNotEqual().left().isVariable(), is(equalTo(true)));
@@ -129,7 +129,7 @@ public class ExpressionTest {
 
     @Test
     public void testBracketedValueOperand() throws ParserException {
-        ExpressionSyntaxTree tree = new Expression("($a) == ($b)").tree();
+        AbstratSyntaxTree tree = new Expression("($a) == ($b)").tree();
         assertThat(tree.isExpression(), is(equalTo(true)));
         assertThat(tree.asExpression().isEqual(), is(equalTo(true)));
         assertThat(tree.asExpression().asEqual().left().isVariable(), is(equalTo(true)));
@@ -140,7 +140,7 @@ public class ExpressionTest {
 
     @Test
     public void testComplex() throws ParserException {
-        ExpressionSyntaxTree tree = new Expression("$a != $b || ($c == $d && $e == $f)").tree();
+        AbstratSyntaxTree tree = new Expression("$a != $b || ($c == $d && $e == $f)").tree();
         assertThat(tree.isExpression(), is(equalTo(true)));
         assertThat(tree.asExpression().isOr(), is(equalTo(true)));
         Or or = tree.asExpression().asOr();
@@ -181,7 +181,7 @@ public class ExpressionTest {
 
     @Test
     public void testIsNot() throws ParserException {
-        ExpressionSyntaxTree tree = new Expression("($a == \"foo\") != ($b == \"bar\")").tree();
+        AbstratSyntaxTree tree = new Expression("($a == \"foo\") != ($b == \"bar\")").tree();
         assertThat(tree.isExpression(), is(equalTo(true)));
         assertThat(tree.asExpression().isIsNot(), is(equalTo(true)));
         IsNot isNot = tree.asExpression().asIsNot();
@@ -199,7 +199,7 @@ public class ExpressionTest {
 
     @Test
     public void testIs() throws ParserException {
-        ExpressionSyntaxTree tree = new Expression("($a == \"foo\") == ($b == \"bar\")").tree();
+        AbstratSyntaxTree tree = new Expression("($a == \"foo\") == ($b == \"bar\")").tree();
         assertThat(tree.isExpression(), is(equalTo(true)));
         assertThat(tree.asExpression().isIs(), is(equalTo(true)));
         Is is = tree.asExpression().asIs();
@@ -217,7 +217,7 @@ public class ExpressionTest {
 
     @Test
     public void testXor() throws ParserException {
-        ExpressionSyntaxTree tree = new Expression("($a == \"foo\") ^^ ($b == \"bar\")").tree();
+        AbstratSyntaxTree tree = new Expression("($a == \"foo\") ^^ ($b == \"bar\")").tree();
         assertThat(tree.isExpression(), is(equalTo(true)));
         assertThat(tree.asExpression().isXor(), is(equalTo(true)));
         Xor xor = tree.asExpression().asXor();
@@ -235,7 +235,7 @@ public class ExpressionTest {
 
     @Test
     public void testNot() throws ParserException {
-        ExpressionSyntaxTree tree = new Expression("!($a == \"foo\")").tree();
+        AbstratSyntaxTree tree = new Expression("!($a == \"foo\")").tree();
         assertThat(tree.isExpression(), is(equalTo(true)));
         assertThat(tree.asExpression().isNot(), is(equalTo(true)));
         Not not = tree.asExpression().asNot();
@@ -248,7 +248,7 @@ public class ExpressionTest {
 
     @Test
     public void testComplexNot() throws ParserException {
-        ExpressionSyntaxTree tree = new Expression("$a == \"foo\" && !($b == \"bar\")").tree();
+        AbstratSyntaxTree tree = new Expression("$a == \"foo\" && !($b == \"bar\")").tree();
         assertThat(tree.isExpression(), is(equalTo(true)));
         assertThat(tree.asExpression().isAnd(), is(equalTo(true)));
         And and = tree.asExpression().asAnd();
@@ -266,7 +266,7 @@ public class ExpressionTest {
 
     @Test
     public void testFlatAnd() throws ParserException {
-        ExpressionSyntaxTree tree = new Expression("$c == $d && $e == $f").tree();
+        AbstratSyntaxTree tree = new Expression("$c == $d && $e == $f").tree();
         assertThat(tree.isExpression(), is(equalTo(true)));
         assertThat(tree.asExpression().isAnd(), is(equalTo(true)));
         And and = tree.asExpression().asAnd();
@@ -284,7 +284,7 @@ public class ExpressionTest {
 
     @Test
     public void testEqualIsEqual() throws ParserException {
-        ExpressionSyntaxTree tree = new Expression("($a == \"foo\") == ($b == \"bar\")").tree();
+        AbstratSyntaxTree tree = new Expression("($a == \"foo\") == ($b == \"bar\")").tree();
         assertThat(tree.isExpression(), is(equalTo(true)));
         assertThat(tree.asExpression().isIs(), is(equalTo(true)));
         Is is = tree.asExpression().asIs();
@@ -302,7 +302,7 @@ public class ExpressionTest {
 
     @Test
     public void testFlatAndAnd() throws ParserException {
-        ExpressionSyntaxTree tree = new Expression("$a == \"foo\" && $b == \"bar\" && $c == \"foobar\"").tree();
+        AbstratSyntaxTree tree = new Expression("$a == \"foo\" && $b == \"bar\" && $c == \"foobar\"").tree();
         assertThat(tree.isExpression(), is(equalTo(true)));
         assertThat(tree.asExpression().isAnd(), is(equalTo(true)));
         And and = tree.asExpression().asAnd();
@@ -324,7 +324,7 @@ public class ExpressionTest {
 
     @Test
     public void testFlatAndOr() throws ParserException {
-        ExpressionSyntaxTree tree = new Expression("$a == \"foo\" && $b == \"bar\" || $c == \"foobar\"").tree();
+        AbstratSyntaxTree tree = new Expression("$a == \"foo\" && $b == \"bar\" || $c == \"foobar\"").tree();
         assertThat(tree.isExpression(), is(equalTo(true)));
         assertThat(tree.asExpression().isAnd(), is(equalTo(true)));
         And and = tree.asExpression().asAnd();

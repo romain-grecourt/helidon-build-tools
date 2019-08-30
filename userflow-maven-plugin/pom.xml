@@ -60,7 +60,6 @@
         <dependency>
             <groupId>io.helidon.common</groupId>
             <artifactId>helidon-common</artifactId>
-            <scope>test</scope>
         </dependency>
     </dependencies>
 

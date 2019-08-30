@@ -15,17 +15,16 @@
  */
 package io.helidon.build.userflow;
 
-import java.io.File;
-import java.io.FileInputStream;
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedList;
-import java.util.Properties;
 
 import io.helidon.build.userflow.Expression.ParserException;
-import io.helidon.build.userflow.ExpressionSyntaxTree.ConditionalExpression;
-import io.helidon.build.userflow.ExpressionSyntaxTree.Value;
+import io.helidon.build.userflow.AbstratSyntaxTree.LogicalExpression;
+import io.helidon.build.userflow.AbstratSyntaxTree.Value;
 
 /**
  * User flow model.
@@ -62,29 +61,40 @@ public final class UserFlow {
      * @return UserFlow
      * @throws IOException if an error occurs while reading the descriptor file
      */
-    static UserFlow create(File descriptor) throws IOException, ParserException {
-        Properties properties = new Properties();
-        properties.load(new FileInputStream(descriptor));
-        LinkedList<Step> steps = new LinkedList<>();
-
-        // filter expression property names only
-        ArrayList<String> stepProps = new ArrayList<>();
-        for(Object key : properties.keySet()) {
-            String propName = (String) key;
-            if (!propName.endsWith(".text")) {
-                stepProps.add(propName);
+    static UserFlow create(InputStream descriptor) throws IOException, ParserException {
+        BufferedReader reader = new BufferedReader(
+                new InputStreamReader(descriptor));
+        HashMap<String, String> properties = new HashMap<>();
+        LinkedList<String> stepProps = new LinkedList<>();
+        String line;
+        while((line = reader.readLine()) != null) {
+            if(line.startsWith("#")){
+                continue;
+            }
+            int index = line.indexOf('=');
+            if (index <= 0) {
+                continue;
+            }
+            String key = line.substring(0, index);
+            String value = line.substring(key.length() + 1);
+            properties.put(key, value);
+            if (!(key.endsWith(".predicate")
+                    || key.endsWith(".default")
+                    || key.endsWith(".validation")
+                    || key.endsWith(".error"))){
+                stepProps.add(key);
             }
         }
-        // natural sort
-        Collections.sort(stepProps);
+        LinkedList<Step> steps = new LinkedList<>();
 
         // create the steps
         for (String step : stepProps) {
-            String text = properties.getProperty(step + ".text");
-            if (text == null) {
-                throw new IllegalStateException("No text for step: " + step);
-            }
-            steps.add(new Step(step, text, new Expression(properties.getProperty(step))));
+            String text = properties.get(step);
+            String predicate = properties.get(step + ".predicate");
+            String defaultValue = properties.get(step + ".default");
+            String validation = properties.get(step + ".validation");
+            String error = properties.get(step + ".error");
+            steps.add(new Step(step, text, predicate, defaultValue, validation, error));
         }
         return new UserFlow(steps);
     }
@@ -96,12 +106,35 @@ public final class UserFlow {
 
         private final String name;
         private final String text;
-        private final Expression expr;
+        private final ExpressionModel predicate;
+        private final String defaultValue;
+        private final ExpressionModel validation;
+        private final String error;
 
-        Step(String name, String text, Expression expr) {
-            this.name=  name;
+        Step(String name, String text, String predicate,
+                String defaultValue, String validation, String error)
+                throws ParserException {
+
+            if(name == null || text == null) {
+                throw new IllegalArgumentException("Invalid step, name or text is null");
+            }
+            this.name = name;
             this.text = text;
-            this.expr = expr;
+            this.predicate = predicate != null ?
+                    new ExpressionModel(new Expression(predicate).tree())
+                    : null;
+            if (predicate != null && defaultValue == null) {
+                throw new IllegalArgumentException("Step is missing default attribute: " + name);
+            }
+            this.defaultValue = defaultValue;
+            if (validation == null) {
+                throw new IllegalArgumentException("Step is missing validation attribute: " + name);
+            }
+            this.validation = new ExpressionModel(new Expression(validation).tree());
+            if (validation == null) {
+                throw new IllegalArgumentException("Step is missing error attribute: " + name);
+            }
+            this.error = error;
         }
 
         /**
@@ -117,8 +150,14 @@ public final class UserFlow {
                     return name;
                 case ("text"):
                     return text;
-                case ("expr"):
-                    return new ExpressionModel(expr.tree());
+                case ("predicate"):
+                    return predicate;
+                case ("default"):
+                    return defaultValue;
+                case ("validation"):
+                    return validation;
+                case ("error"):
+                    return error;
                 default:
                     throw new IllegalArgumentException("Unkown attribute: " + attr);
             }
@@ -130,18 +169,18 @@ public final class UserFlow {
      */
     public static final class ExpressionModel {
 
-        private final ExpressionSyntaxTree node;
+        private final AbstratSyntaxTree node;
 
         /**
          * Create a new expression model.
          * @param node syntax tree node
          */
-        ExpressionModel(ExpressionSyntaxTree node) {
+        ExpressionModel(AbstratSyntaxTree node) {
             this.node = node;
         }
 
         private Object getExpressionAttribute(String attr) {
-            ConditionalExpression expression = node.asExpression();
+            LogicalExpression expression = node.asExpression();
             switch (attr) {
                 case ("type"):
                     return expression.type().name();

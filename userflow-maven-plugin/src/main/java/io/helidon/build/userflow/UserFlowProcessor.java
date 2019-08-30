@@ -15,17 +15,21 @@
  */
 package io.helidon.build.userflow;
 
-import freemarker.cache.FileTemplateLoader;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.net.URL;
+
+import freemarker.cache.URLTemplateLoader;
 import freemarker.core.Environment;
 import freemarker.template.Configuration;
 import freemarker.template.Template;
 import freemarker.template.TemplateException;
 import freemarker.template.TemplateExceptionHandler;
 import freemarker.template.Version;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.IOException;
-import java.io.OutputStreamWriter;
+import java.io.OutputStream;
+
+import static io.helidon.common.CollectionsHelper.mapOf;
 
 /**
  * User flow processor.
@@ -37,22 +41,109 @@ final class UserFlowProcessor {
 
     private final Configuration freemarker;
     private final UserFlow userFlow;
+    private String bashIncludes;
+    private String batIncludes;
 
-    UserFlowProcessor(UserFlow userFlow, File basedir) throws IOException {
+    /**
+     * Create a new instance of the user flow processor.
+     * @param userFlow user flow
+     * @throws IOException if an error occurs while setting up the template engine
+     */
+    UserFlowProcessor(UserFlow userFlow) throws IOException {
         this.userFlow = userFlow;
         freemarker = new Configuration(FREEMARKER_VERSION);
-        freemarker.setTemplateLoader(new FileTemplateLoader(basedir));
+        freemarker.setTemplateLoader(new TemplateLoader());
         freemarker.setDefaultEncoding(DEFAULT_ENCODING);
         freemarker.setTemplateExceptionHandler(TemplateExceptionHandler.RETHROW_HANDLER);
         freemarker.setLogTemplateExceptions(false);
     }
 
-    String process(String templatePath) throws IOException, TemplateException {
-        Template tpl = freemarker.getTemplate(templatePath);
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        OutputStreamWriter writer = new OutputStreamWriter(baos);
-        Environment env = tpl.createProcessingEnvironment(userFlow, writer);
+    /**
+     * Render a single template.
+     * @param template URL pointing at the template
+     * @param os output stream
+     * @param model the template model
+     * @throws IOException if an IO error occurs during rendering
+     * @throws TemplateException if a template error occurs during rendering 
+     */
+    void renderTemplate(URL template, OutputStream os, Object model)
+            throws IOException, TemplateException {
+
+        Template tpl = freemarker.getTemplate(template.toExternalForm());
+        OutputStreamWriter writer = new OutputStreamWriter(os);
+        Environment env = tpl.createProcessingEnvironment(model, writer);
         env.process();
-        return baos.toString(DEFAULT_ENCODING);
+    }
+
+    /**
+     * Lazily render and get the bash includes.
+     * @return String
+     * @throws IOException if an IO error occurs during rendering
+     * @throws TemplateException if a template error occurs during rendering
+     */
+    String bashIncludes() throws IOException, TemplateException {
+        if (bashIncludes == null) {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            URL template = this.getClass().getResource("userflow-bash.ftl");
+            if (template == null) {
+                throw new IllegalStateException("Cannot locate bash source template");
+            }
+            renderTemplate(template, baos, userFlow);
+            bashIncludes = baos.toString();
+        }
+        return bashIncludes;
+    }
+
+    /**
+     * Lazily render and get the bat includes.
+     * @return String
+     * @throws IOException if an IO error occurs during rendering
+     * @throws TemplateException if a template error occurs during rendering
+     */
+    String batIncludes() throws IOException, TemplateException {
+        if (batIncludes == null) {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            URL template = this.getClass().getResource("userflow-bat.ftl");
+            if (template == null) {
+                throw new IllegalStateException("Cannot locate bat source template");
+            }
+            renderTemplate(template, baos, userFlow);
+            batIncludes = baos.toString();
+        }
+        return batIncludes;
+    }
+
+    /**
+     * Process the given template.
+     * @param template template
+     * @return ByteArrayOutputStream
+     * @throws IOException if an IO error occurs while rendering
+     * @throws TemplateException if a template error occurs while rendering
+     */
+    void process(URL template, OutputStream os) throws IOException, TemplateException {
+        renderTemplate(template, os, mapOf(
+                "bashIncludes", bashIncludes,
+                "batIncludes", batIncludes,
+                "flow", userFlow));
+    }
+
+    /**
+     * A URL based template loader.
+     */
+    private static final class TemplateLoader extends URLTemplateLoader {
+
+        @Override
+        protected URL getURL(String url) {
+            try {
+                URL u = new URL(url);
+                // check if the URL actually exist since
+                // freemarker invokes this method with all kind of variants
+                // for the locales...
+                u.openStream();
+                return u;
+            } catch (IOException ex) {
+                return null;
+            }
+        }
     }
 }

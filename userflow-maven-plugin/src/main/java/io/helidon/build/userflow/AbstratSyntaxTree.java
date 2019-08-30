@@ -16,24 +16,24 @@
 package io.helidon.build.userflow;
 
 /**
- * Expression syntax tree.
+ * Expression AST.
  */
-public interface ExpressionSyntaxTree {
+public interface AbstratSyntaxTree {
 
     /**
-     * Test if this instance is a conditional expression.
-     * @return {@code true} if a conditional expression, {@code false} otherwise
+     * Test if this instance is a logical expression.
+     * @return {@code true} if a logical expression, {@code false} otherwise
      */
     default boolean isExpression() {
-        return this instanceof ConditionalExpression;
+        return this instanceof LogicalExpression;
     }
 
     /**
-     * Get this instance as a {@link ConditionalExpression}.
+     * Get this instance as a {@link LogicalExpression}.
      * @return Expression
      */
-    default ConditionalExpression asExpression() {
-        return (ConditionalExpression) this;
+    default LogicalExpression asExpression() {
+        return (LogicalExpression) this;
     }
 
     /**
@@ -69,7 +69,7 @@ public interface ExpressionSyntaxTree {
     /**
      * Represents literal text values, either as a variable or constant.
      */
-    public static abstract class Value implements ExpressionSyntaxTree {
+    public static abstract class Value implements AbstratSyntaxTree {
 
         private final String value;
 
@@ -170,7 +170,7 @@ public interface ExpressionSyntaxTree {
          * Get the right operand
          * @return ExpressionSyntaxTree
          */
-        public ExpressionSyntaxTree right();
+        public AbstratSyntaxTree right();
     }
 
     /**
@@ -182,19 +182,19 @@ public interface ExpressionSyntaxTree {
          * Get the left operand
          * @return ExpressionSyntaxTree
          */
-        public ExpressionSyntaxTree left();
+        public AbstratSyntaxTree left();
 
         /**
          * Get the right operand
          * @return ExpressionSyntaxTree
          */
-        public ExpressionSyntaxTree right();
+        public AbstratSyntaxTree right();
     }
 
     /**
      * Logical expression of named variables and text literal.
      */
-    public static abstract class ConditionalExpression implements ExpressionSyntaxTree {
+    public static abstract class LogicalExpression implements AbstratSyntaxTree {
 
         /**
          * Test if this expression has one operand.
@@ -215,7 +215,7 @@ public interface ExpressionSyntaxTree {
         }
 
         /**
-         * Test if this conditional expression has two operands.
+         * Test if this expression has two operands.
          *
          * @return {@code true} if instance accepts two operands, {@code false} otherwise
          */
@@ -370,16 +370,16 @@ public interface ExpressionSyntaxTree {
     /**
      * This expression represents the logical negation of an expression.
      */
-    public final class Not extends ConditionalExpression implements UnaryOperation {
+    public final class Not extends LogicalExpression implements UnaryOperation {
 
-        private final ConditionalExpression right;
+        private final LogicalExpression right;
 
-        Not(ConditionalExpression expr) {
+        Not(LogicalExpression expr) {
             this.right = expr;
         }
 
         @Override
-        public ConditionalExpression right() {
+        public LogicalExpression right() {
             return right;
         }
 
@@ -392,12 +392,12 @@ public interface ExpressionSyntaxTree {
     /**
      * Base class for expression with two operands.
      */
-    public static abstract class BinaryConditionalExpression extends ConditionalExpression implements BinaryOperation {
+    public static abstract class BinaryConditionalExpression extends LogicalExpression implements BinaryOperation {
 
-        private final ConditionalExpression left;
-        private final ConditionalExpression right;
+        private final LogicalExpression left;
+        private final LogicalExpression right;
 
-        BinaryConditionalExpression(ConditionalExpression left, ConditionalExpression right) {
+        BinaryConditionalExpression(LogicalExpression left, LogicalExpression right) {
             this.left = left;
             this.right = right;
         }
@@ -407,7 +407,7 @@ public interface ExpressionSyntaxTree {
          * @return Condition
          */
         @Override
-        public ConditionalExpression left(){
+        public LogicalExpression left(){
             return left;
         }
 
@@ -416,7 +416,7 @@ public interface ExpressionSyntaxTree {
          * @return Condition
          */
         @Override
-        public ConditionalExpression right() {
+        public LogicalExpression right() {
             return right;
         }
     }
@@ -426,7 +426,7 @@ public interface ExpressionSyntaxTree {
      */
     public static final class Is extends BinaryConditionalExpression {
 
-        Is(ConditionalExpression left, ConditionalExpression right) {
+        Is(LogicalExpression left, LogicalExpression right) {
             super(left, right);
         }
 
@@ -441,7 +441,7 @@ public interface ExpressionSyntaxTree {
      */
     public static final class IsNot extends BinaryConditionalExpression {
 
-        IsNot(ConditionalExpression left, ConditionalExpression right) {
+        IsNot(LogicalExpression left, LogicalExpression right) {
             super(left, right);
         }
 
@@ -456,7 +456,7 @@ public interface ExpressionSyntaxTree {
      */
     public static final class And extends BinaryConditionalExpression {
 
-        And(ConditionalExpression left, ConditionalExpression right) {
+        And(LogicalExpression left, LogicalExpression right) {
             super(left, right);
         }
 
@@ -471,7 +471,7 @@ public interface ExpressionSyntaxTree {
      */
     public static final class Or extends BinaryConditionalExpression {
 
-        Or(ConditionalExpression left, ConditionalExpression right) {
+        Or(LogicalExpression left, LogicalExpression right) {
             super(left, right);
         }
 
@@ -486,7 +486,7 @@ public interface ExpressionSyntaxTree {
      */
     public static final class Xor extends BinaryConditionalExpression {
 
-        Xor(ConditionalExpression left, ConditionalExpression right) {
+        Xor(LogicalExpression left, LogicalExpression right) {
             super(left, right);
         }
 
@@ -499,7 +499,7 @@ public interface ExpressionSyntaxTree {
     /**
      * Base class for value expression with two operands.
      */
-    public static abstract class BinaryValueExpression extends ConditionalExpression implements BinaryOperation {
+    public static abstract class BinaryValueExpression extends LogicalExpression implements BinaryOperation {
 
         private final Value left;
         private final Value right;

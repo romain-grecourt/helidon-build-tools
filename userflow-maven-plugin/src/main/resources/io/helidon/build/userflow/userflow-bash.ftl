@@ -1,6 +1,6 @@
 <#ftl strip_text=true>
 
-<#!-- conditional expression -->
+<#-- conditional expression -->
 <#macro not arg>! { <@expression e=arg /> ;}</#macro>
 <#macro is_not arg1 arg2>! { <@is arg1=arg1 arg2=arg2 /> ;}</#macro>
 <#macro and arg1 arg2>{ <@expression e=arg1 /> && <@expression e=arg2 /> ;}</#macro>
@@ -45,5 +45,8 @@
 
 <#!-- generate the step functions -->
 <#list steps as step>
-function ${step.name}() { if <@expression step.expr /> ;then echo true ; else echo false ;fi ;}
+<#if step.predicate??>
+function do_${step.name}() { if <@expression step.predicate /> ;then echo true ; else echo false ;fi ;}
+</#if>
+function validate_${step.name}() { if <@expression step.validation /> ;then echo true ; else echo false ;fi ;}
 </#list>
