@@ -20,21 +20,20 @@ import java.io.FileOutputStream;
 import java.net.URL;
 import org.junit.jupiter.api.Test;
 
-
 /**
  * Tests {@link UserFlowProcessor#process(java.net.URL, java.io.OutputStream) }.
  */
 public class UserFlowProcessorTest {
 
-    private static final URL FLOW_DESCRIPTOR = UserFlowProcessorTest.class.getResource("userflow.properties");
+    private static final URL FLOW_DESCRIPTOR = UserFlowProcessorTest.class.getResource("what-to-eat.properties");
 
     @Test
     public void testBashRendering() throws Exception {
         UserFlow flow = UserFlow.create(FLOW_DESCRIPTOR.openStream());
-        File output = new File("target/test-classes/userflow.sh");
+        File output = new File("target/test-classes/what-to-eat.sh");
         FileOutputStream fos = new FileOutputStream(output);
         UserFlowProcessor processor = new UserFlowProcessor(flow);
         processor.bashIncludes();
-        processor.process(UserFlowProcessorTest.class.getResource("userflow.sh.ftl"), fos);
+        processor.process(UserFlowProcessorTest.class.getResource("what-to-eat.sh.ftl"), fos);
     }
 }
