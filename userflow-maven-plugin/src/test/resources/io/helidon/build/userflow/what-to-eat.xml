@@ -1,0 +1,46 @@
+<userflow>
+  <property id="gluten" text="Are you alergic to gluten" default="no" />
+  <select text="Is it lunch or diner">
+    <property id="lunch">
+      <select text="Select a lunch type">
+        <property id="mexican" default="yes">
+          <select text="Select a mexican dish">
+            <property id="carnitas" default="yes" />
+            <property id="burrito" />
+            <property id="quesadilla" unless="gluten" />
+          </select>
+          <property id="beans" text="Do you want beans" default="yes">
+            <select text="Select beans type">
+              <property id="red" default="yes" />
+              <property id="black" />
+            </select>
+          </property>
+          <property id="guacamole" text="Do you want guacamole" if="gluten" />
+        </property>
+        <property id="italian" >
+          <select text="Select an italian dish">
+            <property id="pizza" default="yes" />
+            <property id="pasta" />
+            <property id="bruschetta" unless="gluten" />
+          </select>
+        </property>
+      </select>
+    </property>
+    <property id="diner">
+      <select text="Select a diner type">
+        <property id="french" default="yes">
+          <select text="Select a french dish">
+            <property id="snails" default="yes" />
+            <property id="frogs" />
+          </select>
+        </property>
+        <property id="japanese">
+          <select text="Select a japanese dish">
+            <property id="sushi" default="yes" />
+            <property id="yakiniku" />
+          </select>
+        </property>
+      </select>
+    </property>
+  </select>
+</userflow>

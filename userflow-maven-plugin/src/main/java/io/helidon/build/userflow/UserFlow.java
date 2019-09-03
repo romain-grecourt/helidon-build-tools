@@ -15,270 +15,159 @@
  */
 package io.helidon.build.userflow;
 
-import java.io.BufferedReader;
 import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.LinkedList;
-
-import io.helidon.build.userflow.Expression.ParserException;
-import io.helidon.build.userflow.AbstratSyntaxTree.LogicalExpression;
-import io.helidon.build.userflow.AbstratSyntaxTree.Value;
+import java.util.List;
+import javax.xml.bind.JAXB;
+import javax.xml.bind.annotation.XmlAccessOrder;
+import javax.xml.bind.annotation.XmlAccessorOrder;
+import javax.xml.bind.annotation.XmlAttribute;
+import javax.xml.bind.annotation.XmlElement;
+import javax.xml.bind.annotation.XmlElements;
+import javax.xml.bind.annotation.XmlID;
+import javax.xml.bind.annotation.XmlIDREF;
+import javax.xml.bind.annotation.XmlRootElement;
+import javax.xml.bind.annotation.XmlType;
+import javax.xml.bind.annotation.adapters.XmlAdapter;
+import javax.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
 
 /**
  * User flow model.
  */
+@XmlRootElement(name = "userflow")
 public final class UserFlow {
 
-    private final LinkedList<Step> steps;
-
     /**
-     * Create a new user flow instance.
-     * @param steps user flow steps
+     * Create a new user flow instance from a descriptor input stream.
+     * @param is input stream
+     * @return UserFlow
      */
-    UserFlow(LinkedList<Step> steps) {
+    public static UserFlow create(InputStream is) {
+        return JAXB.unmarshal(is, UserFlow.class);
+    }
+
+    private List<Step> steps;
+
+    @XmlElements({
+        @XmlElement(name = "property", type = Property.class),
+        @XmlElement(name = "select", type = Selector.class)
+    })
+    public List<Step> getSteps() {
+        return steps;
+    }
+
+    public void setSteps(List<Step> steps) {
         this.steps = steps;
     }
 
-    /**
-     * Get an instance attribute by name.
-     *
-     * @param attr the attribute name
-     * @return the {@link Object} instance, never {@code null}
-     * @throws IllegalArgumentException if the attribute is unknown
-     */
-    public Object get(String attr) {
-        if ("steps".equals(attr)) {
+    @XmlAccessorOrder(XmlAccessOrder.ALPHABETICAL)
+    @XmlType(propOrder = {"text", "ifProperties", "unlessProperties"})
+    public static abstract class Step {
+
+        private List<Property> ifProperties;
+        private List<Property> unlessProperties;
+        private String text;
+
+        @XmlIDREF
+        @XmlAttribute(name = "if")
+        public List<Property> getIfProperties() {
+            return ifProperties;
+        }
+
+        public void setIfProperties(List<Property> ifProperties) {
+            this.ifProperties = ifProperties;
+        }
+
+        @XmlIDREF
+        @XmlAttribute(name = "unless")
+        public List<Property> getUnlessProperties() {
+            return unlessProperties;
+        }
+
+        public void setUnlessProperties(List<Property> unlessProperties) {
+            this.unlessProperties = unlessProperties;
+        }
+
+        @XmlAttribute(name = "text", required = true)
+        public String getText() {
+            return text;
+        }
+
+        public void setText(String text) {
+            this.text = text;
+        }
+    }
+
+    @XmlAccessorOrder(XmlAccessOrder.ALPHABETICAL)
+    @XmlType(propOrder = {"id", "default", "steps"})
+    public static final class Property extends Step {
+
+        private String id;
+        private List<Step> steps;
+        private Boolean isdefault;
+
+        @XmlID
+        @XmlAttribute(name = "id", required = true)
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+
+        @XmlElements({
+            @XmlElement(name = "property", type = Property.class),
+            @XmlElement(name = "select", type = Selector.class)
+        })
+        public List<Step> getSteps() {
             return steps;
         }
-        throw new IllegalArgumentException("Unkown attribute: " + attr);
-    }
 
-    /**
-     * Create a user flow model from a descriptor file.
-     * @param descriptor the user flow descriptor file
-     * @return UserFlow
-     * @throws IOException if an error occurs while reading the descriptor file
-     */
-    static UserFlow create(InputStream descriptor) throws IOException, ParserException {
-        BufferedReader reader = new BufferedReader(
-                new InputStreamReader(descriptor));
-        HashMap<String, String> properties = new HashMap<>();
-        LinkedList<String> stepProps = new LinkedList<>();
-        String line;
-        while((line = reader.readLine()) != null) {
-            if(line.startsWith("#")){
-                continue;
-            }
-            int index = line.indexOf('=');
-            if (index <= 0) {
-                continue;
-            }
-            String key = line.substring(0, index);
-            String value = line.substring(key.length() + 1);
-            properties.put(key, value);
-            if (!(key.endsWith(".predicate")
-                    || key.endsWith(".default")
-                    || key.endsWith(".validation")
-                    || key.endsWith(".error"))){
-                stepProps.add(key);
-            }
-        }
-        LinkedList<Step> steps = new LinkedList<>();
-
-        // create the steps
-        for (String step : stepProps) {
-            String text = properties.get(step);
-            String predicate = properties.get(step + ".predicate");
-            String defaultValue = properties.get(step + ".default");
-            String validation = properties.get(step + ".validation");
-            String error = properties.get(step + ".error");
-            steps.add(new Step(step, text, predicate, defaultValue, validation, error));
-        }
-        return new UserFlow(steps);
-    }
-
-    /**
-     * A step is a combines an expression and a text.
-     */
-    public static final class Step {
-
-        private final String name;
-        private final String text;
-        private final ExpressionModel predicate;
-        private final String defaultValue;
-        private final ExpressionModel validation;
-        private final String error;
-
-        Step(String name, String text, String predicate,
-                String defaultValue, String validation, String error)
-                throws ParserException {
-
-            if(name == null || text == null) {
-                throw new IllegalArgumentException("Invalid step, name or text is null");
-            }
-            this.name = name;
-            this.text = text;
-            this.predicate = predicate != null ?
-                    new ExpressionModel(new Expression(predicate).tree())
-                    : null;
-            if (predicate != null && defaultValue == null) {
-                throw new IllegalArgumentException("Step is missing default attribute: " + name);
-            }
-            this.defaultValue = defaultValue;
-            if (validation == null) {
-                throw new IllegalArgumentException("Step is missing validation attribute: " + name);
-            }
-            this.validation = new ExpressionModel(new Expression(validation).tree());
-            if (validation == null) {
-                throw new IllegalArgumentException("Step is missing error attribute: " + name);
-            }
-            this.error = error;
+        public void setSteps(List<Step> steps) {
+            this.steps = steps;
         }
 
-        /**
-         * Get an instance attribute by name.
-         *
-         * @param attr the attribute name
-         * @return the {@link Object} instance, never {@code null}
-         * @throws IllegalArgumentException if the attribute is unknown
-         */
-        public Object get(String attr) {
-            switch (attr) {
-                case ("name"):
-                    return name;
-                case ("text"):
-                    return text;
-                case ("predicate"):
-                    return predicate;
-                case ("default"):
-                    return defaultValue;
-                case ("validation"):
-                    return validation;
-                case ("error"):
-                    return error;
-                default:
-                    throw new IllegalArgumentException("Unkown attribute: " + attr);
+        @XmlAttribute(name = "default")
+        @XmlJavaTypeAdapter(BooleanAdapter.class)
+        public Boolean isDefault() {
+            if (isdefault == null) {
+                return false;
             }
+            return isdefault;
+        }
+
+        public void setDefault(Boolean isdefault) {
+            this.isdefault = isdefault;
         }
     }
 
-    /**
-     * Expression template model.
-     */
-    public static final class ExpressionModel {
+    public static final class Selector extends Step {
 
-        private final AbstratSyntaxTree node;
+        private List<Property> choices;
 
-        /**
-         * Create a new expression model.
-         * @param node syntax tree node
-         */
-        ExpressionModel(AbstratSyntaxTree node) {
-            this.node = node;
+        @XmlElement(name = "property")
+        public List<Property> getChoices() {
+            return choices;
         }
 
-        private Object getExpressionAttribute(String attr) {
-            LogicalExpression expression = node.asExpression();
-            switch (attr) {
-                case ("type"):
-                    return expression.type().name();
-                case ("isAnd"):
-                    return expression.isAnd();
-                case ("asAnd"):
-                    return new ExpressionModel(expression.asAnd());
-                case ("isIs"):
-                    return expression.isIs();
-                case ("asIs"):
-                    return new ExpressionModel(expression.asIs());
-                case ("isIsNot"):
-                    return expression.isIsNot();
-                case ("asIsNot"):
-                    return new ExpressionModel(expression.asIsNot());
-                case ("isOr"):
-                    return expression.isOr();
-                case ("asOr"):
-                    return new ExpressionModel(expression.asOr());
-                case ("isXor"):
-                    return expression.isXor();
-                case ("asXor"):
-                    return new ExpressionModel(expression.asXor());
-                case ("isNot"):
-                    return expression.isNot();
-                case ("asNot"):
-                    return new ExpressionModel(expression.asNot());
-                case ("isNotEqual"):
-                    return expression.isNotEqual();
-                case ("asNotEqual"):
-                    return new ExpressionModel(expression.asNotEqual());
-                case ("isEqual"):
-                    return expression.isEqual();
-                case ("asEqual"):
-                    return new ExpressionModel(expression.asEqual());
-                case ("isBinaryOperation"):
-                    return expression.isBinaryOperation();
-                case ("isUnaryOperation"):
-                    return expression.isUnaryOperation();
-                case ("right"):
-                    if (expression.isBinaryOperation()) {
-                        return new ExpressionModel(expression.asBinaryOperation().right());
-                    } else {
-                        return new ExpressionModel(expression.asBinaryOperation().right());
-                    }
-                case ("left"):
-                    if (expression.isBinaryOperation()) {
-                        return new ExpressionModel(expression.asBinaryOperation().left());
-                    } else {
-                        throw new IllegalArgumentException("Not a binary operation: " + expression.type());
-                    }
-                default:
-                    throw new IllegalArgumentException("Unkown attribute: " + attr);
-            }
+        public void setChoices(List<Property> choices) {
+            this.choices = choices;
+        }
+    }
+
+    public static class BooleanAdapter extends XmlAdapter<String, Boolean> {
+
+        @Override
+        public Boolean unmarshal(String s) throws Exception {
+            return "yes".equals(s);
         }
 
-        private Object getValueAttribute(String attr) {
-            Value value = node.asValue();
-            switch (attr) {
-                case ("type"):
-                    return value.type().name();
-                case ("isVariable"):
-                    return value.isVariable();
-                case ("asVariable"):
-                    return new ExpressionModel(value.asVariable());
-                case ("isLiteral"):
-                    return value.isLiteral();
-                case ("asLiteral"):
-                    return new ExpressionModel(value.asLiteral());
-                case ("value"):
-                    return value.value();
-                default:
-                    throw new IllegalArgumentException("Unkown attribute: " + attr);
+        @Override
+        public String marshal(Boolean b) throws Exception {
+            if (b != null && b) {
+                return "yes";
             }
-        }
-
-        /**
-         * Get an instance attribute by name.
-         *
-         * @param attr the attribute name
-         * @return the {@link Object} instance, never {@code null}
-         * @throws IllegalArgumentException if the attribute is unknown
-         */
-        public Object get(String attr) {
-            switch (attr) {
-                case ("isExpression"):
-                    return node.isExpression();
-                case ("asExpression"):
-                    return new ExpressionModel(node.asExpression());
-                default:
-                    if (node.isExpression()) {
-                        return getExpressionAttribute(attr);
-                    } else if (node.isValue()) {
-                        return getValueAttribute(attr);
-                    } else {
-                        throw new IllegalArgumentException("Unkown node type");
-                    }
-            }
+            return "no";
         }
     }
 }
