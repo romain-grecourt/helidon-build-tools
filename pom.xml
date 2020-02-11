@@ -159,6 +159,7 @@
     <modules>
         <module>sitegen-maven-plugin</module>
         <module>helidon-maven-plugin</module>
+        <module>helidon-cli</module>
         <module>helidon-linker</module>
         <module>snakeyaml-codegen-maven-plugin</module>
         <module>utils</module>
