@@ -14,7 +14,7 @@ public interface CommandRegistry {
      * Get the package this command registry belongs to.
      * @return package name
      */
-    String namespace();
+    String pkg();
 
     /**
      * Get a command by name.
@@ -25,14 +25,14 @@ public interface CommandRegistry {
 
     /**
      * Load a {@link CommandRegistry} instance.
-     * @param namespace package namespace the registry is associated with
+     * @param pkg package namespace the registry is associated with
      * @return 
      */
-    static CommandRegistry load(String namespace) {
-        Objects.requireNonNull(namespace, "namespace is null");
+    static CommandRegistry load(String pkg) {
+        Objects.requireNonNull(pkg, "namespace is null");
         return ServiceLoader.load(CommandRegistry.class)
                 .stream()
-                .filter((r) -> namespace.equals(r.get().namespace()))
+                .filter((r) -> pkg.equals(r.get().pkg()))
                 .findFirst()
                 .map(Provider::get)
                 .orElse(EmptyRegistry.INSTANCE);

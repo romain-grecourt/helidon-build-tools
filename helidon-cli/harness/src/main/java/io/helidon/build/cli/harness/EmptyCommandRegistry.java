@@ -13,7 +13,7 @@ final class EmptyRegistry implements CommandRegistry {
     static CommandRegistry INSTANCE = new EmptyRegistry();
 
     @Override
-    public String namespace() {
+    public String pkg() {
         return "";
     }
 

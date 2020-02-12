@@ -17,7 +17,6 @@
 -->
 <project>
     <modelVersion>4.0.0</modelVersion>
-
     <parent>
         <groupId>io.helidon.build-tools.cli</groupId>
         <artifactId>helidon-cli-project</artifactId>
@@ -33,4 +32,16 @@
             <version>${project.version}</version>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <proc>none</proc>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

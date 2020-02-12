@@ -4,6 +4,8 @@ import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+import java.util.function.Predicate;
+import java.util.regex.Pattern;
 
 /**
  * Describes a command.
@@ -25,28 +27,7 @@ public @interface Command {
     String description();
 
     /**
-     * Describes a command option.
+     * Name predicate to validate command names.
      */
-    @Retention(RetentionPolicy.SOURCE)
-    @Target(ElementType.FIELD)
-    static @interface Option {
-
-        /**
-         * The option name.
-         * @return option name
-         */
-        String name();
-
-        /**
-         * The option description.
-         * @return description
-         */
-        String description();
-
-        /**
-         * The required flag.
-         * @return {@code true} if optional, {@code false} if required
-         */
-        boolean required() default true;
-    }
+    static final Predicate<String> NAME_PREDICATE = Pattern.compile("^[a-zA-Z0-9]{1,}$").asMatchPredicate();
 }

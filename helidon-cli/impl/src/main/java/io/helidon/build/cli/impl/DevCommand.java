@@ -1,17 +1,19 @@
-package io.helidon.build.cli;
+package io.helidon.build.cli.impl;
 
 import io.helidon.build.cli.harness.Command;
 import io.helidon.build.cli.harness.CommandContext;
 import io.helidon.build.cli.harness.CommandExecution;
+import io.helidon.build.cli.harness.Option;
 
 /**
  * The {@code dev} command.
  */
+@Command(name = "dev", description = "dev !")
 public final class DevCommand implements CommandExecution {
 
     private final CommonOptions commonOptions;
 
-    @Command.Option(name = "--clean", description = "clean before build")
+    @Option(name = "clean", description = "clean before build")
     private final boolean clean;
 
     public DevCommand(CommonOptions commonOptions, boolean clean) {

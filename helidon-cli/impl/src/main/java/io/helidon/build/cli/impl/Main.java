@@ -1,4 +1,4 @@
-package io.helidon.build.cli;
+package io.helidon.build.cli.impl;
 
 import io.helidon.build.cli.harness.CommandRunner;
 
