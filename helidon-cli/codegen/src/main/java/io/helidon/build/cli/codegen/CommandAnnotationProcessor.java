@@ -6,13 +6,16 @@ import javax.annotation.processing.Messager;
 import javax.annotation.processing.RoundEnvironment;
 import javax.annotation.processing.SupportedAnnotationTypes;
 import javax.annotation.processing.SupportedSourceVersion;
+import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.VariableElement;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.TypeKind;
+import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.Types;
 import javax.lang.model.util.SimpleElementVisitor9;
-import javax.lang.model.element.ExecutableElement;
-import javax.lang.model.element.VariableElement;
 import javax.tools.Diagnostic;
 import javax.tools.FileObject;
 import javax.tools.JavaFileObject;
@@ -20,28 +23,27 @@ import javax.tools.StandardLocation;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.regex.Pattern;
+import java.util.Objects;
 import java.util.Set;
-import java.util.function.Predicate;
 import java.util.Iterator;
 
+import io.helidon.build.cli.harness.Argument;
+import io.helidon.build.cli.harness.CommandRegistry;
 import io.helidon.build.cli.harness.Command;
 import io.helidon.build.cli.harness.CommandExecution;
 import io.helidon.build.cli.harness.CommandModel.CommandInfo;
-import io.helidon.build.cli.harness.CommandModel.OptionInfo;
 import io.helidon.build.cli.harness.Option;
-import io.helidon.build.cli.harness.OptionName;
 import io.helidon.build.cli.harness.CommandFragment;
 import io.helidon.build.cli.harness.CommandModel;
+import io.helidon.build.cli.harness.CommandParameters;
 import io.helidon.build.cli.harness.CommandParser;
-import io.helidon.build.cli.harness.CommandRegistry;
-import java.util.HashSet;
+import io.helidon.build.cli.harness.Creator;
 
 /**
  * Command annotation processor.
@@ -55,14 +57,13 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
 
     private static final String INDENT = "    ";
     private static final String MODEL_IMPL_SUFFIX = "Model";
+    private static final String INFO_IMPL_SUFFIX = "Info";
     private static final String REGISTRY_SERVICE_FILE = "META-INF/services/io.helidon.build.cli.harness.CommandRegistry";
 
     private final Map<String, List<CommandMetaModel>> commandModelsByPkg = new HashMap<>();
-    private final Map<String, OptionsMetaModel> fragmentsByQualifiedName = new HashMap<>();
+    private final Map<String, ParametersMetaModel> fragmentsByQualifiedName = new HashMap<>();
     private final Set<String> rootTypes = new HashSet<>();
     private boolean done;
-
-    // TODO option duplicates
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
@@ -76,7 +77,7 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
             }
             // process and cache the fragments
             for (Element elt : roundEnv.getElementsAnnotatedWith(CommandFragment.class)) {
-                OptionsMetaModel metaModel = elt.accept(new OptionsVisitor(), null);
+                ParametersMetaModel metaModel = elt.accept(new ParametersVisitor(), null);
                 fragmentsByQualifiedName.put(metaModel.typeElt.getQualifiedName().toString(), metaModel);
             }
             // process the command classes
@@ -101,187 +102,304 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
 
     private void generateSources() throws IOException {
         Filer filer = processingEnv.getFiler();
+
+        // comment fragments
+        for (ParametersMetaModel metaModel : fragmentsByQualifiedName.values()) {
+            String fragmentSimpleName = metaModel.typeElt.getSimpleName().toString();
+            String infoSimpleName = fragmentSimpleName + INFO_IMPL_SUFFIX;
+            String infoQualifiedName = metaModel.pkg + "." + infoSimpleName;
+            JavaFileObject fileObject = filer.createSourceFile(infoQualifiedName, metaModel.typeElt);
+            generateCommandFragmentInfo(fileObject, metaModel.pkg, infoSimpleName, fragmentSimpleName, metaModel.params);
+        }
+
+        // commands
         for (Entry<String, List<CommandMetaModel>> entry : commandModelsByPkg.entrySet()) {
             List<CommandMetaModel> metaModels = entry.getValue();
             for (CommandMetaModel metaModel : metaModels) {
-                String modelSimpleName = metaModel.typeElt.getSimpleName() + MODEL_IMPL_SUFFIX;
+                String cmdSimpleName = metaModel.typeElt.getSimpleName().toString();
+                String modelSimpleName = cmdSimpleName + MODEL_IMPL_SUFFIX;
                 String modelQualifiedName = metaModel.pkg + "." + modelSimpleName;
                 JavaFileObject fileObject = filer.createSourceFile(modelQualifiedName, metaModel.typeElt);
-                generateCommandModel(metaModel.pkg, modelSimpleName, fileObject, metaModel.command, metaModel.options.values());
+                generateCommandModel(fileObject, metaModel.pkg, modelSimpleName, metaModel.command, cmdSimpleName, metaModel.params);
             }
             String pkg = entry.getKey();
             String registrySimpleName = "CommandRegistryImpl";
             String registryQualifiedName = pkg + "." + registrySimpleName;
             JavaFileObject fileObject = filer.createSourceFile(registryQualifiedName);
-            generateCommandRegistry(pkg, registrySimpleName, fileObject, metaModels);
+            generateCommandRegistry(fileObject, pkg, registrySimpleName, metaModels);
             FileObject serviceFileObject = filer.createResource(StandardLocation.CLASS_OUTPUT, "", REGISTRY_SERVICE_FILE);
             try (BufferedWriter bw = new BufferedWriter(serviceFileObject.openWriter())) {
                 bw.append(registryQualifiedName).append("\n");
             }
         }
-
-        // TODO generate createExecution method using CommandParser
     }
 
-    private void generateCommandRegistry(String pkg, String name, JavaFileObject fileObject,
-            List<CommandMetaModel> metaModels) throws IOException {
+    private void generateCommandFragmentInfo(JavaFileObject fileObject, String pkg, String infoName, String clazz,
+            List<MetaModel> params) throws IOException {
 
         try (BufferedWriter bw = new BufferedWriter(fileObject.openWriter())) {
-            bw.append("package ").append(pkg).append(" ;\n")
+            bw.append("package ").append(pkg).append(";\n")
                     .append("\n")
-                    .append("import java.util.Optional;\n")
-                    .append("import java.util.HashMap;\n")
-                    .append("import java.util.Map;\n")
+                    .append("import ").append(CommandParameters.class.getName()).append(";\n")
+                    .append("import ").append(CommandParser.class.getName()).append(";\n")
+                    .append("import ").append(CommandModel.class.getName().replace("$", ".")).append(";\n")
+                    .append("import ").append(Option.class.getName()).append(";\n")
                     .append("\n")
-                    .append("import ").append(CommandModel.class.getName()).append(";\n")
-                    .append("import ").append(CommandRegistry.class.getName()).append(";\n")
+                    .append("final class ").append(infoName).append(" extends CommandParameters.CommandFragmentInfo<").append(clazz).append("> {\n")
                     .append("\n")
-                    .append("public final class ").append(name).append(" implements CommandRegistry {\n")
+                    .append(INDENT).append("static final ").append(infoName).append(" INSTANCE = new ").append(infoName).append("();\n")
                     .append("\n")
-                    .append(INDENT).append("final Map<String, CommandModel> commandModels;\n")
-                    .append("\n")
-                    .append(INDENT).append("public ").append(name).append("() {\n")
-                    .append(INDENT).append(INDENT).append(generateNewCommandModelsMap(metaModels, INDENT + INDENT)).append("\n")
+                    .append(INDENT).append("private ").append(infoName).append("() {\n")
+                    .append(INDENT).append(INDENT).append("super(").append(clazz).append(".class);\n")
+                    .append(addParameter(params, INDENT + INDENT)).append("\n")
                     .append(INDENT).append("}\n")
                     .append("\n")
                     .append(INDENT).append("@Override\n")
-                    .append(INDENT).append("public String pkg() {\n")
-                    .append(INDENT).append(INDENT).append("return \"").append(pkg).append("\";\n")
-                    .append(INDENT).append("}\n")
-                    .append("\n")
-                    .append(INDENT).append("@Override\n")
-                    .append(INDENT).append("public Optional<CommandModel> get(String name) {\n")
-                    .append(INDENT).append(INDENT).append("return Optional.ofNullable(commandModels.get(name));\n")
+                    .append(INDENT).append("public ").append(clazz).append(" create(CommandParser parser) {\n")
+                    .append(INDENT).append(INDENT).append("return new ").append(clazz).append("(\n")
+                    .append(resolveParams(params, INDENT + INDENT + INDENT)).append(");\n")
                     .append(INDENT).append("}\n")
                     .append("}\n");
         }
     }
 
-    private void generateCommandModel(String pkg, String name, JavaFileObject fileObject, CommandInfo command,
-            Collection<OptionMetaModel> options) throws IOException {
+    private void generateCommandRegistry(JavaFileObject fileObject, String pkg, String name, List<CommandMetaModel> metaModels)
+            throws IOException {
 
         try (BufferedWriter bw = new BufferedWriter(fileObject.openWriter())) {
-            bw.append("package ").append(pkg).append(" ;\n")
+            bw.append("package ").append(pkg).append(";\n")
                     .append("\n")
-                    .append("import java.util.HashMap;\n")
-                    .append("import java.util.Map;\n")
+                    .append("import ").append(CommandRegistry.class.getName()).append(";\n")
+                    .append("\n")
+                    .append("public final class ").append(name).append(" extends CommandRegistry {\n")
+                    .append("\n")
+                    .append(INDENT).append("public ").append(name).append("() {\n")
+                    .append(INDENT).append(INDENT).append("super(\"").append(pkg).append("\");\n")
+                    .append(registerModels(metaModels, INDENT + INDENT)).append("\n")
+                    .append(INDENT).append("}\n")
+                    .append("}\n");
+        }
+    }
+
+    private void generateCommandModel(JavaFileObject fileObject, String pkg, String modelName, CommandInfo command,
+            String clazz, List<MetaModel> params) throws IOException {
+
+        try (BufferedWriter bw = new BufferedWriter(fileObject.openWriter())) {
+            bw.append("package ").append(pkg).append(";\n")
                     .append("\n")
                     .append("import ").append(CommandExecution.class.getName()).append(";\n")
                     .append("import ").append(CommandModel.class.getName()).append(";\n")
                     .append("import ").append(CommandParser.class.getName()).append(";\n")
+                    .append("import ").append(Option.class.getName()).append(";\n")
                     .append("\n")
-                    .append("final class ").append(name).append(" implements CommandModel {\n")
+                    .append("final class ").append(modelName).append(" extends CommandModel {\n")
                     .append("\n")
-                    .append(INDENT).append("final CommandInfo commandInfo;\n")
-                    .append(INDENT).append("final Map<String, OptionInfo> options;\n")
-                    .append("\n")
-                    .append(INDENT).append(name).append("() {\n")
-                    .append(INDENT).append(INDENT).append(generateNewCommandInfo(command)).append("\n")
-                    .append(INDENT).append(INDENT).append(generateNewOptionsMap(options, INDENT + INDENT)).append("\n")
-                    .append(INDENT).append("}\n")
-                    .append("\n")
-                    .append(INDENT).append("@Override\n")
-                    .append(INDENT).append("public CommandInfo command() {\n")
-                    .append(INDENT).append(INDENT).append("return commandInfo;\n")
-                    .append(INDENT).append("}\n")
-                    .append("\n")
-                    .append(INDENT).append("@Override\n")
-                    .append(INDENT).append("public Map<String, OptionInfo> options() {\n")
-                    .append(INDENT).append(INDENT).append("return options;\n")
+                    .append(INDENT).append(modelName).append("() {\n")
+                    .append(INDENT).append(INDENT).append("super(").append(generateNewCommandInfo(command)).append(");\n")
+                    .append(addParameter(params, INDENT + INDENT)).append("\n")
                     .append(INDENT).append("}\n")
                     .append("\n")
                     .append(INDENT).append("@Override\n")
                     .append(INDENT).append("public CommandExecution createExecution(CommandParser parser) {\n")
-                    .append(INDENT).append(INDENT).append("throw new UnsupportedOperationException();\n")
+                    .append(INDENT).append(INDENT).append("return new ").append(clazz).append("(\n")
+                    .append(resolveParams(params, INDENT + INDENT + INDENT)).append(");\n")
                     .append(INDENT).append("}\n")
                     .append("}\n");
         }
     }
 
-    private String generateNewCommandModelsMap(List<CommandMetaModel> metaModels, String indent) {
-        StringBuilder sb = new StringBuilder("commandModels = new HashMap<>();\n");
-        for (CommandMetaModel metaModel : metaModels) {
-            String modelSimpleName = metaModel.typeElt.getSimpleName() + MODEL_IMPL_SUFFIX;
-            sb.append(indent)
-                    .append("commandModels.put(\"")
-                    .append(metaModel.command.name())
-                    .append("\", new ")
-                    .append(modelSimpleName)
-                    .append("());\n");
+    private String resolveParams(List<MetaModel> params, String indent) {
+        StringBuilder sb = new StringBuilder();
+        Iterator<MetaModel> it = params.iterator();
+        for (int i=0 ; it.hasNext() ; i++) {
+            MetaModel param = it.next();
+            if (param == null) {
+                throw new NullPointerException("model is null");
+            }
+            String paramTypeSimpleName = param.typeElt.getSimpleName().toString();
+            String paramTypeQualifiedName = param.typeElt.getQualifiedName().toString();
+            if (param instanceof ParametersMetaModel) {
+                sb.append(indent)
+                        .append(paramTypeSimpleName).append(INFO_IMPL_SUFFIX).append(".INSTANCE.getOrCreate(parser)");
+            } else {
+                sb.append(indent)
+                        .append("parser.resolve(param(").append(paramTypeQualifiedName).append(".class, ")
+                        .append(i).append("))");
+            }
+            if (it.hasNext()) {
+                sb.append(",\n");
+            }
+        }
+        return sb.toString();
+    }
+
+    private String registerModels(List<CommandMetaModel> commands, String indent) {
+        StringBuilder sb = new StringBuilder();
+        Iterator<CommandMetaModel> it = commands.iterator();
+        while(it.hasNext()) {
+            String modelSimpleName = it.next().typeElt.getSimpleName() + MODEL_IMPL_SUFFIX;
+            sb.append(indent).append("register(new ").append(modelSimpleName).append("());");
+            if (it.hasNext()) {
+                sb.append("\n");
+            }
         }
         return sb.toString();
     }
 
     private String generateNewCommandInfo(CommandInfo command) throws IOException {
-        return new StringBuilder("commandInfo = new CommandInfo(\"")
+        return new StringBuilder("new CommandInfo(\"")
                 .append(command.name())
                 .append("\", \"")
                 .append(command.description())
-                .append("\");")
+                .append("\")")
                 .toString();
     }
 
-    private String generateNewOptionsMap(Collection<OptionMetaModel> options, String indent) {
-        StringBuilder sb = new StringBuilder("options = new HashMap<>();\n");
-        for (OptionMetaModel optionModel : options) {
-            OptionInfo option = optionModel.option;
-            sb.append(indent).append("options.put(\"").append(option.name()).append("\", new OptionInfo(\"")
-                    .append(option.name()).append("\", \"")
-                    .append(option.description()).append("\", ")
-                    .append(option.required() ? "true" : "false")
-                    .append("));\n");
+    private String addParameter(List<MetaModel> params, String indent) {
+        StringBuilder sb = new StringBuilder();
+        Iterator<MetaModel> it = params.iterator();
+        while(it.hasNext()) {
+            MetaModel param = it.next();
+            if (param == null) {
+                throw new NullPointerException("Attribute is null");
+            }
+            sb.append(indent).append("addParameter(");
+            String type = param.typeElt.getQualifiedName().toString();
+            if (param instanceof OptionMetaModel) {
+                Option option = ((OptionMetaModel) param).option;
+                sb.append("new CommandModel.OptionInfo<>(")
+                        .append(type).append(".class, \"")
+                        .append(option.name()).append("\", \"")
+                        .append(option.description()).append("\", ")
+                        .append(option.required() ? "true" : "false")
+                        .append(", Option.Scope.").append(option.scope().name())
+                        .append(")");
+            } else if (param instanceof ArgumentMetaModel) {
+                Argument argument = ((ArgumentMetaModel) param).argument;
+                sb.append("new CommandModel.ArgumentInfo<>(")
+                        .append(type).append(".class, \"")
+                        .append(argument.description()).append("\", ")
+                        .append(argument.required() ? "true" : "false")
+                        .append(")");
+            } else {
+                sb.append(param.typeElt.getSimpleName())
+                        .append(INFO_IMPL_SUFFIX)
+                        .append(".INSTANCE");
+            }
+            sb.append(");");
+            if (it.hasNext()) {
+                sb.append("\n");
+            }
         }
         return sb.toString();
     }
 
-    private final class ConstructorVisitor extends SimpleElementVisitor9<LinkedList<TypeMetaModel>, Map<String, OptionMetaModel>> {
+    private final class ConstructorVisitor extends SimpleElementVisitor9<List<MetaModel>, Void> {
 
         @Override
-        public LinkedList<TypeMetaModel> visitExecutable(ExecutableElement elt, Map<String, OptionMetaModel> optionModels) {
+        public List<MetaModel> visitExecutable(ExecutableElement elt, Void p) {
+            Types types = processingEnv.getTypeUtils();
             Messager messager = processingEnv.getMessager();
-            LinkedList<TypeMetaModel> parameters = new LinkedList<>();
+            List<MetaModel> params = new LinkedList<>();
+            List<String> optionNames = new ArrayList<>();
             for (VariableElement varElt : elt.getParameters()) {
-                OptionName optionNameAnnot = varElt.getAnnotation(OptionName.class);
-                if (optionNameAnnot != null) {
-                    String optionName = optionNameAnnot.value();
-                    OptionMetaModel optionModel = optionModels.get(optionName);
-                    if (optionModel == null) {
-                        messager.printMessage(Diagnostic.Kind.ERROR,
-                                String.format("option named '%s' cannot be found", optionName),
-                                varElt);
-                    } else {
-                        parameters.add(optionModel);
-                    }
-                    continue;
-                }
+
                 String varName = varElt.getSimpleName().toString();
-                OptionMetaModel optionModel = optionModels.get(varName);
-                if (optionModel == null) {
-                    TypeElement typeElt = (TypeElement) processingEnv.getTypeUtils().asElement(varElt.asType());
-                    if (typeElt == null) {
+
+                // resolve the type of the parameter
+                TypeMirror varType = varElt.asType();
+                TypeKind varTypeKind = varType.getKind();
+                boolean primitive = varTypeKind.isPrimitive();
+                TypeElement typeElt;
+                if (primitive) {
+                    typeElt = types.boxedClass(types.getPrimitiveType(varTypeKind));
+                } else {
+                    typeElt = (TypeElement) types.asElement(varElt.asType());
+                }
+                if (typeElt == null) {
+                    throw new IllegalStateException("Unable to resolve type for variable: " + varName);
+                }
+
+                // TODO check supported value types
+
+                // @Option
+                Option optAnnot = varElt.getAnnotation(Option.class);
+                if (optAnnot != null) {
+                    String optionName = optAnnot.name();
+                    if (optionName == null) {
+                        messager.printMessage(Diagnostic.Kind.ERROR, "option name cannot be null", varElt);
+                        continue;
+                    }
+                    if (!Option.NAME_PREDICATE.test(optionName)) {
                         messager.printMessage(Diagnostic.Kind.ERROR,
-                                String.format("parameter '%s' does not correspond to a field annotated with @%s",
-                                        varName, Option.class.getSimpleName()),
+                                String.format("'%s' is not a valid option name", optionName),
                                 varElt);
                         continue;
                     }
+                    if (optionNames.contains(optionName)) {
+                        messager.printMessage(Diagnostic.Kind.ERROR,
+                                String.format("option named '%s' is already defined", optionName),
+                                varElt);
+                        continue;
+                    }
+                    if (optAnnot.description() == null) {
+                        messager.printMessage(Diagnostic.Kind.ERROR, "description cannot be null", varElt);
+                        continue;
+                    }
+                    params.add(new OptionMetaModel(typeElt, optAnnot));
+                    optionNames.add(optionName);
+                    continue;
+                }
+
+                // @Argument
+                Argument argAnnot = varElt.getAnnotation(Argument.class);
+                if (argAnnot != null) {
+                    if (argAnnot.description() == null) {
+                        messager.printMessage(Diagnostic.Kind.ERROR, "description cannot be null", varElt);
+                        continue;
+                    }
+                    params.add(new ArgumentMetaModel(typeElt, argAnnot));
+                    continue;
+                }
+
+                if (!primitive) {
+                    // @CommandFragment
                     String fragmentQualifiedName = typeElt.getQualifiedName().toString();
-                    OptionsMetaModel optionsModel = fragmentsByQualifiedName.get(fragmentQualifiedName);
-                    if (optionsModel == null) {
+                    ParametersMetaModel fragmentModel = fragmentsByQualifiedName.get(fragmentQualifiedName);
+                    if (fragmentModel == null) {
                         if (rootTypes.contains(fragmentQualifiedName)) {
+                            // report an error if the fragment related file is present in the compilation unit
                             messager.printMessage(Diagnostic.Kind.ERROR,
                                     String.format("type '%s' is not annotated with @%s", typeElt,
                                             CommandFragment.class.getSimpleName()),
                                     varElt);
                         }
-                    } else {
-                        parameters.add(optionsModel);
+                        continue;
                     }
+                    List<String> optionDuplicates = fragmentModel.optionDuplicates(optionNames);
+                    if (!optionDuplicates.isEmpty()) {
+                        StringBuilder sb = new StringBuilder();
+                        Iterator<String> it = optionDuplicates.iterator();
+                        while (it.hasNext()) {
+                            sb.append(it.next());
+                            if (it.hasNext()) {
+                                sb.append(", ");
+                            }
+                        }
+                        messager.printMessage(Diagnostic.Kind.ERROR,
+                                String.format("command fragment duplicates options: '%s'", sb),
+                                varElt);
+                        continue;
+                    }
+                    optionNames.addAll(fragmentModel.optionNames());
+                    params.add(fragmentModel);
                 } else {
-                    parameters.add(optionModel);
+                    messager.printMessage(Diagnostic.Kind.ERROR,
+                            String.format("%s is not a valid attribute", varName),
+                            varElt);
                 }
             }
-            return parameters;
+            return params;
         }
     }
 
@@ -291,107 +409,102 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
         public CommandMetaModel visitType(TypeElement typeElt, Void p) {
             Command annot = typeElt.getAnnotation(Command.class);
             CommandInfo command = new CommandInfo(annot.name(), annot.description());
-            OptionsMetaModel optionsModel = typeElt.accept(new OptionsVisitor(), null);
+            ParametersMetaModel optionsModel = typeElt.accept(new ParametersVisitor(), null);
             return new CommandMetaModel(optionsModel, command);
         }
     }
 
-    private final class OptionsVisitor extends SimpleElementVisitor9<OptionsMetaModel, Void> {
+    private final class ParametersVisitor extends SimpleElementVisitor9<ParametersMetaModel, Void> {
 
         @Override
-        public OptionsMetaModel visitType(TypeElement typeElt, Void p) {
-            Map<String, OptionMetaModel> optionModels = new HashMap<>();
+        public ParametersMetaModel visitType(TypeElement typeElt, Void p) {
+            List<MetaModel> options = null;
             for (Element elt : typeElt.getEnclosedElements()) {
-                if (elt.getKind() == ElementKind.FIELD) {
-                    Option annot = elt.getAnnotation(Option.class);
-                    if (annot != null) {
-                        String optionName = annot.name();
-                        if (!Option.NAME_PREDICATE.test(optionName)) {
-                            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                                    String.format("'%s' is not a valid option name", optionName),
-                                    elt);
-                        }
-                        OptionInfo optionInfo = new OptionInfo(optionName, annot.description(), annot.required());
-                        Element eltType = processingEnv.getTypeUtils().asElement(elt.asType());
-                        optionModels.put(optionName, new OptionMetaModel((TypeElement) eltType, optionInfo));
-                    }
+                if (elt.getKind() == ElementKind.CONSTRUCTOR && elt.getAnnotation(Creator.class) != null) {
+                    options = elt.accept(new ConstructorVisitor(), null);
                 }
             }
-            LinkedList<TypeMetaModel> constructorArgs = null;
-            for (Element elt : typeElt.getEnclosedElements()) {
-                if (elt.getKind() == ElementKind.CONSTRUCTOR) {
-                    if (constructorArgs == null) {
-                        constructorArgs = elt.accept(new ConstructorVisitor(), optionModels);
-                    }
-                }
-            }
-            if (!optionModels.isEmpty() && (constructorArgs == null || constructorArgs.isEmpty())) {
-                StringBuilder sb = new StringBuilder();
-                Iterator<String> it = optionModels.keySet().iterator();
-                while(it.hasNext()) {
-                    sb.append(it.next());
-                    if (it.hasNext()) {
-                        sb.append(", ");
-                    }
-                }
+            if (options == null) {
                 processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                        String.format("Some field(s) are annotated with @%s, but no valid constructor is found: %s",
-                                Option.class.getSimpleName(), sb),
+                        String.format("No constructor annotated with @%s found", Creator.class.getSimpleName()),
                         typeElt);
             }
-            return new OptionsMetaModel(typeElt, optionModels, constructorArgs);
+            return new ParametersMetaModel(typeElt, options);
         }
     }
 
-    private abstract class TypeMetaModel {
+    private abstract class MetaModel {
 
         protected final TypeElement typeElt;
         protected final String pkg;
 
-        TypeMetaModel(TypeElement typeElt) {
-            if (typeElt != null) {
-                this.pkg = processingEnv.getElementUtils().getPackageOf(typeElt).getQualifiedName().toString();
-                this.typeElt = typeElt;
-            } else {
-                this.pkg = null;
-                this.typeElt = null;
+        MetaModel(TypeElement typeElt) {
+            this.typeElt = Objects.requireNonNull(typeElt, "typeElt is null");
+            this.pkg = processingEnv.getElementUtils().getPackageOf(typeElt).getQualifiedName().toString();
+        }
+    }
+
+    private class ArgumentMetaModel extends MetaModel {
+
+        private final Argument argument;
+
+        ArgumentMetaModel(TypeElement typeElt, Argument argument) {
+            super(typeElt);
+            this.argument = Objects.requireNonNull(argument, "argument is null");
+        }
+    }
+
+    private class OptionMetaModel extends MetaModel {
+
+        private final Option option;
+
+        OptionMetaModel(TypeElement typeElt, Option option) {
+            super(typeElt);
+            this.option = Objects.requireNonNull(option, "option is null");
+        }
+    }
+
+    private class ParametersMetaModel extends MetaModel {
+
+        protected final List<MetaModel> params;
+
+        ParametersMetaModel(TypeElement typeElt, List<MetaModel> params) {
+            super(typeElt);
+            this.params = params;
+        }
+
+        ParametersMetaModel(ParametersMetaModel copy) {
+            this(copy.typeElt, copy.params);
+        }
+
+        List<String> optionNames() {
+            List<String> names = new ArrayList<>();
+            for (MetaModel attr : params) {
+                if (attr instanceof OptionMetaModel) {
+                    names.add(((OptionMetaModel) attr).option.name());
+                }
             }
+            return names;
+        }
+
+        List<String> optionDuplicates(List<String> optionNames) {
+            List<String> duplicates = new ArrayList<>();
+            for (String optionName : optionNames()) {
+                if (optionNames.contains(optionName)) {
+                    duplicates.add(optionName);
+                }
+            }
+            return duplicates;
         }
     }
 
-    private class OptionMetaModel extends TypeMetaModel {
-
-        private final OptionInfo option;
-
-        OptionMetaModel(TypeElement typeElt, OptionInfo option) {
-            super(typeElt);
-            this.option = option;
-        }
-    }
-
-    private class OptionsMetaModel extends TypeMetaModel {
-
-        protected final Map<String, OptionMetaModel> options;
-        protected final LinkedList<TypeMetaModel> constructorArgs;
-
-        OptionsMetaModel(TypeElement typeElt, Map<String, OptionMetaModel> options, LinkedList<TypeMetaModel> constructorArgs) {
-            super(typeElt);
-            this.options = options;
-            this.constructorArgs = constructorArgs;
-        }
-
-        OptionsMetaModel(OptionsMetaModel copy) {
-            this(copy.typeElt, copy.options, copy.constructorArgs);
-        }
-    }
-
-    private final class CommandMetaModel extends OptionsMetaModel {
+    private final class CommandMetaModel extends ParametersMetaModel {
 
         private final CommandInfo command;
 
-        CommandMetaModel(OptionsMetaModel optionsModel, CommandInfo command) {
+        CommandMetaModel(ParametersMetaModel optionsModel, CommandInfo command) {
             super(optionsModel);
-            this.command = command;
+            this.command = Objects.requireNonNull(command, "command is null");
         }
     }
 }

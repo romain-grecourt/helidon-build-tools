@@ -1,5 +1,6 @@
 package io.helidon.build.cli.harness;
 
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -12,7 +13,7 @@ public final class CommandContext {
     private String message;
 
     CommandContext(CommandRegistry registry) {
-        this.registry = registry;
+        this.registry = Objects.requireNonNull(registry, "registry is null");
     }
 
     /**
@@ -30,6 +31,14 @@ public final class CommandContext {
      */
     public CommandRegistry registry() {
         return registry;
+    }
+
+    /**
+     * Execute a command.
+     * @param args raw arguments
+     */
+    public void execute(String ... args) {
+        CommandRunner.execute(this, args);
     }
 
     /**

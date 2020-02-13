@@ -1,23 +1,25 @@
 package io.helidon.build.cli.impl;
 
+import io.helidon.build.cli.harness.Argument;
 import io.helidon.build.cli.harness.Command;
 import io.helidon.build.cli.harness.CommandContext;
 import io.helidon.build.cli.harness.CommandExecution;
 import io.helidon.build.cli.harness.CommandModel;
-import io.helidon.build.cli.harness.Option;
+import io.helidon.build.cli.harness.Creator;
 
 /**
  * The {@code help} command.
  */
 @Command(name = "help", description = "Get help")
-public final class HelpCommand implements CommandExecution {
+final class HelpCommand implements CommandExecution {
 
     private final CommonOptions commonOptions;
-
-    @Option(name = "command", description = "command to get the help for")
     private final String command;
 
-    public HelpCommand(CommonOptions commonOptions, String command) {
+    @Creator
+    HelpCommand(CommonOptions commonOptions,
+            @Argument(description = "command to get the help for") String command) {
+
         this.commonOptions = commonOptions;
         this.command = command;
     }

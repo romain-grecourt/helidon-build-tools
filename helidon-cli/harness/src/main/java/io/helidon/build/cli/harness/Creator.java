@@ -6,16 +6,9 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Maps an option by name.
+ * Marks the constructor of a {@link Command} or {@link CommandFragment}.
  */
 @Retention(RetentionPolicy.SOURCE)
-@Target(ElementType.PARAMETER)
-public @interface OptionName {
-
-    /**
-     * The option name.
-     *
-     * @return option name
-     */
-    String value();
+@Target(ElementType.CONSTRUCTOR)
+public @interface Creator {
 }

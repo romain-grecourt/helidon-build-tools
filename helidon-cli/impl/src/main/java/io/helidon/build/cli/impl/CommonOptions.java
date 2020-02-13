@@ -3,22 +3,23 @@ package io.helidon.build.cli.impl;
 import java.io.File;
 
 import io.helidon.build.cli.harness.Option;
-import io.helidon.build.cli.harness.OptionName;
 import io.helidon.build.cli.harness.CommandFragment;
+import io.helidon.build.cli.harness.Creator;
 
 /**
  * Common options.
  */
 @CommandFragment
-public final class CommonOptions {
+final class CommonOptions {
 
-    @Option(name = "help", description = "Print the help usage")
     final boolean help;
-
-    @Option(name = "project", description = "project directory")
     final File projectDir;
 
-    public CommonOptions(boolean help, @OptionName("project") File projectDir) {
+    @Creator
+    CommonOptions(
+            @Option(name = "help", description = "Print the help usage", required = false) boolean help,
+            @Option(name = "project", description = "project directory", required = false) File projectDir) {
+
         this.help = help;
         this.projectDir = projectDir;
     }

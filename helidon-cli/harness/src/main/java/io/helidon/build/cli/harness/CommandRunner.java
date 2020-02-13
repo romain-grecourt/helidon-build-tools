@@ -1,26 +1,25 @@
 package io.helidon.build.cli.harness;
 
+import java.util.Objects;
+
 /**
  * Command runner.
  */
 public final class CommandRunner {
 
     private final CommandParser parser;
-    private final CommandRegistry registry;
     private final CommandContext context;
 
-    private CommandRunner(String namespace, String[] args) {
-        this.parser = new CommandParser(args);
-        this.registry = CommandRegistry.load(namespace);
-        this.context = new CommandContext(registry);
+    private CommandRunner(CommandContext context, String[] args) {
+        this.context = Objects.requireNonNull(context, "context is null");
+        this.parser = CommandParser.create(args);
     }
 
     /**
      * Execute the command.
      */
     public void execute() {
-        parser.parse();
-        registry.get(parser.commandName())
+        context.registry().get(parser.commandName().orElse(""))
                 .ifPresentOrElse(this::executeCommand, this::commandNotFound);
     }
 
@@ -35,10 +34,21 @@ public final class CommandRunner {
 
     /**
      * Create a new {@link CommandRunner instance}.
+     *
+     * @param context command context
+     * @param args raw command line arguments
+     */
+    public static void execute(CommandContext context, String... args) {
+        new CommandRunner(context, args).execute();
+    }
+
+    /**
+     * Create a new {@link CommandRunner instance}.
      * @param namespace package namespace
      * @param args raw command line arguments
      */
-    public static void execute(String namespace, String[] args) {
-        new CommandRunner(namespace, args).execute();
+    public static void execute(String namespace, String ... args) {
+        CommandRegistry registry = CommandRegistry.load(namespace);
+        execute(new CommandContext(registry), args);
     }
 }
