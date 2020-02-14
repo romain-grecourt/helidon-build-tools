@@ -44,6 +44,7 @@ import io.helidon.build.cli.harness.CommandModel;
 import io.helidon.build.cli.harness.CommandParameters;
 import io.helidon.build.cli.harness.CommandParser;
 import io.helidon.build.cli.harness.Creator;
+import java.util.stream.Collectors;
 
 /**
  * Command annotation processor.
@@ -59,6 +60,8 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
     private static final String MODEL_IMPL_SUFFIX = "Model";
     private static final String INFO_IMPL_SUFFIX = "Info";
     private static final String REGISTRY_SERVICE_FILE = "META-INF/services/io.helidon.build.cli.harness.CommandRegistry";
+    private static final List<String> ARGUMENT_VTYPES = Argument.VALUE_TYPES.stream().map(Class::getName).collect(Collectors.toList());
+    private static final List<String> OPTION_VTYPES = Argument.VALUE_TYPES.stream().map(Class::getName).collect(Collectors.toList());
 
     private final Map<String, List<CommandMetaModel>> commandModelsByPkg = new HashMap<>();
     private final Map<String, ParametersMetaModel> fragmentsByQualifiedName = new HashMap<>();
@@ -296,17 +299,97 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
 
     private final class ConstructorVisitor extends SimpleElementVisitor9<List<MetaModel>, Void> {
 
+        private boolean processOption(VariableElement varElt, TypeElement typeElt, List<String> options, List<MetaModel> params) {
+            Option optionAnnot = varElt.getAnnotation(Option.class);
+            if (optionAnnot != null) {
+                String optionName = optionAnnot.name();
+                if (optionName == null) {
+                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "option name cannot be null", varElt);
+                } else if (!Option.NAME_PREDICATE.test(optionName)) {
+                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            String.format("'%s' is not a valid option name", optionName),
+                            varElt);
+                } else if (options.contains(optionName)) {
+                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            String.format("option named '%s' is already defined", optionName),
+                            varElt);
+                } else if (optionAnnot.description() == null) {
+                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "description cannot be null", varElt);
+                } else {
+                    String typeQualifiedName = typeElt.getQualifiedName().toString();
+                    if (!OPTION_VTYPES.contains(typeQualifiedName)) {
+                        processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                                String.format("%s is not a valid option value type: " + typeQualifiedName),
+                                varElt);
+                    } else {
+                        params.add(new OptionMetaModel(typeElt, optionAnnot));
+                        options.add(optionName);
+                    }
+                }
+                return true;
+            }
+            return false;
+        }
+
+        private boolean processArgument(VariableElement varElt, TypeElement typeElt, List<MetaModel> params) {
+            Argument argumentAnnot = varElt.getAnnotation(Argument.class);
+            if (argumentAnnot != null) {
+                if (argumentAnnot.description() == null) {
+                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "description cannot be null", varElt);
+                } else {
+                    String typeQualifiedName = typeElt.getQualifiedName().toString();
+                    if (!ARGUMENT_VTYPES.contains(typeQualifiedName)) {
+                        processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                                String.format("%s is not a valid argument value type: " + typeQualifiedName),
+                                varElt);
+                    } else {
+                        params.add(new ArgumentMetaModel(typeElt, argumentAnnot));
+                    }
+                }
+                return true;
+            }
+            return false;
+        }
+
+        private void processFragment(VariableElement varElt, TypeElement typeElt, List<String> options, List<MetaModel> params) {
+            String fragmentQualifiedName = typeElt.getQualifiedName().toString();
+            ParametersMetaModel fragmentModel = fragmentsByQualifiedName.get(fragmentQualifiedName);
+            if (fragmentModel == null) {
+                if (rootTypes.contains(fragmentQualifiedName)) {
+                    // report an error if the fragment related file is present in the compilation unit
+                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            String.format("type '%s' is not annotated with @%s", typeElt,
+                                    CommandFragment.class.getSimpleName()),
+                            varElt);
+                }
+            } else {
+                List<String> optionDuplicates = fragmentModel.optionDuplicates(options);
+                if (!optionDuplicates.isEmpty()) {
+                    StringBuilder sb = new StringBuilder();
+                    Iterator<String> it = optionDuplicates.iterator();
+                    while (it.hasNext()) {
+                        sb.append(it.next());
+                        if (it.hasNext()) {
+                            sb.append(", ");
+                        }
+                    }
+                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            String.format("command fragment duplicates options: '%s'", sb),
+                            varElt);
+                }
+                options.addAll(fragmentModel.optionNames());
+                params.add(fragmentModel);
+            }
+        }
+
         @Override
         public List<MetaModel> visitExecutable(ExecutableElement elt, Void p) {
             Types types = processingEnv.getTypeUtils();
-            Messager messager = processingEnv.getMessager();
             List<MetaModel> params = new LinkedList<>();
             List<String> optionNames = new ArrayList<>();
             for (VariableElement varElt : elt.getParameters()) {
-
                 String varName = varElt.getSimpleName().toString();
-
-                // resolve the type of the parameter
+                // resolve the type
                 TypeMirror varType = varElt.asType();
                 TypeKind varTypeKind = varType.getKind();
                 boolean primitive = varTypeKind.isPrimitive();
@@ -320,83 +403,17 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
                     throw new IllegalStateException("Unable to resolve type for variable: " + varName);
                 }
 
-                // TODO check supported value types
+                // process the variable
+                if (!processOption(varElt, typeElt, optionNames, params)
+                        && !processArgument(varElt, typeElt, params)) {
 
-                // @Option
-                Option optAnnot = varElt.getAnnotation(Option.class);
-                if (optAnnot != null) {
-                    String optionName = optAnnot.name();
-                    if (optionName == null) {
-                        messager.printMessage(Diagnostic.Kind.ERROR, "option name cannot be null", varElt);
-                        continue;
-                    }
-                    if (!Option.NAME_PREDICATE.test(optionName)) {
-                        messager.printMessage(Diagnostic.Kind.ERROR,
-                                String.format("'%s' is not a valid option name", optionName),
+                    if (!primitive) {
+                        processFragment(varElt, typeElt, optionNames, params);
+                    } else {
+                        processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                                String.format("%s is not a valid attribute", varName),
                                 varElt);
-                        continue;
                     }
-                    if (optionNames.contains(optionName)) {
-                        messager.printMessage(Diagnostic.Kind.ERROR,
-                                String.format("option named '%s' is already defined", optionName),
-                                varElt);
-                        continue;
-                    }
-                    if (optAnnot.description() == null) {
-                        messager.printMessage(Diagnostic.Kind.ERROR, "description cannot be null", varElt);
-                        continue;
-                    }
-                    params.add(new OptionMetaModel(typeElt, optAnnot));
-                    optionNames.add(optionName);
-                    continue;
-                }
-
-                // @Argument
-                Argument argAnnot = varElt.getAnnotation(Argument.class);
-                if (argAnnot != null) {
-                    if (argAnnot.description() == null) {
-                        messager.printMessage(Diagnostic.Kind.ERROR, "description cannot be null", varElt);
-                        continue;
-                    }
-                    params.add(new ArgumentMetaModel(typeElt, argAnnot));
-                    continue;
-                }
-
-                if (!primitive) {
-                    // @CommandFragment
-                    String fragmentQualifiedName = typeElt.getQualifiedName().toString();
-                    ParametersMetaModel fragmentModel = fragmentsByQualifiedName.get(fragmentQualifiedName);
-                    if (fragmentModel == null) {
-                        if (rootTypes.contains(fragmentQualifiedName)) {
-                            // report an error if the fragment related file is present in the compilation unit
-                            messager.printMessage(Diagnostic.Kind.ERROR,
-                                    String.format("type '%s' is not annotated with @%s", typeElt,
-                                            CommandFragment.class.getSimpleName()),
-                                    varElt);
-                        }
-                        continue;
-                    }
-                    List<String> optionDuplicates = fragmentModel.optionDuplicates(optionNames);
-                    if (!optionDuplicates.isEmpty()) {
-                        StringBuilder sb = new StringBuilder();
-                        Iterator<String> it = optionDuplicates.iterator();
-                        while (it.hasNext()) {
-                            sb.append(it.next());
-                            if (it.hasNext()) {
-                                sb.append(", ");
-                            }
-                        }
-                        messager.printMessage(Diagnostic.Kind.ERROR,
-                                String.format("command fragment duplicates options: '%s'", sb),
-                                varElt);
-                        continue;
-                    }
-                    optionNames.addAll(fragmentModel.optionNames());
-                    params.add(fragmentModel);
-                } else {
-                    messager.printMessage(Diagnostic.Kind.ERROR,
-                            String.format("%s is not a valid attribute", varName),
-                            varElt);
                 }
             }
             return params;

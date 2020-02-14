@@ -26,11 +26,31 @@ final class HelpCommand implements CommandExecution {
 
     @Override
     public void execute(CommandContext context) {
-        context.registry().get(command)
-                .ifPresentOrElse(this::printHelp, () -> context.commandNotFound(command));
+        new HelpExecution(context, command).run();
     }
 
-    private void printHelp(CommandModel model) {
-        // TODO
+    private static final class HelpExecution {
+
+        private final CommandContext context;
+        private final String command;
+
+        HelpExecution(CommandContext context, String command) {
+            this.context = context;
+            this.command = command;
+        }
+
+        void run() {
+            context.command(command)
+                    .ifPresentOrElse(this::printHelp, this::commandNotFound);
+        }
+
+        void commandNotFound() {
+            System.out.println("Command not found: " + command);
+        }
+
+        void printHelp(CommandModel model) {
+            System.out.println("TODO describe: " + command);
+        }
     }
+
 }

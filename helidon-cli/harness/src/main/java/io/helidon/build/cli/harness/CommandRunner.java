@@ -19,8 +19,10 @@ public final class CommandRunner {
      * Execute the command.
      */
     public void execute() {
-        context.registry().get(parser.commandName().orElse(""))
+        // TODO set system properties
+        context.command(parser.commandName().orElse(""))
                 .ifPresentOrElse(this::executeCommand, this::commandNotFound);
+        // TODO set exit code
     }
 
     private void executeCommand(CommandModel model) {
@@ -29,7 +31,7 @@ public final class CommandRunner {
 
     private void commandNotFound() {
         context.exitCode(CommandContext.ExitCode.FAILURE);
-        context.message("Command not found: " + parser.commandName());
+        context.exitMessage("Command not found: " + parser.commandName());
     }
 
     /**

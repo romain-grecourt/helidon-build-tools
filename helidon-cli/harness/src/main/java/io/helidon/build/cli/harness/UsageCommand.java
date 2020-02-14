@@ -21,7 +21,7 @@ final class UsageCommand extends CommandModel {
         @Override
         public void execute(CommandContext context) {
             System.out.println("Commands:");
-            for (CommandModel commandModel : context.registry().getAll()) {
+            for (CommandModel commandModel : context.allCommands()) {
                 CommandInfo commandInfo = commandModel.command();
                 if ("".equals(commandInfo.name())) {
                     continue;

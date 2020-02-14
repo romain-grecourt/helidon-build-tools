@@ -40,7 +40,7 @@ public class CommandRegistry {
      * Get all the commands.
      * @return collection of all registered commands
      */
-    public final Collection<CommandModel> getAll() {
+    public final Collection<CommandModel> all() {
         return registry.values();
     }
 

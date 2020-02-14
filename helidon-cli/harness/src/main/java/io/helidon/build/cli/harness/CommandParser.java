@@ -10,6 +10,7 @@ import java.util.Optional;
 import io.helidon.build.cli.harness.CommandModel.ArgumentInfo;
 import io.helidon.build.cli.harness.CommandModel.OptionInfo;
 import io.helidon.build.cli.harness.CommandParameters.ParameterInfo;
+import java.util.Objects;
 
 /**
  * Command parser.
@@ -28,6 +29,7 @@ public final class CommandParser {
         this.error = error;
     }
 
+    // TODO throw parser error.
     /**
      * Parse the command line arguments.
      * @param rawArgs arguments to parse
@@ -114,6 +116,7 @@ public final class CommandParser {
     }
 
     private <T> T resolveValue(Class<T> type, String rawValue) {
+        Objects.requireNonNull(rawValue, "rawValue is null");
         if (String.class.equals(type)) {
             return type.cast(rawValue);
         }
@@ -126,51 +129,64 @@ public final class CommandParser {
         throw new IllegalArgumentException("Invalid value type: " + type);
     }
 
+    private <T> T resolveDefaultValue(Class<T> type) {
+        if (!type.isPrimitive()) {
+            return type.cast(null);
+        }
+        if (Integer.class.equals(type)) {
+            return type.cast((Integer) 0);
+        }
+        if (Boolean.class.equals(type)) {
+            return type.cast(Boolean.FALSE);
+        }
+        throw new IllegalArgumentException("Invalid value type: " + type);
+    }
+
     /**
      * Resolve the given parameter.
      * @param <T> parameter type
      * @param param the parameter to resolve
      * @return resolve value for the parameter
-     * @throws ParameterResolutionException if an error occurs while resolving the parameter
+     * @throws CommandParserException if an error occurs while resolving the parameter
      */
-    public <T> T resolve(ParameterInfo<T> param) throws ParameterResolutionException {
+    public <T> T resolve(ParameterInfo<T> param) throws CommandParserException {
         Class<T> type = param.type();
         if (param instanceof OptionInfo) {
             OptionInfo option = (OptionInfo) param;
             Parameter resolved = params.get(option.name());
             if (resolved == null && option.required()) {
-                throw new ParameterResolutionException("Missing required option: " + option.name());
+                throw new CommandParserException("Missing required option: " + option.name());
             }
             if (Boolean.class.equals(type)) {
                 if (resolved == null) {
-                    return (T) null;
+                    return type.cast(Boolean.FALSE);
                 } else if (resolved instanceof FlagParam) {
                     return type.cast(Boolean.TRUE);
                 }
             } else if (Option.VALUE_TYPES.contains(type)) {
                 if (resolved == null) {
-                    return resolveValue(type, null);
+                    return (T) resolveDefaultValue(type);
                 } else if (resolved instanceof KeyValueParam) {
                     return resolveValue(type, ((KeyValueParam) resolved).value);
                 }
             } else if (Option.MULTI_TYPES.contains(type)) {
                 throw new UnsupportedOperationException("multi values are not supported yet");
             }
-            throw new ParameterResolutionException("Invalid option value: " + option.name());
+            throw new CommandParserException("Invalid option value: " + option.name());
         } else if (param instanceof ArgumentInfo) {
             ArgumentInfo argInfo = (ArgumentInfo) param;
             Parameter resolved = params.get("");
             if (resolved == null && argInfo.required()) {
-                throw new ParameterResolutionException("Missing required argument");
+                throw new CommandParserException("Missing required argument");
             }
             if (Argument.VALUE_TYPES.contains(type)) {
                 if (resolved == null) {
-                    return (T) null;
+                    return (T) resolveDefaultValue(type);
                 } else if (resolved instanceof ArgumentParam) {
                     return type.cast(((ArgumentParam) resolved).value);
                 }
             }
-            throw new ParameterResolutionException("Invalid argument value");
+            throw new CommandParserException("Invalid argument value");
         }
         throw new IllegalArgumentException("Unresolveable parameter: " + param);
     }
@@ -198,11 +214,11 @@ public final class CommandParser {
     }
 
     /**
-     * Parameter resolution error.
+     * Parser error.
      */
-    public static final class ParameterResolutionException extends RuntimeException {
+    public static final class CommandParserException extends RuntimeException {
 
-        private ParameterResolutionException(String message) {
+        private CommandParserException(String message) {
             super(message);
         }
     }

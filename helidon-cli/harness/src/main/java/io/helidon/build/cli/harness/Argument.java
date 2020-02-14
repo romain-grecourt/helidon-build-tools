@@ -31,5 +31,5 @@ public @interface Argument {
     /**
      * Supported value types.
      */
-    static final List<Class<?>> VALUE_TYPES = List.of(String.class, Integer.class, File.class);
+    static final List<Class<?>> VALUE_TYPES = List.of(String.class, Integer.class, Boolean.class, File.class);
 }

@@ -1,18 +1,31 @@
 package io.helidon.build.cli.harness;
 
+import java.util.Collection;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Properties;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 
 /**
  * The command context.
  */
 public final class CommandContext {
 
+    private final Logger logger;
+    private final Properties properties;
     private final CommandRegistry registry;
     private ExitCode exitCode = ExitCode.SUCCESS;
-    private String message;
+    private String exitMessage;
 
+    // TODO add a constructor to create from a parent context
+    // re-use register, logger, copy properties
     CommandContext(CommandRegistry registry) {
+        this.properties = new Properties();
+        this.logger = Logger.getAnonymousLogger();
+        this.logger.addHandler(new LogHandler());
         this.registry = Objects.requireNonNull(registry, "registry is null");
     }
 
@@ -26,11 +39,20 @@ public final class CommandContext {
     };
 
     /**
-     * Get the command registry.
-     * @return command registry
+     * Get a command model by name.
+     * @param name command name
+     * @return optional of command model, never {@code null}
      */
-    public CommandRegistry registry() {
-        return registry;
+    public Optional<CommandModel> command(String name) {
+        return registry.get(name);
+    }
+
+    /**
+     * Get all commands.
+     * @return collection of command models, never {@code null}
+     */
+    public Collection<CommandModel> allCommands() {
+        return registry.all();
     }
 
     /**
@@ -39,6 +61,54 @@ public final class CommandContext {
      */
     public void execute(String ... args) {
         CommandRunner.execute(this, args);
+    }
+
+    /**
+     * Get the system properties.
+     * @return properties, never {@code null}
+     */
+    public Properties properties() {
+        return properties;
+    }
+
+    /**
+     * Get the logger for this context.
+     * @return logger, never {@code null}
+     */
+    public Logger Logger() {
+        return logger;
+    }
+
+    /**
+     * Log an INFO message.
+     * @param message INFO message to log
+     */
+    public void logInfo(String message) {
+        logger.log(Level.INFO, message);
+    }
+
+    /**
+     * Log a WARNING message.
+     * @param message WARNING message to log
+     */
+    public void logWarning(String message) {
+        logger.log(Level.WARNING, message);
+    }
+
+    /**
+     * Log a SEVERE message.
+     * @param message SEVERE message to log
+     */
+    public void logError(String message) {
+        logger.log(Level.SEVERE, message);
+    }
+
+    /**
+     * Log a FINE message.
+     * @param message FINE message to log
+     */
+    public void logDebug(String message) {
+        logger.log(Level.FINE, message);
     }
 
     /**
@@ -58,19 +128,19 @@ public final class CommandContext {
     }
 
     /**
-     * Set the message message.
-     * @param message action message
+     * Set the exitMessage message.
+     * @param exitMessage exit message
      */
-    public void message(String message) {
-        this.message = message;
+    public void exitMessage(String exitMessage) {
+        this.exitMessage = exitMessage;
     }
 
     /**
      * Get the action message.
      * @return optional of {@link String}
      */
-    Optional<String> message() {
-        return Optional.ofNullable(message);
+    Optional<String> exitMessage() {
+        return Optional.ofNullable(exitMessage);
     }
 
     /**
@@ -79,6 +149,22 @@ public final class CommandContext {
      */
     public void commandNotFound(String commandName) {
         exitCode = CommandContext.ExitCode.FAILURE;
-        message = "Command not found: " + commandName;
+        exitMessage = "Command not found: " + commandName;
+    }
+
+    private static final class LogHandler extends Handler {
+
+        @Override
+        public void publish(LogRecord record) {
+            System.out.println(record.getMessage());
+        }
+
+        @Override
+        public void flush() {
+        }
+
+        @Override
+        public void close() throws SecurityException {
+        }
     }
 }
