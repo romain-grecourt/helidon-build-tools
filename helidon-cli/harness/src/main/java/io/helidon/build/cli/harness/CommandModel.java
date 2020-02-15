@@ -11,6 +11,16 @@ public abstract class CommandModel extends CommandParameters {
 
     protected CommandModel(CommandInfo commandInfo) {
         this.commandInfo = Objects.requireNonNull(commandInfo, "commandInfo is null");
+        // built-in options
+        addParameter(HelpCommand.HELP_OPTION);
+    }
+
+    /**
+     * Indicate if the sub-classes is a meta command.
+     * @return {@code true} if meta, {@code false} if not meta.
+     */
+    boolean isMeta() {
+        return false;
     }
 
     /**
@@ -148,6 +158,14 @@ public abstract class CommandModel extends CommandParameters {
             super(type, description, required);
             this.name = Objects.requireNonNull(name, "name is null");
             this.scope = Objects.requireNonNull(scope, "scope is null");
+        }
+
+        /**
+         * Get the option scope.
+         * @return scope, never {@code null}
+         */
+        public Option.Scope scope() {
+            return scope;
         }
 
         /**

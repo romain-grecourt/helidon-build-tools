@@ -14,6 +14,8 @@ import java.util.logging.Logger;
  */
 public final class CommandContext {
 
+    private final String name;
+    private final String description;
     private final Logger logger;
     private final Properties properties;
     private final CommandRegistry registry;
@@ -21,10 +23,13 @@ public final class CommandContext {
     private String exitMessage;
 
     // TODO add a constructor to create from a parent context
-    // re-use register, logger, copy properties
-    CommandContext(CommandRegistry registry) {
+    // re-use name, description, registry, logger, copy properties
+    private CommandContext(CommandRegistry registry, String name, String description) {
+        this.name = Objects.requireNonNull(name, "name is null");
+        this.description = Objects.requireNonNull(description, "description is null");
         this.properties = new Properties();
         this.logger = Logger.getAnonymousLogger();
+        this.logger.setUseParentHandlers(false);
         this.logger.addHandler(new LogHandler());
         this.registry = Objects.requireNonNull(registry, "registry is null");
     }
@@ -37,6 +42,22 @@ public final class CommandContext {
         WARNING,
         FAILURE
     };
+
+    /**
+     * Get the CLI name.
+     * @return name, never {@code null}
+     */
+    public String name() {
+        return name;
+    }
+
+    /**
+     * Get the CLI description.
+     * @return description, never {@code null}
+     */
+    public String description() {
+        return description;
+    }
 
     /**
      * Get a command model by name.
@@ -150,6 +171,17 @@ public final class CommandContext {
     public void commandNotFound(String commandName) {
         exitCode = CommandContext.ExitCode.FAILURE;
         exitMessage = "Command not found: " + commandName;
+    }
+
+    /**
+     * Create a new command context.
+     * @param registry command registry
+     * @param name CLI name
+     * @param description CLI description
+     * @return command context, never {@code null}
+     */
+    public static CommandContext create(CommandRegistry registry, String name, String description) {
+        return new CommandContext(registry, name, description);
     }
 
     private static final class LogHandler extends Handler {

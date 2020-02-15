@@ -3,6 +3,7 @@ package io.helidon.build.cli.harness;
 /**
  * A command execution.
  */
+@FunctionalInterface
 public interface CommandExecution {
 
     /**

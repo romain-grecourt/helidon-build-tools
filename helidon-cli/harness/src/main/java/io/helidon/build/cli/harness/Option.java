@@ -61,6 +61,7 @@ public @interface Option {
 
     /**
      * Option scope.
+     * TODO remove scope.
      */
     static enum Scope {
 

@@ -1,6 +1,7 @@
 package io.helidon.build.cli.harness;
 
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Command runner.
@@ -12,7 +13,7 @@ public final class CommandRunner {
 
     private CommandRunner(CommandContext context, String[] args) {
         this.context = Objects.requireNonNull(context, "context is null");
-        this.parser = CommandParser.create(args);
+        this.parser = CommandParser.create(args == null ? new String[0] : args);
     }
 
     /**
@@ -20,18 +21,13 @@ public final class CommandRunner {
      */
     public void execute() {
         // TODO set system properties
-        context.command(parser.commandName().orElse(""))
-                .ifPresentOrElse(this::executeCommand, this::commandNotFound);
+        parser.commandName()
+                .ifPresentOrElse((cmdName) -> context.command(cmdName)
+                        .flatMap((cmd) -> Optional.of(parser.resolve(HelpCommand.HELP_OPTION) ? new HelpCommand() : cmd))
+                        .ifPresentOrElse((cmd) -> cmd.createExecution(parser).execute(context),
+                                () -> context.commandNotFound(cmdName)),
+                        () -> new UsageCommand().createExecution(parser).execute(context));
         // TODO set exit code
-    }
-
-    private void executeCommand(CommandModel model) {
-        model.createExecution(parser).execute(context);
-    }
-
-    private void commandNotFound() {
-        context.exitCode(CommandContext.ExitCode.FAILURE);
-        context.exitMessage("Command not found: " + parser.commandName());
     }
 
     /**
@@ -42,15 +38,5 @@ public final class CommandRunner {
      */
     public static void execute(CommandContext context, String... args) {
         new CommandRunner(context, args).execute();
-    }
-
-    /**
-     * Create a new {@link CommandRunner instance}.
-     * @param namespace package namespace
-     * @param args raw command line arguments
-     */
-    public static void execute(String namespace, String ... args) {
-        CommandRegistry registry = CommandRegistry.load(namespace);
-        execute(new CommandContext(registry), args);
     }
 }

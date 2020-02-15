@@ -22,9 +22,11 @@ public class CommandRegistry {
     }
 
     protected CommandRegistry(String pkg) {
-        this.pkg = pkg;
+        this.pkg = Objects.requireNonNull(pkg, "pkg is null");
         registry = new HashMap<>();
+        // built-in commands
         register(new UsageCommand());
+        register(new HelpCommand());
     }
 
     protected final void register(CommandModel model) {
@@ -63,11 +65,12 @@ public class CommandRegistry {
 
     /**
      * Load a {@link CommandRegistry} instance.
-     * @param pkg package namespace the registry is associated with
-     * @return 
+     * @param clazz a class to derive the package namespace the registry is associated with
+     * @return command registry, never {@code null}
      */
-    static CommandRegistry load(String pkg) {
-        Objects.requireNonNull(pkg, "namespace is null");
+    public static CommandRegistry load(Class<?> clazz) {
+        Objects.requireNonNull(clazz, "clazz is null");
+        String pkg = clazz.getPackageName();
         return ServiceLoader.load(CommandRegistry.class)
                 .stream()
                 .filter((r) -> pkg.equals(r.get().pkg()))

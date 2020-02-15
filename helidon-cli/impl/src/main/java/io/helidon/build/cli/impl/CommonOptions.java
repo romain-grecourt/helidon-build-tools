@@ -12,15 +12,10 @@ import io.helidon.build.cli.harness.Creator;
 @CommandFragment
 final class CommonOptions {
 
-    final boolean help;
     final File projectDir;
 
     @Creator
-    CommonOptions(
-            @Option(name = "help", description = "Print the help usage", required = false) boolean help,
-            @Option(name = "project", description = "project directory", required = false) File projectDir) {
-
-        this.help = help;
+    CommonOptions(@Option(name = "project", description = "project directory", required = false) File projectDir) {
         this.projectDir = projectDir;
     }
 }

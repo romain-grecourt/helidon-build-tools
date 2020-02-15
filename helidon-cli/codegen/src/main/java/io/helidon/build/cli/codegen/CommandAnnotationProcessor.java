@@ -63,7 +63,7 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
     private static final List<String> ARGUMENT_VTYPES = Argument.VALUE_TYPES.stream().map(Class::getName).collect(Collectors.toList());
     private static final List<String> OPTION_VTYPES = Argument.VALUE_TYPES.stream().map(Class::getName).collect(Collectors.toList());
 
-    private final Map<String, List<CommandMetaModel>> commandModelsByPkg = new HashMap<>();
+    private final Map<String, List<CommandMetaModel>> commandsByPkg = new HashMap<>();
     private final Map<String, ParametersMetaModel> fragmentsByQualifiedName = new HashMap<>();
     private final Set<String> rootTypes = new HashSet<>();
     private boolean done;
@@ -80,18 +80,22 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
             }
             // process and cache the fragments
             for (Element elt : roundEnv.getElementsAnnotatedWith(CommandFragment.class)) {
-                ParametersMetaModel metaModel = elt.accept(new ParametersVisitor(), null);
-                fragmentsByQualifiedName.put(metaModel.typeElt.getQualifiedName().toString(), metaModel);
+                ParametersMetaModel fragment = elt.accept(new ParametersVisitor(), null);
+                if (fragment != null) {
+                    fragmentsByQualifiedName.put(fragment.typeElt.getQualifiedName().toString(), fragment);
+                }
             }
             // process the command classes
             for (Element elt : roundEnv.getElementsAnnotatedWith(Command.class)) {
-                CommandMetaModel metaModel = elt.accept(new CommandVisitor(), null);
-                List<CommandMetaModel> metaModels = commandModelsByPkg.get(metaModel.pkg);
-                if (metaModels == null) {
-                    metaModels = new ArrayList<>();
-                    commandModelsByPkg.put(metaModel.pkg, metaModels);
+                CommandMetaModel command = elt.accept(new CommandVisitor(), null);
+                if (command != null) {
+                    List<CommandMetaModel> commands = commandsByPkg.get(command.pkg);
+                    if (commands == null) {
+                        commands = new ArrayList<>();
+                        commandsByPkg.put(command.pkg, commands);
+                    }
+                    commands.add(command);
                 }
-                metaModels.add(metaModel);
             }
             try {
                generateSources();
@@ -116,7 +120,7 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
         }
 
         // commands
-        for (Entry<String, List<CommandMetaModel>> entry : commandModelsByPkg.entrySet()) {
+        for (Entry<String, List<CommandMetaModel>> entry : commandsByPkg.entrySet()) {
             List<CommandMetaModel> metaModels = entry.getValue();
             for (CommandMetaModel metaModel : metaModels) {
                 String cmdSimpleName = metaModel.typeElt.getSimpleName().toString();
@@ -297,90 +301,90 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
         return sb.toString();
     }
 
-    private final class ConstructorVisitor extends SimpleElementVisitor9<List<MetaModel>, Void> {
-
-        private boolean processOption(VariableElement varElt, TypeElement typeElt, List<String> options, List<MetaModel> params) {
-            Option optionAnnot = varElt.getAnnotation(Option.class);
-            if (optionAnnot != null) {
-                String optionName = optionAnnot.name();
-                if (optionName == null) {
-                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "option name cannot be null", varElt);
-                } else if (!Option.NAME_PREDICATE.test(optionName)) {
-                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                            String.format("'%s' is not a valid option name", optionName),
-                            varElt);
-                } else if (options.contains(optionName)) {
-                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                            String.format("option named '%s' is already defined", optionName),
-                            varElt);
-                } else if (optionAnnot.description() == null) {
-                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "description cannot be null", varElt);
-                } else {
-                    String typeQualifiedName = typeElt.getQualifiedName().toString();
-                    if (!OPTION_VTYPES.contains(typeQualifiedName)) {
-                        processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                                String.format("%s is not a valid option value type: " + typeQualifiedName),
-                                varElt);
-                    } else {
-                        params.add(new OptionMetaModel(typeElt, optionAnnot));
-                        options.add(optionName);
-                    }
-                }
-                return true;
-            }
-            return false;
-        }
-
-        private boolean processArgument(VariableElement varElt, TypeElement typeElt, List<MetaModel> params) {
-            Argument argumentAnnot = varElt.getAnnotation(Argument.class);
-            if (argumentAnnot != null) {
-                if (argumentAnnot.description() == null) {
-                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "description cannot be null", varElt);
-                } else {
-                    String typeQualifiedName = typeElt.getQualifiedName().toString();
-                    if (!ARGUMENT_VTYPES.contains(typeQualifiedName)) {
-                        processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                                String.format("%s is not a valid argument value type: " + typeQualifiedName),
-                                varElt);
-                    } else {
-                        params.add(new ArgumentMetaModel(typeElt, argumentAnnot));
-                    }
-                }
-                return true;
-            }
-            return false;
-        }
-
-        private void processFragment(VariableElement varElt, TypeElement typeElt, List<String> options, List<MetaModel> params) {
-            String fragmentQualifiedName = typeElt.getQualifiedName().toString();
-            ParametersMetaModel fragmentModel = fragmentsByQualifiedName.get(fragmentQualifiedName);
-            if (fragmentModel == null) {
-                if (rootTypes.contains(fragmentQualifiedName)) {
-                    // report an error if the fragment related file is present in the compilation unit
-                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                            String.format("type '%s' is not annotated with @%s", typeElt,
-                                    CommandFragment.class.getSimpleName()),
-                            varElt);
-                }
+    private boolean processOption(VariableElement varElt, TypeElement typeElt, List<String> options, List<MetaModel> params) {
+        Option optionAnnot = varElt.getAnnotation(Option.class);
+        if (optionAnnot != null) {
+            String optionName = optionAnnot.name();
+            if (optionName == null) {
+                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "option name cannot be null", varElt);
+            } else if (!Option.NAME_PREDICATE.test(optionName)) {
+                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        String.format("'%s' is not a valid option name", optionName),
+                        varElt);
+            } else if (options.contains(optionName)) {
+                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        String.format("option named '%s' is already defined", optionName),
+                        varElt);
+            } else if (optionAnnot.description() == null) {
+                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "description cannot be null", varElt);
             } else {
-                List<String> optionDuplicates = fragmentModel.optionDuplicates(options);
-                if (!optionDuplicates.isEmpty()) {
-                    StringBuilder sb = new StringBuilder();
-                    Iterator<String> it = optionDuplicates.iterator();
-                    while (it.hasNext()) {
-                        sb.append(it.next());
-                        if (it.hasNext()) {
-                            sb.append(", ");
-                        }
-                    }
+                String typeQualifiedName = typeElt.getQualifiedName().toString();
+                if (!OPTION_VTYPES.contains(typeQualifiedName)) {
                     processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                            String.format("command fragment duplicates options: '%s'", sb),
+                            String.format("%s is not a valid option value type: " + typeQualifiedName),
                             varElt);
+                } else {
+                    params.add(new OptionMetaModel(typeElt, optionAnnot));
+                    options.add(optionName);
                 }
-                options.addAll(fragmentModel.optionNames());
-                params.add(fragmentModel);
             }
+            return true;
         }
+        return false;
+    }
+
+    private boolean processArgument(VariableElement varElt, TypeElement typeElt, List<MetaModel> params) {
+        Argument argumentAnnot = varElt.getAnnotation(Argument.class);
+        if (argumentAnnot != null) {
+            if (argumentAnnot.description() == null) {
+                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "description cannot be null", varElt);
+            } else {
+                String typeQualifiedName = typeElt.getQualifiedName().toString();
+                if (!ARGUMENT_VTYPES.contains(typeQualifiedName)) {
+                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            String.format("%s is not a valid argument value type: " + typeQualifiedName),
+                            varElt);
+                } else {
+                    params.add(new ArgumentMetaModel(typeElt, argumentAnnot));
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private void processFragment(VariableElement varElt, TypeElement typeElt, List<String> options, List<MetaModel> params) {
+        String fragmentQualifiedName = typeElt.getQualifiedName().toString();
+        ParametersMetaModel fragmentModel = fragmentsByQualifiedName.get(fragmentQualifiedName);
+        if (fragmentModel == null) {
+            if (rootTypes.contains(fragmentQualifiedName)) {
+                // report an error if the fragment related file is present in the compilation unit
+                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        String.format("type '%s' is not annotated with @%s", typeElt,
+                                CommandFragment.class.getSimpleName()),
+                        varElt);
+            }
+        } else {
+            List<String> optionDuplicates = fragmentModel.optionDuplicates(options);
+            if (!optionDuplicates.isEmpty()) {
+                StringBuilder sb = new StringBuilder();
+                Iterator<String> it = optionDuplicates.iterator();
+                while (it.hasNext()) {
+                    sb.append(it.next());
+                    if (it.hasNext()) {
+                        sb.append(", ");
+                    }
+                }
+                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        String.format("command fragment duplicates options: '%s'", sb),
+                        varElt);
+            }
+            options.addAll(fragmentModel.optionNames());
+            params.add(fragmentModel);
+        }
+    }
+
+    private final class ConstructorVisitor extends SimpleElementVisitor9<List<MetaModel>, Void> {
 
         @Override
         public List<MetaModel> visitExecutable(ExecutableElement elt, Void p) {
@@ -413,6 +417,7 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
                         processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
                                 String.format("%s is not a valid attribute", varName),
                                 varElt);
+                        return null;
                     }
                 }
             }
@@ -420,14 +425,32 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
         }
     }
 
+    private boolean implementsCommandExecution(TypeElement typeElt) {
+        for (TypeMirror iface : typeElt.getInterfaces()) {
+            TypeElement ifaceTypeElt = (TypeElement) processingEnv.getTypeUtils().asElement(iface);
+            if (CommandExecution.class.getName().equals(ifaceTypeElt.getQualifiedName().toString())) {
+                return true;
+            }
+        }
+        processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                String.format("%s does not implement %s", typeElt, CommandExecution.class.getSimpleName()),
+                typeElt);
+        return false;
+    }
+
     private final class CommandVisitor extends SimpleElementVisitor9<CommandMetaModel, Void> {
 
         @Override
         public CommandMetaModel visitType(TypeElement typeElt, Void p) {
-            Command annot = typeElt.getAnnotation(Command.class);
-            CommandInfo command = new CommandInfo(annot.name(), annot.description());
-            ParametersMetaModel optionsModel = typeElt.accept(new ParametersVisitor(), null);
-            return new CommandMetaModel(optionsModel, command);
+            if (implementsCommandExecution(typeElt)) {
+                Command annot = typeElt.getAnnotation(Command.class);
+                CommandInfo command = new CommandInfo(annot.name(), annot.description());
+                ParametersMetaModel params = typeElt.accept(new ParametersVisitor(), null);
+                if (params != null) {
+                    return new CommandMetaModel(params, command);
+                }
+            }
+            return null;
         }
     }
 
@@ -435,18 +458,20 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
 
         @Override
         public ParametersMetaModel visitType(TypeElement typeElt, Void p) {
-            List<MetaModel> options = null;
+            List<MetaModel> params = null;
             for (Element elt : typeElt.getEnclosedElements()) {
                 if (elt.getKind() == ElementKind.CONSTRUCTOR && elt.getAnnotation(Creator.class) != null) {
-                    options = elt.accept(new ConstructorVisitor(), null);
+                    params = elt.accept(new ConstructorVisitor(), null);
+                    break;
                 }
             }
-            if (options == null) {
-                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+            if (params != null) {
+                return new ParametersMetaModel(typeElt, params);
+            }
+            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
                         String.format("No constructor annotated with @%s found", Creator.class.getSimpleName()),
                         typeElt);
-            }
-            return new ParametersMetaModel(typeElt, options);
+            return null;
         }
     }
 

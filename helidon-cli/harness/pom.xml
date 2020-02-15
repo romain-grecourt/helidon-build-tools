@@ -25,4 +25,12 @@
     </parent>
     <artifactId>helidon-cli-harness</artifactId>
     <name>Helidon Command Line Interface Harness</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>

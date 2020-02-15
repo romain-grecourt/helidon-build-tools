@@ -9,6 +9,6 @@ public class MainTest {
 
     @Test
     public void simpleTest(){
-        Main.main(new String[]{"help", "dev"});
+        Main.main(new String[]{});
     }
 }

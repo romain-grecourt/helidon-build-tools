@@ -36,6 +36,7 @@ public final class CommandParser {
      * @return parser
      */
     public static CommandParser create(String[] rawArgs) {
+        Objects.requireNonNull(rawArgs, "rawArgs is null");
         String error = null;
         String commandName = null;
         Map<String, Parameter> params = new HashMap<>();
