@@ -1,0 +1,8 @@
+
+Usage:	test-cli test [OPTIONS]
+
+A test command
+
+Options:
+ --clean    Clean the directory
+ --debug    Turn on debug mode

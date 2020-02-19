@@ -19,11 +19,8 @@ public final class CommandContext {
     private final Logger logger;
     private final Properties properties;
     private final CommandRegistry registry;
-    private ExitCode exitCode = ExitCode.SUCCESS;
-    private String exitMessage;
+    private boolean error;
 
-    // TODO add a constructor to create from a parent context
-    // re-use name, description, registry, logger, copy properties
     private CommandContext(CommandRegistry registry, String name, String description) {
         this.name = Objects.requireNonNull(name, "name is null");
         this.description = Objects.requireNonNull(description, "description is null");
@@ -33,15 +30,6 @@ public final class CommandContext {
         this.logger.addHandler(new LogHandler());
         this.registry = Objects.requireNonNull(registry, "registry is null");
     }
-
-    /**
-     * Exit codes.
-     */
-    public enum ExitCode {
-        SUCCESS,
-        WARNING,
-        FAILURE
-    };
 
     /**
      * Get the CLI name.
@@ -74,14 +62,6 @@ public final class CommandContext {
      */
     public Collection<CommandModel> allCommands() {
         return registry.all();
-    }
-
-    /**
-     * Execute a command.
-     * @param args raw arguments
-     */
-    public void execute(String ... args) {
-        CommandRunner.execute(this, args);
     }
 
     /**
@@ -133,44 +113,41 @@ public final class CommandContext {
     }
 
     /**
-     * Get the action exit code.
-     * @return exit code
+     * Set the error message if not already set.
+     * @param message error message
      */
-    ExitCode exitCode() {
-        return exitCode;
+    public void error(String message) {
+        if (!error) {
+            error = true;
+            logError(message);
+        }
     }
 
     /**
-     * The action exit code.
-     * @param exitCode exit code
-     */
-    public void exitCode(ExitCode exitCode) {
-        this.exitCode = exitCode;
-    }
-
-    /**
-     * Set the exitMessage message.
-     * @param exitMessage exit message
-     */
-    public void exitMessage(String exitMessage) {
-        this.exitMessage = exitMessage;
-    }
-
-    /**
-     * Get the action message.
-     * @return optional of {@link String}
-     */
-    Optional<String> exitMessage() {
-        return Optional.ofNullable(exitMessage);
-    }
-
-    /**
-     * Mark this context action for a command not found erorr.
+     * Mark this context action for a command not found error.
      * @param commandName command name
      */
-    public void commandNotFound(String commandName) {
-        exitCode = CommandContext.ExitCode.FAILURE;
-        exitMessage = "Command not found: " + commandName;
+    void commandNotFound(String commandName) {
+        error("Command not found: " + commandName);
+    }
+
+    /**
+     * Execute a command.
+     * @param args raw arguments
+     */
+    public void execute(String... args) {
+        CommandRunner.execute(this, args);
+    }
+
+    /**
+     * Perform the system sequence.
+     */
+    public void exit() {
+        if (error) {
+            System.exit(1);
+        } else {
+            System.exit(0);
+        }
     }
 
     /**

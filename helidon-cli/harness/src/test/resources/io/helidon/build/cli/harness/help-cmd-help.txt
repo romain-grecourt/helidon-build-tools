@@ -1,0 +1,4 @@
+
+Usage:	test-cli help [OPTIONS] command
+
+Help about the command

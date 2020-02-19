@@ -16,11 +16,11 @@ public abstract class CommandModel extends CommandParameters {
     }
 
     /**
-     * Indicate if the sub-classes is a meta command.
-     * @return {@code true} if meta, {@code false} if not meta.
+     * Indicate if the command is visible.
+     * @return {@code true} if visible, {@code false} if not visible.
      */
-    boolean isMeta() {
-        return false;
+    boolean visible() {
+        return true;
     }
 
     /**

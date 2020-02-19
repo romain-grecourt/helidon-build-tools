@@ -19,14 +19,22 @@ class HelpCommand extends CommandModel {
     }
 
     @Override
-    boolean isMeta() {
-        return true;
+    boolean visible() {
+        return false;
     }
 
     @Override
     public final CommandExecution createExecution(CommandParser parser) {
-        final String cmdName = Optional.ofNullable(parser.resolve(commandArg)).orElse(UsageCommand.NAME);
-        return (ctx) -> ctx.command(cmdName).ifPresentOrElse((cmd) -> this.execute(ctx, cmd), () -> ctx.commandNotFound(cmdName));
+        return Optional.ofNullable(parser.resolve(commandArg))
+                // if the help command is forced because of --help, the actual command arg is the original command name
+                .or(() -> parser.commandName().map((cmd) -> "help".equals(cmd) ? null : cmd))
+                // if --help is found at this point, this is help about the help command
+                .or(() -> Optional.ofNullable(parser.resolve(HELP_OPTION) ? "help" : null))
+                // execute
+                .map((cmdName) -> (CommandExecution) (ctx) -> ctx.command(cmdName)
+                .ifPresentOrElse((cmd) -> this.execute(ctx, cmd), () -> ctx.commandNotFound(cmdName)))
+                // just help, print the usage
+                .orElse((CommandExecution) (ctx) -> ctx.execute());
     }
 
     private void execute(CommandContext context, CommandModel model) {
@@ -47,7 +55,7 @@ class HelpCommand extends CommandModel {
                 options.add((OptionInfo) param);
             }
         }
-        context.logInfo(String.format("\nUsage:\t %s %s [OPTIONS]%s\n", context.name(), model.command().name(), argument));
+        context.logInfo(String.format("\nUsage:\t%s %s [OPTIONS]%s\n", context.name(), model.command().name(), argument));
         context.logInfo(model.command().description());
         if (maxOptNameLength > 0) {
             int descColPos = maxOptNameLength + 4;

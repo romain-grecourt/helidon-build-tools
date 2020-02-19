@@ -1,12 +1,13 @@
 package io.helidon.build.cli.harness;
 
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.ServiceLoader;
+import java.util.stream.Collectors;
 
 /**
  * Registry of {@link CommandModel}, keyed by their name.
@@ -40,10 +41,10 @@ public class CommandRegistry {
 
     /**
      * Get all the commands.
-     * @return collection of all registered commands
+     * @return list of all visible registered commands
      */
-    public final Collection<CommandModel> all() {
-        return registry.values();
+    public final List<CommandModel> all() {
+        return registry.values().stream().filter(CommandModel::visible).collect(Collectors.toList());
     }
 
     /**

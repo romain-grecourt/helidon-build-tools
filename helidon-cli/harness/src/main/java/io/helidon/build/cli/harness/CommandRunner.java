@@ -21,13 +21,15 @@ public final class CommandRunner {
      */
     public void execute() {
         // TODO set system properties
-        parser.commandName()
-                .ifPresentOrElse((cmdName) -> context.command(cmdName)
-                        .flatMap((cmd) -> Optional.of(parser.resolve(HelpCommand.HELP_OPTION) ? new HelpCommand() : cmd))
-                        .ifPresentOrElse((cmd) -> cmd.createExecution(parser).execute(context),
-                                () -> context.commandNotFound(cmdName)),
-                        () -> new UsageCommand().createExecution(parser).execute(context));
-        // TODO set exit code
+        parser.error().ifPresentOrElse(context::error,
+                () -> parser.commandName()
+                        .ifPresentOrElse((cmdName) -> context.command(cmdName)
+                                // check for --help, force the help command if found
+                                .flatMap((cmd) -> Optional.of(parser.resolve(HelpCommand.HELP_OPTION) ? new HelpCommand() : cmd))
+                                .ifPresentOrElse((cmd) -> cmd.createExecution(parser).execute(context),
+                                        () -> context.commandNotFound(cmdName)),
+                                // not command name provided, print the usage
+                                () -> new UsageCommand().createExecution(parser).execute(context)));
     }
 
     /**

@@ -12,8 +12,8 @@ final class UsageCommand extends CommandModel {
     }
 
     @Override
-    boolean isMeta() {
-        return true;
+    boolean visible() {
+        return false;
     }
 
     @Override
@@ -22,7 +22,7 @@ final class UsageCommand extends CommandModel {
     }
 
     private void execute(CommandContext context) {
-        context.logInfo(String.format("\nUsage:\t %s [OPTIONS] COMMAND\n", context.name()));
+        context.logInfo(String.format("\nUsage:\t%s [OPTIONS] COMMAND\n", context.name()));
         context.logInfo(context.description());
         context.logInfo("\nOptions:");
         context.logInfo("-D<name>=<value>     Define a system property");
@@ -31,9 +31,6 @@ final class UsageCommand extends CommandModel {
         context.logInfo("\nCommands:");
         int maxCmdNameLength = 0;
         for (CommandModel command : context.allCommands()) {
-            if (command.isMeta()) {
-                continue;
-            }
             int cmdNameLength = command.command().name().length();
             if (cmdNameLength > maxCmdNameLength) {
                 maxCmdNameLength = cmdNameLength;
@@ -42,9 +39,6 @@ final class UsageCommand extends CommandModel {
         if (maxCmdNameLength > 0) {
             int descColPos = maxCmdNameLength + 4 ;
             for (CommandModel command : context.allCommands()) {
-                if (command.isMeta()) {
-                    continue;
-                }
                 CommandInfo commandInfo = command.command();
                 int curColPos = descColPos - commandInfo.name().length();
                 String spacing = "";

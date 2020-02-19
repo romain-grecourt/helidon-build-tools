@@ -46,6 +46,7 @@ public final class CommandParser {
             if (arg == null || arg.isEmpty()) {
                 continue;
             }
+            arg = arg.trim();
             if (arg.charAt(0) == '-') {
                 String optionName = arg.substring(1);
                 if (!optionName.isEmpty() && optionName.charAt(0) == '-') {
