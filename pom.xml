@@ -137,6 +137,7 @@
         <!-- maven plugin versions -->
         <version.plugin.checkstyle>2.17</version.plugin.checkstyle>
         <version.plugin.compiler>3.8.1</version.plugin.compiler>
+        <version.plugin.dependency>3.0.0</version.plugin.dependency>
         <version.plugin.deploy>2.8.2</version.plugin.deploy>
         <version.plugin.directory>0.1</version.plugin.directory>
         <version.plugin.enforcer>3.0.0-M1</version.plugin.enforcer>
@@ -241,6 +242,11 @@
                     <groupId>org.commonjava.maven.plugins</groupId>
                     <artifactId>directory-maven-plugin</artifactId>
                     <version>${version.plugin.directory}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-dependency-plugin</artifactId>
+                    <version>${version.plugin.dependency}</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>

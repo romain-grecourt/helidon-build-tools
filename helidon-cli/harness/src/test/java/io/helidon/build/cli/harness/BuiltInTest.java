@@ -18,9 +18,9 @@ import static org.hamcrest.MatcherAssert.assertThat;
 public class BuiltInTest {
 
     static final CommandRegistry REGISTRY = new TestCommandRegistry();
-    static final String TEST_CLI_USAGE = resourceAsString("test-cli-usage.txt");
+    static final String CLI_USAGE = resourceAsString("cli-usage.txt");
     static final String HELP_CMD_HELP = resourceAsString("help-cmd-help.txt");
-    static final String TEST_CMD_HELP = resourceAsString("test-cmd-usage.txt");
+    static final String TEST_CMD_HELP = resourceAsString("test-cmd-help.txt");
 
     static CommandContext ctx() {
         return CommandContext.create(REGISTRY, "test-cli", "A test cli");
@@ -53,9 +53,9 @@ public class BuiltInTest {
 
     @Test
     public void testUsage() {
-        assertThat(exec("--help"), is(equalTo(TEST_CLI_USAGE)));
-        assertThat(exec("help"), is(equalTo(TEST_CLI_USAGE)));
-        assertThat(exec(), is(equalTo(TEST_CLI_USAGE)));
+        assertThat(exec("--help"), is(equalTo(CLI_USAGE)));
+        assertThat(exec("help"), is(equalTo(CLI_USAGE)));
+        assertThat(exec(), is(equalTo(CLI_USAGE)));
     }
 
     @Test
@@ -78,8 +78,8 @@ public class BuiltInTest {
 
         TestCommand() {
             super(new CommandInfo("test", "A test command"));
-            addParameter(new OptionInfo<>(String.class, "clean", "Clean the directory", true, Option.Scope.ANY));
-            addParameter(new OptionInfo<>(String.class, "debug", "Turn on debug mode", true, Option.Scope.ANY));
+            addParameter(new OptionInfo<>(String.class, "clean", "Clean the directory", true));
+            addParameter(new OptionInfo<>(String.class, "debug", "Turn on debug mode", true));
         }
 
         @Override

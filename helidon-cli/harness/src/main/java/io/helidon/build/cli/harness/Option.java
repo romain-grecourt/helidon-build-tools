@@ -39,12 +39,6 @@ public @interface Option {
     boolean required() default true;
 
     /**
-     * The scope of the option.
-     * @return option scope
-     */
-    Scope scope() default Scope.LOCAL;
-
-    /**
      * Name predicate to validate option names.
      */
     static final Predicate<String> NAME_PREDICATE = Pattern.compile("^[a-zA-Z0-9]{1,}[-]?[a-zA-Z0-9]{1,}$").asMatchPredicate();
@@ -58,26 +52,4 @@ public @interface Option {
      * Supported multi value types.
      */
     static final List<Class<?>> MULTI_TYPES = List.of(Collection.class, List.class);
-
-    /**
-     * Option scope.
-     * TODO remove scope.
-     */
-    static enum Scope {
-
-        /**
-         * A global option only.
-         */
-        GLOBAL,
-
-        /**
-         * A local option only, specific to a command.
-         */
-        LOCAL,
-
-        /**
-         * An option that is both global and local.
-         */
-        ANY
-    }
 }

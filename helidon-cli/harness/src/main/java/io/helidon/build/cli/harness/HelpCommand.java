@@ -9,7 +9,7 @@ import java.util.Optional;
  */
 class HelpCommand extends CommandModel {
 
-    static OptionInfo<Boolean> HELP_OPTION = new OptionInfo<>(Boolean.class, "help", "Display help information", false, Option.Scope.ANY);
+    static OptionInfo<Boolean> HELP_OPTION = new OptionInfo<>(Boolean.class, "help", "Display help information", false);
     private final ArgumentInfo<String> commandArg;
 
     HelpCommand() {
@@ -32,7 +32,7 @@ class HelpCommand extends CommandModel {
                 .or(() -> Optional.ofNullable(parser.resolve(HELP_OPTION) ? "help" : null))
                 // execute
                 .map((cmdName) -> (CommandExecution) (ctx) -> ctx.command(cmdName)
-                .ifPresentOrElse((cmd) -> this.execute(ctx, cmd), () -> ctx.commandNotFound(cmdName)))
+                .ifPresentOrElse((cmd) -> this.execute(ctx, cmd), () -> ctx.commandNotFoundError(cmdName)))
                 // just help, print the usage
                 .orElse((CommandExecution) (ctx) -> ctx.execute());
     }

@@ -5,17 +5,29 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 import io.helidon.build.cli.harness.CommandModel.ArgumentInfo;
 import io.helidon.build.cli.harness.CommandModel.OptionInfo;
 import io.helidon.build.cli.harness.CommandParameters.ParameterInfo;
-import java.util.Objects;
+import java.util.List;
 
 /**
  * Command parser.
  */
 public final class CommandParser {
+
+    private static final List<String> GLOBAL_OPTIONS = List.of("--help");
+
+    static final String TOO_MANY_ARGUMENTS = "Too many arguments";
+    static final String INVALID_REPEATING_OPTION = "Invalid repeating option";
+    static final String INVALID_COMMAND_NAME = "Invalid command name";
+    static final String INVALID_OPTION_NAME = "Invalid option name";
+    static final String MISSING_REQUIRED_ARGUMENT = "Missing required argument";
+    static final String INVALID_ARGUMENT_VALUE = "Invalid argument value";
+    static final String INVALID_OPTION_VALUE = "Invalid option value";
+    static final String MISSING_REQUIRED_OPTION = "Missing required option";
 
     private final String[] rawArgs;
     private final Map<String, Parameter> params;
@@ -29,70 +41,65 @@ public final class CommandParser {
         this.error = error;
     }
 
-    // TODO throw parser error.
     /**
      * Parse the command line arguments.
      * @param rawArgs arguments to parse
      * @return parser
      */
-    public static CommandParser create(String[] rawArgs) {
+    public static CommandParser create(String ... rawArgs) {
         Objects.requireNonNull(rawArgs, "rawArgs is null");
         String error = null;
         String commandName = null;
         Map<String, Parameter> params = new HashMap<>();
-        boolean global = true;
         for (int i = 0; i < rawArgs.length; i++) {
             String arg = rawArgs[i];
             if (arg == null || arg.isEmpty()) {
                 continue;
             }
-            arg = arg.trim();
-            if (arg.charAt(0) == '-') {
-                String optionName = arg.substring(1);
-                if (!optionName.isEmpty() && optionName.charAt(0) == '-') {
-                    optionName = optionName.substring(1);
+            arg = arg.trim().toLowerCase();
+            if (!GLOBAL_OPTIONS.contains(arg) && commandName == null) {
+                if (!Command.NAME_PREDICATE.test(arg)) {
+                    error = INVALID_COMMAND_NAME + ": " + arg;
+                    break;
                 }
+                commandName = arg;
+            } else if (arg.length() > 2 && arg.charAt(0) == '-' && arg.charAt(1) == '-') {
+                String optionName = arg.substring(2);
                 if (!Option.NAME_PREDICATE.test(optionName)) {
-                    error = "Invalid option name: " + optionName;
+                    error = INVALID_OPTION_NAME + ": " + optionName;
                     break;
                 }
                 Parameter param = params.get(optionName);
                 if (i + 1 < rawArgs.length) {
                     // key-value(s)
-                    String value = rawArgs[i + 1];
+                    String value = rawArgs[i + 1].trim().toLowerCase();
                     if (value.charAt(0) != '-') {
                         if (param == null) {
-                            params.put(optionName, new KeyValueParam(optionName, global, value));
+                            params.put(optionName, new KeyValueParam(optionName, value));
                         } else if (param instanceof KeyValueParam) {
                             LinkedList<String> values = new LinkedList<>();
                             values.add(((KeyValueParam) param).value);
                             values.add(value);
-                            params.put(optionName, new KeyValuesParam(optionName, global, values));
+                            params.put(optionName, new KeyValuesParam(optionName, values));
                         } else if (param instanceof KeyValuesParam) {
                             ((KeyValuesParam) param).values.add(value);
                         } else {
-                            error = "Invalid repeating option: " + optionName;
+                            error = INVALID_REPEATING_OPTION + ": " + optionName;
                             break;
                         }
+                        i++;
                         continue;
                     }
                 }
                 // flag
                 if (param == null) {
-                    params.put(optionName, new FlagParam(optionName, global));
+                    params.put(optionName, new FlagParam(optionName));
                 } else {
-                    error = "Invalid repeating option: " + optionName;
+                    error = INVALID_REPEATING_OPTION + ": " + optionName;
                     break;
                 }
-            } else if (commandName == null) {
-                if (!Command.NAME_PREDICATE.test(arg)) {
-                    error = "Invalid command name: " + arg;
-                    break;
-                }
-                commandName = arg;
-                global = false;
             } else if (params.containsKey("")) {
-                error = "Too many arguments";
+                error = TOO_MANY_ARGUMENTS;
                 break;
             } else {
                 params.put("", new ArgumentParam(arg));
@@ -115,6 +122,14 @@ public final class CommandParser {
      */
     public Optional<String> commandName() {
         return Optional.ofNullable(commandName);
+    }
+
+    /**
+     * Get the parsed parameters.
+     * @return map of parameter
+     */
+    Map<String, Parameter> params() {
+        return params;
     }
 
     private <T> T resolveValue(Class<T> type, String rawValue) {
@@ -157,7 +172,7 @@ public final class CommandParser {
             OptionInfo option = (OptionInfo) param;
             Parameter resolved = params.get(option.name());
             if (resolved == null && option.required()) {
-                throw new CommandParserException("Missing required option: " + option.name());
+                throw new CommandParserException(MISSING_REQUIRED_OPTION + ": " + option.name());
             }
             if (Boolean.class.equals(type)) {
                 if (resolved == null) {
@@ -174,12 +189,12 @@ public final class CommandParser {
             } else if (Option.MULTI_TYPES.contains(type)) {
                 throw new UnsupportedOperationException("multi values are not supported yet");
             }
-            throw new CommandParserException("Invalid option value: " + option.name());
+            throw new CommandParserException(INVALID_OPTION_VALUE + ": " + option.name());
         } else if (param instanceof ArgumentInfo) {
             ArgumentInfo argInfo = (ArgumentInfo) param;
             Parameter resolved = params.get("");
             if (resolved == null && argInfo.required()) {
-                throw new CommandParserException("Missing required argument");
+                throw new CommandParserException(MISSING_REQUIRED_ARGUMENT);
             }
             if (Argument.VALUE_TYPES.contains(type)) {
                 if (resolved == null) {
@@ -188,7 +203,7 @@ public final class CommandParser {
                     return type.cast(((ArgumentParam) resolved).value);
                 }
             }
-            throw new CommandParserException("Invalid argument value");
+            throw new CommandParserException(INVALID_ARGUMENT_VALUE);
         }
         throw new IllegalArgumentException("Unresolveable parameter: " + param);
     }
@@ -231,11 +246,9 @@ public final class CommandParser {
     public static abstract class Parameter {
 
         final String name;
-        final boolean global;
 
-        private Parameter(String name, boolean global) {
+        private Parameter(String name) {
             this.name = name;
-            this.global = global;
         }
     }
 
@@ -244,8 +257,8 @@ public final class CommandParser {
      */
     public static class FlagParam extends Parameter {
 
-        private FlagParam(String name, boolean global) {
-            super(name, global);
+        private FlagParam(String name) {
+            super(name);
         }
     }
 
@@ -254,10 +267,10 @@ public final class CommandParser {
      */
     public static class KeyValueParam extends Parameter {
 
-        private final String value;
+        final String value;
 
-        private KeyValueParam(String name, boolean global, String value) {
-            super(name, global);
+        private KeyValueParam(String name, String value) {
+            super(name);
             this.value = value;
         }
     }
@@ -267,10 +280,10 @@ public final class CommandParser {
      */
     public static class KeyValuesParam extends Parameter {
 
-        private final LinkedList<String> values;
+        final LinkedList<String> values;
 
-        private KeyValuesParam(String name, boolean global, LinkedList<String> values) {
-            super(name, global);
+        private KeyValuesParam(String name, LinkedList<String> values) {
+            super(name);
             this.values = values;
         }
     }
@@ -280,10 +293,10 @@ public final class CommandParser {
      */
     public static class ArgumentParam extends Parameter {
 
-        private final String value;
+        final String value;
 
         private ArgumentParam(String value) {
-            super("", /* global */ false);
+            super("");
             this.value = value;
         }
     }

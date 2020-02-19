@@ -19,7 +19,16 @@ public final class CommandContext {
     private final Logger logger;
     private final Properties properties;
     private final CommandRegistry registry;
-    private boolean error;
+    private ExitAction exitAction;
+
+    private CommandContext(CommandContext parent) {
+        this.name = parent.name;
+        this.description = parent.description;
+        this.properties = parent.properties;
+        this.logger = parent.logger;
+        this.registry = parent.registry;
+        this.exitAction = new ExitAction();
+    }
 
     private CommandContext(CommandRegistry registry, String name, String description) {
         this.name = Objects.requireNonNull(name, "name is null");
@@ -29,6 +38,68 @@ public final class CommandContext {
         this.logger.setUseParentHandlers(false);
         this.logger.addHandler(new LogHandler());
         this.registry = Objects.requireNonNull(registry, "registry is null");
+        this.exitAction = new ExitAction();
+    }
+
+    /**
+     * Exit status.
+     */
+    public static enum ExitStatus {
+        /**
+         * Success exit status.
+         */
+        SUCCESS,
+
+        /**
+         * Warning exit status.
+         */
+        WARNING,
+
+        /**
+         * Failure exit status.
+         */
+        FAILURE;
+
+        /**
+         * Test if this status is worse than the given one.
+         * @param status status to compare with
+         * @return {@code true} if worse, {@code false} if not
+         */
+        public boolean isWorse(ExitStatus status) {
+            return ordinal() > status.ordinal();
+        }
+    }
+
+    private final class ExitAction {
+
+        final ExitStatus status;
+        final String message;
+
+        private ExitAction() {
+            this.status = ExitStatus.SUCCESS;
+            this.message = null;
+        }
+
+        ExitAction(ExitStatus status, String message) {
+            this.status = Objects.requireNonNull(status, "exit status is null");
+            this.message = Objects.requireNonNull(message, "message is null");
+        }
+
+        void run() {
+            switch (exitAction.status) {
+                case FAILURE:
+                    if (message != null && !message.isEmpty()) {
+                        CommandContext.this.logError(message);
+                    }
+                    System.exit(1);
+                case WARNING:
+                    if (message != null && !message.isEmpty()) {
+                        CommandContext.this.logWarning(message);
+                    }
+                default:
+                    System.exit(0);
+            }
+        }
     }
 
     /**
@@ -113,41 +184,49 @@ public final class CommandContext {
     }
 
     /**
+     * Execute a nested command.
+     * @param args raw arguments
+     */
+    public void execute(String... args) {
+        CommandContext ctx = new CommandContext(this);
+        CommandRunner.execute(ctx, args);
+        this.exitAction = ctx.exitAction;
+    }
+
+    /**
+     * Set the exit action to {@link ExitStatus#FAILURE} with a command not found error message.
+     *
+     * @param cmdName command name
+     */
+    void commandNotFoundError(String cmdName) {
+        error("Command not found: " + cmdName);
+    }
+
+    /**
+     * Set the exit action to {@link ExitStatus#FAILURE} with the given error message.
+     * @param message 
+     */
+    void error(String message) {
+        exitAction(ExitStatus.FAILURE, message);
+    }
+
+    /**
      * Set the error message if not already set.
+     * @param status
      * @param message error message
      */
-    public void error(String message) {
-        if (!error) {
-            error = true;
+    public void exitAction(ExitStatus status, String message) {
+        if (status.isWorse(exitAction.status)) {
+            exitAction = new ExitAction(status, message);
             logError(message);
         }
     }
 
     /**
-     * Mark this context action for a command not found error.
-     * @param commandName command name
+     * Perform the exit action.
      */
-    void commandNotFound(String commandName) {
-        error("Command not found: " + commandName);
-    }
-
-    /**
-     * Execute a command.
-     * @param args raw arguments
-     */
-    public void execute(String... args) {
-        CommandRunner.execute(this, args);
-    }
-
-    /**
-     * Perform the system sequence.
-     */
-    public void exit() {
-        if (error) {
-            System.exit(1);
-        } else {
-            System.exit(0);
-        }
+    public void runExitAction() {
+        exitAction.run();
     }
 
     /**

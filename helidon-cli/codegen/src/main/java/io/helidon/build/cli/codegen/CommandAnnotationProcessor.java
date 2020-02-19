@@ -279,7 +279,6 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
                         .append(option.name()).append("\", \"")
                         .append(option.description()).append("\", ")
                         .append(option.required() ? "true" : "false")
-                        .append(", Option.Scope.").append(option.scope().name())
                         .append(")");
             } else if (param instanceof ArgumentMetaModel) {
                 Argument argument = ((ArgumentMetaModel) param).argument;

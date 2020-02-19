@@ -143,7 +143,6 @@ public abstract class CommandModel extends CommandParameters {
     public static final class OptionInfo<T> extends AttributeInfo<T> {
 
         private final String name;
-        private final Option.Scope scope;
 
         /**
          * Create a new option info.
@@ -152,20 +151,10 @@ public abstract class CommandModel extends CommandParameters {
          * @param name option name
          * @param description option description
          * @param required option required flag
-         * @param scope option scope
          */
-        public OptionInfo(Class<T> type, String name, String description, boolean required, Option.Scope scope) {
+        public OptionInfo(Class<T> type, String name, String description, boolean required) {
             super(type, description, required);
             this.name = Objects.requireNonNull(name, "name is null");
-            this.scope = Objects.requireNonNull(scope, "scope is null");
-        }
-
-        /**
-         * Get the option scope.
-         * @return scope, never {@code null}
-         */
-        public Option.Scope scope() {
-            return scope;
         }
 
         /**
