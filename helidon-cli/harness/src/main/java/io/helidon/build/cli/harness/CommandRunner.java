@@ -33,12 +33,25 @@ public final class CommandRunner {
     }
 
     /**
-     * Create a new {@link CommandRunner instance}.
+     * Execute a sub-command.
      *
      * @param context command context
      * @param args raw command line arguments
      */
-    public static void execute(CommandContext context, String... args) {
+    static void execute(CommandContext context, String... args) {
         new CommandRunner(context, args).execute();
+    }
+
+    /**
+     * Execute a command.
+     * @param cli CLI definition
+     * @param clazz class used to derive the package of the sub-commands
+     * @param args raw command line arguments
+     */
+    public static void execute(CLIDefinition cli, Class clazz, String... args) {
+        CommandRegistry registry = CommandRegistry.load(clazz);
+        CommandContext context = CommandContext.create(registry, cli);
+        CommandRunner.execute(context, args);
+        context.runExitAction();
     }
 }

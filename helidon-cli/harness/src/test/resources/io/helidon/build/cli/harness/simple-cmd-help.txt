@@ -1,0 +1,8 @@
+
+Usage:	test-cli simple [OPTIONS]
+
+A simple test command
+
+Options:
+ --foo    Foo option
+ --bar    Bar option

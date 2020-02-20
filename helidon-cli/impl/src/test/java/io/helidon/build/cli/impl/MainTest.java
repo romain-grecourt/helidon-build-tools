@@ -89,7 +89,6 @@ public class MainTest {
     @Test
     public void testHelp() throws IOException, InterruptedException {
         ExecResult res = exec("dev" ,"--help");
-        System.out.println(res.output);
         assertThat(res.code, is(equalTo(0)));
         assertThat(res.output, is(equalTo(DEV_CMD_HELP)));
 

@@ -26,6 +26,5 @@ public final class DevCommand implements CommandExecution {
 
     @Override
     public void execute(CommandContext context) {
-        throw new UnsupportedOperationException("Not supported yet.");
     }
 }

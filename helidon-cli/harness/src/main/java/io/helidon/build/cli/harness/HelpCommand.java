@@ -55,7 +55,7 @@ class HelpCommand extends CommandModel {
                 options.add((OptionInfo) param);
             }
         }
-        context.logInfo(String.format("\nUsage:\t%s %s [OPTIONS]%s\n", context.name(), model.command().name(), argument));
+        context.logInfo(String.format("\nUsage:\t%s %s [OPTIONS]%s\n", context.cli().name(), model.command().name(), argument));
         context.logInfo(model.command().description());
         if (maxOptNameLength > 0) {
             int descColPos = maxOptNameLength + 4;

@@ -22,8 +22,8 @@ final class UsageCommand extends CommandModel {
     }
 
     private void execute(CommandContext context) {
-        context.logInfo(String.format("\nUsage:\t%s [OPTIONS] COMMAND\n", context.name()));
-        context.logInfo(context.description());
+        context.logInfo(String.format("\nUsage:\t%s [OPTIONS] COMMAND\n", context.cli().name()));
+        context.logInfo(context.cli().description());
         context.logInfo("\nOptions:");
         context.logInfo("-D<name>=<value>     Define a system property");
         context.logInfo("--verbose            Produce verbose output");
@@ -48,6 +48,6 @@ final class UsageCommand extends CommandModel {
                 context.logInfo(String.format("  %s%s%s", commandInfo.name(), spacing, commandInfo.description()));
             }
         }
-        context.logInfo(String.format("\nRun '%s COMMAND --help' for more information on a command.", context.name()));
+        context.logInfo(String.format("\nRun '%s COMMAND --help' for more information on a command.", context.cli().name()));
     }
 }

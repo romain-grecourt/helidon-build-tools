@@ -50,7 +50,7 @@ public class CommandParameters {
             return (ParameterInfo<T>) param;
         }
         throw new IllegalStateException("Parameter mismatch, class=" + this.getClass() 
-                + ", index=" + idx + "expectedType=" + type + ", actualType=" + param.type());
+                + ", index=" + idx + ", expectedType=" + type + ", actualType=" + param.type());
     }
 
     /**

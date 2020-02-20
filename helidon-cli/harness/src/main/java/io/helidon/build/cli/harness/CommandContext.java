@@ -14,25 +14,22 @@ import java.util.logging.Logger;
  */
 public final class CommandContext {
 
-    private final String name;
-    private final String description;
+    private final CLIDefinition cli;
     private final Logger logger;
     private final Properties properties;
     private final CommandRegistry registry;
     private ExitAction exitAction;
 
     private CommandContext(CommandContext parent) {
-        this.name = parent.name;
-        this.description = parent.description;
+        this.cli = parent.cli;
         this.properties = parent.properties;
         this.logger = parent.logger;
         this.registry = parent.registry;
         this.exitAction = new ExitAction();
     }
 
-    private CommandContext(CommandRegistry registry, String name, String description) {
-        this.name = Objects.requireNonNull(name, "name is null");
-        this.description = Objects.requireNonNull(description, "description is null");
+    private CommandContext(CommandRegistry registry, CLIDefinition cli) {
+        this.cli = Objects.requireNonNull(cli, "cli is null");
         this.properties = new Properties();
         this.logger = Logger.getAnonymousLogger();
         this.logger.setUseParentHandlers(false);
@@ -103,19 +100,11 @@ public final class CommandContext {
     }
 
     /**
-     * Get the CLI name.
-     * @return name, never {@code null}
+     * Get the CLI definition
+     * @return CLI definition, never {@code null}
      */
-    public String name() {
-        return name;
-    }
-
-    /**
-     * Get the CLI description.
-     * @return description, never {@code null}
-     */
-    public String description() {
-        return description;
+    public CLIDefinition cli() {
+        return cli;
     }
 
     /**
@@ -232,12 +221,11 @@ public final class CommandContext {
     /**
      * Create a new command context.
      * @param registry command registry
-     * @param name CLI name
-     * @param description CLI description
+     * @param cliDef CLI definition
      * @return command context, never {@code null}
      */
-    public static CommandContext create(CommandRegistry registry, String name, String description) {
-        return new CommandContext(registry, name, description);
+    public static CommandContext create(CommandRegistry registry, CLIDefinition cliDef) {
+        return new CommandContext(registry, cliDef);
     }
 
     private static final class LogHandler extends Handler {
