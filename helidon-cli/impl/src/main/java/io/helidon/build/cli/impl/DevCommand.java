@@ -9,7 +9,7 @@ import io.helidon.build.cli.harness.Option;
 /**
  * The {@code dev} command.
  */
-@Command(name = "dev", description = "dev !")
+@Command(name = "dev", description = "Continuous application development")
 public final class DevCommand implements CommandExecution {
 
     private final CommonOptions commonOptions;
@@ -18,7 +18,7 @@ public final class DevCommand implements CommandExecution {
     @Creator
     DevCommand(
             CommonOptions commonOptions,
-            @Option(name = "clean", description = "clean before build") boolean clean) {
+            @Option(name = "clean", description = "Perform a clean before the first build", required = false) boolean clean) {
 
         this.commonOptions = commonOptions;
         this.clean = clean;
@@ -26,5 +26,7 @@ public final class DevCommand implements CommandExecution {
 
     @Override
     public void execute(CommandContext context) {
+        context.logInfo(String.format("\n// TODO exec dev, project=%s, clean=%s",
+                commonOptions.project, String.valueOf(clean)));
     }
 }

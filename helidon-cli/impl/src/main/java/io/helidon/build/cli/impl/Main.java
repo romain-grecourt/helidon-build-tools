@@ -8,7 +8,7 @@ import io.helidon.build.cli.harness.CommandRunner;
  */
 public class Main {
 
-    private static final CLIDefinition CLI_DEFINITION = CLIDefinition.create("helidon", "Java framework for writing microservices");
+    private static final CLIDefinition CLI_DEFINITION = CLIDefinition.create("helidon", "Helidon Project command line tool");
 
     /**
      * Execute the command.

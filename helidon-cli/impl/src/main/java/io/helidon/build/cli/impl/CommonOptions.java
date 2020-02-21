@@ -12,10 +12,10 @@ import io.helidon.build.cli.harness.Creator;
 @CommandFragment
 final class CommonOptions {
 
-    final File projectDir;
+    final File project;
 
     @Creator
-    CommonOptions(@Option(name = "project", description = "project directory", required = false) File projectDir) {
-        this.projectDir = projectDir;
+    CommonOptions(@Option(name = "project", description = "The project directory", required = false) File project) {
+        this.project = project;
     }
 }

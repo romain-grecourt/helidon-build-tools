@@ -2,23 +2,28 @@ package io.helidon.build.cli.harness;
 
 import java.io.File;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
 import io.helidon.build.cli.harness.CommandModel.ArgumentInfo;
 import io.helidon.build.cli.harness.CommandModel.OptionInfo;
+import io.helidon.build.cli.harness.CommandModel.RepeatableOptionInfo;
 import io.helidon.build.cli.harness.CommandParameters.ParameterInfo;
-import java.util.List;
 
 /**
  * Command parser.
  */
 public final class CommandParser {
 
-    private static final List<String> GLOBAL_OPTIONS = List.of("--help");
+    private static final List<String> GLOBAL_OPTIONS = List.of(
+            "--" + CommandModel.HELP_OPTION.name(),
+            "--" + CommandModel.VERBOSE_OPTION.name(),
+            "--" + CommandModel.DEBUG_OPTION.name());
 
     static final String TOO_MANY_ARGUMENTS = "Too many arguments";
     static final String INVALID_REPEATING_OPTION = "Invalid repeating option";
@@ -27,6 +32,7 @@ public final class CommandParser {
     static final String MISSING_REQUIRED_ARGUMENT = "Missing required argument";
     static final String INVALID_ARGUMENT_VALUE = "Invalid argument value";
     static final String INVALID_OPTION_VALUE = "Invalid option value";
+    static final String UNREPEATABLE_OPTION = "Option cannot be repeated";
     static final String MISSING_REQUIRED_OPTION = "Missing required option";
 
     private final String[] rawArgs;
@@ -74,15 +80,24 @@ public final class CommandParser {
                     // key-value(s)
                     String value = rawArgs[i + 1].trim().toLowerCase();
                     if (value.charAt(0) != '-') {
-                        if (param == null) {
+                        String[] splitValues = value.split(",");
+                        if (param == null && splitValues.length == 1) {
                             params.put(optionName, new KeyValueParam(optionName, value));
+                        } else if (param == null) {
+                            LinkedList<String> values = new LinkedList<>();
+                            for (String splitValue : splitValues) {
+                                values.add(splitValue);
+                            }
+                            params.put(optionName, new KeyValuesParam(optionName, values));
                         } else if (param instanceof KeyValueParam) {
                             LinkedList<String> values = new LinkedList<>();
                             values.add(((KeyValueParam) param).value);
                             values.add(value);
                             params.put(optionName, new KeyValuesParam(optionName, values));
                         } else if (param instanceof KeyValuesParam) {
-                            ((KeyValuesParam) param).values.add(value);
+                            for (String splitValue : splitValues) {
+                                ((KeyValuesParam) param).values.add(splitValue);
+                            }
                         } else {
                             error = INVALID_REPEATING_OPTION + ": " + optionName;
                             break;
@@ -160,52 +175,87 @@ public final class CommandParser {
     }
 
     /**
-     * Resolve the given parameter.
-     * @param <T> parameter type
-     * @param param the parameter to resolve
-     * @return resolve value for the parameter
+     * Resolve the given option parameter.
+     * @param <T> option type
+     * @param optionInfo the option to resolve
+     * @return resolved value for the option
      * @throws CommandParserException if an error occurs while resolving the parameter
      */
-    public <T> T resolve(ParameterInfo<T> param) throws CommandParserException {
-        Class<T> type = param.type();
-        if (param instanceof OptionInfo) {
-            OptionInfo option = (OptionInfo) param;
-            Parameter resolved = params.get(option.name());
-            if (resolved == null && option.required()) {
-                throw new CommandParserException(MISSING_REQUIRED_OPTION + ": " + option.name());
-            }
-            if (Boolean.class.equals(type)) {
-                if (resolved == null) {
-                    return type.cast(Boolean.FALSE);
-                } else if (resolved instanceof FlagParam) {
-                    return type.cast(Boolean.TRUE);
-                }
-            } else if (Option.VALUE_TYPES.contains(type)) {
-                if (resolved == null) {
-                    return (T) resolveDefaultValue(type);
-                } else if (resolved instanceof KeyValueParam) {
-                    return resolveValue(type, ((KeyValueParam) resolved).value);
-                }
-            } else if (Option.MULTI_TYPES.contains(type)) {
-                throw new UnsupportedOperationException("multi values are not supported yet");
-            }
-            throw new CommandParserException(INVALID_OPTION_VALUE + ": " + option.name());
-        } else if (param instanceof ArgumentInfo) {
-            ArgumentInfo argInfo = (ArgumentInfo) param;
-            Parameter resolved = params.get("");
-            if (resolved == null && argInfo.required()) {
-                throw new CommandParserException(MISSING_REQUIRED_ARGUMENT);
-            }
-            if (Argument.VALUE_TYPES.contains(type)) {
-                if (resolved == null) {
-                    return (T) resolveDefaultValue(type);
-                } else if (resolved instanceof ArgumentParam) {
-                    return type.cast(((ArgumentParam) resolved).value);
-                }
-            }
-            throw new CommandParserException(INVALID_ARGUMENT_VALUE);
+    public <T> T resolve(OptionInfo<T> optionInfo) throws CommandParserException {
+        Class<T> type = optionInfo.type();
+        Parameter resolved = params.get(optionInfo.name());
+        if (resolved == null && optionInfo.required()) {
+            throw new CommandParserException(MISSING_REQUIRED_OPTION + ": " + optionInfo.name());
         }
-        throw new IllegalArgumentException("Unresolveable parameter: " + param);
+        if (Boolean.class.equals(type)) {
+            if (resolved == null) {
+                return type.cast(Boolean.FALSE);
+            } else if (resolved instanceof FlagParam) {
+                return type.cast(Boolean.TRUE);
+            }
+        } else if (Option.VALUE_TYPES.contains(type)) {
+            if (resolved == null) {
+                return (T) resolveDefaultValue(type);
+            } else if (resolved instanceof KeyValueParam) {
+                return resolveValue(type, ((KeyValueParam) resolved).value);
+            } else if (resolved instanceof KeyValuesParam) {
+                throw new CommandParserException(UNREPEATABLE_OPTION + ": " + optionInfo.name());
+            }
+        }
+        throw new CommandParserException(INVALID_OPTION_VALUE + ": " + optionInfo.name());
+    }
+
+    /**
+     * Resolve the given repeatable option parameter.
+     * @param <T> repeated parameter type
+     * @param optionInfo the option to resolve
+     * @return collection of resolved values for the option
+     * @throws CommandParserException if an error occurs while resolving the parameter
+     */
+    public <T> Collection<T> resolve(RepeatableOptionInfo<T> optionInfo) throws CommandParserException {
+        Class<T> type = optionInfo.paramType();
+        Parameter resolved = params.get(optionInfo.name());
+        if (resolved == null && optionInfo.required()) {
+            throw new CommandParserException(MISSING_REQUIRED_OPTION + ": " + optionInfo.name());
+        }
+        if (Option.VALUE_TYPES.contains(type)) {
+            if (resolved == null) {
+                return List.of();
+            } else if (resolved instanceof KeyValueParam) {
+                return List.of(resolveValue(type, ((KeyValueParam) resolved).value));
+            } else if (resolved instanceof KeyValuesParam) {
+                LinkedList<T> resolvedValues = new LinkedList<>();
+                for (String value : ((KeyValuesParam) resolved).values) {
+                    resolvedValues.add(resolveValue(type, value));
+                }
+                return resolvedValues;
+            }
+        }
+        throw new CommandParserException(INVALID_OPTION_VALUE + ": " + optionInfo.name());
+    }
+
+    /**
+     * Resolve the given argument parameter.
+     * @param <T> argument type
+     * @param argInfo the argument to resolve
+     * @return resolved value for the argument
+     * @throws CommandParserException if an error occurs while resolving the parameter
+     */
+    @SuppressWarnings("unchecked")
+    public <T> T resolve(ArgumentInfo<T> argInfo) throws CommandParserException {
+        Class<T> type = argInfo.type();
+        Parameter resolved = params.get("");
+        if (resolved == null && argInfo.required()) {
+            throw new CommandParserException(MISSING_REQUIRED_ARGUMENT);
+        }
+        if (Argument.VALUE_TYPES.contains(type)) {
+            if (resolved == null) {
+                return (T) resolveDefaultValue(type);
+            } else if (resolved instanceof ArgumentParam) {
+                return type.cast(((ArgumentParam) resolved).value);
+            }
+        }
+        throw new CommandParserException(INVALID_ARGUMENT_VALUE);
     }
 
     @Override

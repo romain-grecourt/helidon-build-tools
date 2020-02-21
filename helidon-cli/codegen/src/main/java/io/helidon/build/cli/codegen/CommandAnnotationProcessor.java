@@ -2,7 +2,6 @@ package io.helidon.build.cli.codegen;
 
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.Filer;
-import javax.annotation.processing.Messager;
 import javax.annotation.processing.RoundEnvironment;
 import javax.annotation.processing.SupportedAnnotationTypes;
 import javax.annotation.processing.SupportedSourceVersion;
@@ -12,8 +11,10 @@ import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.SimpleTypeVisitor9;
 import javax.lang.model.util.Types;
 import javax.lang.model.util.SimpleElementVisitor9;
 import javax.tools.Diagnostic;
@@ -25,6 +26,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +34,7 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
 import java.util.Iterator;
+import java.util.stream.Collectors;
 
 import io.helidon.build.cli.harness.Argument;
 import io.helidon.build.cli.harness.CommandRegistry;
@@ -44,7 +47,6 @@ import io.helidon.build.cli.harness.CommandModel;
 import io.helidon.build.cli.harness.CommandParameters;
 import io.helidon.build.cli.harness.CommandParser;
 import io.helidon.build.cli.harness.Creator;
-import java.util.stream.Collectors;
 
 /**
  * Command annotation processor.
@@ -61,12 +63,14 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
     private static final String INFO_IMPL_SUFFIX = "Info";
     private static final String REGISTRY_SERVICE_FILE = "META-INF/services/io.helidon.build.cli.harness.CommandRegistry";
     private static final List<String> ARGUMENT_VTYPES = Argument.VALUE_TYPES.stream().map(Class::getName).collect(Collectors.toList());
-    private static final List<String> OPTION_VTYPES = Argument.VALUE_TYPES.stream().map(Class::getName).collect(Collectors.toList());
+    private static final List<String> OPTION_VTYPES = Option.VALUE_TYPES.stream().map(Class::getName).collect(Collectors.toList());
 
     private final Map<String, List<CommandMetaModel>> commandsByPkg = new HashMap<>();
     private final Map<String, ParametersMetaModel> fragmentsByQualifiedName = new HashMap<>();
     private final Set<String> rootTypes = new HashSet<>();
     private boolean done;
+
+    // TODO enforce options only for command fragments.
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
@@ -149,20 +153,20 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
                     .append("\n")
                     .append("import ").append(CommandParameters.class.getName()).append(";\n")
                     .append("import ").append(CommandParser.class.getName()).append(";\n")
-                    .append("import ").append(CommandModel.class.getName().replace("$", ".")).append(";\n")
-                    .append("import ").append(Option.class.getName()).append(";\n")
+                    .append("import ").append(CommandModel.class.getName()).append(";\n")
                     .append("\n")
                     .append("final class ").append(infoName).append(" extends CommandParameters.CommandFragmentInfo<").append(clazz).append("> {\n")
                     .append("\n")
+                    .append(declareParameters(params, INDENT))
                     .append(INDENT).append("static final ").append(infoName).append(" INSTANCE = new ").append(infoName).append("();\n")
                     .append("\n")
                     .append(INDENT).append("private ").append(infoName).append("() {\n")
                     .append(INDENT).append(INDENT).append("super(").append(clazz).append(".class);\n")
-                    .append(addParameter(params, INDENT + INDENT)).append("\n")
+                    .append(addParameter(params.size(), INDENT + INDENT)).append("\n")
                     .append(INDENT).append("}\n")
                     .append("\n")
                     .append(INDENT).append("@Override\n")
-                    .append(INDENT).append("public ").append(clazz).append(" create(CommandParser parser) {\n")
+                    .append(INDENT).append("public ").append(clazz).append(" resolve(CommandParser parser) {\n")
                     .append(INDENT).append(INDENT).append("return new ").append(clazz).append("(\n")
                     .append(resolveParams(params, INDENT + INDENT + INDENT)).append(");\n")
                     .append(INDENT).append("}\n")
@@ -196,14 +200,16 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
                     .append("\n")
                     .append("import ").append(CommandExecution.class.getName()).append(";\n")
                     .append("import ").append(CommandModel.class.getName()).append(";\n")
+                    .append("import ").append(CommandParameters.class.getName()).append(";\n")
                     .append("import ").append(CommandParser.class.getName()).append(";\n")
-                    .append("import ").append(Option.class.getName()).append(";\n")
                     .append("\n")
                     .append("final class ").append(modelName).append(" extends CommandModel {\n")
                     .append("\n")
+                    .append(declareParameters(params, INDENT))
+                    .append("\n")
                     .append(INDENT).append(modelName).append("() {\n")
                     .append(INDENT).append(INDENT).append("super(").append(generateNewCommandInfo(command)).append(");\n")
-                    .append(addParameter(params, INDENT + INDENT)).append("\n")
+                    .append(addParameter(params.size(), INDENT + INDENT)).append("\n")
                     .append(INDENT).append("}\n")
                     .append("\n")
                     .append(INDENT).append("@Override\n")
@@ -218,20 +224,12 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
     private String resolveParams(List<MetaModel> params, String indent) {
         StringBuilder sb = new StringBuilder();
         Iterator<MetaModel> it = params.iterator();
-        for (int i=0 ; it.hasNext() ; i++) {
+        for (int i=1 ; it.hasNext() ; i++) {
             MetaModel param = it.next();
-            if (param == null) {
-                throw new NullPointerException("model is null");
-            }
-            String paramTypeSimpleName = param.typeElt.getSimpleName().toString();
-            String paramTypeQualifiedName = param.typeElt.getQualifiedName().toString();
             if (param instanceof ParametersMetaModel) {
-                sb.append(indent)
-                        .append(paramTypeSimpleName).append(INFO_IMPL_SUFFIX).append(".INSTANCE.getOrCreate(parser)");
+                sb.append(indent).append("OPTION").append(i).append(".resolve(parser)");
             } else {
-                sb.append(indent)
-                        .append("parser.resolve(param(").append(paramTypeQualifiedName).append(".class, ")
-                        .append(i).append("))");
+                sb.append(indent).append("parser.resolve(OPTION").append(i).append(")");
             }
             if (it.hasNext()) {
                 sb.append(",\n");
@@ -262,38 +260,63 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
                 .toString();
     }
 
-    private String addParameter(List<MetaModel> params, String indent) {
+    private String declareParameters(List<MetaModel> params, String indent) {
         StringBuilder sb = new StringBuilder();
         Iterator<MetaModel> it = params.iterator();
-        while(it.hasNext()) {
+        for(int i=1 ; it.hasNext() ; i++) {
             MetaModel param = it.next();
-            if (param == null) {
-                throw new NullPointerException("Attribute is null");
-            }
-            sb.append(indent).append("addParameter(");
-            String type = param.typeElt.getQualifiedName().toString();
-            if (param instanceof OptionMetaModel) {
-                Option option = ((OptionMetaModel) param).option;
-                sb.append("new CommandModel.OptionInfo<>(")
-                        .append(type).append(".class, \"")
+            sb.append(indent).append("static final ");
+            if (param instanceof RepeatableOptionMetaModel) {
+                String paramType = ((RepeatableOptionMetaModel) param).paramTypeElt.getQualifiedName().toString();
+                Option option = ((RepeatableOptionMetaModel) param).option;
+                sb.append("CommandModel.RepeatableOptionInfo<").append(paramType).append(">")
+                        .append(" OPTION").append(i)
+                        .append(" = new CommandModel.RepeatableOptionInfo<>(")
+                        .append(paramType).append(".class, \"")
                         .append(option.name()).append("\", \"")
                         .append(option.description()).append("\", ")
                         .append(option.required() ? "true" : "false")
-                        .append(")");
-            } else if (param instanceof ArgumentMetaModel) {
-                Argument argument = ((ArgumentMetaModel) param).argument;
-                sb.append("new CommandModel.ArgumentInfo<>(")
-                        .append(type).append(".class, \"")
-                        .append(argument.description()).append("\", ")
-                        .append(argument.required() ? "true" : "false")
-                        .append(")");
+                        .append(");");
             } else {
-                sb.append(param.typeElt.getSimpleName())
-                        .append(INFO_IMPL_SUFFIX)
-                        .append(".INSTANCE");
+                String type = param.typeElt.getQualifiedName().toString();
+                if (param instanceof OptionMetaModel) {
+                    Option option = ((OptionMetaModel) param).option;
+                    sb.append("CommandModel.OptionInfo<").append(type).append(">")
+                            .append(" OPTION").append(i)
+                            .append(" = new CommandModel.OptionInfo<>(")
+                            .append(type).append(".class, \"")
+                            .append(option.name()).append("\", \"")
+                            .append(option.description()).append("\", ")
+                            .append(option.required() ? "true" : "false")
+                            .append(");");
+                } else if (param instanceof ArgumentMetaModel) {
+                    Argument argument = ((ArgumentMetaModel) param).argument;
+                    sb.append("CommandModel.ArgumentInfo<").append(type).append(">")
+                            .append(" OPTION").append(i)
+                            .append(" = new CommandModel.ArgumentInfo<>(")
+                            .append(type).append(".class, \"")
+                            .append(argument.description()).append("\", ")
+                            .append(argument.required() ? "true" : "false")
+                            .append(");");
+                } else {
+                    sb.append("CommandParameters.CommandFragmentInfo<").append(param.typeElt.getSimpleName()).append(">")
+                            .append(" OPTION").append(i)
+                            .append(" = ")
+                            .append(param.typeElt.getSimpleName())
+                            .append(INFO_IMPL_SUFFIX)
+                            .append(".INSTANCE;");
+                }
             }
-            sb.append(");");
-            if (it.hasNext()) {
+            sb.append("\n");
+        }
+        return sb.toString();
+    }
+
+    private String addParameter(int numParams, String indent) {
+        StringBuilder sb = new StringBuilder();
+        for(int i=1 ; i <= numParams; i++) {
+            sb.append(indent).append("addParameter(OPTION").append(i).append(");");
+            if (i < numParams) {
                 sb.append("\n");
             }
         }
@@ -318,18 +341,48 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
                 processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "description cannot be null", varElt);
             } else {
                 String typeQualifiedName = typeElt.getQualifiedName().toString();
-                if (!OPTION_VTYPES.contains(typeQualifiedName)) {
-                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                            String.format("%s is not a valid option value type: " + typeQualifiedName),
-                            varElt);
-                } else {
+                if (OPTION_VTYPES.contains(typeQualifiedName)) {
                     params.add(new OptionMetaModel(typeElt, optionAnnot));
                     options.add(optionName);
+                } else if (Collection.class.getName().equals(typeQualifiedName)) {
+                    TypeElement paramTypeElt = varElt.asType().accept(new TypeParamVisitor(), null);
+                    if (paramTypeElt != null) {
+                        String paramTypeQualifiedName = paramTypeElt.getQualifiedName().toString();
+                        if (!OPTION_VTYPES.contains(paramTypeQualifiedName)) {
+                            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                                    String.format("%s is not a valid option values type parameter: ", paramTypeQualifiedName),
+                                    varElt);
+                        } else {
+                            params.add(new RepeatableOptionMetaModel(paramTypeElt, optionAnnot));
+                            options.add(optionName);
+                        }
+                    } else {
+                        processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                                String.format("Repetable option type must be: %s", Collection.class.getName()),
+                                varElt);
+                    }
+                } else {
+                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            String.format("%s is not a valid option value type: ", typeQualifiedName),
+                            varElt);
                 }
             }
             return true;
         }
         return false;
+    }
+
+    private final class TypeParamVisitor extends SimpleTypeVisitor9<TypeElement, Void> {
+
+        @Override
+        public TypeElement visitDeclared(DeclaredType t, Void p) {
+            List<? extends TypeMirror> typeArguments = t.getTypeArguments();
+            if (typeArguments.size() == 1) {
+                TypeElement typeElt = (TypeElement) processingEnv.getTypeUtils().asElement(typeArguments.get(0));
+                return typeElt;
+            }
+            return null;
+        }
     }
 
     private boolean processArgument(VariableElement varElt, TypeElement typeElt, List<MetaModel> params) {
@@ -479,6 +532,11 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
         protected final TypeElement typeElt;
         protected final String pkg;
 
+        MetaModel() {
+            this.typeElt = null;
+            this.pkg = null;
+        }
+
         MetaModel(TypeElement typeElt) {
             this.typeElt = Objects.requireNonNull(typeElt, "typeElt is null");
             this.pkg = processingEnv.getElementUtils().getPackageOf(typeElt).getQualifiedName().toString();
@@ -502,6 +560,18 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
         OptionMetaModel(TypeElement typeElt, Option option) {
             super(typeElt);
             this.option = Objects.requireNonNull(option, "option is null");
+        }
+    }
+
+    private class RepeatableOptionMetaModel extends MetaModel {
+
+        private final Option option;
+        private final TypeElement paramTypeElt;
+
+        RepeatableOptionMetaModel(TypeElement paramTypeElt, Option option) {
+            super();
+            this.option = Objects.requireNonNull(option, "option is null");
+            this.paramTypeElt = Objects.requireNonNull(paramTypeElt, "paramTypeElt is null");
         }
     }
 

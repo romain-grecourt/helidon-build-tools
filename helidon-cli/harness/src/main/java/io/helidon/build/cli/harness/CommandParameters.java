@@ -1,9 +1,7 @@
 package io.helidon.build.cli.harness;
 
-import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -36,24 +34,6 @@ public class CommandParameters {
     }
 
     /**
-     * Get the parameter at the given idx with the given type.
-     *
-     * @param <T> parameter type
-     * @param type actual type
-     * @param idx index
-     * @return parameter info
-     */
-    @SuppressWarnings("unchecked")
-    protected final <T> ParameterInfo<T> param(Class<T> type, int idx) {
-        ParameterInfo param = parameters().get(idx);
-        if (param.type().equals(type)) {
-            return (ParameterInfo<T>) param;
-        }
-        throw new IllegalStateException("Parameter mismatch, class=" + this.getClass() 
-                + ", index=" + idx + ", expectedType=" + type + ", actualType=" + param.type());
-    }
-
-    /**
      * Meta model for parameters to retain the mapped type.
      * @param <T> mapped type
      */
@@ -61,11 +41,18 @@ public class CommandParameters {
 
         /**
          * The parameter type.
-         * @return type, never {@code null}
+         * @return type
          */
         Class<T> type();
 
-        // TODO typeParam
+        /**
+         * Indicate if the parameter is visible.
+         *
+         * @return {@code true} if visible, {@code false} if not visible.
+         */
+        default boolean visible() {
+            return true;
+        }
     }
 
     /**
@@ -75,7 +62,6 @@ public class CommandParameters {
     public static abstract class CommandFragmentInfo<T> extends CommandParameters implements ParameterInfo<T> {
 
         private final Class<T> type;
-        private final Map<CommandParser, T> fragmentsCache;
 
         /**
          * Create a new fragment info.
@@ -85,21 +71,6 @@ public class CommandParameters {
         protected CommandFragmentInfo(Class<T> type) {
             super();
             this.type = Objects.requireNonNull(type, "type is null");
-            fragmentsCache = new HashMap<>();
-        }
-
-        /**
-         * Get the fragment for the given parser from the cache or create it if not cached.
-         * @param parser command parser
-         * @return fragment
-         */
-        public final T getOrCreate(CommandParser parser) {
-            T fragment = fragmentsCache.get(parser);
-            if (fragment == null) {
-                fragment = create(parser);
-                fragmentsCache.put(parser, fragment);
-            }
-            return fragment;
         }
 
         @Override
@@ -108,10 +79,10 @@ public class CommandParameters {
         }
 
         /**
-         * Create a fragment instance.
+         * Resolve a fragment instance.
          * @param parser command parser
          * @return created fragment
          */
-        public abstract T create(CommandParser parser);
+        public abstract T resolve(CommandParser parser);
     }
 }

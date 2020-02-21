@@ -20,7 +20,12 @@ import static org.hamcrest.CoreMatchers.is;
 public class MainTest {
 
     static final String CLI_USAGE = resourceAsString("cli-usage.txt");
+    static final String BUILD_CMD_HELP = resourceAsString("build-cmd-help.txt");
     static final String DEV_CMD_HELP = resourceAsString("dev-cmd-help.txt");
+    static final String FEATURES_CMD_HELP = resourceAsString("features-cmd-help.txt");
+    static final String INFO_CMD_HELP = resourceAsString("info-cmd-help.txt");
+    static final String INIT_CMD_HELP = resourceAsString("init-cmd-help.txt");
+    static final String VERSION_CMD_HELP = resourceAsString("version-cmd-help.txt");
 
     static String javaPath() {
         String javaHome = System.getProperty("java.home");
@@ -88,12 +93,52 @@ public class MainTest {
 
     @Test
     public void testHelp() throws IOException, InterruptedException {
-        ExecResult res = exec("dev" ,"--help");
+        ExecResult res = exec("build" ,"--help");
+        assertThat(res.code, is(equalTo(0)));
+        assertThat(res.output, is(equalTo(BUILD_CMD_HELP)));
+
+        res = exec("help" ,"build");
+        assertThat(res.code, is(equalTo(0)));
+        assertThat(res.output, is(equalTo(BUILD_CMD_HELP)));
+
+        res = exec("dev" ,"--help");
         assertThat(res.code, is(equalTo(0)));
         assertThat(res.output, is(equalTo(DEV_CMD_HELP)));
 
         res = exec("help" ,"dev");
         assertThat(res.code, is(equalTo(0)));
         assertThat(res.output, is(equalTo(DEV_CMD_HELP)));
+
+        res = exec("features" ,"--help");
+        assertThat(res.code, is(equalTo(0)));
+        assertThat(res.output, is(equalTo(FEATURES_CMD_HELP)));
+
+        res = exec("help", "features");
+        assertThat(res.code, is(equalTo(0)));
+        assertThat(res.output, is(equalTo(FEATURES_CMD_HELP)));
+
+        res = exec("info" ,"--help");
+        assertThat(res.code, is(equalTo(0)));
+        assertThat(res.output, is(equalTo(INFO_CMD_HELP)));
+
+        res = exec("help", "info");
+        assertThat(res.code, is(equalTo(0)));
+        assertThat(res.output, is(equalTo(INFO_CMD_HELP)));
+
+        res = exec("init" ,"--help");
+        assertThat(res.code, is(equalTo(0)));
+        assertThat(res.output, is(equalTo(INIT_CMD_HELP)));
+
+        res = exec("help", "init");
+        assertThat(res.code, is(equalTo(0)));
+        assertThat(res.output, is(equalTo(INIT_CMD_HELP)));
+
+        res = exec("version" ,"--help");
+        assertThat(res.code, is(equalTo(0)));
+        assertThat(res.output, is(equalTo(VERSION_CMD_HELP)));
+
+        res = exec("help", "version");
+        assertThat(res.code, is(equalTo(0)));
+        assertThat(res.output, is(equalTo(VERSION_CMD_HELP)));
     }
 }

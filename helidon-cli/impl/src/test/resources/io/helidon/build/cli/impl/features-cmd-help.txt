@@ -1,0 +1,10 @@
+
+Usage:	helidon features [OPTIONS]
+
+List or add features to the project
+
+Options:
+  --project    The project directory
+  --add        Add features to the project
+  --list       List the features used in the project
+  --all        List all available features

@@ -127,4 +127,7 @@ public class CommandParserTest {
         assertThat(parser.params().get("foo"), is(instanceOf(CommandParser.KeyValuesParam.class)));
         assertThat(((CommandParser.KeyValuesParam) parser.params().get("foo")).values, contains("bar1", "bar2"));
     }
+
+    // TODO test split values with ','
+    // TODO test resolve methods
 }

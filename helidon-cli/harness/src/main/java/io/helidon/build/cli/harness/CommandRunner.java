@@ -1,7 +1,8 @@
 package io.helidon.build.cli.harness;
 
 import java.util.Objects;
-import java.util.Optional;
+
+import io.helidon.build.cli.harness.CommandParser.CommandParserException;
 
 /**
  * Command runner.
@@ -21,15 +22,57 @@ public final class CommandRunner {
      */
     public void execute() {
         // TODO set system properties
-        parser.error().ifPresentOrElse(context::error,
-                () -> parser.commandName()
-                        .ifPresentOrElse((cmdName) -> context.command(cmdName)
-                                // check for --help, force the help command if found
-                                .flatMap((cmd) -> Optional.of(parser.resolve(HelpCommand.HELP_OPTION) ? new HelpCommand() : cmd))
-                                .ifPresentOrElse((cmd) -> cmd.createExecution(parser).execute(context),
-                                        () -> context.commandNotFoundError(cmdName)),
-                                // not command name provided, print the usage
-                                () -> new UsageCommand().createExecution(parser).execute(context)));
+        try {
+            parser.error().ifPresentOrElse(context::error, this::doExecute);
+        } catch (CommandParserException ex) {
+            context.error(ex.getMessage());
+        }
+    }
+
+    /**
+     * Execute the current command from the parser.
+     */
+    private void doExecute() {
+        parser.commandName().ifPresentOrElse(this::doExecuteCommandName, this::printUsage);
+    }
+
+    /**
+     * Execute the command represented by the given name.
+     * @param command command name
+     */
+    private void doExecuteCommandName(String command) {
+        context.command(command).map(this::mapHelp)
+                .ifPresentOrElse(this::doExecuteCommand, () -> context.commandNotFoundError(command));
+    }
+
+    /**
+     * Execute the given {@link CommandModel} instance.
+     * @param command command to execute
+     */
+    private void doExecuteCommand(CommandModel command) {
+        if (parser.resolve(CommandModel.VERBOSE_OPTION)) {
+            context.verbosity(CommandContext.Verbosity.VERBOSE);
+        }
+        if (parser.resolve(CommandModel.DEBUG_OPTION)) {
+            context.verbosity(CommandContext.Verbosity.DEBUG);
+        }
+        command.createExecution(parser).execute(context);
+    }
+
+    /**
+     * Resolve the {@code --help} option and return the {@code help} command if found.
+     * @param command fallback command
+     * @return {@code help} command if the {@code --help} option is provided, otherwise the supplied fallback command
+     */
+    private CommandModel mapHelp(CommandModel command) {
+        return parser.resolve(CommandModel.HELP_OPTION) ? new HelpCommand() : command;
+    }
+
+    /**
+     * No command provided, print the usage.
+     */
+    private void printUsage() {
+        new UsageCommand().createExecution(parser).execute(context);
     }
 
     /**
@@ -52,6 +95,6 @@ public final class CommandRunner {
         CommandRegistry registry = CommandRegistry.load(clazz);
         CommandContext context = CommandContext.create(registry, cli);
         CommandRunner.execute(context, args);
-        context.runExitAction();
+        context.exitAction().run();
     }
 }

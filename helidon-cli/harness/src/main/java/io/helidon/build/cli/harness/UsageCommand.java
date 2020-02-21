@@ -25,9 +25,9 @@ final class UsageCommand extends CommandModel {
         context.logInfo(String.format("\nUsage:\t%s [OPTIONS] COMMAND\n", context.cli().name()));
         context.logInfo(context.cli().description());
         context.logInfo("\nOptions:");
-        context.logInfo("-D<name>=<value>     Define a system property");
-        context.logInfo("--verbose            Produce verbose output");
-        context.logInfo("--version            Print version information and quit");
+        context.logInfo("  -D<name>=<value>     Define a system property");
+        context.logInfo("  --verbose            " + CommandModel.VERBOSE_OPTION.description);
+        context.logInfo("  --debug              " + CommandModel.DEBUG_OPTION.description);
         context.logInfo("\nCommands:");
         int maxCmdNameLength = 0;
         for (CommandModel command : context.allCommands()) {

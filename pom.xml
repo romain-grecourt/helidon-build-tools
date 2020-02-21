@@ -135,6 +135,7 @@
           -->
 
         <!-- maven plugin versions -->
+        <version.plugin.buildnumber>1.4</version.plugin.buildnumber>
         <version.plugin.checkstyle>2.17</version.plugin.checkstyle>
         <version.plugin.compiler>3.8.1</version.plugin.compiler>
         <version.plugin.dependency>3.0.0</version.plugin.dependency>
@@ -356,9 +357,31 @@
                     <artifactId>maven-plugin-plugin</artifactId>
                     <version>${version.plugin.plugin-plugin}</version>
                 </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>buildnumber-maven-plugin</artifactId>
+                    <version>${version.plugin.buildnumber}</version>
+                </plugin>
             </plugins>
         </pluginManagement>
         <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>buildnumber-maven-plugin</artifactId>
+                <version>${version.plugin.buildnumber}</version>
+                <executions>
+                    <execution>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>create</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <timestampFormat>{0,date,yyyy-MM-dd HH:mm:ss z}</timestampFormat>
+                    <getRevisionOnlyOnce>true</getRevisionOnlyOnce>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.commonjava.maven.plugins</groupId>
                 <artifactId>directory-maven-plugin</artifactId>

@@ -1,7 +1,8 @@
 
 Usage:	helidon dev [OPTIONS]
 
-dev !
+Continuous application development
 
 Options:
- --clean    clean before build
+  --project    The project directory
+  --clean      Perform a clean before the first build

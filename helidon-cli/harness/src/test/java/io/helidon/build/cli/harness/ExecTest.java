@@ -1,5 +1,6 @@
 package io.helidon.build.cli.harness;
 
+import io.helidon.build.cli.harness.CommandContext.ExitStatus;
 import io.helidon.build.cli.harness.CommandModel.OptionInfo;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -24,7 +25,7 @@ public class ExecTest {
     static final String SIMPLE_CMD_HELP = resourceAsString("simple-cmd-help.txt");
     static final CLIDefinition TEST_CLI = CLIDefinition.create("test-cli", "A test cli");
 
-    static CommandContext ctx() {
+    static CommandContext context() {
         return CommandContext.create(REGISTRY, TEST_CLI);
     }
 
@@ -37,12 +38,12 @@ public class ExecTest {
         }
     }
 
-    static String exec(CommandContext ctx, String... args) {
+    static String exec(CommandContext context, String... args) {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         PrintStream stdout = System.out;
         try {
             System.setOut(new PrintStream(baos));
-            CommandRunner.execute(ctx, args);
+            CommandRunner.execute(context, args);
         } finally {
             System.setOut(stdout);
         }
@@ -50,37 +51,39 @@ public class ExecTest {
     }
 
     static String exec(String... args) {
-        return exec(ctx(), args);
+        return exec(context(), args);
     }
 
     @Test
     public void testUsage() {
-        assertThat(exec("--help"), is(equalTo(CLI_USAGE)));
-        assertThat(exec("help"), is(equalTo(CLI_USAGE)));
-        assertThat(exec(), is(equalTo(CLI_USAGE)));
+        assertThat(exec("--help"), is(CLI_USAGE));
+        assertThat(exec("help"), is(CLI_USAGE));
+        assertThat(exec(), is(CLI_USAGE));
     }
 
     @Test
     public void testHelp() {
-        assertThat(exec("help", "--help"), is(equalTo(HELP_CMD_HELP)));
-        assertThat(exec("help", "help"), is(equalTo(HELP_CMD_HELP)));
-        assertThat(exec("help", "simple"), is(equalTo(SIMPLE_CMD_HELP)));
-        assertThat(exec("simple", "--help"), is(equalTo(SIMPLE_CMD_HELP)));
+        assertThat(exec("help", "--help"), is(HELP_CMD_HELP));
+        assertThat(exec("help", "help"), is(HELP_CMD_HELP));
+        assertThat(exec("help", "simple"), is(SIMPLE_CMD_HELP));
+        assertThat(exec("simple", "--help"), is(SIMPLE_CMD_HELP));
     }
 
     @Test
     public void testCmd() {
-        assertThat(exec("simple"), is(equalTo("noop\n")));
-        assertThat(exec("simple", "--foo"), is(equalTo("foo\n")));
-        assertThat(exec("simple", "--bar"), is(equalTo("bar\n")));
+        assertThat(exec("simple"), is("noop\n"));
+        assertThat(exec("simple", "--foo"), is("foo\n"));
+        assertThat(exec("simple", "--bar"), is("bar\n"));
     }
 
     @Test
     public void testCommonOptions() {
-        assertThat(exec("common", "--key", "value"), is(equalTo("value\n")));
+        assertThat(exec("common", "--key", "value"), is("value\n"));
         assertThat(exec("common", "--foo", "--key", "value"), is(equalTo("foo: value\n")));
-//        assertThat(exec("common"), is(equalTo("noop\n")));
-        // TODO test missing required param --dir
+        CommandContext context = context();
+        exec(context, "common");
+        assertThat(context.exitAction().status, is(ExitStatus.FAILURE));
+        assertThat(context.exitAction().message, is("Missing required option: key"));
     }
 
     private static final class TestCommandRegistry extends CommandRegistry {
@@ -105,13 +108,13 @@ public class ExecTest {
 
         @Override
         public CommandExecution createExecution(CommandParser parser) {
-            return (ctx) -> {
+            return (context) -> {
                 if (parser.resolve(FOO)) {
-                    ctx.logInfo("foo");
+                    context.logInfo("foo");
                 } else if (parser.resolve(BAR)) {
-                    ctx.logInfo("bar");
+                    context.logInfo("bar");
                 } else {
-                    ctx.logInfo("noop");
+                    context.logInfo("noop");
                 }
             };
         }
@@ -130,12 +133,12 @@ public class ExecTest {
 
         @Override
         public CommandExecution createExecution(CommandParser parser) {
-            return (ctx) -> {
-                String key = COMMON_OPTIONS.getOrCreate(parser).key;
+            return (context) -> {
+                String key = COMMON_OPTIONS.resolve(parser).key;
                 if (parser.resolve(FOO)) {
-                    ctx.logInfo("foo: " + key);
+                    context.logInfo("foo: " + key);
                 } else {
-                    ctx.logInfo(key);
+                    context.logInfo(key);
                 }
             };
         }
@@ -160,7 +163,7 @@ public class ExecTest {
         }
 
         @Override
-        public CommonOptions create(CommandParser parser) {
+        public CommonOptions resolve(CommandParser parser) {
             return new CommonOptions(parser.resolve(KEY_OPTION));
         }
     }

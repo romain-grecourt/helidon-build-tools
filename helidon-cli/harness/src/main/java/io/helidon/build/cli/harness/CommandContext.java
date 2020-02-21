@@ -18,6 +18,7 @@ public final class CommandContext {
     private final Logger logger;
     private final Properties properties;
     private final CommandRegistry registry;
+    private final LogHandler logHandler;
     private ExitAction exitAction;
 
     private CommandContext(CommandContext parent) {
@@ -25,6 +26,7 @@ public final class CommandContext {
         this.properties = parent.properties;
         this.logger = parent.logger;
         this.registry = parent.registry;
+        this.logHandler = parent.logHandler;
         this.exitAction = new ExitAction();
     }
 
@@ -33,7 +35,8 @@ public final class CommandContext {
         this.properties = new Properties();
         this.logger = Logger.getAnonymousLogger();
         this.logger.setUseParentHandlers(false);
-        this.logger.addHandler(new LogHandler());
+        this.logHandler = new LogHandler();
+        this.logger.addHandler(logHandler);
         this.registry = Objects.requireNonNull(registry, "registry is null");
         this.exitAction = new ExitAction();
     }
@@ -67,7 +70,7 @@ public final class CommandContext {
         }
     }
 
-    private final class ExitAction {
+    public final class ExitAction {
 
         final ExitStatus status;
         final String message;
@@ -82,7 +85,11 @@ public final class CommandContext {
             this.message = Objects.requireNonNull(message, "message is null");
         }
 
-        void run() {
+        /**
+         * Run the exit sequence for this action.
+         * <b>WARNING:</b> This method invokes {@link System#exit(int)}.
+         */
+        public void run() {
             switch (exitAction.status) {
                 case FAILURE:
                     if (message != null && !message.isEmpty()) {
@@ -168,8 +175,16 @@ public final class CommandContext {
      * Log a FINE message.
      * @param message FINE message to log
      */
-    public void logDebug(String message) {
+    public void logVerbose(String message) {
         logger.log(Level.FINE, message);
+    }
+
+    /**
+     * Log a FINEST message.
+     * @param message FINEST message to log
+     */
+    public void logDebug(String message) {
+        logger.log(Level.FINEST, message);
     }
 
     /**
@@ -177,26 +192,9 @@ public final class CommandContext {
      * @param args raw arguments
      */
     public void execute(String... args) {
-        CommandContext ctx = new CommandContext(this);
-        CommandRunner.execute(ctx, args);
-        this.exitAction = ctx.exitAction;
-    }
-
-    /**
-     * Set the exit action to {@link ExitStatus#FAILURE} with a command not found error message.
-     *
-     * @param cmdName command name
-     */
-    void commandNotFoundError(String cmdName) {
-        error("Command not found: " + cmdName);
-    }
-
-    /**
-     * Set the exit action to {@link ExitStatus#FAILURE} with the given error message.
-     * @param message 
-     */
-    void error(String message) {
-        exitAction(ExitStatus.FAILURE, message);
+        CommandContext context = new CommandContext(this);
+        CommandRunner.execute(context, args);
+        this.exitAction = context.exitAction;
     }
 
     /**
@@ -212,10 +210,36 @@ public final class CommandContext {
     }
 
     /**
-     * Perform the exit action.
+     * Get the exit action.
+     * @return exit action, never {@code null}
      */
-    public void runExitAction() {
-        exitAction.run();
+    public ExitAction exitAction() {
+        return exitAction;
+    }
+
+    /**
+     * Enable verbose mode.
+     * @param verbose verbose value
+     */
+    void verbosity(Verbosity verbosity) {
+        this.logHandler.verbosity = verbosity;
+    }
+
+    /**
+     * Set the exit action to {@link ExitStatus#FAILURE} with a command not found error message.
+     *
+     * @param command command name
+     */
+    void commandNotFoundError(String command) {
+        error("Command not found: " + command);
+    }
+
+    /**
+     * Set the exit action to {@link ExitStatus#FAILURE} with the given error message.
+     * @param message error message
+     */
+    void error(String message) {
+        exitAction(ExitStatus.FAILURE, message);
     }
 
     /**
@@ -228,11 +252,35 @@ public final class CommandContext {
         return new CommandContext(registry, cliDef);
     }
 
+    /**
+     * Verbosity levels.
+     */
+    static enum Verbosity {
+        NORMAL,
+        VERBOSE,
+        DEBUG
+    }
+
+    /**
+     * Custom log handler to print the message to {@code stdout} and {@code stderr}.
+     */
     private static final class LogHandler extends Handler {
+
+        Verbosity verbosity = Verbosity.NORMAL;
 
         @Override
         public void publish(LogRecord record) {
-            System.out.println(record.getMessage());
+            Level level = record.getLevel();
+            if (level == Level.INFO) {
+                System.out.println(record.getMessage());
+            } else if (level == Level.WARNING || level == Level.SEVERE) {
+                System.err.println(record.getMessage());
+            } else if ((level == Level.CONFIG || level == Level.FINE)
+                    && (verbosity == Verbosity.VERBOSE || verbosity == Verbosity.DEBUG)) {
+                System.out.println(record.getMessage());
+            } else if (verbosity == Verbosity.DEBUG) {
+                System.out.println(record.getMessage());
+            }
         }
 
         @Override

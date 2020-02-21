@@ -1,0 +1,7 @@
+
+Usage:	helidon version [OPTIONS]
+
+Print version information
+
+Options:
+  --project    The project directory

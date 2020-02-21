@@ -46,10 +46,10 @@ public @interface Option {
     /**
      * Supported value types.
      */
-    static final List<Class<?>> VALUE_TYPES = List.of(String.class, Integer.class, File.class);
+    static final List<Class<?>> VALUE_TYPES = List.of(String.class, Boolean.class, Integer.class, File.class);
 
     /**
-     * Supported multi value types.
+     * Supported value types.
      */
-    static final List<Class<?>> MULTI_TYPES = List.of(Collection.class, List.class);
+    static final List<Class<?>> VALUES_TYPES = List.of(String.class, Integer.class, File.class);
 }

@@ -1,5 +1,6 @@
 package io.helidon.build.cli.harness;
 
+import java.util.Collection;
 import java.util.Objects;
 
 /**
@@ -7,12 +8,17 @@ import java.util.Objects;
  */
 public abstract class CommandModel extends CommandParameters {
 
+    static OptionInfo<Boolean> HELP_OPTION = new OptionInfo<>(Boolean.class, "help", "Display help information", false, false);
+    static OptionInfo<Boolean> VERBOSE_OPTION = new OptionInfo<>(Boolean.class, "verbose", "Produce verbose output", false, false);
+    static OptionInfo<Boolean> DEBUG_OPTION = new OptionInfo<>(Boolean.class, "debug", "Produce debug output", false, false);
+
     private final CommandInfo commandInfo;
 
     protected CommandModel(CommandInfo commandInfo) {
         this.commandInfo = Objects.requireNonNull(commandInfo, "commandInfo is null");
         // built-in options
-        addParameter(HelpCommand.HELP_OPTION);
+        addParameter(HELP_OPTION);
+        addParameter(VERBOSE_OPTION);
     }
 
     /**
@@ -89,7 +95,7 @@ public abstract class CommandModel extends CommandParameters {
         protected final boolean required;
 
         protected AttributeInfo(Class<T> type, String description, boolean required) {
-            this.type = Objects.requireNonNull(type, "type is null");
+            this.type = type;
             this.description = Objects.requireNonNull(description, "description is null");
             this.required = required;
         }
@@ -140,9 +146,24 @@ public abstract class CommandModel extends CommandParameters {
      * Meta model for the {@link Option} annotation.
      * @param <T> mapped type
      */
-    public static final class OptionInfo<T> extends AttributeInfo<T> {
+    public static class OptionInfo<T> extends AttributeInfo<T> {
 
         private final String name;
+        private final boolean visible;
+
+        /**
+         * Create a new option info.
+         *
+         * @param type option field type
+         * @param name option name
+         * @param description option description
+         * @param required option required flag
+         */
+        OptionInfo(Class<T> type, String name, String description, boolean required, boolean visible) {
+            super(type, description, required);
+            this.name = Objects.requireNonNull(name, "name is null");
+            this.visible = visible;
+        }
 
         /**
          * Create a new option info.
@@ -153,8 +174,7 @@ public abstract class CommandModel extends CommandParameters {
          * @param required option required flag
          */
         public OptionInfo(Class<T> type, String name, String description, boolean required) {
-            super(type, description, required);
-            this.name = Objects.requireNonNull(name, "name is null");
+            this(type, name, description, required, /* visible */ true);
         }
 
         /**
@@ -164,6 +184,40 @@ public abstract class CommandModel extends CommandParameters {
          */
         public String name() {
             return name;
+        }
+
+        @Override
+        public boolean visible() {
+            return visible;
+        }
+    }
+
+    /**
+     * Meta model for repeatable {@link Option} value annotation.
+     * @param <T> item type
+     */
+    public static final class RepeatableOptionInfo<T> extends OptionInfo<Collection<T>> {
+
+        private final Class<T> paramType;
+
+        /**
+         * Create a new Repeatable option info.
+         * @param paramType option field type parameter type
+         * @param name option name
+         * @param description option description
+         * @param required option required flag
+         */
+        public RepeatableOptionInfo(Class<T> paramType, String name, String description, boolean required) {
+            super(null, name, description, required);
+            this.paramType = Objects.requireNonNull(paramType, "paramType is null");
+        }
+
+        /**
+         * Get the parameter type.
+         * @return type, never {@code null}
+         */
+        public Class<T> paramType() {
+            return paramType;
         }
     }
 }
