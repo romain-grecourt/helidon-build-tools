@@ -36,17 +36,21 @@ import java.util.Set;
 import java.util.Iterator;
 import java.util.stream.Collectors;
 
-import io.helidon.build.cli.harness.Argument;
 import io.helidon.build.cli.harness.CommandRegistry;
 import io.helidon.build.cli.harness.Command;
 import io.helidon.build.cli.harness.CommandExecution;
 import io.helidon.build.cli.harness.CommandModel.CommandInfo;
-import io.helidon.build.cli.harness.Option;
 import io.helidon.build.cli.harness.CommandFragment;
 import io.helidon.build.cli.harness.CommandModel;
 import io.helidon.build.cli.harness.CommandParameters;
 import io.helidon.build.cli.harness.CommandParser;
 import io.helidon.build.cli.harness.Creator;
+import io.helidon.build.cli.harness.Option;
+import io.helidon.build.cli.harness.Option.Argument;
+import io.helidon.build.cli.harness.Option.Flag;
+import io.helidon.build.cli.harness.Option.KeyValue;
+import io.helidon.build.cli.harness.Option.KeyValues;
+import java.io.File;
 
 /**
  * Command annotation processor.
@@ -62,8 +66,9 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
     private static final String MODEL_IMPL_SUFFIX = "Model";
     private static final String INFO_IMPL_SUFFIX = "Info";
     private static final String REGISTRY_SERVICE_FILE = "META-INF/services/io.helidon.build.cli.harness.CommandRegistry";
-    private static final List<String> ARGUMENT_VTYPES = Argument.VALUE_TYPES.stream().map(Class::getName).collect(Collectors.toList());
-    private static final List<String> OPTION_VTYPES = Option.VALUE_TYPES.stream().map(Class::getName).collect(Collectors.toList());
+    private static final List<String> ARGUMENT_TYPES = Argument.SUPPORTED_TYPES.stream().map(Class::getName).collect(Collectors.toList());
+    private static final List<String> KEY_VALUE_TYPES = KeyValue.SUPPORTED_TYPES.stream().map(Class::getName).collect(Collectors.toList());
+    private static final List<String> KEY_VALUES_TYPES = KeyValues.SUPPORTED_TYPES.stream().map(Class::getName).collect(Collectors.toList());
 
     private final Map<String, List<CommandMetaModel>> commandsByPkg = new HashMap<>();
     private final Map<String, ParametersMetaModel> fragmentsByQualifiedName = new HashMap<>();
@@ -71,6 +76,10 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
     private boolean done;
 
     // TODO enforce options only for command fragments.
+    // TODO support inheritance
+    // TODO split the code in this class
+    // TODO add unit tests
+    // i.e no argument
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
@@ -149,28 +158,29 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
             List<MetaModel> params) throws IOException {
 
         try (BufferedWriter bw = new BufferedWriter(fileObject.openWriter())) {
-            bw.append("package ").append(pkg).append(";\n")
-                    .append("\n")
-                    .append("import ").append(CommandParameters.class.getName()).append(";\n")
-                    .append("import ").append(CommandParser.class.getName()).append(";\n")
-                    .append("import ").append(CommandModel.class.getName()).append(";\n")
-                    .append("\n")
-                    .append("final class ").append(infoName).append(" extends CommandParameters.CommandFragmentInfo<").append(clazz).append("> {\n")
-                    .append("\n")
-                    .append(declareParameters(params, INDENT))
-                    .append(INDENT).append("static final ").append(infoName).append(" INSTANCE = new ").append(infoName).append("();\n")
-                    .append("\n")
-                    .append(INDENT).append("private ").append(infoName).append("() {\n")
-                    .append(INDENT).append(INDENT).append("super(").append(clazz).append(".class);\n")
-                    .append(addParameter(params.size(), INDENT + INDENT)).append("\n")
-                    .append(INDENT).append("}\n")
-                    .append("\n")
-                    .append(INDENT).append("@Override\n")
-                    .append(INDENT).append("public ").append(clazz).append(" resolve(CommandParser parser) {\n")
-                    .append(INDENT).append(INDENT).append("return new ").append(clazz).append("(\n")
-                    .append(resolveParams(params, INDENT + INDENT + INDENT)).append(");\n")
-                    .append(INDENT).append("}\n")
-                    .append("}\n");
+            String s = "package " + pkg + ";\n"
+                    + "\n"
+                    + "import " + CommandModel.class.getName() + ";\n"
+                    + "import " + CommandParameters.class.getName() + ";\n"
+                    + "import " + CommandParser.class.getName() + ";\n"
+                    + "\n"
+                    + "final class " + infoName + " extends CommandParameters.CommandFragmentInfo<" + clazz + "> {\n"
+                    + "\n"
+                    + declareParameters(params, INDENT)
+                    + INDENT + "static final " + infoName + " INSTANCE = new " + infoName + "();\n"
+                    + "\n"
+                    + INDENT + "private " + infoName + "() {\n"
+                    + INDENT + INDENT + "super(" + clazz + ".class);\n"
+                    + addParameter(params.size(), INDENT + INDENT) + "\n"
+                    + INDENT + "}\n"
+                    + "\n"
+                    + INDENT + "@Override\n"
+                    + INDENT + "public " + clazz + " resolve(CommandParser parser) {\n"
+                    + INDENT + INDENT + "return new " + clazz + "(\n"
+                    + resolveParams(params, INDENT + INDENT + INDENT) + ");\n"
+                    + INDENT + "}\n"
+                    + "}\n";
+            bw.append(s);
         }
     }
 
@@ -178,17 +188,18 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
             throws IOException {
 
         try (BufferedWriter bw = new BufferedWriter(fileObject.openWriter())) {
-            bw.append("package ").append(pkg).append(";\n")
-                    .append("\n")
-                    .append("import ").append(CommandRegistry.class.getName()).append(";\n")
-                    .append("\n")
-                    .append("public final class ").append(name).append(" extends CommandRegistry {\n")
-                    .append("\n")
-                    .append(INDENT).append("public ").append(name).append("() {\n")
-                    .append(INDENT).append(INDENT).append("super(\"").append(pkg).append("\");\n")
-                    .append(registerModels(metaModels, INDENT + INDENT)).append("\n")
-                    .append(INDENT).append("}\n")
-                    .append("}\n");
+            String s = "package " + pkg + ";\n"
+                    + "\n"
+                    + "import " + CommandRegistry.class.getName() + ";\n"
+                    + "\n"
+                    + "public final class CommandRegistryImpl extends CommandRegistry {\n"
+                    + "\n"
+                    + INDENT + "public " + name + "() {\n"
+                    + INDENT + INDENT + "super(\"" + pkg + "\");\n"
+                    + registerModels(metaModels, INDENT + INDENT) + "\n"
+                    + INDENT + "}\n"
+                    + "}\n";
+            bw.append(s);
         }
     }
 
@@ -196,178 +207,232 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
             String clazz, List<MetaModel> params) throws IOException {
 
         try (BufferedWriter bw = new BufferedWriter(fileObject.openWriter())) {
-            bw.append("package ").append(pkg).append(";\n")
-                    .append("\n")
-                    .append("import ").append(CommandExecution.class.getName()).append(";\n")
-                    .append("import ").append(CommandModel.class.getName()).append(";\n")
-                    .append("import ").append(CommandParameters.class.getName()).append(";\n")
-                    .append("import ").append(CommandParser.class.getName()).append(";\n")
-                    .append("\n")
-                    .append("final class ").append(modelName).append(" extends CommandModel {\n")
-                    .append("\n")
-                    .append(declareParameters(params, INDENT))
-                    .append("\n")
-                    .append(INDENT).append(modelName).append("() {\n")
-                    .append(INDENT).append(INDENT).append("super(").append(generateNewCommandInfo(command)).append(");\n")
-                    .append(addParameter(params.size(), INDENT + INDENT)).append("\n")
-                    .append(INDENT).append("}\n")
-                    .append("\n")
-                    .append(INDENT).append("@Override\n")
-                    .append(INDENT).append("public CommandExecution createExecution(CommandParser parser) {\n")
-                    .append(INDENT).append(INDENT).append("return new ").append(clazz).append("(\n")
-                    .append(resolveParams(params, INDENT + INDENT + INDENT)).append(");\n")
-                    .append(INDENT).append("}\n")
-                    .append("}\n");
+            String s = "package " + pkg + ";\n"
+                    + "\n"
+                    + "import " + CommandExecution.class.getName() + ";\n"
+                    + "import " + CommandModel.class.getName() + ";\n"
+                    + "import " + CommandParameters.class.getName() + ";\n"
+                    + "import " + CommandParser.class.getName() + ";\n"
+                    + "\n"
+                    + "final class " + modelName + " extends CommandModel {\n"
+                    + "\n"
+                    + declareParameters(params, INDENT)
+                    + "\n"
+                    + INDENT + modelName + "() {\n"
+                    + INDENT + INDENT + "super(" + "new CommandInfo(\"" + command.name() + "\", \"" + command.description() + "\"));\n"
+                    + addParameter(params.size(), INDENT + INDENT) + "\n"
+                    + INDENT + "}\n"
+                    + "\n"
+                    + INDENT + "@Override\n"
+                    + INDENT + "public CommandExecution createExecution(CommandParser parser) {\n"
+                    + INDENT + INDENT + "return new " + clazz + "(\n"
+                    + resolveParams(params, INDENT + INDENT + INDENT) + ");\n"
+                    + INDENT + "}\n"
+                    + "}\n";
+            bw.append(s);
         }
     }
 
     private String resolveParams(List<MetaModel> params, String indent) {
-        StringBuilder sb = new StringBuilder();
+        String s = "";
         Iterator<MetaModel> it = params.iterator();
         for (int i=1 ; it.hasNext() ; i++) {
             MetaModel param = it.next();
             if (param instanceof ParametersMetaModel) {
-                sb.append(indent).append("OPTION").append(i).append(".resolve(parser)");
+                s += indent + "OPTION" + i + ".resolve(parser)";
             } else {
-                sb.append(indent).append("parser.resolve(OPTION").append(i).append(")");
+                s += indent + "parser.resolve(OPTION" + i + ")";
             }
             if (it.hasNext()) {
-                sb.append(",\n");
+                s += ",\n";
             }
         }
-        return sb.toString();
+        return s;
     }
 
     private String registerModels(List<CommandMetaModel> commands, String indent) {
-        StringBuilder sb = new StringBuilder();
+        String s = "";
         Iterator<CommandMetaModel> it = commands.iterator();
         while(it.hasNext()) {
             String modelSimpleName = it.next().typeElt.getSimpleName() + MODEL_IMPL_SUFFIX;
-            sb.append(indent).append("register(new ").append(modelSimpleName).append("());");
+            s += indent + "register(new " + modelSimpleName + "());";
             if (it.hasNext()) {
-                sb.append("\n");
+                s += "\n";
             }
         }
-        return sb.toString();
-    }
-
-    private String generateNewCommandInfo(CommandInfo command) throws IOException {
-        return new StringBuilder("new CommandInfo(\"")
-                .append(command.name())
-                .append("\", \"")
-                .append(command.description())
-                .append("\")")
-                .toString();
+        return s;
     }
 
     private String declareParameters(List<MetaModel> params, String indent) {
-        StringBuilder sb = new StringBuilder();
+        String s = "";
         Iterator<MetaModel> it = params.iterator();
         for(int i=1 ; it.hasNext() ; i++) {
             MetaModel param = it.next();
-            sb.append(indent).append("static final ");
-            if (param instanceof RepeatableOptionMetaModel) {
-                String paramType = ((RepeatableOptionMetaModel) param).paramTypeElt.getQualifiedName().toString();
-                Option option = ((RepeatableOptionMetaModel) param).option;
-                sb.append("CommandModel.RepeatableOptionInfo<").append(paramType).append(">")
-                        .append(" OPTION").append(i)
-                        .append(" = new CommandModel.RepeatableOptionInfo<>(")
-                        .append(paramType).append(".class, \"")
-                        .append(option.name()).append("\", \"")
-                        .append(option.description()).append("\", ")
-                        .append(option.required() ? "true" : "false")
-                        .append(");");
-            } else {
+            if (param == null) {
+                continue;
+            }
+            s += indent + "static final ";
+            if (param instanceof KeyValuesMetaModel) {
+                String paramType = ((KeyValuesMetaModel) param).paramTypeElt.getQualifiedName().toString();
+                KeyValues option = ((KeyValuesMetaModel) param).option;
+                s += "CommandModel.KeyValuesInfo<" + paramType + "> OPTION" + i + " = new CommandModel.KeyValuesInfo<>("
+                        + paramType + ".class, \"" + option.name() + "\", \"" + option.description() + "\", "
+                        + String.valueOf(option.required()) + ");";
+            } else if (param instanceof FlagMetaModel ){
+                Flag option = ((FlagMetaModel) param).option;
+                s += "CommandModel.FlagInfo OPTION" + i + " = new CommandModel.FlagInfo(\""
+                        + option.name() + "\", \"" + option.description() + "\");";
+            } else if (param.typeElt != null) {
                 String type = param.typeElt.getQualifiedName().toString();
-                if (param instanceof OptionMetaModel) {
-                    Option option = ((OptionMetaModel) param).option;
-                    sb.append("CommandModel.OptionInfo<").append(type).append(">")
-                            .append(" OPTION").append(i)
-                            .append(" = new CommandModel.OptionInfo<>(")
-                            .append(type).append(".class, \"")
-                            .append(option.name()).append("\", \"")
-                            .append(option.description()).append("\", ")
-                            .append(option.required() ? "true" : "false")
-                            .append(");");
+                if (param instanceof KeyValueMetaModel) {
+                    KeyValue option = ((KeyValueMetaModel) param).option;
+                    s += "CommandModel.KeyValueInfo<" + type + "> OPTION" + i + " = new CommandModel.KeyValueInfo<>("
+                            + type + ".class, \"" + option.name() + "\", \"" + option.description()
+                            + "\", " + defaultValue(type, option.defaultValue()) + ");";
+                    option.defaultValue();
                 } else if (param instanceof ArgumentMetaModel) {
-                    Argument argument = ((ArgumentMetaModel) param).argument;
-                    sb.append("CommandModel.ArgumentInfo<").append(type).append(">")
-                            .append(" OPTION").append(i)
-                            .append(" = new CommandModel.ArgumentInfo<>(")
-                            .append(type).append(".class, \"")
-                            .append(argument.description()).append("\", ")
-                            .append(argument.required() ? "true" : "false")
-                            .append(");");
+                    Argument option = ((ArgumentMetaModel) param).option;
+                    s += "CommandModel.ArgumentInfo<" + type + "> OPTION" + i + " = new CommandModel.ArgumentInfo<>("
+                            + type + ".class, \"" + option.description() + "\", "
+                            + String.valueOf(option.required()) + ");";
                 } else {
-                    sb.append("CommandParameters.CommandFragmentInfo<").append(param.typeElt.getSimpleName()).append(">")
-                            .append(" OPTION").append(i)
-                            .append(" = ")
-                            .append(param.typeElt.getSimpleName())
-                            .append(INFO_IMPL_SUFFIX)
-                            .append(".INSTANCE;");
+                    s += "CommandParameters.CommandFragmentInfo<" + param.typeElt.getSimpleName() + "> OPTION" + i + " = "
+                            + param.typeElt.getSimpleName() + INFO_IMPL_SUFFIX + ".INSTANCE;";
                 }
             }
-            sb.append("\n");
+            s += "\n";
         }
-        return sb.toString();
+        return s;
     }
 
     private String addParameter(int numParams, String indent) {
-        StringBuilder sb = new StringBuilder();
+        String s = "";
         for(int i=1 ; i <= numParams; i++) {
-            sb.append(indent).append("addParameter(OPTION").append(i).append(");");
+            s += indent + "addParameter(OPTION" + i + ");";
             if (i < numParams) {
-                sb.append("\n");
+                s += "\n";
             }
         }
-        return sb.toString();
+        return s;
+    }
+
+    private String defaultValue(String type, String value) {
+        if (value == null || value.isEmpty()) {
+            return "null";
+        }
+        // String.class, Integer.class, File.class
+        if (String.class.getName().equals(type)) {
+            return "\"" + value + "\"";
+        }
+        if (Integer.class.getName().equals(type)) {
+            return "Integer.parseInt(\"" + value + "\")";
+        }
+        if (File.class.getName().equals(type)) {
+            return "new java.io.File(\"" + value + "\")";
+        }
+        throw new IllegalArgumentException("Unsupported type: " + type);
+    }
+
+    private boolean checkOptionName(String name, VariableElement varElt, List<String> options) {
+        if (name.isEmpty()) {
+            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "option name cannot be empty", varElt);
+            return false;
+        }
+        if (!Option.NAME_PREDICATE.test(name)) {
+            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    String.format("'%s' is not a valid option name", name),
+                    varElt);
+            return false;
+        }
+        if (options.contains(name)) {
+            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                    String.format("option named '%s' is already defined", name),
+                    varElt);
+            return false;
+        }
+        return true;
+    }
+
+    private boolean checkOptionDescription(String desc, VariableElement varElt) {
+        if (desc.isEmpty()) {
+            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "description cannot be empty", varElt);
+            return false;
+        }
+        return true;
     }
 
     private boolean processOption(VariableElement varElt, TypeElement typeElt, List<String> options, List<MetaModel> params) {
-        Option optionAnnot = varElt.getAnnotation(Option.class);
-        if (optionAnnot != null) {
-            String optionName = optionAnnot.name();
-            if (optionName == null) {
-                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "option name cannot be null", varElt);
-            } else if (!Option.NAME_PREDICATE.test(optionName)) {
-                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                        String.format("'%s' is not a valid option name", optionName),
-                        varElt);
-            } else if (options.contains(optionName)) {
-                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                        String.format("option named '%s' is already defined", optionName),
-                        varElt);
-            } else if (optionAnnot.description() == null) {
-                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "description cannot be null", varElt);
-            } else {
-                String typeQualifiedName = typeElt.getQualifiedName().toString();
-                if (OPTION_VTYPES.contains(typeQualifiedName)) {
-                    params.add(new OptionMetaModel(typeElt, optionAnnot));
-                    options.add(optionName);
-                } else if (Collection.class.getName().equals(typeQualifiedName)) {
-                    TypeElement paramTypeElt = varElt.asType().accept(new TypeParamVisitor(), null);
-                    if (paramTypeElt != null) {
-                        String paramTypeQualifiedName = paramTypeElt.getQualifiedName().toString();
-                        if (!OPTION_VTYPES.contains(paramTypeQualifiedName)) {
-                            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                                    String.format("%s is not a valid option values type parameter: ", paramTypeQualifiedName),
-                                    varElt);
-                        } else {
-                            params.add(new RepeatableOptionMetaModel(paramTypeElt, optionAnnot));
-                            options.add(optionName);
-                        }
-                    } else {
-                        processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                                String.format("Repetable option type must be: %s", Collection.class.getName()),
-                                varElt);
-                    }
+        String typeQualifiedName = typeElt.getQualifiedName().toString();
+        Argument argument = varElt.getAnnotation(Argument.class);
+        if (argument != null) {
+            if (checkOptionDescription(argument.description(), varElt)) {
+                if (ARGUMENT_TYPES.contains(typeQualifiedName)) {
+                    params.add(new ArgumentMetaModel(typeElt, argument));
+                    return true;
                 } else {
                     processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                            String.format("%s is not a valid option value type: ", typeQualifiedName),
+                            String.format("%s is not a valid argument type: ", typeQualifiedName),
                             varElt);
                 }
             }
-            return true;
+            return false;
+        }
+        Flag flag = varElt.getAnnotation(Flag.class);
+        if (flag != null) {
+            if (checkOptionName(flag.name(), varElt, options) && checkOptionDescription(flag.description(), varElt)) {
+                if (Boolean.class.getName().equals(typeQualifiedName)) {
+                    params.add(new FlagMetaModel(flag));
+                    options.add(flag.name());
+                    return true;
+                } else {
+                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            String.format("%s is not a valid flag type: ", typeQualifiedName),
+                            varElt);
+                }
+            }
+            return false;
+        }
+        KeyValue keyValue = varElt.getAnnotation(KeyValue.class);
+        if (keyValue != null) {
+            if (checkOptionName(keyValue.name(), varElt, options) && checkOptionDescription(keyValue.description(), varElt)) {
+                if (KEY_VALUE_TYPES.contains(typeQualifiedName)
+                        || ElementKind.ENUM.equals(typeElt.getKind())) {
+                    params.add(new KeyValueMetaModel(typeElt, keyValue));
+                    options.add(keyValue.name());
+                    return true;
+                } else {
+                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            String.format("%s is not a valid key-value type: ", typeElt),
+                            varElt);
+                }
+            }
+            return false;
+        }
+        KeyValues keyValues = varElt.getAnnotation(KeyValues.class);
+        if (keyValues != null) {
+            if (checkOptionName(keyValues.name(), varElt, options)
+                    && checkOptionDescription(keyValues.description(), varElt)) {
+                if (Collection.class.getName().equals(typeQualifiedName)) {
+                    TypeElement paramTypeElt = varElt.asType().accept(new TypeParamVisitor(), null);
+                    if (paramTypeElt != null) {
+                        String paramTypeQualifiedName = paramTypeElt.getQualifiedName().toString();
+                        if (KEY_VALUES_TYPES.contains(paramTypeQualifiedName)) {
+                            params.add(new KeyValuesMetaModel(paramTypeElt, keyValues));
+                            options.add(keyValues.name());
+                            return true;
+                        } else {
+                            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                                    String.format("%s is not a valid option values type parameter: ", paramTypeQualifiedName),
+                                    varElt);
+                        }
+                    }
+                } else {
+                    processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                            String.format("%s is not a valid key-values type: ", typeElt),
+                            varElt);
+                }
+            }
+            return false;
         }
         return false;
     }
@@ -392,7 +457,7 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
                 processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "description cannot be null", varElt);
             } else {
                 String typeQualifiedName = typeElt.getQualifiedName().toString();
-                if (!ARGUMENT_VTYPES.contains(typeQualifiedName)) {
+                if (!ARGUMENT_TYPES.contains(typeQualifiedName)) {
                     processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
                             String.format("%s is not a valid argument value type: " + typeQualifiedName),
                             varElt);
@@ -530,57 +595,109 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
     private abstract class MetaModel {
 
         protected final TypeElement typeElt;
-        protected final String pkg;
 
         MetaModel() {
             this.typeElt = null;
-            this.pkg = null;
         }
 
         MetaModel(TypeElement typeElt) {
-            this.typeElt = Objects.requireNonNull(typeElt, "typeElt is null");
-            this.pkg = processingEnv.getElementUtils().getPackageOf(typeElt).getQualifiedName().toString();
+            this.typeElt = typeElt;
         }
     }
 
-    private class ArgumentMetaModel extends MetaModel {
-
-        private final Argument argument;
-
-        ArgumentMetaModel(TypeElement typeElt, Argument argument) {
-            super(typeElt);
-            this.argument = Objects.requireNonNull(argument, "argument is null");
-        }
+    private interface DescribedOptionMetaModel {
+        String description();
     }
 
-    private class OptionMetaModel extends MetaModel {
+    private interface NamedOptionMetaModel extends DescribedOptionMetaModel {
+        String name();
+    }
 
-        private final Option option;
+    private class ArgumentMetaModel extends MetaModel implements DescribedOptionMetaModel {
 
-        OptionMetaModel(TypeElement typeElt, Option option) {
+        private final Argument option;
+
+        ArgumentMetaModel(TypeElement typeElt, Argument option) {
             super(typeElt);
             this.option = Objects.requireNonNull(option, "option is null");
         }
+
+        @Override
+        public String description() {
+            return option.description();
+        }
     }
 
-    private class RepeatableOptionMetaModel extends MetaModel {
+    private class FlagMetaModel extends MetaModel implements NamedOptionMetaModel {
 
-        private final Option option;
+        private final Flag option;
+
+        FlagMetaModel(Flag option) {
+            super();
+            this.option = Objects.requireNonNull(option, "option is null");
+        }
+
+        @Override
+        public String description() {
+            return option.description();
+        }
+
+        @Override
+        public String name() {
+            return option.name();
+        }
+    }
+
+    private class KeyValueMetaModel extends MetaModel implements NamedOptionMetaModel {
+
+        private final KeyValue option;
+
+        KeyValueMetaModel(TypeElement typeElt, KeyValue  option) {
+            super(typeElt);
+            this.option = Objects.requireNonNull(option, "option is null");
+        }
+
+        @Override
+        public String name() {
+            return option.name();
+        }
+
+        @Override
+        public String description() {
+            return option.description();
+        }
+    }
+
+    private class KeyValuesMetaModel extends MetaModel implements NamedOptionMetaModel {
+
+        private final KeyValues option;
         private final TypeElement paramTypeElt;
 
-        RepeatableOptionMetaModel(TypeElement paramTypeElt, Option option) {
+        KeyValuesMetaModel(TypeElement paramTypeElt, KeyValues option) {
             super();
             this.option = Objects.requireNonNull(option, "option is null");
             this.paramTypeElt = Objects.requireNonNull(paramTypeElt, "paramTypeElt is null");
+        }
+
+        @Override
+        public String description() {
+            return option.description();
+        }
+
+        @Override
+        public String name() {
+            return option.name();
         }
     }
 
     private class ParametersMetaModel extends MetaModel {
 
         protected final List<MetaModel> params;
+        protected final String pkg;
 
         ParametersMetaModel(TypeElement typeElt, List<MetaModel> params) {
-            super(typeElt);
+            super(Objects.requireNonNull(typeElt, "typeElt is null"));
+            this.pkg = processingEnv.getElementUtils().getPackageOf(typeElt).getQualifiedName().toString();
             this.params = params;
         }
 
@@ -591,8 +708,8 @@ public class CommandAnnotationProcessor extends AbstractProcessor {
         List<String> optionNames() {
             List<String> names = new ArrayList<>();
             for (MetaModel attr : params) {
-                if (attr instanceof OptionMetaModel) {
-                    names.add(((OptionMetaModel) attr).option.name());
+                if (attr instanceof NamedOptionMetaModel) {
+                    names.add(((NamedOptionMetaModel) attr).name());
                 }
             }
             return names;

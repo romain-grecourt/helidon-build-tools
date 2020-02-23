@@ -1,12 +1,13 @@
 package io.helidon.build.cli.harness;
 
-import io.helidon.build.cli.harness.CommandContext.ExitStatus;
-import io.helidon.build.cli.harness.CommandModel.OptionInfo;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+
+import io.helidon.build.cli.harness.CommandContext.ExitStatus;
+import io.helidon.build.cli.harness.CommandModel.KeyValueInfo;
 
 import org.junit.jupiter.api.Test;
 
@@ -97,8 +98,8 @@ public class ExecTest {
 
     private static final class SimpleCommand extends CommandModel {
 
-        private static final OptionInfo<Boolean> FOO = new OptionInfo<>(Boolean.class, "foo", "Foo option", false);
-        private static final OptionInfo<Boolean> BAR = new OptionInfo<>(Boolean.class, "bar", "Bar option", false);
+        private static final FlagInfo FOO = new FlagInfo("foo", "Foo option");
+        private static final FlagInfo BAR = new FlagInfo("bar", "Bar option");
 
         SimpleCommand() {
             super(new CommandInfo("simple", "A simple test command"));
@@ -123,7 +124,7 @@ public class ExecTest {
     private static final class CommandWithCommonOptions extends CommandModel {
 
         private static final CommonOptionsInfo COMMON_OPTIONS = new CommonOptionsInfo();
-        private static final OptionInfo<Boolean> FOO = new OptionInfo<>(Boolean.class, "foo", "Turn on foo mode", false);
+        private static final FlagInfo FOO = new FlagInfo("foo", "Turn on foo mode");
 
         CommandWithCommonOptions() {
             super(new CommandInfo("common", "A test command with common options"));
@@ -155,7 +156,7 @@ public class ExecTest {
 
     private static final class CommonOptionsInfo extends CommandParameters.CommandFragmentInfo<CommonOptions> {
 
-        private static final OptionInfo<String> KEY_OPTION = new OptionInfo<>(String.class, "key", "key option", true);
+        private static final KeyValueInfo<String> KEY_OPTION = new KeyValueInfo<>(String.class, "key", "key option", null);
 
         private CommonOptionsInfo() {
             super(CommonOptions.class);

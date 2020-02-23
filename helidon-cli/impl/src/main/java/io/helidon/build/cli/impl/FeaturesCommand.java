@@ -6,7 +6,8 @@ import io.helidon.build.cli.harness.Command;
 import io.helidon.build.cli.harness.CommandContext;
 import io.helidon.build.cli.harness.CommandExecution;
 import io.helidon.build.cli.harness.Creator;
-import io.helidon.build.cli.harness.Option;
+import io.helidon.build.cli.harness.Option.Flag;
+import io.helidon.build.cli.harness.Option.KeyValues;
 
 /**
  * The {@code features} command.
@@ -22,9 +23,9 @@ public final class FeaturesCommand implements CommandExecution {
     @Creator
     FeaturesCommand(
             CommonOptions commonOptions,
-            @Option(name = "add", description = "Add features to the project", required = false) Collection<String> add,
-            @Option(name = "list", description = "List the features used in the project", required = false) boolean list,
-            @Option(name = "all", description = "List all available features", required = false) boolean all) {
+            @KeyValues(name = "add", description = "Add features to the project") Collection<String> add,
+            @Flag(name = "list", description = "List the features used in the project") boolean list,
+            @Flag(name = "all", description = "List all available features") boolean all) {
 
         this.commonOptions = commonOptions;
         this.add = add;

@@ -4,7 +4,8 @@ import io.helidon.build.cli.harness.Command;
 import io.helidon.build.cli.harness.CommandContext;
 import io.helidon.build.cli.harness.CommandExecution;
 import io.helidon.build.cli.harness.Creator;
-import io.helidon.build.cli.harness.Option;
+import io.helidon.build.cli.harness.Option.Flag;
+import io.helidon.build.cli.harness.Option.KeyValue;
 
 /**
  * The {@code init} command.
@@ -14,32 +15,35 @@ public final class InitCommand implements CommandExecution {
 
     private final CommonOptions commonOptions;
     private final boolean batch;
-    private final boolean mp;
-    private final boolean se;
-    private final boolean maven;
-    private final boolean gradle;
+    private final Flavor flavor;
+    private final Build build;
+
+    enum Flavor {
+        MP,
+        SE
+    }
+
+    enum Build {
+        MAVEN,
+        GRADLE
+    }
 
     @Creator
     InitCommand(
             CommonOptions commonOptions,
-            @Option(name = "mp", description = "Generate a Helidon MP project", required = false) boolean mp,
-            @Option(name = "se", description = "Generate a Helidon SE project", required = false) boolean se,
-            @Option(name = "maven", description = "Use a Maven as build system", required = false) boolean maven,
-            @Option(name = "gradle", description = "Use a Gradle as build system", required = false) boolean gradle,
-            @Option(name = "batch", description = "Non iteractive, user input is passes as system properties", required = false) boolean batch) {
+            @KeyValue(name = "flavor", description = "Helidon flavor SE|MP") Flavor flavor,
+            @KeyValue(name = "build", description = "Build type MAVEN|GRADLE") Build build,
+            @Flag(name = "batch", description = "Non iteractive, user input is passes as system properties") boolean batch) {
 
         this.commonOptions = commonOptions;
-        this.mp = mp;
-        this.se = se;
-        this.maven = maven;
-        this.gradle = gradle;
+        this.flavor = flavor;
+        this.build = build;
         this.batch = batch;
     }
 
     @Override
     public void execute(CommandContext context) {
-        context.logInfo(String.format("\n TODO exec init, project=%s, mp=%s, se=%s, maven=%s, gradle=%s, batch=%s",
-                commonOptions.project, String.valueOf(mp), String.valueOf(se), String.valueOf(maven), String.valueOf(gradle),
-                String.valueOf(batch)));
+        context.logInfo(String.format("\n TODO exec init, project=%s, flavor=%s, build=%s, batch=%s",
+                commonOptions.project, String.valueOf(flavor), String.valueOf(build), String.valueOf(batch)));
     }
 }

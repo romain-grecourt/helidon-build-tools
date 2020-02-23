@@ -5,8 +5,6 @@ Generate a new project
 
 Options:
   --project    The project directory
-  --mp         Generate a Helidon MP project
-  --se         Generate a Helidon SE project
-  --maven      Use a Maven as build system
-  --gradle     Use a Gradle as build system
+  --flavor     Helidon flavor SE|MP
+  --build      Build type MAVEN|GRADLE
   --batch      Non iteractive, user input is passes as system properties

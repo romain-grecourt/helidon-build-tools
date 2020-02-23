@@ -4,7 +4,7 @@ import io.helidon.build.cli.harness.Command;
 import io.helidon.build.cli.harness.CommandContext;
 import io.helidon.build.cli.harness.CommandExecution;
 import io.helidon.build.cli.harness.Creator;
-import io.helidon.build.cli.harness.Option;
+import io.helidon.build.cli.harness.Option.Flag;
 
 /**
  * The {@code build} command.
@@ -20,9 +20,9 @@ public final class BuildCommand implements CommandExecution {
     @Creator
     BuildCommand(
             CommonOptions commonOptions,
-            @Option(name = "clean", description = "Perform a clean before the build", required = false) boolean clean,
-            @Option(name = "native", description = "Build a native binary using GraalVM native-image", required = false) boolean nativeMode,
-            @Option(name = "jlink", description = "Build a jlink image", required = false) boolean jlinkMode) {
+            @Flag(name = "clean", description = "Perform a clean before the build") boolean clean,
+            @Flag(name = "native", description = "Build a native binary using GraalVM native-image") boolean nativeMode,
+            @Flag(name = "jlink", description = "Build a jlink image") boolean jlinkMode) {
 
         this.commonOptions = commonOptions;
         this.clean = clean;

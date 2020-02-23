@@ -1,12 +1,13 @@
 package io.helidon.build.cli.impl;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Properties;
+
 import io.helidon.build.cli.harness.Command;
 import io.helidon.build.cli.harness.CommandContext;
 import io.helidon.build.cli.harness.CommandExecution;
 import io.helidon.build.cli.harness.Creator;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.Properties;
 
 /**
  * The {@code version} command.

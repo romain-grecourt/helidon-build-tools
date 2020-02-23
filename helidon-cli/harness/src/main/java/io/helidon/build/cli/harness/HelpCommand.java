@@ -61,7 +61,7 @@ class HelpCommand extends CommandModel {
         }
 
         private void doExecute(CommandContext context, CommandModel model) {
-            List<OptionInfo> options = new ArrayList<>();
+            List<NamedOptionInfo> options = new ArrayList<>();
             String argument = "";
             int maxOptNameLength = 0;
             for (ParameterInfo<?> param : model.parameters()) {
@@ -70,20 +70,20 @@ class HelpCommand extends CommandModel {
                 }
                 if (param instanceof ArgumentInfo) {
                     argument = " " + ((ArgumentInfo) param).description;
-                } else if (param instanceof OptionInfo) {
-                    int optNameLength = ((OptionInfo) param).name().length();
+                } else if (param instanceof NamedOptionInfo) {
+                    int optNameLength = ((NamedOptionInfo) param).name().length();
                     if (optNameLength > maxOptNameLength) {
                         maxOptNameLength = optNameLength;
                     }
-                    options.add((OptionInfo) param);
+                    options.add((NamedOptionInfo) param);
                 } else if (param instanceof CommandFragmentInfo) {
                     for (ParameterInfo<?> fragmentParam : ((CommandFragmentInfo) param).parameters()) {
-                        if (fragmentParam instanceof OptionInfo) {
-                            int optNameLength = ((OptionInfo) fragmentParam).name().length();
+                        if (fragmentParam instanceof NamedOptionInfo) {
+                            int optNameLength = ((NamedOptionInfo) fragmentParam).name().length();
                             if (optNameLength > maxOptNameLength) {
                                 maxOptNameLength = optNameLength;
                             }
-                            options.add((OptionInfo) fragmentParam);
+                            options.add((NamedOptionInfo) fragmentParam);
                         }
                     }
                 }
@@ -93,7 +93,7 @@ class HelpCommand extends CommandModel {
             if (maxOptNameLength > 0) {
                 int descColPos = maxOptNameLength + 4;
                 context.logInfo("\nOptions:");
-                for (OptionInfo<?> option : options) {
+                for (NamedOptionInfo<?> option : options) {
                     int curColPos = descColPos - option.name().length();
                     String spacing = "";
                     for (int i = 0; i < curColPos; i++) {

@@ -4,7 +4,7 @@ import io.helidon.build.cli.harness.Command;
 import io.helidon.build.cli.harness.CommandContext;
 import io.helidon.build.cli.harness.CommandExecution;
 import io.helidon.build.cli.harness.Creator;
-import io.helidon.build.cli.harness.Option;
+import io.helidon.build.cli.harness.Option.Flag;
 
 /**
  * The {@code dev} command.
@@ -18,7 +18,7 @@ public final class DevCommand implements CommandExecution {
     @Creator
     DevCommand(
             CommonOptions commonOptions,
-            @Option(name = "clean", description = "Perform a clean before the first build", required = false) boolean clean) {
+            @Flag(name = "clean", description = "Perform a clean before the first build") boolean clean) {
 
         this.commonOptions = commonOptions;
         this.clean = clean;
