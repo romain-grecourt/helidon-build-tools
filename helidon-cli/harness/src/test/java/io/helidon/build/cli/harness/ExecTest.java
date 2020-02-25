@@ -84,7 +84,7 @@ public class ExecTest {
         CommandContext context = context();
         exec(context, "common");
         assertThat(context.exitAction().status, is(ExitStatus.FAILURE));
-        assertThat(context.exitAction().message, is("Missing required option: key"));
+        assertThat(context.exitAction().message, is("Missing required option: key\nSee 'test-cli common --help'"));
     }
 
     private static final class TestCommandRegistry extends CommandRegistry {
@@ -156,7 +156,7 @@ public class ExecTest {
 
     private static final class CommonOptionsInfo extends CommandParameters.CommandFragmentInfo<CommonOptions> {
 
-        private static final KeyValueInfo<String> KEY_OPTION = new KeyValueInfo<>(String.class, "key", "key option", null);
+        private static final KeyValueInfo<String> KEY_OPTION = new KeyValueInfo<>(String.class, "key", "key option", null, true);
 
         private CommonOptionsInfo() {
             super(CommonOptions.class);

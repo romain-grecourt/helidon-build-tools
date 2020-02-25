@@ -6,5 +6,4 @@ Build the application
 Options:
   --project    The project directory
   --clean      Perform a clean before the build
-  --native     Build a native binary using GraalVM native-image
-  --jlink      Build a jlink image
+  --mode       Build mode

@@ -209,6 +209,7 @@ public abstract class CommandModel extends CommandParameters {
     public static final class KeyValueInfo<T> extends NamedOptionInfo<T> {
 
         private final T defaultValue;
+        private final boolean required;
 
         /**
          * Create a new key value info.
@@ -216,10 +217,12 @@ public abstract class CommandModel extends CommandParameters {
          * @param name option name
          * @param description option description
          * @param defaultValue default value, may be {@code null} if the option is not required
+         * @param required option required
          */
-        public KeyValueInfo(Class<T> type, String name, String description, T defaultValue) {
+        public KeyValueInfo(Class<T> type, String name, String description, T defaultValue, boolean required) {
             super(type, name, description);
             this.defaultValue = defaultValue;
+            this.required = required;
         }
 
         /**
@@ -229,6 +232,15 @@ public abstract class CommandModel extends CommandParameters {
          */
         public T defaultValue() {
             return defaultValue;
+        }
+
+        /**
+         * The attribute required flag.
+         *
+         * @return required flag
+         */
+        public boolean required() {
+            return required;
         }
     }
 

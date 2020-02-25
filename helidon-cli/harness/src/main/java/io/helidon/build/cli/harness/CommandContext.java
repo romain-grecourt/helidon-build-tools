@@ -1,6 +1,7 @@
 package io.helidon.build.cli.harness;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
@@ -8,6 +9,9 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
+
+import io.helidon.build.cli.harness.CommandModel.CommandInfo;
 
 /**
  * The command context.
@@ -205,7 +209,6 @@ public final class CommandContext {
     public void exitAction(ExitStatus status, String message) {
         if (status.isWorse(exitAction.status)) {
             exitAction = new ExitAction(status, message);
-            logError(message);
         }
     }
 
@@ -226,12 +229,21 @@ public final class CommandContext {
     }
 
     /**
-     * Set the exit action to {@link ExitStatus#FAILURE} with a command not found error message.
+     * Set the exit action to {@link ExitStatus#FAILURE} and display an error message.
      *
      * @param command command name
      */
     void commandNotFoundError(String command) {
-        error("Command not found: " + command);
+        List<String> allCommandNames = registry.commandsByName().values()
+                .stream().map(CommandModel::command).map(CommandInfo::name).collect(Collectors.toList());
+        String match = CommandMatcher.match(command, allCommandNames);
+        String cliName = cli.name();
+        if (match != null) {
+            error(String.format("'%s' is not a valid command.\nDid you mean '%s'?\nSee '%s --help' for more information",
+                    command, match, cliName));
+        } else {
+            error(String.format("'%s' is not a valid command.\nSee '%s --help' for more information", command, cliName));
+        }
     }
 
     /**

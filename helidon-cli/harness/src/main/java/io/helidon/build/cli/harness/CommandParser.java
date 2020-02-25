@@ -148,7 +148,7 @@ public final class CommandParser {
         return params;
     }
 
-    private <T> T resolveValue(Class<T> type, String rawValue) {
+    private static <T> T resolveValue(Class<T> type, String rawValue) {
         Objects.requireNonNull(rawValue, "rawValue is null");
         if (String.class.equals(type)) {
             return type.cast(rawValue);
@@ -160,6 +160,15 @@ public final class CommandParser {
             return type.cast(new File(rawValue));
         }
         throw new IllegalArgumentException("Invalid value type: " + type);
+    }
+
+    private static boolean isSupported(Class<?> type, List<Class<?>> supportedTypes) {
+        for (Class<?> supportedType : supportedTypes) {
+            if (supportedType.isAssignableFrom(type)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -189,10 +198,10 @@ public final class CommandParser {
         Class<T> type = option.type();
         Parameter resolved = params.get(option.name());
         T defaultValue = option.defaultValue();
-        if (resolved == null && defaultValue == null) {
+        if (resolved == null && option.required()) {
             throw new CommandParserException(MISSING_REQUIRED_OPTION + ": " + option.name());
         }
-        if (Option.KeyValue.SUPPORTED_TYPES.contains(type)) {
+        if (isSupported(type, Option.KeyValue.SUPPORTED_TYPES)) {
             if (resolved == null) {
                 return defaultValue;
             } else if (resolved instanceof KeyValueParam) {
@@ -217,7 +226,7 @@ public final class CommandParser {
         if (resolved == null) {
             return Collections.emptyList();
         }
-        if (Option.KeyValues.SUPPORTED_TYPES.contains(type)) {
+        if (isSupported(type, Option.KeyValues.SUPPORTED_TYPES)) {
             if (resolved instanceof KeyValueParam) {
                 return List.of(resolveValue(type, ((KeyValueParam) resolved).value));
             } else if (resolved instanceof KeyValuesParam) {
@@ -245,7 +254,7 @@ public final class CommandParser {
         if (resolved == null && option.required()) {
             throw new CommandParserException(MISSING_REQUIRED_ARGUMENT);
         }
-        if (Option.Argument.SUPPORTED_TYPES.contains(type)) {
+        if (isSupported(type, Option.Argument.SUPPORTED_TYPES)) {
             if (resolved == null) {
                 return (T) null;
             } else if (resolved instanceof ArgumentParam) {

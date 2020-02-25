@@ -14,17 +14,17 @@ import java.util.stream.Collectors;
  */
 public class CommandRegistry {
 
-    private final Map<String, CommandModel> registry;
+    private final Map<String, CommandModel> commandsByName;
     private final String pkg;
 
     private CommandRegistry() {
         this.pkg = null;
-        this.registry = Collections.emptyMap();
+        this.commandsByName = Collections.emptyMap();
     }
 
     protected CommandRegistry(String pkg) {
         this.pkg = Objects.requireNonNull(pkg, "pkg is null");
-        registry = new HashMap<>();
+        commandsByName = new HashMap<>();
         // built-in commands
         register(new UsageCommand());
         register(new HelpCommand());
@@ -33,10 +33,18 @@ public class CommandRegistry {
     protected final void register(CommandModel model) {
         Objects.requireNonNull(model, "model is null");
         String name = model.command().name();
-        if (registry.containsKey(name)) {
+        if (commandsByName.containsKey(name)) {
             throw new IllegalArgumentException("Command already registered for name: " + name);
         }
-        registry.put(name, model);
+        commandsByName.put(name, model);
+    }
+
+    /**
+     * Get the commands by name.
+     * @return map of command model keyed by name
+     */
+    final Map<String, CommandModel> commandsByName() {
+        return commandsByName;
     }
 
     /**
@@ -44,7 +52,7 @@ public class CommandRegistry {
      * @return list of all visible registered commands
      */
     public final List<CommandModel> all() {
-        return registry.values().stream().filter(CommandModel::visible).collect(Collectors.toList());
+        return commandsByName.values().stream().filter(CommandModel::visible).collect(Collectors.toList());
     }
 
     /**
@@ -53,7 +61,7 @@ public class CommandRegistry {
      * @return optional of {@link CommandModel}
      */
     public final Optional<CommandModel> get(String name) {
-        return name == null ? Optional.empty() : Optional.ofNullable(registry.get(name));
+        return name == null ? Optional.empty() : Optional.ofNullable(commandsByName.get(name));
     }
 
     /**

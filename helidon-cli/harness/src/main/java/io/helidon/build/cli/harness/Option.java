@@ -60,7 +60,7 @@ public @interface Option {
         /**
          * Supported value types.
          */
-        static final List<Class<?>> SUPPORTED_TYPES = List.of(String.class, Integer.class, File.class);
+        static final List<Class<?>> SUPPORTED_TYPES = List.of(String.class, Integer.class, File.class, Enum.class);
     }
 
     /**
@@ -98,9 +98,16 @@ public @interface Option {
         String defaultValue() default "";
 
         /**
+         * The required flag. default is {@code false}
+         *
+         * @return {@code true} if optional, {@code false} if required
+         */
+        boolean required() default false;
+
+        /**
          * Supported value types.
          */
-        static final List<Class<?>> SUPPORTED_TYPES = List.of(String.class, Integer.class, File.class);
+        static final List<Class<?>> SUPPORTED_TYPES = List.of(String.class, Integer.class, File.class, Enum.class);
     }
 
     /**
@@ -160,6 +167,6 @@ public @interface Option {
         /**
          * Supported value types.
          */
-        static final List<Class<?>> SUPPORTED_TYPES = List.of(String.class, File.class);
+        static final List<Class<?>> SUPPORTED_TYPES = List.of(String.class, File.class, Enum.class);
     }
 }

@@ -22,11 +22,7 @@ public final class CommandRunner {
      */
     public void execute() {
         // TODO set system properties
-        try {
-            parser.error().ifPresentOrElse(context::error, this::doExecute);
-        } catch (CommandParserException ex) {
-            context.error(ex.getMessage());
-        }
+        parser.error().ifPresentOrElse(context::error, this::doExecute);
     }
 
     /**
@@ -41,8 +37,13 @@ public final class CommandRunner {
      * @param command command name
      */
     private void doExecuteCommandName(String command) {
-        context.command(command).map(this::mapHelp)
+        try {
+            context.command(command).map(this::mapHelp)
                 .ifPresentOrElse(this::doExecuteCommand, () -> context.commandNotFoundError(command));
+        } catch (CommandParserException ex) {
+            context.error(String.format("%s\nSee '%s %s --help'",
+                    ex.getMessage(), context.cli().name(), command));
+        }
     }
 
     /**

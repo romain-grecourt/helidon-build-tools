@@ -18,11 +18,17 @@ public final class InitCommand implements CommandExecution {
     private final Flavor flavor;
     private final Build build;
 
+    /**
+     * Helidon flavors.
+     */
     enum Flavor {
         MP,
         SE
     }
 
+    /**
+     * Build systems.
+     */
     enum Build {
         MAVEN,
         GRADLE
@@ -31,8 +37,8 @@ public final class InitCommand implements CommandExecution {
     @Creator
     InitCommand(
             CommonOptions commonOptions,
-            @KeyValue(name = "flavor", description = "Helidon flavor SE|MP") Flavor flavor,
-            @KeyValue(name = "build", description = "Build type MAVEN|GRADLE") Build build,
+            @KeyValue(name = "flavor", description = "Helidon flavor", defaultValue = "SE") Flavor flavor,
+            @KeyValue(name = "build", description = "Build type", defaultValue = "MAVEN") Build build,
             @Flag(name = "batch", description = "Non iteractive, user input is passes as system properties") boolean batch) {
 
         this.commonOptions = commonOptions;
