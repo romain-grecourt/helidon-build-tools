@@ -1,5 +1,6 @@
 package io.helidon.build.cli.harness;
 
+import java.io.File;
 import java.util.Collection;
 import java.util.Objects;
 
@@ -84,11 +85,34 @@ public abstract class CommandModel extends CommandParameters {
         }
     }
 
+    private static String valueUsage(Class<?> type) {
+        String usage = "";
+        if (String.class.equals(type)) {
+            usage += "VALUE";
+        } else if (Integer.class.equals(type)) {
+            usage += "NUMBER";
+        } else if (File.class.equals(type)) {
+            usage += "PATH";
+        } else if (Enum.class.isAssignableFrom(type)) {
+            String choices = "";
+            @SuppressWarnings("unchecked")
+            Class<? extends Enum> enumClass = (Class<? extends Enum>) type;
+            for (Enum e : enumClass.getEnumConstants()) {
+                if (!choices.isEmpty()) {
+                    choices += "|";
+                }
+                choices += e.name();
+            }
+            usage += choices;
+        }
+        return usage;
+    }
+
     /**
      * Common meta-model for {@link Argument} and {@link Option}.
      * @param <T> mapped type
      */
-    public static class OptionInfo<T> implements ParameterInfo<T> {
+    public static abstract class OptionInfo<T> implements ParameterInfo<T> {
 
         protected final Class<T> type;
         protected final String description;
@@ -111,6 +135,12 @@ public abstract class CommandModel extends CommandParameters {
         public final Class<T> type() {
             return type;
         }
+
+        /**
+         * Get the usage for this option.
+         * @return usage, never {@code null}
+         */
+        abstract String usage();
     }
 
     /**
@@ -140,6 +170,13 @@ public abstract class CommandModel extends CommandParameters {
          */
         public boolean required() {
             return required;
+        }
+
+        @Override
+        String usage() {
+            return (required? "" : "[")
+                    + description.toUpperCase()
+                    + (required ? "" : "]");
         }
     }
 
@@ -200,6 +237,11 @@ public abstract class CommandModel extends CommandParameters {
         public FlagInfo(String name, String description) {
             this(name, description, /* visible */ true);
         }
+
+        @Override
+        String usage() {
+            return "[--" + name() + "]";
+        }
     }
 
     /**
@@ -242,6 +284,13 @@ public abstract class CommandModel extends CommandParameters {
         public boolean required() {
             return required;
         }
+
+        @Override
+        String usage() {
+            return (required? "" : "[")
+                    + "--" + name() + " " + valueUsage(type)
+                    + (required ? "" : "]");
+        }
     }
 
     /**
@@ -281,6 +330,14 @@ public abstract class CommandModel extends CommandParameters {
          */
         public boolean required() {
             return required;
+        }
+
+        @Override
+        String usage() {
+            return (required? "" : "[")
+                    + "--" + name() + " " + valueUsage(paramType)
+                    + "[," + valueUsage(paramType) + "]"
+                    + (required ? "" : "]");
         }
     }
 }

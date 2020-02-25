@@ -90,7 +90,7 @@ public class ExecTest {
     private static final class TestCommandRegistry extends CommandRegistry {
 
         public TestCommandRegistry() {
-            super(/* pkg */ "");
+            super(/* pkg */"");
             register(new SimpleCommand());
             register(new CommandWithCommonOptions());
         }

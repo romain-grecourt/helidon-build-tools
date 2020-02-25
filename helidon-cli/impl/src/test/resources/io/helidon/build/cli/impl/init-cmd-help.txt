@@ -1,10 +1,13 @@
 
-Usage:	helidon init [OPTIONS]
+Usage:	helidon init [OPTIONS] [--project PATH] [--flavor MP|SE] [--build MAVEN|GRADLE] [--batch]
 
 Generate a new project
 
 Options:
-  --project    The project directory
-  --flavor     Helidon flavor
-  --build      Build type
-  --batch      Non iteractive, user input is passes as system properties
+  -D<name>=<value>    Define a system property
+  --verbose           Produce verbose output
+  --debug             Produce debug output
+  --project           The project directory
+  --flavor            Helidon flavor (default: SE)
+  --build             Build type (default: MAVEN)
+  --batch             Non interactive, user input is passed as system properties

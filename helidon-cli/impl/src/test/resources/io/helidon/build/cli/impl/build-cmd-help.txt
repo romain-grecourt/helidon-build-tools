@@ -1,9 +1,12 @@
 
-Usage:	helidon build [OPTIONS]
+Usage:	helidon build [OPTIONS] [--project PATH] [--clean] [--mode PLAIN|NATIVE|JLINK]
 
 Build the application
 
 Options:
-  --project    The project directory
-  --clean      Perform a clean before the build
-  --mode       Build mode
+  -D<name>=<value>    Define a system property
+  --verbose           Produce verbose output
+  --debug             Produce debug output
+  --project           The project directory
+  --clean             Perform a clean before the build
+  --mode              Build mode (default: PLAIN)

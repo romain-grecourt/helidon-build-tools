@@ -1,7 +1,10 @@
 
-Usage:	helidon info [OPTIONS]
+Usage:	helidon info [OPTIONS] [--project PATH]
 
 Print project information
 
 Options:
-  --project    The project directory
+  -D<name>=<value>    Define a system property
+  --verbose           Produce verbose output
+  --debug             Produce debug output
+  --project           The project directory

@@ -15,6 +15,7 @@ import io.helidon.build.cli.harness.CommandModel.FlagInfo;
 import io.helidon.build.cli.harness.CommandModel.KeyValueInfo;
 import io.helidon.build.cli.harness.CommandModel.KeyValuesInfo;
 import java.util.Collections;
+import java.util.Properties;
 
 /**
  * Command parser.
@@ -40,12 +41,15 @@ public final class CommandParser {
     private final Map<String, Parameter> params;
     private final String error;
     private final String commandName;
+    private final Properties properties;
 
     private CommandParser(String[] rawArgs, String commandName, Map<String, Parameter> params, String error) {
         this.rawArgs = rawArgs;
         this.commandName = commandName;
         this.params = params;
         this.error = error;
+        // TODO
+        this.properties = new Properties();
     }
 
     /**

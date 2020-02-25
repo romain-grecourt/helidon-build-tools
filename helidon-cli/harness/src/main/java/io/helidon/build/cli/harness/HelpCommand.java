@@ -1,7 +1,7 @@
 package io.helidon.build.cli.harness;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -60,48 +60,54 @@ class HelpCommand extends CommandModel {
                     () -> context.commandNotFoundError(commandName));
         }
 
+        private String optionDescription(NamedOptionInfo<?> option) {
+            String desc = option.description();
+            if (option instanceof KeyValueInfo && !((KeyValueInfo) option).required()) {
+                Object defaultValue = ((KeyValueInfo<?>) option).defaultValue();
+                if (defaultValue != null) {
+                    desc += " (default: " + defaultValue + ")";
+                }
+            }
+            return desc;
+        }
+
         private void doExecute(CommandContext context, CommandModel model) {
-            List<NamedOptionInfo> options = new ArrayList<>();
+            Map<String, String> options = new LinkedHashMap<>();
+            options.putAll(UsageCommand.GLOBAL_OPTIONS);
+            String usage = "";
             String argument = "";
-            int maxOptNameLength = 0;
             for (ParameterInfo<?> param : model.parameters()) {
                 if (!param.visible()) {
                     continue;
                 }
+                if (!usage.isEmpty()) {
+                    usage += " ";
+                }
                 if (param instanceof ArgumentInfo) {
-                    argument = " " + ((ArgumentInfo) param).description;
-                } else if (param instanceof NamedOptionInfo) {
-                    int optNameLength = ((NamedOptionInfo) param).name().length();
-                    if (optNameLength > maxOptNameLength) {
-                        maxOptNameLength = optNameLength;
-                    }
-                    options.add((NamedOptionInfo) param);
+                    argument = ((ArgumentInfo) param).usage();
+                } else if (param instanceof OptionInfo) {
+                    usage += ((OptionInfo) param).usage();
+                }
+                if (param instanceof NamedOptionInfo) {
+                    NamedOptionInfo<?> option = (NamedOptionInfo<?>) param;
+                    options.put("--" + option.name(), optionDescription(option));
                 } else if (param instanceof CommandFragmentInfo) {
                     for (ParameterInfo<?> fragmentParam : ((CommandFragmentInfo) param).parameters()) {
                         if (fragmentParam instanceof NamedOptionInfo) {
-                            int optNameLength = ((NamedOptionInfo) fragmentParam).name().length();
-                            if (optNameLength > maxOptNameLength) {
-                                maxOptNameLength = optNameLength;
-                            }
-                            options.add((NamedOptionInfo) fragmentParam);
+                            NamedOptionInfo<?> fragmentOption = (NamedOptionInfo<?>) fragmentParam;
+                            usage += fragmentOption.usage();
+                            options.put("--" + fragmentOption.name(), optionDescription(fragmentOption));
                         }
                     }
                 }
             }
-            context.logInfo(String.format("\nUsage:\t%s %s [OPTIONS]%s\n", context.cli().name(), model.command().name(), argument));
-            context.logInfo(model.command().description());
-            if (maxOptNameLength > 0) {
-                int descColPos = maxOptNameLength + 4;
-                context.logInfo("\nOptions:");
-                for (NamedOptionInfo<?> option : options) {
-                    int curColPos = descColPos - option.name().length();
-                    String spacing = "";
-                    for (int i = 0; i < curColPos; i++) {
-                        spacing += " ";
-                    }
-                    context.logInfo(String.format("  --%s%s%s", option.name(), spacing, option.description));
-                }
+            if (!argument.isEmpty()) {
+                usage += (usage.isEmpty() ? argument : (" " + argument));
             }
+            context.logInfo(String.format("\nUsage:\t%s %s [OPTIONS] %s\n", context.cli().name(), model.command().name(), usage));
+            context.logInfo(model.command().description());
+            context.logInfo("\nOptions:");
+            context.logInfo(UsageCommand.describeOptions(options));
         }
     }
 }

@@ -39,8 +39,9 @@ public final class InitCommand implements CommandExecution {
             CommonOptions commonOptions,
             @KeyValue(name = "flavor", description = "Helidon flavor", defaultValue = "SE") Flavor flavor,
             @KeyValue(name = "build", description = "Build type", defaultValue = "MAVEN") Build build,
-            @Flag(name = "batch", description = "Non iteractive, user input is passes as system properties") boolean batch) {
+            @Flag(name = "batch", description = "Non interactive, user input is passed as system properties") boolean batch) {
 
+        // TODO don't set the defaults for flavor and build
         this.commonOptions = commonOptions;
         this.flavor = flavor;
         this.build = build;
@@ -49,7 +50,7 @@ public final class InitCommand implements CommandExecution {
 
     @Override
     public void execute(CommandContext context) {
-        context.logInfo(String.format("\n TODO exec init, project=%s, flavor=%s, build=%s, batch=%s",
-                commonOptions.project, String.valueOf(flavor), String.valueOf(build), String.valueOf(batch)));
+        context.logInfo(String.format("\n TODO exec init, project=%s, flavor=%s, build=%s, batch=%s, properties=%s",
+                commonOptions.project, String.valueOf(flavor), String.valueOf(build), String.valueOf(batch), context.properties()));
     }
 }

@@ -4,9 +4,9 @@ Usage:	helidon [OPTIONS] COMMAND
 Helidon Project command line tool
 
 Options:
-  -D<name>=<value>     Define a system property
-  --verbose            Produce verbose output
-  --debug              Produce debug output
+  -D<name>=<value>    Define a system property
+  --verbose           Produce verbose output
+  --debug             Produce debug output
 
 Commands:
   features    List or add features to the project
