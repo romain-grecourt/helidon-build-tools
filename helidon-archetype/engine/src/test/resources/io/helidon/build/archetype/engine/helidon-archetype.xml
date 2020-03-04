@@ -26,15 +26,15 @@
         <property id="name" description="Project name" />
         <property id="package" description="Java package name" />
     </properties>
-    <path-transformations>
-        <path-transformation id="packaged">
+    <transformations>
+        <transformation id="packaged">
             <replace regex="__pkg__" replacement="${package}" />
             <replace regex="\\." replacement="\\/" />
-        </path-transformation>
-        <path-transformation id="mustache">
+        </transformation>
+        <transformation id="mustache">
             <replace regex="\.mustache$" replacement="" />
-        </path-transformation>
-    </path-transformations>
+        </transformation>
+    </transformations>
     <template-sets transformations="mustache">
         <template-set transformations="packaged">
             <directory>src/main/java</directory>

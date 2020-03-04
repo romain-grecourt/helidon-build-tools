@@ -26,8 +26,8 @@ import io.helidon.build.archetype.engine.ArchetypeDescriptor.FileSets;
 import io.helidon.build.archetype.engine.ArchetypeDescriptor.FlowNode;
 import io.helidon.build.archetype.engine.ArchetypeDescriptor.Input;
 import io.helidon.build.archetype.engine.ArchetypeDescriptor.InputFlow;
-import io.helidon.build.archetype.engine.ArchetypeDescriptor.PathReplacement;
-import io.helidon.build.archetype.engine.ArchetypeDescriptor.PathTransformation;
+import io.helidon.build.archetype.engine.ArchetypeDescriptor.Replacement;
+import io.helidon.build.archetype.engine.ArchetypeDescriptor.Transformation;
 import io.helidon.build.archetype.engine.ArchetypeDescriptor.Property;
 import io.helidon.build.archetype.engine.ArchetypeDescriptor.Select;
 import io.helidon.build.archetype.engine.ArchetypeDescriptor.TemplateSets;
@@ -63,28 +63,28 @@ public class ArchetypeDescriptorTest {
                 hasItems("Gradle based project", "Maven based project", "Project groupId", "Project artifactId", "Project version"
                 , "Project name", "Java package name"));
 
-        Map<String, PathTransformation> transformations = desc.getTransformations().stream()
-                .collect(Collectors.toMap(PathTransformation::getId, (o) -> o));
+        Map<String, Transformation> transformations = desc.getTransformations().stream()
+                .collect(Collectors.toMap(Transformation::getId, (o) -> o));
         assertThat(transformations.size(), is(2));
         assertThat(transformations.keySet(), hasItems("packaged", "mustache"));
-        List<PathReplacement> packaged = transformations.get("packaged").getReplacements();
+        List<Replacement> packaged = transformations.get("packaged").getReplacements();
         assertThat(packaged, is(notNullValue()));
-        assertThat(packaged.stream().map(PathReplacement::getRegex).collect(Collectors.toList()), hasItems("__pkg__", "\\\\."));
-        assertThat(packaged.stream().map(PathReplacement::getReplacement).collect(Collectors.toList()),
+        assertThat(packaged.stream().map(Replacement::getRegex).collect(Collectors.toList()), hasItems("__pkg__", "\\\\."));
+        assertThat(packaged.stream().map(Replacement::getReplacement).collect(Collectors.toList()),
                 hasItems("${package}", "\\\\/"));
-        List<PathReplacement> mustache = transformations.get("mustache").getReplacements();
+        List<Replacement> mustache = transformations.get("mustache").getReplacements();
         assertThat(mustache, is(notNullValue()));
-        assertThat(mustache.stream().map(PathReplacement::getRegex).collect(Collectors.toList()), hasItems("\\.mustache$"));
-        assertThat(mustache.stream().map(PathReplacement::getReplacement).collect(Collectors.toList()), hasItems(""));
+        assertThat(mustache.stream().map(Replacement::getRegex).collect(Collectors.toList()), hasItems("\\.mustache$"));
+        assertThat(mustache.stream().map(Replacement::getReplacement).collect(Collectors.toList()), hasItems(""));
 
         TemplateSets templateSets = desc.getTemplateSets();
         assertThat(templateSets, is(notNullValue()));
-        assertThat(templateSets.getTransformations().stream().map(PathTransformation::getId).collect(Collectors.toList()),
+        assertThat(templateSets.getTransformations().stream().map(Transformation::getId).collect(Collectors.toList()),
                 hasItems("mustache"));
         assertThat(templateSets.getTemplateSets().size(), is(3));
 
         FileSet ts1 = templateSets.getTemplateSets().get(0);
-        assertThat(ts1.getTransformations().stream().map(PathTransformation::getId).collect(Collectors.toList()),
+        assertThat(ts1.getTransformations().stream().map(Transformation::getId).collect(Collectors.toList()),
                 hasItems("packaged"));
         assertThat(ts1.getDirectory(), is("src/main/java"));
         assertThat(ts1.getIncludes(), hasItems("**/*.mustache"));
@@ -93,7 +93,7 @@ public class ArchetypeDescriptorTest {
         assertThat(ts1.getUnlessProperties(), is(nullValue()));
 
         FileSet ts2 = templateSets.getTemplateSets().get(1);
-        assertThat(ts2.getTransformations().stream().map(PathTransformation::getId).collect(Collectors.toList()),
+        assertThat(ts2.getTransformations().stream().map(Transformation::getId).collect(Collectors.toList()),
                 hasItems("packaged"));
         assertThat(ts2.getDirectory(), is("src/test/java"));
         assertThat(ts2.getIncludes(), hasItems("**/*.mustache"));
@@ -114,7 +114,7 @@ public class ArchetypeDescriptorTest {
         assertThat(fileSets.getTransformations(), is(nullValue()));
         assertThat(fileSets.getFileSets().size(), is(4));
         FileSet fs1 = fileSets.getFileSets().get(0);
-        assertThat(fs1.getTransformations().stream().map(PathTransformation::getId).collect(Collectors.toList()),
+        assertThat(fs1.getTransformations().stream().map(Transformation::getId).collect(Collectors.toList()),
                 hasItems("packaged"));
         assertThat(fs1.getDirectory(), is("src/main/java"));
         assertThat(fs1.getIncludes(), is(nullValue()));
@@ -131,7 +131,7 @@ public class ArchetypeDescriptorTest {
         assertThat(fs2.getUnlessProperties(), is(nullValue()));
 
         FileSet fs3 = fileSets.getFileSets().get(2);
-        assertThat(fs3.getTransformations().stream().map(PathTransformation::getId).collect(Collectors.toList()),
+        assertThat(fs3.getTransformations().stream().map(Transformation::getId).collect(Collectors.toList()),
                 hasItems("packaged"));
         assertThat(fs3.getDirectory(), is("src/test/java"));
         assertThat(fs3.getIncludes(), is(nullValue()));
