@@ -27,16 +27,24 @@ import javax.xml.bind.annotation.XmlElements;
 import javax.xml.bind.annotation.XmlID;
 import javax.xml.bind.annotation.XmlIDREF;
 import javax.xml.bind.annotation.XmlRootElement;
+import javax.xml.bind.annotation.XmlType;
 
 /**
- * XML binding model for {@code helidon-archetype.xml}.
+ * Helidon archetype XML descriptor.
  */
-@XmlRootElement(name = "archetype-descriptor")
+@XmlRootElement(name = "archetype-descriptor", namespace = ArchetypeDescriptor.NAMESPACE)
+@XmlType(namespace = ArchetypeDescriptor.NAMESPACE,
+        propOrder = {"name", "properties", "transformations", "templateSets", "fileSets", "inputFlow"})
 public final class ArchetypeDescriptor {
+
+    /**
+     * XML namespace.
+     */
+    public static final String NAMESPACE = "https://archetype.helidon.io";
 
     private String name;
     private List<Property> properties;
-    private List<PathTransformation> transformations;
+    private List<Transformation> transformations;
     private TemplateSets templateSets;
     private FileSets fileSets;
     private InputFlow inputFlow;
@@ -56,7 +64,7 @@ public final class ArchetypeDescriptor {
      *
      * @return String
      */
-    @XmlAttribute
+    @XmlElement(name = "name", required = true)
     public String getName() {
         return name;
     }
@@ -75,8 +83,8 @@ public final class ArchetypeDescriptor {
      *
      * @return list of {@link Property}
      */
-    @XmlElementWrapper(name = "properties")
-    @XmlElement(name = "property")
+    @XmlElementWrapper(name = "properties", required = true)
+    @XmlElement(name = "property", required = true)
     public List<Property> getProperties() {
         return properties;
     }
@@ -91,22 +99,22 @@ public final class ArchetypeDescriptor {
     }
 
     /**
-     * Get the path transformations.
+     * Get the transformations.
      *
-     * @return list of {@link PathTransformation}
+     * @return list of {@link Transformation}
      */
-    @XmlElementWrapper(name = "path-transformations")
-    @XmlElement(name = "path-transformation")
-    public List<PathTransformation> getTransformations() {
+    @XmlElementWrapper(name = "transformations")
+    @XmlElement(name = "transformation")
+    public List<Transformation> getTransformations() {
         return transformations;
     }
 
     /**
-     * Set the path transformations.
+     * Set the transformations.
      *
      * @param transformations transformations
      */
-    public void setTransformations(List<PathTransformation> transformations) {
+    public void setTransformations(List<Transformation> transformations) {
         this.transformations = transformations;
     }
 
@@ -167,6 +175,7 @@ public final class ArchetypeDescriptor {
         this.inputFlow = inputFlow;
     }
 
+    @XmlType(namespace = NAMESPACE)
     public static final class Property {
 
         private String id;
@@ -239,12 +248,13 @@ public final class ArchetypeDescriptor {
     }
 
     /**
-     * Path transformation, a pipeline of replacement operations applied on a path.
+     *  transformation, a pipeline of string replacement operations.
      */
-    public static final class PathTransformation {
+    @XmlType(namespace = NAMESPACE)
+    public static final class Transformation {
 
         private String id;
-        private List<PathReplacement> replacements;
+        private List<Replacement> replacements;
 
         /**
          * Set the transformation id.
@@ -256,7 +266,7 @@ public final class ArchetypeDescriptor {
         }
 
         /**
-         * Get the path transformation id.
+         * Get the transformation id.
          *
          * @return String
          */
@@ -269,19 +279,19 @@ public final class ArchetypeDescriptor {
         /**
          * Get the replacements.
          *
-         * @return linked list of {@link PathReplacement}
+         * @return linked list of {@link Replacement}
          */
         @XmlElement(name = "replace")
-        public List<PathReplacement> getReplacements() {
+        public List<Replacement> getReplacements() {
             return replacements;
         }
 
         /**
-         * Set the path replacements.
+         * Set the replacements.
          *
-         * @param replacements path replacements
+         * @param replacements replacements
          */
-        public void setReplacements(List<PathReplacement> replacements) {
+        public void setReplacements(List<Replacement> replacements) {
             this.replacements = replacements;
         }
 
@@ -304,7 +314,7 @@ public final class ArchetypeDescriptor {
             if (getClass() != obj.getClass()) {
                 return false;
             }
-            final PathTransformation other = (PathTransformation) obj;
+            final Transformation other = (Transformation) obj;
             if (!Objects.equals(this.id, other.id)) {
                 return false;
             }
@@ -313,15 +323,16 @@ public final class ArchetypeDescriptor {
     }
 
     /**
-     * Replace operation for a path transformation.
+     * Replace operation for a transformation.
      */
-    public static final class PathReplacement {
+    @XmlType(namespace = NAMESPACE)
+    public static final class Replacement {
 
         private String regex;
         private String replacement;
 
         /**
-         * Get the source regular expression to match the portion of the path to be transformed.
+         * Get the source regular expression to match the section to be replaced.
          *
          * @return regular expression
          */
@@ -377,7 +388,7 @@ public final class ArchetypeDescriptor {
             if (getClass() != obj.getClass()) {
                 return false;
             }
-            final PathReplacement other = (PathReplacement) obj;
+            final Replacement other = (Replacement) obj;
             if (!Objects.equals(this.regex, other.regex)) {
                 return false;
             }
@@ -388,6 +399,7 @@ public final class ArchetypeDescriptor {
     /**
      * Base class for conditional nodes.
      */
+    @XmlType(namespace = NAMESPACE)
     public abstract static class Conditional {
 
         private List<Property> ifProperties;
@@ -463,7 +475,8 @@ public final class ArchetypeDescriptor {
     /**
      * Set of included template files.
      */
-    public static final class TemplateSets extends PathSets {
+    @XmlType(namespace = NAMESPACE)
+    public static final class TemplateSets extends Sets {
 
         private List<FileSet> templateSets;
 
@@ -504,7 +517,7 @@ public final class ArchetypeDescriptor {
             if (getClass() != obj.getClass()) {
                 return false;
             }
-            if (!super.equals((PathSets) obj)) {
+            if (!super.equals((Sets) obj)) {
                 return false;
             }
             final TemplateSets other = (TemplateSets) obj;
@@ -515,7 +528,8 @@ public final class ArchetypeDescriptor {
     /**
      * Set of included template files.
      */
-    public static final class FileSets extends PathSets {
+    @XmlType(namespace = NAMESPACE)
+    public static final class FileSets extends Sets {
 
         private List<FileSet> fileSets;
 
@@ -556,7 +570,7 @@ public final class ArchetypeDescriptor {
             if (getClass() != obj.getClass()) {
                 return false;
             }
-            if (!super.equals((PathSets) obj)) {
+            if (!super.equals((Sets) obj)) {
                 return false;
             }
             final FileSets other = (FileSets) obj;
@@ -567,27 +581,28 @@ public final class ArchetypeDescriptor {
     /**
      * Base class for {@link TemplateSets} and {@link FileSets}.
      */
-    public static class PathSets {
+    @XmlType(namespace = NAMESPACE)
+    public abstract static class Sets {
 
-        private List<PathTransformation> transformations;
+        private List<Transformation> transformations;
 
         /**
-         * Get the path transformations.
+         * Get the transformations.
          *
-         * @return path transformations applied to this file sets
+         * @return transformations applied to this file sets
          */
         @XmlIDREF
         @XmlAttribute(name = "transformations")
-        public List<PathTransformation> getTransformations() {
+        public List<Transformation> getTransformations() {
             return transformations;
         }
 
         /**
-         * Set the path transformations.
+         * Set the transformations.
          *
-         * @param transformations path transformations
+         * @param transformations transformations
          */
-        public void setTransformations(List<PathTransformation> transformations) {
+        public void setTransformations(List<Transformation> transformations) {
             this.transformations = transformations;
         }
 
@@ -609,7 +624,7 @@ public final class ArchetypeDescriptor {
             if (getClass() != obj.getClass()) {
                 return false;
             }
-            final PathSets other = (PathSets) obj;
+            final Sets other = (Sets) obj;
             return Objects.equals(this.transformations, other.transformations);
         }
     }
@@ -617,9 +632,10 @@ public final class ArchetypeDescriptor {
     /**
      * A list of included files.
      */
+    @XmlType(namespace = NAMESPACE)
     public static final class FileSet extends Conditional {
 
-        private List<PathTransformation> transformations;
+        private List<Transformation> transformations;
         private String directory;
         private List<String> includes;
         private List<String> excludes;
@@ -683,22 +699,22 @@ public final class ArchetypeDescriptor {
         }
 
         /**
-         * Get the applied path transformations.
+         * Get the applied transformations.
          *
-         * @return list of {@link PathTransformation}
+         * @return list of {@link Transformation}
          */
         @XmlIDREF
         @XmlAttribute
-        public List<PathTransformation> getTransformations() {
+        public List<Transformation> getTransformations() {
             return transformations;
         }
 
         /**
-         * Set the applied path transformations.
+         * Set the applied transformations.
          *
-         * @param transformations path transformations
+         * @param transformations transformations
          */
-        public void setTransformations(List<PathTransformation> transformations) {
+        public void setTransformations(List<Transformation> transformations) {
             this.transformations = transformations;
         }
 
@@ -744,6 +760,7 @@ public final class ArchetypeDescriptor {
     /**
      * User input flow.
      */
+    @XmlType(namespace = NAMESPACE)
     public static final class InputFlow {
 
         private List<FlowNode> nodes;
@@ -796,6 +813,7 @@ public final class ArchetypeDescriptor {
     /**
      * Base class for flow nodes.
      */
+    @XmlType(namespace = NAMESPACE)
     public abstract static class FlowNode extends Conditional {
 
         private String text;
@@ -849,6 +867,7 @@ public final class ArchetypeDescriptor {
     /**
      * Select input, one of N choices.
      */
+    @XmlType(namespace = NAMESPACE)
     public static final class Select extends FlowNode {
 
         private String id;
@@ -926,6 +945,7 @@ public final class ArchetypeDescriptor {
     /**
      * A selectable choice.
      */
+    @XmlType(namespace = NAMESPACE)
     public static final class Choice extends FlowNode {
 
         private Property property;
@@ -980,6 +1000,7 @@ public final class ArchetypeDescriptor {
     /**
      * A user input.
      */
+    @XmlType(namespace = NAMESPACE)
     public static final class Input extends FlowNode {
 
         private String id;

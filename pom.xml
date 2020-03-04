@@ -150,6 +150,7 @@
         <version.plugin.gpg>1.6</version.plugin.gpg>
         <version.plugin.jar>3.0.2</version.plugin.jar>
         <version.plugin.javadoc>3.1.1</version.plugin.javadoc>
+        <version.plugin.jaxb2>2.5.0</version.plugin.jaxb2>
         <version.plugin.license>1.16</version.plugin.license>
         <version.plugin.plexus>2.1.0</version.plugin.plexus>
         <version.plugin.plugin-plugin>3.6.0</version.plugin.plugin-plugin>
@@ -376,6 +377,11 @@
                     <groupId>org.codehaus.plexus</groupId>
                     <artifactId>plexus-component-metadata</artifactId>
                     <version>${version.lib.plexus.component}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>jaxb2-maven-plugin</artifactId>
+                    <version>${version.plugin.jaxb2}</version>
                 </plugin>
             </plugins>
         </pluginManagement>
