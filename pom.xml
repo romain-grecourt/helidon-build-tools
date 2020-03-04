@@ -113,6 +113,7 @@
         <version.lib.doxia>1.9.1</version.lib.doxia>
         <version.lib.freemarker>2.3.23</version.lib.freemarker>
         <version.lib.helidon>0.9.0</version.lib.helidon>
+        <version.lib.jaxb>2.3.2</version.lib.jaxb>
         <version.lib.junit>5.1.0</version.lib.junit>
         <version.lib.hamcrest>1.3</version.lib.hamcrest>
         <version.lib.maven>3.6.2</version.lib.maven>
@@ -453,6 +454,13 @@
                 <groupId>io.helidon</groupId>
                 <artifactId>helidon-bom</artifactId>
                 <version>${version.lib.helidon}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.glassfish.jaxb</groupId>
+                <artifactId>jaxb-bom</artifactId>
+                <version>${version.lib.jaxb}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
