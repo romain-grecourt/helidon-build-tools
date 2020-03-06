@@ -16,38 +16,21 @@
 package io.helidon.build.archetype.engine;
 
 import java.io.InputStream;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
-
-import javax.xml.bind.JAXB;
-import javax.xml.bind.annotation.XmlAttribute;
-import javax.xml.bind.annotation.XmlElement;
-import javax.xml.bind.annotation.XmlElementWrapper;
-import javax.xml.bind.annotation.XmlElements;
-import javax.xml.bind.annotation.XmlID;
-import javax.xml.bind.annotation.XmlIDREF;
-import javax.xml.bind.annotation.XmlRootElement;
-import javax.xml.bind.annotation.XmlType;
+import java.util.Optional;
 
 /**
  * Helidon archetype XML descriptor.
  */
-@XmlRootElement(name = "archetype-descriptor", namespace = ArchetypeDescriptor.NAMESPACE)
-@XmlType(namespace = ArchetypeDescriptor.NAMESPACE,
-        propOrder = {"name", "properties", "transformations", "templateSets", "fileSets", "inputFlow"})
 public final class ArchetypeDescriptor {
 
-    /**
-     * XML namespace.
-     */
-    public static final String NAMESPACE = "https://archetype.helidon.io";
-
-    private String name;
-    private List<Property> properties;
-    private List<Transformation> transformations;
+    private final LinkedList<Property> properties = new LinkedList<>();
+    private final LinkedList<Transformation> transformations = new LinkedList<>();
     private TemplateSets templateSets;
     private FileSets fileSets;
-    private InputFlow inputFlow;
+    private final InputFlow inputFlow = new InputFlow();
 
     /**
      * Create a archetype descriptor instance from an input stream.
@@ -56,167 +39,95 @@ public final class ArchetypeDescriptor {
      * @return ArchetypeDescriptor
      */
     public static ArchetypeDescriptor read(InputStream is) {
-        return JAXB.unmarshal(is, ArchetypeDescriptor.class);
-    }
-
-    /**
-     * Get the descriptor name.
-     *
-     * @return String
-     */
-    @XmlElement(name = "name", required = true)
-    public String getName() {
-        return name;
-    }
-
-    /**
-     * Set the descriptor name.
-     *
-     * @param name name
-     */
-    public void setName(String name) {
-        this.name = name;
+        return ArchetypeDescriptorReader.read(is);
     }
 
     /**
      * Get the archetype properties.
      *
-     * @return list of {@link Property}
+     * @return list of {@link Property}, never {@code null}
      */
-    @XmlElementWrapper(name = "properties", required = true)
-    @XmlElement(name = "property", required = true)
-    public List<Property> getProperties() {
+    public LinkedList<Property> properties() {
         return properties;
-    }
-
-    /**
-     * Set the properties.
-     *
-     * @param properties property
-     */
-    public void setProperties(List<Property> properties) {
-        this.properties = properties;
     }
 
     /**
      * Get the transformations.
      *
-     * @return list of {@link Transformation}
+     * @return list of {@link Transformation}, never {@code null}
      */
-    @XmlElementWrapper(name = "transformations")
-    @XmlElement(name = "transformation")
-    public List<Transformation> getTransformations() {
+    public LinkedList<Transformation> transformations() {
         return transformations;
-    }
-
-    /**
-     * Set the transformations.
-     *
-     * @param transformations transformations
-     */
-    public void setTransformations(List<Transformation> transformations) {
-        this.transformations = transformations;
     }
 
     /**
      * Get the template sets.
      *
-     * @return TemplateSets
+     * @return optional of template sets, never {@code null}
      */
-    @XmlElement(name = "template-sets")
-    public TemplateSets getTemplateSets() {
-        return templateSets;
+    public Optional<TemplateSets> templateSets() {
+        return Optional.ofNullable(templateSets);
     }
 
     /**
      * Set the template sets.
-     *
      * @param templateSets template sets
      */
-    public void setTemplateSets(TemplateSets templateSets) {
-        this.templateSets = templateSets;
+    void templateSets(TemplateSets templateSets) {
+        this.templateSets = Objects.requireNonNull(templateSets, "templateSets is null");
     }
 
     /**
      * Get the file sets.
      *
-     * @return file sets
+     * @return optional of file sets, never {@code null}
      */
-    @XmlElement(name = "file-sets")
-    public FileSets getFileSets() {
-        return fileSets;
+    public Optional<FileSets> fileSets() {
+        return Optional.ofNullable(fileSets);
     }
 
     /**
      * Set the file sets.
-     *
      * @param fileSets file sets
      */
-    public void setFileSets(FileSets fileSets) {
-        this.fileSets = fileSets;
+    void fileSets(FileSets fileSets) {
+        this.fileSets = Objects.requireNonNull(fileSets, "fileSets is null");
     }
 
     /**
      * Get the input flow.
      *
-     * @return input flow
+     * @return input flow, never {@code null}
      */
-    @XmlElement(name = "input-flow")
-    public InputFlow getInputFlow() {
+    public InputFlow inputFlow() {
         return inputFlow;
     }
 
-    /**
-     * Set the input flow.
-     *
-     * @param inputFlow input flow
-     */
-    public void setInputFlow(InputFlow inputFlow) {
-        this.inputFlow = inputFlow;
-    }
-
-    @XmlType(namespace = NAMESPACE)
     public static final class Property {
 
-        private String id;
-        private String description;
+        private final String id;
+        private final String description;
 
-        /**
-         * Set the property id.
-         *
-         * @param id id
-         */
-        public void setId(String id) {
-            this.id = id;
+        Property(String id, String description) {
+            this.id = Objects.requireNonNull(id, "id is null");
+            this.description = Objects.requireNonNull(description, "description is null");
         }
 
         /**
          * Get the property id.
          *
-         * @return String
+         * @return property id, never {@code null}
          */
-        @XmlID
-        @XmlAttribute(name = "id", required = true)
-        public String getId() {
+        public String id() {
             return id;
-        }
-
-        /**
-         * Set the property description.
-         *
-         * @param description property description
-         */
-        public void setDescription(String description) {
-            this.description = description;
         }
 
         /**
          * get the property description.
          *
-         * @return description
+         * @return description, never {@code null}
          */
-        @XmlAttribute(name = "description", required = true)
-        public String getDescription() {
+        public String description() {
             return description;
         }
 
@@ -250,49 +161,32 @@ public final class ArchetypeDescriptor {
     /**
      *  transformation, a pipeline of string replacement operations.
      */
-    @XmlType(namespace = NAMESPACE)
     public static final class Transformation {
 
-        private String id;
-        private List<Replacement> replacements;
+        private final String id;
+        private final LinkedList<Replacement> replacements;
 
-        /**
-         * Set the transformation id.
-         *
-         * @param id id
-         */
-        public void setId(String id) {
-            this.id = id;
+        Transformation(String id) {
+            this.id = Objects.requireNonNull(id, "id is null");
+            this.replacements = new LinkedList<>();
         }
 
         /**
          * Get the transformation id.
          *
-         * @return String
+         * @return transformation id, never {@code null}
          */
-        @XmlID
-        @XmlAttribute(name = "id", required = true)
-        public String getId() {
+        public String id() {
             return id;
         }
 
         /**
          * Get the replacements.
          *
-         * @return linked list of {@link Replacement}
+         * @return linked list of replacement, never {@code null}
          */
-        @XmlElement(name = "replace")
-        public List<Replacement> getReplacements() {
+        public LinkedList<Replacement> replacements() {
             return replacements;
-        }
-
-        /**
-         * Set the replacements.
-         *
-         * @param replacements replacements
-         */
-        public void setReplacements(List<Replacement> replacements) {
-            this.replacements = replacements;
         }
 
         @Override
@@ -325,48 +219,32 @@ public final class ArchetypeDescriptor {
     /**
      * Replace operation for a transformation.
      */
-    @XmlType(namespace = NAMESPACE)
     public static final class Replacement {
 
-        private String regex;
-        private String replacement;
+        private final String regex;
+        private final String replacement;
+
+        Replacement(String regex, String replacement) {
+            this.regex = Objects.requireNonNull(regex, "regex is null");
+            this.replacement = Objects.requireNonNull(replacement, "replacement is null");
+        }
 
         /**
          * Get the source regular expression to match the section to be replaced.
          *
-         * @return regular expression
+         * @return regular expression, never {@code null}
          */
-        @XmlAttribute(required = true)
-        public String getRegex() {
+        public String regex() {
             return regex;
-        }
-
-        /**
-         * Set the source regular expression.
-         *
-         * @param regex regular expression
-         */
-        public void setRegex(String regex) {
-            this.regex = regex;
         }
 
         /**
          * Get the replacement for the matches of the source regular expression.
          *
-         * @return replacement
+         * @return replacement, never {@code null}
          */
-        @XmlAttribute(required = true)
-        public String getReplacement() {
+        public String replacement() {
             return replacement;
-        }
-
-        /**
-         * Set the replacement.
-         *
-         * @param replacement replacement
-         */
-        public void setReplacement(String replacement) {
-            this.replacement = replacement;
         }
 
         @Override
@@ -399,50 +277,32 @@ public final class ArchetypeDescriptor {
     /**
      * Base class for conditional nodes.
      */
-    @XmlType(namespace = NAMESPACE)
     public abstract static class Conditional {
 
-        private List<Property> ifProperties;
-        private List<Property> unlessProperties;
+        private final List<Property> ifProperties;
+        private final List<Property> unlessProperties;
+
+        Conditional(List<Property> ifProperties, List<Property> unlessProperties) {
+            this.ifProperties = Objects.requireNonNull(ifProperties, "ifProperties is null");
+            this.unlessProperties = Objects.requireNonNull(unlessProperties, "unlessProperties is null");
+        }
 
         /**
          * Get the if properties.
          *
-         * @return list of properties
+         * @return list of properties, never {@code null}
          */
-        @XmlIDREF
-        @XmlAttribute(name = "if")
-        public List<Property> getIfProperties() {
+        public List<Property> ifProperties() {
             return ifProperties;
-        }
-
-        /**
-         * Set the {@code if} properties.
-         *
-         * @param ifProperties {@code if} properties
-         */
-        public void setIfProperties(List<Property> ifProperties) {
-            this.ifProperties = ifProperties;
         }
 
         /**
          * Get the {@code unless} properties.
          *
-         * @return list of properties
+         * @return list of properties, never {@code null}
          */
-        @XmlIDREF
-        @XmlAttribute(name = "unless")
-        public List<Property> getUnlessProperties() {
+        public List<Property> unlessProperties() {
             return unlessProperties;
-        }
-
-        /**
-         * Set the {@code unless} properties.
-         *
-         * @param unlessProperties {@code unless} properties
-         */
-        public void setUnlessProperties(List<Property> unlessProperties) {
-            this.unlessProperties = unlessProperties;
         }
 
         @Override
@@ -475,28 +335,21 @@ public final class ArchetypeDescriptor {
     /**
      * Set of included template files.
      */
-    @XmlType(namespace = NAMESPACE)
-    public static final class TemplateSets extends Sets {
+    public static final class TemplateSets extends PathSets {
 
-        private List<FileSet> templateSets;
+        private final LinkedList<FileSet> templateSets = new LinkedList<>();
+
+        TemplateSets(List<Transformation> transformations) {
+            super(transformations);
+        }
 
         /**
          * Get the template sets.
          *
-         * @return list of {@link FileSet}
+         * @return list of file set, never {@code null}
          */
-        @XmlElement(name = "template-set")
-        public List<FileSet> getTemplateSets() {
+        public LinkedList<FileSet> templateSets() {
             return templateSets;
-        }
-
-        /**
-         * Set the template sets.
-         *
-         * @param templateSets template sets
-         */
-        public void setTemplateSets(List<FileSet> templateSets) {
-            this.templateSets = templateSets;
         }
 
         @Override
@@ -517,7 +370,7 @@ public final class ArchetypeDescriptor {
             if (getClass() != obj.getClass()) {
                 return false;
             }
-            if (!super.equals((Sets) obj)) {
+            if (!super.equals((PathSets) obj)) {
                 return false;
             }
             final TemplateSets other = (TemplateSets) obj;
@@ -528,28 +381,21 @@ public final class ArchetypeDescriptor {
     /**
      * Set of included template files.
      */
-    @XmlType(namespace = NAMESPACE)
-    public static final class FileSets extends Sets {
+    public static final class FileSets extends PathSets {
 
-        private List<FileSet> fileSets;
+        private final LinkedList<FileSet> fileSets = new LinkedList<>();
+
+        FileSets(List<Transformation> transformations) {
+            super(transformations);
+        }
 
         /**
          * Get the file sets.
          *
-         * @return list of {@link FileSet}
+         * @return list of file set, never {@code null}
          */
-        @XmlElement(name = "file-set")
-        public List<FileSet> getFileSets() {
+        public LinkedList<FileSet> fileSets() {
             return fileSets;
-        }
-
-        /**
-         * Set the file sets.
-         *
-         * @param fileSets file sets
-         */
-        public void setFileSets(List<FileSet> fileSets) {
-            this.fileSets = fileSets;
         }
 
         @Override
@@ -570,7 +416,7 @@ public final class ArchetypeDescriptor {
             if (getClass() != obj.getClass()) {
                 return false;
             }
-            if (!super.equals((Sets) obj)) {
+            if (!super.equals((PathSets) obj)) {
                 return false;
             }
             final FileSets other = (FileSets) obj;
@@ -581,29 +427,21 @@ public final class ArchetypeDescriptor {
     /**
      * Base class for {@link TemplateSets} and {@link FileSets}.
      */
-    @XmlType(namespace = NAMESPACE)
-    public abstract static class Sets {
+    public abstract static class PathSets {
 
-        private List<Transformation> transformations;
+        private final List<Transformation> transformations;
+
+        protected PathSets(List<Transformation> transformations) {
+            this.transformations = Objects.requireNonNull(transformations, "transformations is null");
+        }
 
         /**
          * Get the transformations.
          *
-         * @return transformations applied to this file sets
+         * @return list of transformation, never {@code null}
          */
-        @XmlIDREF
-        @XmlAttribute(name = "transformations")
-        public List<Transformation> getTransformations() {
+        public List<Transformation> transformations() {
             return transformations;
-        }
-
-        /**
-         * Set the transformations.
-         *
-         * @param transformations transformations
-         */
-        public void setTransformations(List<Transformation> transformations) {
-            this.transformations = transformations;
         }
 
         @Override
@@ -624,7 +462,7 @@ public final class ArchetypeDescriptor {
             if (getClass() != obj.getClass()) {
                 return false;
             }
-            final Sets other = (Sets) obj;
+            final PathSets other = (PathSets) obj;
             return Objects.equals(this.transformations, other.transformations);
         }
     }
@@ -632,90 +470,62 @@ public final class ArchetypeDescriptor {
     /**
      * A list of included files.
      */
-    @XmlType(namespace = NAMESPACE)
     public static final class FileSet extends Conditional {
 
-        private List<Transformation> transformations;
+        private final List<Transformation> transformations;
+        private final LinkedList<String> includes;
+        private final LinkedList<String> excludes;
         private String directory;
-        private List<String> includes;
-        private List<String> excludes;
+
+        FileSet(List<Transformation> transformations, List<Property> ifProperties, List<Property> unlessProperties) {
+            super(ifProperties, unlessProperties);
+            this.transformations = Objects.requireNonNull(transformations, "transformations is null");
+            this.includes = new LinkedList<>();
+            this.excludes = new LinkedList<>();
+        }
 
         /**
          * Get the directory of this file set.
          *
-         * @return directory
+         * @return directory optional, never {@code null}
          */
-        public String getDirectory() {
-            return directory;
+        public Optional<String> directory() {
+            return Optional.ofNullable(directory);
         }
 
         /**
-         * Set the directory for this file set.
-         *
+         * Set the directory.
          * @param directory directory
          */
-        public void setDirectory(String directory) {
-            this.directory = directory;
+        void directory(String directory) {
+            this.directory = Objects.requireNonNull(directory, "directory is null");
         }
 
         /**
          * Get the exclude filters.
          *
-         * @return exclude filters
+         * @return list of exclude filter, never {@code null}
          */
-        @XmlElementWrapper(name = "excludes")
-        @XmlElement(name = "exclude")
-        public List<String> getExcludes() {
+        public LinkedList<String> excludes() {
             return excludes;
-        }
-
-        /**
-         * Set the exclude filters.
-         *
-         * @param excludes excludes filters
-         */
-        public void setExcludes(List<String> excludes) {
-            this.excludes = excludes;
         }
 
         /**
          * Get the include filters.
          *
-         * @return include filters
+         * @return list of include filter, never {@code null}
          */
-        @XmlElementWrapper(name = "includes")
-        @XmlElement(name = "include")
-        public List<String> getIncludes() {
+        public LinkedList<String> includes() {
             return includes;
-        }
-
-        /**
-         * Set the include filters.
-         *
-         * @param includes include filters
-         */
-        public void setIncludes(List<String> includes) {
-            this.includes = includes;
         }
 
         /**
          * Get the applied transformations.
          *
-         * @return list of {@link Transformation}
+         * @return list of transformation, never {@code null}
          */
-        @XmlIDREF
-        @XmlAttribute
-        public List<Transformation> getTransformations() {
+        public List<Transformation> transformations() {
             return transformations;
-        }
-
-        /**
-         * Set the applied transformations.
-         *
-         * @param transformations transformations
-         */
-        public void setTransformations(List<Transformation> transformations) {
-            this.transformations = transformations;
         }
 
         @Override
@@ -760,31 +570,17 @@ public final class ArchetypeDescriptor {
     /**
      * User input flow.
      */
-    @XmlType(namespace = NAMESPACE)
     public static final class InputFlow {
 
-        private List<FlowNode> nodes;
+        private final LinkedList<FlowNode> nodes = new LinkedList<>();
 
         /**
          * Get the flow nodes.
          *
-         * @return list of {@link FlowNode}
+         * @return list of flow node, never {@code null}
          */
-        @XmlElements({
-            @XmlElement(name = "select", type = Select.class),
-            @XmlElement(name = "input", type = Input.class)
-        })
-        public List<FlowNode> getNodes() {
+        public LinkedList<FlowNode> nodes() {
             return nodes;
-        }
-
-        /**
-         * Set the flow nodes.
-         *
-         * @param nodes nodes
-         */
-        public void setNodes(List<FlowNode> nodes) {
-            this.nodes = nodes;
         }
 
         @Override
@@ -813,28 +609,22 @@ public final class ArchetypeDescriptor {
     /**
      * Base class for flow nodes.
      */
-    @XmlType(namespace = NAMESPACE)
     public abstract static class FlowNode extends Conditional {
 
-        private String text;
+        private final String text;
+
+        protected FlowNode(String text, List<Property> ifProperties, List<Property> unlessProperties) {
+            super(ifProperties, unlessProperties);
+            this.text = Objects.requireNonNull(text, "text is null");
+        }
 
         /**
          * Get the input text for this select.
          *
-         * @return input text
+         * @return input text, never {@code null}
          */
-        @XmlAttribute(required = true)
-        public String getText() {
+        public String text() {
             return text;
-        }
-
-        /**
-         * Set the input text for this select.
-         *
-         * @param text input text
-         */
-        public void setText(String text) {
-            this.text = text;
         }
 
         @Override
@@ -867,48 +657,33 @@ public final class ArchetypeDescriptor {
     /**
      * Select input, one of N choices.
      */
-    @XmlType(namespace = NAMESPACE)
     public static final class Select extends FlowNode {
 
-        private String id;
-        private List<Choice> choices;
+        private final String id;
+        private final LinkedList<Choice> choices;
+
+        Select(String id, String text, List<Property> ifProperties, List<Property> unlessProperties) {
+            super(text, ifProperties, unlessProperties);
+            this.id = Objects.requireNonNull(id, "id is null");
+            this.choices = new LinkedList<>();
+        }
 
         /**
          * Get the select id.
          *
-         * @return String
+         * @return select id, never {@code null}
          */
-        @XmlAttribute(required = true)
-        public String getId() {
+        public String id() {
             return id;
-        }
-
-        /**
-         * Set the select id.
-         *
-         * @param id id
-         */
-        public void setId(String id) {
-            this.id = id;
         }
 
         /**
          * Get the choices.
          *
-         * @return list of {@code Choice}
+         * @return list of {@code Choice}, never {@code null}
          */
-        @XmlElement(name = "choice")
-        public List<Choice> getChoices() {
+        public LinkedList<Choice> choices() {
             return choices;
-        }
-
-        /**
-         * Set the choices.
-         *
-         * @param choices choices
-         */
-        public void setChoices(List<Choice> choices) {
-            this.choices = choices;
         }
 
         @Override
@@ -945,29 +720,22 @@ public final class ArchetypeDescriptor {
     /**
      * A selectable choice.
      */
-    @XmlType(namespace = NAMESPACE)
     public static final class Choice extends FlowNode {
 
-        private Property property;
+        private final Property property;
+
+        Choice(Property property, String text, List<Property> ifProperties, List<Property> unlessProperties) {
+            super(text, ifProperties, unlessProperties);
+            this.property = Objects.requireNonNull(property, "property is null");
+        }
 
         /**
          * Get the property mapping for this choice.
          *
-         * @return String
+         * @return property, never {@code null}
          */
-        @XmlIDREF
-        @XmlAttribute(required = true)
-        public Property getProperty() {
+        public Property property() {
             return property;
-        }
-
-        /**
-         * Set the property mapping for this choice.
-         *
-         * @param property property mapping
-         */
-        public void setProperty(Property property) {
-            this.property = property;
         }
 
         @Override
@@ -1000,50 +768,37 @@ public final class ArchetypeDescriptor {
     /**
      * A user input.
      */
-    @XmlType(namespace = NAMESPACE)
     public static final class Input extends FlowNode {
 
-        private String id;
-        private Property property;
-        private String defaultValue;
+        private final String id;
+        private final Property property;
+        private final Optional<String> defaultValue;
+
+        Input(String id, Property property, String defaultValue, String text, List<Property> ifProperties,
+                List<Property> unlessProperties) {
+
+            super(text, ifProperties, unlessProperties);
+            this.id = Objects.requireNonNull(id, "id is null");
+            this.property = Objects.requireNonNull(property, "property is null");
+            this.defaultValue = Optional.ofNullable(defaultValue);
+        }
 
         /**
          * Get the input id.
          *
-         * @return input id
+         * @return input id, never {@code null}
          */
-        @XmlAttribute(required = true)
-        public String getId() {
+        public String id() {
             return id;
-        }
-
-        /**
-         * Set the input id.
-         *
-         * @param id input id
-         */
-        public void setId(String id) {
-            this.id = id;
         }
 
         /**
          * Get the mapped property.
          *
-         * @return Property
+         * @return Property, never {@code null}
          */
-        @XmlIDREF
-        @XmlAttribute(required = true)
-        public Property getProperty() {
+        public Property property() {
             return property;
-        }
-
-        /**
-         * Set the mapped property.
-         *
-         * @param property property
-         */
-        public void setProperty(Property property) {
-            this.property = property;
         }
 
         /**
@@ -1051,18 +806,8 @@ public final class ArchetypeDescriptor {
          *
          * @return default value
          */
-        @XmlAttribute(name = "default")
-        public String getDefaultValue() {
+        public Optional<String> defaultValue() {
             return defaultValue;
-        }
-
-        /**
-         * Set the input default value.
-         *
-         * @param defaultValue default value
-         */
-        public void setDefaultValue(String defaultValue) {
-            this.defaultValue = defaultValue;
         }
 
         @Override

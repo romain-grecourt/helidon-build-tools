@@ -18,6 +18,15 @@ package io.helidon.build.archetype.engine;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Properties;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.Comparator;
+import java.util.stream.Collectors;
 
 import io.helidon.build.archetype.engine.ArchetypeDescriptor.FileSet;
 import io.helidon.build.archetype.engine.ArchetypeDescriptor.Property;
@@ -27,6 +36,8 @@ import io.helidon.build.archetype.engine.ArchetypeDescriptor.Transformation;
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.not;
+import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 
 /**
@@ -54,27 +65,14 @@ public class ArchetypeEngineTest {
     @Test
     public void testTransform() {
         LinkedList<Transformation> transformations = new LinkedList<>();
-        Transformation t1 = new Transformation();
-        LinkedList<Replacement> t1r = new LinkedList<>();
-        Replacement t1r1 = new Replacement();
-        t1r1.setRegex("\\.mustache$");
-        t1r1.setReplacement("");
-        t1r.add(t1r1);
-        t1.setReplacements(t1r);
+        Transformation t1 = new Transformation("mustache");
+        t1.replacements().add(new Replacement("\\.mustache$", ""));
         transformations.add(t1);
-        Transformation t2 = new Transformation();
-        LinkedList<Replacement> t2r = new LinkedList<>();
-        Replacement t2r1 = new Replacement();
-        t2r1.setRegex("__pkg__");
-        t2r1.setReplacement("com.example.myapp");
-        t2r.add(t2r1);
-        Replacement t2r2 = new Replacement();
-        t2r2.setRegex("(?!\\.java)\\.");
-        t2r2.setReplacement("\\/");
-        t2r.add(t2r2);
-        t2.setReplacements(t2r);
+        Transformation t2 = new Transformation("packaged");
+        t2.replacements().add(new Replacement("__pkg__", "com.example.myapp"));
+        t2.replacements().add(new Replacement("(?!\\.java)\\.", "\\/"));
         transformations.add(t2);
-        assertThat(ArchetypeEngine.transform("src/main/java/__pkg__/Main.java.mustache", transformations),
+        assertThat(ArchetypeEngine.transform("src/main/java/__pkg__/Main.java.mustache", transformations, new Properties()),
                 is("src/main/java/com/example/myapp/Main.java"));
     }
 
@@ -87,30 +85,67 @@ public class ArchetypeEngineTest {
         Properties props1 = new Properties();
         props1.put("prop1", "true");
 
-        FileSet fset1 = new FileSet();
-        Property prop1 = new Property();
-        prop1.setId("prop1");
-        fset1.setIfProperties(List.of(prop1));
+        Property prop1 = new Property("prop1", "Prop 1");
+        FileSet fset1 = new FileSet(List.of(), List.of(prop1), List.of());
         assertThat(ArchetypeEngine.evaluateConditional(fset1, props1), is(true));
         assertThat(ArchetypeEngine.evaluateConditional(fset1, new Properties()), is(false));
 
-        FileSet fset2 = new FileSet();
-        fset2.setUnlessProperties(List.of(prop1));
+        FileSet fset2 = new FileSet(List.of(), List.of(), List.of(prop1));
         assertThat(ArchetypeEngine.evaluateConditional(fset2, props1), is(false));
         assertThat(ArchetypeEngine.evaluateConditional(fset2, new Properties()), is(true));
 
-        Property prop2 = new Property();
-        prop2.setId("prop2");
-        FileSet fset3 = new FileSet();
-        fset3.setIfProperties(List.of(prop1, prop2));
+        Property prop2 = new Property("prop2", "Prop 2");
+        FileSet fset3 = new FileSet(List.of(), List.of(prop1, prop2), List.of());
         assertThat(ArchetypeEngine.evaluateConditional(fset3, props2), is(true));
         assertThat(ArchetypeEngine.evaluateConditional(fset3, props1), is(false));
         assertThat(ArchetypeEngine.evaluateConditional(fset3, new Properties()), is(false));
 
-        FileSet fset4 = new FileSet();
-        fset4.setIfProperties(List.of(prop1));
-        fset4.setUnlessProperties(List.of(prop2));
+        FileSet fset4 = new FileSet(List.of(), List.of(prop1), List.of(prop2));
         assertThat(ArchetypeEngine.evaluateConditional(fset4, props2), is(false));
         assertThat(ArchetypeEngine.evaluateConditional(fset4, new Properties()), is(false));
+    }
+
+    @Test
+    public void testGenerate() throws IOException {
+        Properties props = new Properties();
+        props.put("groupId", "com.example");
+        props.put("artifactId", "my-project");
+        props.put("version", "1.0-SNAPSHOT");
+        props.put("name", "my super project");
+        props.put("package", "com.example.myproject");
+        props.put("maven", "true");
+        File targetDir = new File(new File("").getAbsolutePath(), "target");
+        File outputDir = new File(targetDir, "test-project");
+        Path outputDirPath = outputDir.toPath();
+        if (Files.exists(outputDirPath)) {
+            Files.walk(outputDirPath)
+                    .sorted(Comparator.reverseOrder())
+                    .map(Path::toFile)
+                    .forEach(File::delete);
+        }
+        assertThat(Files.exists(outputDirPath), is(false));
+        new ArchetypeEngine(ArchetypeEngineTest.class.getClassLoader(), props).generate(outputDir);
+        assertThat(Files.exists(outputDirPath), is(true));
+        assertThat(Files.walk(outputDirPath)
+                .filter(p -> !Files.isDirectory(p))
+                .map((p) -> outputDirPath.relativize(p).toString())
+                .collect(Collectors.toList()),
+                is(List.of("pom.xml", "src/main/java/com/example/myproject/Main.java")));
+
+        InputStream is = ArchetypeEngineTest.class.getClassLoader().getResourceAsStream("META-INF/test.properties");
+        assertThat(is, is(not(nullValue())));
+        Properties testProps = new Properties();
+        testProps.load(is);
+
+        String pomBase64 = testProps.getProperty("pom.xml");
+        assertThat(pomBase64, is(not(nullValue())));
+        assertThat(new String(Files.readAllBytes(outputDirPath.resolve("pom.xml")), StandardCharsets.UTF_8),
+                is (new String(Base64.getDecoder().decode(pomBase64), StandardCharsets.UTF_8)));
+
+        String mainBase64 = testProps.getProperty("main.java");
+        assertThat(mainBase64, is(not(nullValue())));
+        assertThat(new String(Files.readAllBytes(outputDirPath.resolve("src/main/java/com/example/myproject/Main.java")),
+                StandardCharsets.UTF_8),
+                is (new String(Base64.getDecoder().decode(mainBase64), StandardCharsets.UTF_8)));
     }
 }

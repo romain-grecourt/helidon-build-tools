@@ -16,7 +16,7 @@
     limitations under the License.
 
 -->
-<archetype-descriptor name="test">
+<archetype-descriptor>
     <properties>
         <property id="gradle" description="Gradle based project" />
         <property id="maven" description="Maven based project" />
@@ -29,7 +29,7 @@
     <transformations>
         <transformation id="packaged">
             <replace regex="__pkg__" replacement="${package}" />
-            <replace regex="\\." replacement="\\/" />
+            <replace regex="(?!\.[a-z]+$)\." replacement="\/" />
         </transformation>
         <transformation id="mustache">
             <replace regex="\.mustache$" replacement="" />
@@ -52,6 +52,12 @@
             <directory>.</directory>
             <includes>
                 <include>build.gradle.mustache</include>
+            </includes>
+        </template-set>
+        <template-set if="maven">
+            <directory>.</directory>
+            <includes>
+                <include>pom.xml.mustache</include>
             </includes>
         </template-set>
     </template-sets>
@@ -86,6 +92,8 @@
             <choice property="maven" text="Maven" />
             <choice property="gradle" text="Gradle" />
         </select>
+        <!-- TODO input validation -->
+        <!-- TODO input value transformation -->
         <input id="groupId" property="groupId" text="Enter a project groupId" if="maven"/>
         <input id="artifactId" property="artifactId" text="Enter a project artifactId" />
         <input id="version" property="version" text="Enter a project version" default="1.0-SNAPSHOT" />
