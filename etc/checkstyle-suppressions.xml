@@ -25,5 +25,7 @@
     <suppress checks="FileLength"
             files="config/config/src/main/java/io/helidon/config/Config.java"
             lines="1"/>
+    <suppress checks="LineLength"
+            files="helidon-archetype/engine/src/test/resources/META-INF/test.properties" />
 </suppressions>
 
