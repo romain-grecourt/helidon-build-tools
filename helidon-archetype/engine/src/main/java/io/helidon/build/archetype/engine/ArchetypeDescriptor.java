@@ -32,6 +32,9 @@ public final class ArchetypeDescriptor {
     private FileSets fileSets;
     private final InputFlow inputFlow = new InputFlow();
 
+    ArchetypeDescriptor() {
+    }
+
     /**
      * Create a archetype descriptor instance from an input stream.
      *
@@ -107,10 +110,12 @@ public final class ArchetypeDescriptor {
 
         private final String id;
         private final String description;
+        private final Optional<String> defaultValue;
 
-        Property(String id, String description) {
+        Property(String id, String description, String defaultValue) {
             this.id = Objects.requireNonNull(id, "id is null");
             this.description = Objects.requireNonNull(description, "description is null");
+            this.defaultValue = Optional.ofNullable(defaultValue);
         }
 
         /**
@@ -129,6 +134,15 @@ public final class ArchetypeDescriptor {
          */
         public String description() {
             return description;
+        }
+
+        /**
+         * Get the default value.
+         *
+         * @return default value
+         */
+        public Optional<String> defaultValue() {
+            return defaultValue;
         }
 
         @Override
@@ -659,22 +673,11 @@ public final class ArchetypeDescriptor {
      */
     public static final class Select extends FlowNode {
 
-        private final String id;
         private final LinkedList<Choice> choices;
 
-        Select(String id, String text, List<Property> ifProperties, List<Property> unlessProperties) {
+        Select(String text, List<Property> ifProperties, List<Property> unlessProperties) {
             super(text, ifProperties, unlessProperties);
-            this.id = Objects.requireNonNull(id, "id is null");
             this.choices = new LinkedList<>();
-        }
-
-        /**
-         * Get the select id.
-         *
-         * @return select id, never {@code null}
-         */
-        public String id() {
-            return id;
         }
 
         /**
@@ -690,7 +693,6 @@ public final class ArchetypeDescriptor {
         public int hashCode() {
             int hash = 7;
             hash += super.hashCode();
-            hash = 89 * hash + Objects.hashCode(this.id);
             hash = 89 * hash + Objects.hashCode(this.choices);
             return hash;
         }
@@ -710,9 +712,6 @@ public final class ArchetypeDescriptor {
                 return false;
             }
             final Select other = (Select) obj;
-            if (!Objects.equals(this.id, other.id)) {
-                return false;
-            }
             return Objects.equals(this.choices, other.choices);
         }
     }
@@ -770,26 +769,15 @@ public final class ArchetypeDescriptor {
      */
     public static final class Input extends FlowNode {
 
-        private final String id;
         private final Property property;
         private final Optional<String> defaultValue;
 
-        Input(String id, Property property, String defaultValue, String text, List<Property> ifProperties,
+        Input(Property property, String defaultValue, String text, List<Property> ifProperties,
                 List<Property> unlessProperties) {
 
             super(text, ifProperties, unlessProperties);
-            this.id = Objects.requireNonNull(id, "id is null");
             this.property = Objects.requireNonNull(property, "property is null");
             this.defaultValue = Optional.ofNullable(defaultValue);
-        }
-
-        /**
-         * Get the input id.
-         *
-         * @return input id, never {@code null}
-         */
-        public String id() {
-            return id;
         }
 
         /**
@@ -814,7 +802,6 @@ public final class ArchetypeDescriptor {
         public int hashCode() {
             int hash = 5;
             hash += super.hashCode();
-            hash = 17 * hash + Objects.hashCode(this.id);
             hash = 17 * hash + Objects.hashCode(this.property);
             hash = 17 * hash + Objects.hashCode(this.defaultValue);
             return hash;
@@ -835,9 +822,6 @@ public final class ArchetypeDescriptor {
                 return false;
             }
             final Input other = (Input) obj;
-            if (!Objects.equals(this.id, other.id)) {
-                return false;
-            }
             if (!Objects.equals(this.defaultValue, other.defaultValue)) {
                 return false;
             }

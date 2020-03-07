@@ -54,14 +54,14 @@ public class ArchetypeDescriptorTest {
         assertThat(is, is(notNullValue()));
 
         ArchetypeDescriptor desc = ArchetypeDescriptor.read(is);
-        List<Property> properties = desc.properties();
-        assertThat(properties, is(not(empty())));
+        Map<String, Property> properties = desc.properties().stream().collect(Collectors.toMap(Property::id, (p) -> p));
+        assertThat(properties.entrySet(), is(not(empty())));
         assertThat(properties.size(), is(7));
-        assertThat(properties.stream().map(Property::id).collect(Collectors.toList()),
-                hasItems("gradle", "maven", "groupId", "artifactId", "version", "name", "package"));
-        assertThat(properties.stream().map(Property::description).collect(Collectors.toList()),
+        assertThat(properties.keySet(), hasItems("gradle", "maven", "groupId", "artifactId", "version", "name", "package"));
+        assertThat(properties.values().stream().map(Property::description).collect(Collectors.toList()),
                 hasItems("Gradle based project", "Maven based project", "Project groupId", "Project artifactId", "Project version"
                 , "Project name", "Java package name"));
+        assertThat(properties.get("version").defaultValue().get(), is("1.0-SNAPSHOT"));
 
         Map<String, Transformation> transformations = desc.transformations().stream()
                 .collect(Collectors.toMap(Transformation::id, (o) -> o));
@@ -69,10 +69,9 @@ public class ArchetypeDescriptorTest {
         assertThat(transformations.keySet(), hasItems("packaged", "mustache"));
         List<Replacement> packaged = transformations.get("packaged").replacements();
         assertThat(packaged, is(not(empty())));
-        assertThat(packaged.stream().map(Replacement::regex).collect(Collectors.toList()),
-                hasItems("__pkg__", "(?!\\.[a-z]+$)\\."));
+        assertThat(packaged.stream().map(Replacement::regex).collect(Collectors.toList()), hasItems("__pkg__"));
         assertThat(packaged.stream().map(Replacement::replacement).collect(Collectors.toList()),
-                hasItems("${package}", "\\/"));
+                hasItems("${package/(?!\\.[a-z]+$)\\./\\/}"));
         List<Replacement> mustache = transformations.get("mustache").replacements();
         assertThat(mustache, is(not(empty())));
         assertThat(mustache.stream().map(Replacement::regex).collect(Collectors.toList()), hasItems("\\.mustache$"));
@@ -160,7 +159,6 @@ public class ArchetypeDescriptorTest {
         assertThat(inputFlow.nodes().size(), is(6));
         FlowNode fn1 = inputFlow.nodes().get(0);
         assertThat(fn1, is(instanceOf(Select.class)));
-        assertThat(((Select) fn1).id(), is("build"));
         assertThat(((Select) fn1).text(), is("Select a build system"));
         assertThat(((Select) fn1).choices().size(), is(2));
         assertThat(fn1.ifProperties(), is(empty()));
@@ -181,7 +179,6 @@ public class ArchetypeDescriptorTest {
         FlowNode fn2 = inputFlow.nodes().get(1);
         assertThat(fn2, is(instanceOf(Input.class)));
         assertThat(((Input) fn2).property().id(), is("groupId"));
-        assertThat(((Input) fn2).id(), is("groupId"));
         assertThat(((Input) fn2).text(), is("Enter a project groupId"));
         assertThat(((Input) fn2).defaultValue().isPresent(), is(false));
         assertThat(fn2.ifProperties().stream().map(Property::id).collect(Collectors.toList()), hasItems("maven"));
@@ -190,7 +187,6 @@ public class ArchetypeDescriptorTest {
         FlowNode fn3 = inputFlow.nodes().get(2);
         assertThat(fn3, is(instanceOf(Input.class)));
         assertThat(((Input) fn3).property().id(), is("artifactId"));
-        assertThat(((Input) fn3).id(), is("artifactId"));
         assertThat(((Input) fn3).text(), is("Enter a project artifactId"));
         assertThat(((Input) fn3).defaultValue().isPresent(), is(false));
         assertThat(fn3.ifProperties(), is(empty()));
@@ -199,16 +195,14 @@ public class ArchetypeDescriptorTest {
         FlowNode fn4 = inputFlow.nodes().get(3);
         assertThat(fn4, is(instanceOf(Input.class)));
         assertThat(((Input) fn4).property().id(), is("version"));
-        assertThat(((Input) fn4).id(), is("version"));
         assertThat(((Input) fn4).text(), is("Enter a project version"));
-        assertThat(((Input) fn4).defaultValue().get(), is("1.0-SNAPSHOT"));
+        assertThat(((Input) fn4).defaultValue().isPresent(), is(false));
         assertThat(fn4.ifProperties(), is(empty()));
         assertThat(fn4.unlessProperties(), is(empty()));
 
         FlowNode fn5 = inputFlow.nodes().get(4);
         assertThat(fn5, is(instanceOf(Input.class)));
         assertThat(((Input) fn5).property().id(), is("name"));
-        assertThat(((Input) fn5).id(), is("name"));
         assertThat(((Input) fn5).text(), is("Enter a project name"));
         assertThat(((Input) fn5).defaultValue().get(), is("${artifactId}"));
         assertThat(fn5.ifProperties(), is(empty()));
@@ -217,7 +211,6 @@ public class ArchetypeDescriptorTest {
         FlowNode fn6 = inputFlow.nodes().get(5);
         assertThat(fn6, is(instanceOf(Input.class)));
         assertThat(((Input) fn6).property().id(), is("package"));
-        assertThat(((Input) fn6).id(), is("package"));
         assertThat(((Input) fn6).text(), is("Enter a Java package name"));
         assertThat(((Input) fn6).defaultValue().get(), is("${groupId}"));
         assertThat(fn5.ifProperties(), is(empty()));

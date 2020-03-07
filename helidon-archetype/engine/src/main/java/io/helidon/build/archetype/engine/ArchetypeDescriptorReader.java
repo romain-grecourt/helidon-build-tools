@@ -111,15 +111,17 @@ final class ArchetypeDescriptorReader extends DefaultHandler {
                 case "properties":
                     validateChild("property", parent, qName);
                     Property prop = new Property(
-                            attr("id", qName, attributes),
-                            attr("description", "property", attributes));
+                            // TODO validate property id (dot separated alphanumerical)
+                            requiredAttr("id", qName, attributes),
+                            requiredAttr("description", "property", attributes),
+                            attributes.getValue("default"));
                     descriptor.properties().add(prop);
                     propertiesMap.put(prop.id(), prop);
                     stack.push("properties/property");
                     break;
                 case "transformations":
                     validateChild("transformation", parent, qName);
-                    Transformation transformation = new Transformation(attr("id", qName, attributes));
+                    Transformation transformation = new Transformation(requiredAttr("id", qName, attributes));
                     descriptor.transformations().add(transformation);
                     transformationsMap.put(transformation.id(), transformation);
                     stack.push("transformations/transformation");
@@ -127,8 +129,8 @@ final class ArchetypeDescriptorReader extends DefaultHandler {
                 case "transformations/transformation":
                     validateChild("replace", parent, qName);
                     descriptor.transformations().getLast().replacements().add(new Replacement(
-                            attr("regex", qName, attributes),
-                            attr("replacement", qName, attributes)));
+                            requiredAttr("regex", qName, attributes),
+                            requiredAttr("replacement", qName, attributes)));
                     stack.push("transformations/transformation/replace");
                     break;
                 case "template-sets":
@@ -193,18 +195,16 @@ final class ArchetypeDescriptorReader extends DefaultHandler {
                     switch (qName) {
                         case "select":
                             descriptor.inputFlow().nodes().add(new Select(
-                                    attr("id", qName, attributes),
-                                    attr("text", qName, attributes),
+                                    requiredAttr("text", qName, attributes),
                                     propertyRefs(attributes, "if", qName),
                                     propertyRefs(attributes, "unless", qName)));
                             stack.push("input-flow/select");
                             break;
                         case "input":
                             descriptor.inputFlow().nodes().add(new Input(
-                                    attr("id", qName, attributes),
-                                    propertyRef(attr("property", qName, attributes), qName),
+                                    propertyRef(requiredAttr("property", qName, attributes), qName),
                                     attributes.getValue("default"),
-                                    attr("text", qName, attributes),
+                                    requiredAttr("text", qName, attributes),
                                     propertyRefs(attributes, "if", qName),
                                     propertyRefs(attributes, "unless", qName)));
                             stack.push("input-flow/input");
@@ -220,8 +220,8 @@ final class ArchetypeDescriptorReader extends DefaultHandler {
                         throw new IllegalStateException("Unable to add 'choice' to flow node");
                     }
                     ((Select) lastFlowNode).choices().add(new Choice(
-                            propertyRef(attr("property", qName, attributes), qName),
-                            attr("text", qName, attributes),
+                            propertyRef(requiredAttr("property", qName, attributes), qName),
+                            requiredAttr("text", qName, attributes),
                             propertyRefs(attributes, "if", qName),
                             propertyRefs(attributes, "unless", qName)));
                     stack.push("input-flow/select/choice");
@@ -306,7 +306,7 @@ final class ArchetypeDescriptorReader extends DefaultHandler {
         return refs;
     }
 
-    private static String attr(String name, String qName, Attributes attr) {
+    private static String requiredAttr(String name, String qName, Attributes attr) {
         String value = attr.getValue(name);
         if (value == null) {
             throw new IllegalStateException("Missing required attribute '" + name + "' for element: '" + qName + "'");
