@@ -25,7 +25,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import io.helidon.build.archetype.engine.ArchetypeDescriptor.FileSet;
@@ -47,9 +49,7 @@ public class ArchetypeEngineTest {
 
     @Test
     public void testResolveProperties() {
-        Properties props = new Properties();
-        props.put("foo", "bar");
-        props.put("bar", "foo");
+        Map<String, String> props = Map.of("foo", "bar", "bar", "foo");
         assertThat(ArchetypeEngine.resolveProperties("${foo}", props), is("bar"));
         assertThat(ArchetypeEngine.resolveProperties("${xxx}", props), is(""));
         assertThat(ArchetypeEngine.resolveProperties("-${foo}-", props), is("-bar-"));
@@ -63,46 +63,48 @@ public class ArchetypeEngineTest {
     }
 
     @Test
+    public void testTransformedProperties() {
+        Map<String, String> props = Map.of("package", "com.example.myapp");
+        assertThat(ArchetypeEngine.resolveProperties("${package/\\./\\/}", props), is("com/example/myapp"));
+    }
+
+    @Test
     public void testTransform() {
         LinkedList<Transformation> transformations = new LinkedList<>();
         Transformation t1 = new Transformation("mustache");
         t1.replacements().add(new Replacement("\\.mustache$", ""));
         transformations.add(t1);
         Transformation t2 = new Transformation("packaged");
-        t2.replacements().add(new Replacement("__pkg__", "com.example.myapp"));
-        t2.replacements().add(new Replacement("(?!\\.java)\\.", "\\/"));
+        t2.replacements().add(new Replacement("__pkg__", "${package/\\./\\/}"));
         transformations.add(t2);
-        assertThat(ArchetypeEngine.transform("src/main/java/__pkg__/Main.java.mustache", transformations, new Properties()),
+        assertThat(ArchetypeEngine.transform("src/main/java/__pkg__/Main.java.mustache", transformations,
+                Map.of("package", "com.example.myapp")),
                 is("src/main/java/com/example/myapp/Main.java"));
     }
 
     @Test
     public void testEvaluateConditional() {
-        Properties props2 = new Properties();
-        props2.put("prop1", "true");
-        props2.put("prop2", "true");
+        Map<String, String> props1 = Map.of("prop1", "true");
+        Map<String, String> props2 = Map.of("prop1", "true", "prop2", "true");
 
-        Properties props1 = new Properties();
-        props1.put("prop1", "true");
-
-        Property prop1 = new Property("prop1", "Prop 1");
+        Property prop1 = new Property("prop1", "Prop 1", null);
         FileSet fset1 = new FileSet(List.of(), List.of(prop1), List.of());
         assertThat(ArchetypeEngine.evaluateConditional(fset1, props1), is(true));
-        assertThat(ArchetypeEngine.evaluateConditional(fset1, new Properties()), is(false));
+        assertThat(ArchetypeEngine.evaluateConditional(fset1, Collections.emptyMap()), is(false));
 
         FileSet fset2 = new FileSet(List.of(), List.of(), List.of(prop1));
         assertThat(ArchetypeEngine.evaluateConditional(fset2, props1), is(false));
-        assertThat(ArchetypeEngine.evaluateConditional(fset2, new Properties()), is(true));
+        assertThat(ArchetypeEngine.evaluateConditional(fset2, Collections.emptyMap()), is(true));
 
-        Property prop2 = new Property("prop2", "Prop 2");
+        Property prop2 = new Property("prop2", "Prop 2", null);
         FileSet fset3 = new FileSet(List.of(), List.of(prop1, prop2), List.of());
         assertThat(ArchetypeEngine.evaluateConditional(fset3, props2), is(true));
         assertThat(ArchetypeEngine.evaluateConditional(fset3, props1), is(false));
-        assertThat(ArchetypeEngine.evaluateConditional(fset3, new Properties()), is(false));
+        assertThat(ArchetypeEngine.evaluateConditional(fset3, Collections.emptyMap()), is(false));
 
         FileSet fset4 = new FileSet(List.of(), List.of(prop1), List.of(prop2));
         assertThat(ArchetypeEngine.evaluateConditional(fset4, props2), is(false));
-        assertThat(ArchetypeEngine.evaluateConditional(fset4, new Properties()), is(false));
+        assertThat(ArchetypeEngine.evaluateConditional(fset4, Collections.emptyMap()), is(false));
     }
 
     @Test

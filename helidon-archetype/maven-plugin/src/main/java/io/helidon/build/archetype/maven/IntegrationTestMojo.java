@@ -28,6 +28,11 @@ public class IntegrationTestMojo extends AbstractMojo {
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
+        // TODO list
+        // 1. generate the full matrix of properties based on the user-flow in the archetype descriptor
+        //    require a properties file to fill in the values of the input text
+        // 2. generate projects for the full matrix
+        // 3. build the projects using the maven invoker plugin
         throw new UnsupportedOperationException("Not implemented yet.");
     }
 }

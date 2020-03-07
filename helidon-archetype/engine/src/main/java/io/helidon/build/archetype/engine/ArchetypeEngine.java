@@ -55,15 +55,18 @@ final class ArchetypeEngine {
     private final MustacheFactory mf;
     private final ClassLoader cl;
     private final ArchetypeDescriptor descriptor;
-    private final Properties properties;
-    private Map<String, List<Transformation>> templates = new HashMap<>();
-    private Map<String, List<Transformation>> files = new HashMap<>();
+    private final Map<String, String> properties;
+    private final Map<String, List<Transformation>> templates;
+    private final Map<String, List<Transformation>> files;
 
-    ArchetypeEngine(ClassLoader cl, Properties properties) {
+    ArchetypeEngine(ClassLoader cl, Properties userProperties) {
         this.cl = Objects.requireNonNull(cl, "class-loader is null");
-        this.properties = Objects.requireNonNull(properties, "properties is null");
         this.mf = new DefaultMustacheFactory();
         this.descriptor = loadDescriptor(cl);
+        Objects.requireNonNull(userProperties, "userProperties is null");
+        this.properties = descriptor.properties().stream()
+                .filter((p) -> p.defaultValue().isPresent() || userProperties.containsKey(p.id()))
+                .collect(Collectors.toMap(Property::id, (p) -> userProperties.getProperty(p.id(), p.defaultValue().orElse(""))));
         List<SourcePath> paths = loadResourcesList(cl);
         this.templates = resolveFileSets(descriptor.templateSets().map(TemplateSets::templateSets).orElseGet(LinkedList::new),
                 descriptor.templateSets().map(TemplateSets::transformations).orElseGet(Collections::emptyList), paths,
@@ -93,7 +96,7 @@ final class ArchetypeEngine {
     }
 
     private static Map<String, List<Transformation>> resolveFileSets(List<FileSet> fileSets, List<Transformation> transformations,
-            List<SourcePath> paths, Properties properties) {
+            List<SourcePath> paths, Map<String, String> properties) {
 
         Map<String, List<Transformation>> resolved = new HashMap<>();
         for (FileSet fileSet : fileSets) {
@@ -120,15 +123,16 @@ final class ArchetypeEngine {
      * Transform a string with transformations.
      * @param input input to be transformed
      * @param transformations transformed to apply
+     * @param properties properties values
      * @return transformation result
      */
-    static String transform(String input, List<Transformation> transformations, Properties props) {
+    static String transform(String input, List<Transformation> transformations, Map<String, String> properties) {
         String output = input;
         List<Replacement> replacements = transformations.stream()
                 .flatMap((t) -> t.replacements().stream())
                 .collect(Collectors.toList());
         for (Replacement rep : replacements) {
-            String replacement = resolveProperties(rep.replacement(), props);
+            String replacement = resolveProperties(rep.replacement(), properties);
             output = output.replaceAll(rep.regex(), replacement);
         }
         return output;
@@ -137,10 +141,10 @@ final class ArchetypeEngine {
     /**
      * Resolve a property of the form <code>${prop}</code>.
      * @param input input to be resolved
-     * @param props properties used to resolve the value of the properties
+     * @param properties properties values
      * @return resolved property
      */
-    static String resolveProperties(String input, Properties props) {
+    static String resolveProperties(String input, Map<String, String> properties) {
         int start = input.indexOf("${");
         int end = input.indexOf("}");
         int index = 0;
@@ -152,7 +156,33 @@ final class ArchetypeEngine {
                 resolved += input.substring(index, start);
             }
             String propName = input.substring(start + 2, end);
-            resolved += props.getProperty(propName, "");
+
+            // search for transformation (name/regexp/replace)
+            int matchStart = 0;
+            do {
+                matchStart = propName.indexOf("/", matchStart + 1);
+            } while (matchStart > 0 && propName.charAt(matchStart - 1) == '\\');
+            int matchEnd = matchStart;
+            do {
+                matchEnd = propName.indexOf("/", matchEnd + 1);
+            } while (matchStart > 0 && propName.charAt(matchStart - 1) == '\\');
+
+            String regexp = null;
+            String replace = null;
+            if (matchStart > 0 && matchEnd > matchStart) {
+                propName = propName.substring(0, matchStart);
+                regexp = propName.substring(matchStart, matchEnd);
+                replace = propName.substring(matchEnd);
+            }
+
+            String propValue = properties.get(propName);
+            if (propValue == null) {
+                propValue = "";
+            } else if (regexp != null && replace != null) {
+                propValue = propValue.replaceAll(regexp, replace);
+            }
+
+            resolved += propValue;
             index = end + 1;
             start = input.indexOf("${", index);
             end = input.indexOf("}", index);
@@ -169,13 +199,13 @@ final class ArchetypeEngine {
      * @param props properties used to resolve the value of the declared properties
      * @return evaluation results
      */
-    static boolean evaluateConditional(Conditional conditional, Properties props) {
+    static boolean evaluateConditional(Conditional conditional, Map<String, String> props) {
         List<Property> ifProps = conditional.ifProperties();
         if (ifProps == null) {
             ifProps = Collections.emptyList();
         }
         for (Property prop : ifProps) {
-            if (!Boolean.valueOf(props.getProperty(prop.id(), "false"))) {
+            if (!Boolean.valueOf(props.get(prop.id()))) {
                 return false;
             }
         }
@@ -184,7 +214,7 @@ final class ArchetypeEngine {
             unlessProps = Collections.emptyList();
         }
         for (Property prop : unlessProps) {
-            if (Boolean.valueOf(props.getProperty(prop.id(), "false"))) {
+            if (Boolean.valueOf(props.get(prop.id()))) {
                 return false;
             }
         }
@@ -195,14 +225,6 @@ final class ArchetypeEngine {
      * Run the archetype.
      */
     void generate(File outputDirectory) {
-        Map<String, String> scopes;
-        List<Property> declaredProps = descriptor.properties();
-        if (declaredProps == null) {
-            scopes = Collections.emptyMap();
-        } else {
-            scopes = declaredProps.stream()
-                    .collect(Collectors.toMap(Property::id, (p) -> properties.getProperty(p.id(), "")));
-        }
         for (Entry<String, List<Transformation>> entry : templates.entrySet()) {
             String resourcePath = entry.getKey().substring(1);
             InputStream is = cl.getResourceAsStream(resourcePath);
@@ -213,7 +235,7 @@ final class ArchetypeEngine {
             File outputFile = new File(outputDirectory, transform(resourcePath, entry.getValue(), properties));
             outputFile.getParentFile().mkdirs();
             try (FileWriter writer = new FileWriter(outputFile)) {
-                m.execute(writer, scopes).flush();
+                m.execute(writer, properties).flush();
             } catch (IOException ex) {
                 throw new RuntimeException(ex);
             }
