@@ -28,6 +28,10 @@ public class JarMojo extends AbstractMojo {
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
+        // TODO list
+        // 1. convert META-INF/helidon-archetype.xml to META-INF/maven/archetype-metadata.xml, include both files
+        // 2. include a META-INF/archetype-post-generate.groovy that triggers the helidon archetype engine
+        // 3. include a MANIFEST.MF entry to retain the version of the engine used to build the archetype
         throw new UnsupportedOperationException("Not implemented yet.");
     }
 }

@@ -26,8 +26,8 @@ import io.helidon.build.archetype.engine.ArchetypeDescriptor.FileSets;
 import io.helidon.build.archetype.engine.ArchetypeDescriptor.FlowNode;
 import io.helidon.build.archetype.engine.ArchetypeDescriptor.Input;
 import io.helidon.build.archetype.engine.ArchetypeDescriptor.InputFlow;
-import io.helidon.build.archetype.engine.ArchetypeDescriptor.PathReplacement;
-import io.helidon.build.archetype.engine.ArchetypeDescriptor.PathTransformation;
+import io.helidon.build.archetype.engine.ArchetypeDescriptor.Replacement;
+import io.helidon.build.archetype.engine.ArchetypeDescriptor.Transformation;
 import io.helidon.build.archetype.engine.ArchetypeDescriptor.Property;
 import io.helidon.build.archetype.engine.ArchetypeDescriptor.Select;
 import io.helidon.build.archetype.engine.ArchetypeDescriptor.TemplateSets;
@@ -39,7 +39,8 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.IsNull.notNullValue;
 import static org.hamcrest.CoreMatchers.hasItems;
 import static org.hamcrest.CoreMatchers.instanceOf;
-import static org.hamcrest.CoreMatchers.nullValue;
+import static org.hamcrest.CoreMatchers.not;
+import static org.hamcrest.Matchers.empty;
 
 /**
  * Tests {@link ArchetypeDescriptor}.
@@ -48,171 +49,171 @@ public class ArchetypeDescriptorTest {
 
     @Test
     public void testUnmarshall() {
-        InputStream is = ArchetypeDescriptorTest.class.getResourceAsStream("helidon-archetype.xml");
-
+        InputStream is = ArchetypeDescriptorTest.class.getClassLoader()
+                .getResourceAsStream(ArchetypeEngine.DESCRIPTOR_RESOURCE_NAME);
         assertThat(is, is(notNullValue()));
-        ArchetypeDescriptor desc = ArchetypeDescriptor.read(is);
-        assertThat(desc.getName(), is("test"));
 
-        List<Property> properties = desc.getProperties();
-        assertThat(properties, is(notNullValue()));
+        ArchetypeDescriptor desc = ArchetypeDescriptor.read(is);
+        Map<String, Property> properties = desc.properties().stream().collect(Collectors.toMap(Property::id, (p) -> p));
+        assertThat(properties.entrySet(), is(not(empty())));
         assertThat(properties.size(), is(7));
-        assertThat(properties.stream().map(Property::getId).collect(Collectors.toList()),
-                hasItems("gradle", "maven", "groupId", "artifactId", "version", "name", "package"));
-        assertThat(properties.stream().map(Property::getDescription).collect(Collectors.toList()),
+        assertThat(properties.keySet(), hasItems("gradle", "maven", "groupId", "artifactId", "version", "name", "package"));
+        assertThat(properties.values().stream().map(Property::description).collect(Collectors.toList()),
                 hasItems("Gradle based project", "Maven based project", "Project groupId", "Project artifactId", "Project version"
                 , "Project name", "Java package name"));
+        assertThat(properties.get("version").defaultValue().get(), is("1.0-SNAPSHOT"));
 
-        Map<String, PathTransformation> transformations = desc.getTransformations().stream()
-                .collect(Collectors.toMap(PathTransformation::getId, (o) -> o));
+        Map<String, Transformation> transformations = desc.transformations().stream()
+                .collect(Collectors.toMap(Transformation::id, (o) -> o));
         assertThat(transformations.size(), is(2));
         assertThat(transformations.keySet(), hasItems("packaged", "mustache"));
-        List<PathReplacement> packaged = transformations.get("packaged").getReplacements();
-        assertThat(packaged, is(notNullValue()));
-        assertThat(packaged.stream().map(PathReplacement::getRegex).collect(Collectors.toList()), hasItems("__pkg__", "\\\\."));
-        assertThat(packaged.stream().map(PathReplacement::getReplacement).collect(Collectors.toList()),
-                hasItems("${package}", "\\\\/"));
-        List<PathReplacement> mustache = transformations.get("mustache").getReplacements();
-        assertThat(mustache, is(notNullValue()));
-        assertThat(mustache.stream().map(PathReplacement::getRegex).collect(Collectors.toList()), hasItems("\\.mustache$"));
-        assertThat(mustache.stream().map(PathReplacement::getReplacement).collect(Collectors.toList()), hasItems(""));
+        List<Replacement> packaged = transformations.get("packaged").replacements();
+        assertThat(packaged, is(not(empty())));
+        assertThat(packaged.stream().map(Replacement::regex).collect(Collectors.toList()), hasItems("__pkg__"));
+        assertThat(packaged.stream().map(Replacement::replacement).collect(Collectors.toList()),
+                hasItems("${package/(?!\\.[a-z]+$)\\./\\/}"));
+        List<Replacement> mustache = transformations.get("mustache").replacements();
+        assertThat(mustache, is(not(empty())));
+        assertThat(mustache.stream().map(Replacement::regex).collect(Collectors.toList()), hasItems("\\.mustache$"));
+        assertThat(mustache.stream().map(Replacement::replacement).collect(Collectors.toList()), hasItems(""));
 
-        TemplateSets templateSets = desc.getTemplateSets();
-        assertThat(templateSets, is(notNullValue()));
-        assertThat(templateSets.getTransformations().stream().map(PathTransformation::getId).collect(Collectors.toList()),
+        assertThat(desc.templateSets().isPresent(), is(true));
+        TemplateSets templateSets = desc.templateSets().get();
+        assertThat(templateSets.transformations().stream().map(Transformation::id).collect(Collectors.toList()),
                 hasItems("mustache"));
-        assertThat(templateSets.getTemplateSets().size(), is(3));
+        assertThat(templateSets.templateSets().size(), is(4));
 
-        FileSet ts1 = templateSets.getTemplateSets().get(0);
-        assertThat(ts1.getTransformations().stream().map(PathTransformation::getId).collect(Collectors.toList()),
+        FileSet ts1 = templateSets.templateSets().get(0);
+        assertThat(ts1.transformations().stream().map(Transformation::id).collect(Collectors.toList()),
                 hasItems("packaged"));
-        assertThat(ts1.getDirectory(), is("src/main/java"));
-        assertThat(ts1.getIncludes(), hasItems("**/*.mustache"));
-        assertThat(ts1.getExcludes(), is(nullValue()));
-        assertThat(ts1.getIfProperties(), is(nullValue()));
-        assertThat(ts1.getUnlessProperties(), is(nullValue()));
+        assertThat(ts1.directory().get(), is("src/main/java"));
+        assertThat(ts1.includes(), hasItems("**/*.mustache"));
+        assertThat(ts1.excludes(), is(empty()));
+        assertThat(ts1.ifProperties(), is(empty()));
+        assertThat(ts1.unlessProperties(), is(empty()));
 
-        FileSet ts2 = templateSets.getTemplateSets().get(1);
-        assertThat(ts2.getTransformations().stream().map(PathTransformation::getId).collect(Collectors.toList()),
+        FileSet ts2 = templateSets.templateSets().get(1);
+        assertThat(ts2.transformations().stream().map(Transformation::id).collect(Collectors.toList()),
                 hasItems("packaged"));
-        assertThat(ts2.getDirectory(), is("src/test/java"));
-        assertThat(ts2.getIncludes(), hasItems("**/*.mustache"));
-        assertThat(ts2.getExcludes(), is(nullValue()));
-        assertThat(ts2.getIfProperties(), is(nullValue()));
-        assertThat(ts2.getUnlessProperties(), is(nullValue()));
+        assertThat(ts2.directory().get(), is("src/test/java"));
+        assertThat(ts2.includes(), hasItems("**/*.mustache"));
+        assertThat(ts2.excludes(), is(empty()));
+        assertThat(ts2.ifProperties(), is(empty()));
+        assertThat(ts2.unlessProperties(), is(empty()));
 
-        FileSet ts3 = templateSets.getTemplateSets().get(2);
-        assertThat(ts3.getIfProperties().stream().map(Property::getId).collect(Collectors.toList()), hasItems("gradle"));
-        assertThat(ts3.getUnlessProperties(), is(nullValue()));
-        assertThat(ts3.getTransformations(), is(nullValue()));
-        assertThat(ts3.getDirectory(), is("."));
-        assertThat(ts3.getIncludes(), hasItems("build.gradle.mustache"));
-        assertThat(ts3.getExcludes(), is(nullValue()));
+        FileSet ts3 = templateSets.templateSets().get(2);
+        assertThat(ts3.ifProperties().stream().map(Property::id).collect(Collectors.toList()), hasItems("gradle"));
+        assertThat(ts3.unlessProperties(), is(empty()));
+        assertThat(ts3.transformations(), is(empty()));
+        assertThat(ts3.directory().get(), is("."));
+        assertThat(ts3.includes(), hasItems("build.gradle.mustache"));
+        assertThat(ts3.excludes(), is(empty()));
 
-        FileSets fileSets = desc.getFileSets();
-        assertThat(fileSets, is(notNullValue()));
-        assertThat(fileSets.getTransformations(), is(nullValue()));
-        assertThat(fileSets.getFileSets().size(), is(4));
-        FileSet fs1 = fileSets.getFileSets().get(0);
-        assertThat(fs1.getTransformations().stream().map(PathTransformation::getId).collect(Collectors.toList()),
+        FileSet ts4 = templateSets.templateSets().get(3);
+        assertThat(ts4.ifProperties().stream().map(Property::id).collect(Collectors.toList()), hasItems("maven"));
+        assertThat(ts4.unlessProperties(), is(empty()));
+        assertThat(ts4.transformations(), is(empty()));
+        assertThat(ts4.directory().get(), is("."));
+        assertThat(ts4.includes(), hasItems("pom.xml.mustache"));
+        assertThat(ts4.excludes(), is(empty()));
+
+        assertThat(desc.fileSets().isPresent(), is(true));
+        FileSets fileSets = desc.fileSets().get();
+        assertThat(fileSets.transformations(), is(empty()));
+        assertThat(fileSets.fileSets().size(), is(4));
+        FileSet fs1 = fileSets.fileSets().get(0);
+        assertThat(fs1.transformations().stream().map(Transformation::id).collect(Collectors.toList()),
                 hasItems("packaged"));
-        assertThat(fs1.getDirectory(), is("src/main/java"));
-        assertThat(fs1.getIncludes(), is(nullValue()));
-        assertThat(fs1.getExcludes(), hasItems("**/*.mustache"));
-        assertThat(fs1.getIfProperties(), is(nullValue()));
-        assertThat(fs1.getUnlessProperties(), is(nullValue()));
+        assertThat(fs1.directory().get(), is("src/main/java"));
+        assertThat(fs1.includes(), is(empty()));
+        assertThat(fs1.excludes(), hasItems("**/*.mustache"));
+        assertThat(fs1.ifProperties(), is(empty()));
+        assertThat(fs1.unlessProperties(), is(empty()));
 
-        FileSet fs2 = fileSets.getFileSets().get(1);
-        assertThat(fs2.getTransformations(), is(nullValue()));
-        assertThat(fs2.getDirectory(), is("src/main/resources"));
-        assertThat(fs2.getExcludes(), is(nullValue()));
-        assertThat(fs2.getIncludes(), hasItems("**/*"));
-        assertThat(fs2.getIfProperties(), is(nullValue()));
-        assertThat(fs2.getUnlessProperties(), is(nullValue()));
+        FileSet fs2 = fileSets.fileSets().get(1);
+        assertThat(fs2.transformations(), is(empty()));
+        assertThat(fs2.directory().get(), is("src/main/resources"));
+        assertThat(fs2.excludes(), is(empty()));
+        assertThat(fs2.includes(), hasItems("**/*"));
+        assertThat(fs2.ifProperties(), is(empty()));
+        assertThat(fs2.unlessProperties(), is(empty()));
 
-        FileSet fs3 = fileSets.getFileSets().get(2);
-        assertThat(fs3.getTransformations().stream().map(PathTransformation::getId).collect(Collectors.toList()),
+        FileSet fs3 = fileSets.fileSets().get(2);
+        assertThat(fs3.transformations().stream().map(Transformation::id).collect(Collectors.toList()),
                 hasItems("packaged"));
-        assertThat(fs3.getDirectory(), is("src/test/java"));
-        assertThat(fs3.getIncludes(), is(nullValue()));
-        assertThat(fs3.getExcludes(), hasItems("**/*.mustache"));
-        assertThat(fs3.getIfProperties(), is(nullValue()));
-        assertThat(fs3.getUnlessProperties(), is(nullValue()));
+        assertThat(fs3.directory().get(), is("src/test/java"));
+        assertThat(fs3.includes(), is(empty()));
+        assertThat(fs3.excludes(), hasItems("**/*.mustache"));
+        assertThat(fs3.ifProperties(), is(empty()));
+        assertThat(fs3.unlessProperties(), is(empty()));
 
-        FileSet fs4 = fileSets.getFileSets().get(3);
-        assertThat(fs4.getTransformations(), is(nullValue()));
-        assertThat(fs4.getDirectory(), is("src/test/resources"));
-        assertThat(fs4.getIncludes(), is(nullValue()));
-        assertThat(fs4.getExcludes(), hasItems("**/*"));
-        assertThat(fs4.getIfProperties(), is(nullValue()));
-        assertThat(fs4.getUnlessProperties(), is(nullValue()));
+        FileSet fs4 = fileSets.fileSets().get(3);
+        assertThat(fs4.transformations(), is(empty()));
+        assertThat(fs4.directory().get(), is("src/test/resources"));
+        assertThat(fs4.includes(), is(empty()));
+        assertThat(fs4.excludes(), hasItems("**/*"));
+        assertThat(fs4.ifProperties(), is(empty()));
+        assertThat(fs4.unlessProperties(), is(empty()));
 
-        InputFlow inputFlow = desc.getInputFlow();
-        assertThat(inputFlow, is(notNullValue()));
-        assertThat(inputFlow.getNodes().size(), is(6));
-        FlowNode fn1 = inputFlow.getNodes().get(0);
+        InputFlow inputFlow = desc.inputFlow();
+        assertThat(inputFlow.nodes().size(), is(6));
+        FlowNode fn1 = inputFlow.nodes().get(0);
         assertThat(fn1, is(instanceOf(Select.class)));
-        assertThat(((Select) fn1).getId(), is("build"));
-        assertThat(((Select) fn1).getText(), is("Select a build system"));
-        assertThat(((Select) fn1).getChoices().size(), is(2));
-        assertThat(fn1.getIfProperties(), is(nullValue()));
-        assertThat(fn1.getUnlessProperties(), is(nullValue()));
+        assertThat(((Select) fn1).text(), is("Select a build system"));
+        assertThat(((Select) fn1).choices().size(), is(2));
+        assertThat(fn1.ifProperties(), is(empty()));
+        assertThat(fn1.unlessProperties(), is(empty()));
 
-        Choice c1 = ((Select) fn1).getChoices().get(0);
-        assertThat(c1.getProperty().getId(), is("maven"));
-        assertThat(c1.getText(), is("Maven"));
-        assertThat(c1.getIfProperties(), is(nullValue()));
-        assertThat(c1.getUnlessProperties(), is(nullValue()));
+        Choice c1 = ((Select) fn1).choices().get(0);
+        assertThat(c1.property().id(), is("maven"));
+        assertThat(c1.text(), is("Maven"));
+        assertThat(c1.ifProperties(), is(empty()));
+        assertThat(c1.unlessProperties(), is(empty()));
 
-        Choice c2 = ((Select) fn1).getChoices().get(1);
-        assertThat(c2.getProperty().getId(), is("gradle"));
-        assertThat(c2.getText(), is("Gradle"));
-        assertThat(c2.getIfProperties(), is(nullValue()));
-        assertThat(c2.getUnlessProperties(), is(nullValue()));
+        Choice c2 = ((Select) fn1).choices().get(1);
+        assertThat(c2.property().id(), is("gradle"));
+        assertThat(c2.text(), is("Gradle"));
+        assertThat(c2.ifProperties(), is(empty()));
+        assertThat(c2.unlessProperties(), is(empty()));
 
-        FlowNode fn2 = inputFlow.getNodes().get(1);
+        FlowNode fn2 = inputFlow.nodes().get(1);
         assertThat(fn2, is(instanceOf(Input.class)));
-        assertThat(((Input) fn2).getProperty().getId(), is("groupId"));
-        assertThat(((Input) fn2).getId(), is("groupId"));
-        assertThat(((Input) fn2).getText(), is("Enter a project groupId"));
-        assertThat(((Input) fn2).getDefaultValue(), is(nullValue()));
-        assertThat(fn2.getIfProperties().stream().map(Property::getId).collect(Collectors.toList()), hasItems("maven"));
-        assertThat(fn2.getUnlessProperties(), is(nullValue()));
+        assertThat(((Input) fn2).property().id(), is("groupId"));
+        assertThat(((Input) fn2).text(), is("Enter a project groupId"));
+        assertThat(((Input) fn2).defaultValue().isPresent(), is(false));
+        assertThat(fn2.ifProperties().stream().map(Property::id).collect(Collectors.toList()), hasItems("maven"));
+        assertThat(fn2.unlessProperties(), is(empty()));
 
-        FlowNode fn3 = inputFlow.getNodes().get(2);
+        FlowNode fn3 = inputFlow.nodes().get(2);
         assertThat(fn3, is(instanceOf(Input.class)));
-        assertThat(((Input) fn3).getProperty().getId(), is("artifactId"));
-        assertThat(((Input) fn3).getId(), is("artifactId"));
-        assertThat(((Input) fn3).getText(), is("Enter a project artifactId"));
-        assertThat(((Input) fn3).getDefaultValue(), is(nullValue()));
-        assertThat(fn3.getIfProperties(), is(nullValue()));
-        assertThat(fn3.getUnlessProperties(), is(nullValue()));
+        assertThat(((Input) fn3).property().id(), is("artifactId"));
+        assertThat(((Input) fn3).text(), is("Enter a project artifactId"));
+        assertThat(((Input) fn3).defaultValue().isPresent(), is(false));
+        assertThat(fn3.ifProperties(), is(empty()));
+        assertThat(fn3.unlessProperties(), is(empty()));
 
-        FlowNode fn4 = inputFlow.getNodes().get(3);
+        FlowNode fn4 = inputFlow.nodes().get(3);
         assertThat(fn4, is(instanceOf(Input.class)));
-        assertThat(((Input) fn4).getProperty().getId(), is("version"));
-        assertThat(((Input) fn4).getId(), is("version"));
-        assertThat(((Input) fn4).getText(), is("Enter a project version"));
-        assertThat(((Input) fn4).getDefaultValue(), is("1.0-SNAPSHOT"));
-        assertThat(fn4.getIfProperties(), is(nullValue()));
-        assertThat(fn4.getUnlessProperties(), is(nullValue()));
+        assertThat(((Input) fn4).property().id(), is("version"));
+        assertThat(((Input) fn4).text(), is("Enter a project version"));
+        assertThat(((Input) fn4).defaultValue().isPresent(), is(false));
+        assertThat(fn4.ifProperties(), is(empty()));
+        assertThat(fn4.unlessProperties(), is(empty()));
 
-        FlowNode fn5 = inputFlow.getNodes().get(4);
+        FlowNode fn5 = inputFlow.nodes().get(4);
         assertThat(fn5, is(instanceOf(Input.class)));
-        assertThat(((Input) fn5).getProperty().getId(), is("name"));
-        assertThat(((Input) fn5).getId(), is("name"));
-        assertThat(((Input) fn5).getText(), is("Enter a project name"));
-        assertThat(((Input) fn5).getDefaultValue(), is("${artifactId}"));
-        assertThat(fn5.getIfProperties(), is(nullValue()));
-        assertThat(fn5.getUnlessProperties(), is(nullValue()));
+        assertThat(((Input) fn5).property().id(), is("name"));
+        assertThat(((Input) fn5).text(), is("Enter a project name"));
+        assertThat(((Input) fn5).defaultValue().get(), is("${artifactId}"));
+        assertThat(fn5.ifProperties(), is(empty()));
+        assertThat(fn5.unlessProperties(), is(empty()));
 
-        FlowNode fn6 = inputFlow.getNodes().get(5);
+        FlowNode fn6 = inputFlow.nodes().get(5);
         assertThat(fn6, is(instanceOf(Input.class)));
-        assertThat(((Input) fn6).getProperty().getId(), is("package"));
-        assertThat(((Input) fn6).getId(), is("package"));
-        assertThat(((Input) fn6).getText(), is("Enter a Java package name"));
-        assertThat(((Input) fn6).getDefaultValue(), is("${groupId}"));
-        assertThat(fn5.getIfProperties(), is(nullValue()));
-        assertThat(fn5.getUnlessProperties(), is(nullValue()));
+        assertThat(((Input) fn6).property().id(), is("package"));
+        assertThat(((Input) fn6).text(), is("Enter a Java package name"));
+        assertThat(((Input) fn6).defaultValue().get(), is("${groupId}"));
+        assertThat(fn5.ifProperties(), is(empty()));
+        assertThat(fn5.unlessProperties(), is(empty()));
     }
 }
