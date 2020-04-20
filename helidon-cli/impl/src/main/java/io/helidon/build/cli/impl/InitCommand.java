@@ -31,7 +31,7 @@ import io.helidon.build.util.Constants;
 import io.helidon.build.util.HelidonVariant;
 import io.helidon.build.util.ProjectConfig;
 import io.helidon.build.util.ProjectDependency;
-import io.helidon.build.util.QuickstartGenerator;
+import io.helidon.build.util.SimpleQuickstartGenerator;
 
 import org.apache.maven.model.Extension;
 import org.apache.maven.model.Model;
@@ -47,7 +47,6 @@ import static io.helidon.build.util.ProjectConfig.PROJECT_FLAVOR;
 @Command(name = "init", description = "Generate a new project")
 public final class InitCommand extends BaseCommand implements CommandExecution {
 
-    static final String ARCHETYPE_VERSION = "archetype.version";
     static final String DEVLOOP_EXTENSION = "devloop.extension";
 
     private final CommonOptions commonOptions;
@@ -106,15 +105,16 @@ public final class InitCommand extends BaseCommand implements CommandExecution {
 
         // Ensure archetype version
         if (version == null || version.isEmpty()) {
-            version = cliConfig.getProperty(ARCHETYPE_VERSION);
+            version = helidonVersion();
             Objects.requireNonNull(version);
+            context.logInfo("Using Helidon version " + version);
         }
 
         // Generate project using Maven archetype
-        Path dir = null;
+        Path dir;
         Path parentDirectory = commonOptions.project().toPath();
         try {
-            dir = QuickstartGenerator.generator()
+            dir = SimpleQuickstartGenerator.generator()
                     .parentDirectory(parentDirectory)
                     .helidonVariant(HelidonVariant.parse(flavor.name()))
                     .helidonVersion(version)
@@ -133,6 +133,7 @@ public final class InitCommand extends BaseCommand implements CommandExecution {
         ProjectConfig configFile = projectConfig(dir);
         configFile.property(PROJECT_DIRECTORY, dir.toString());
         configFile.property(PROJECT_FLAVOR, flavor.toString());
+        configFile.property(HELIDON_VERSION, version);
         cliConfig.forEach((key, value) -> {
             String propName = (String) key;
             if (propName.startsWith(FEATURE_PREFIX)) {      // Applies to both SE or MP
@@ -152,6 +153,7 @@ public final class InitCommand extends BaseCommand implements CommandExecution {
     private void ensurePomExtension(File pomFile, Properties properties) {
         Model model = readPomModel(pomFile);
         ProjectDependency ext = ProjectDependency.fromString(properties.getProperty(DEVLOOP_EXTENSION));
+        ext.version(helidonVersion());
         Objects.requireNonNull(ext);
         List<Extension> extensions = model.getBuild().getExtensions();
         Optional<Extension> found = extensions.stream().filter(
