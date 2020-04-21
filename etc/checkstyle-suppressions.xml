@@ -27,5 +27,7 @@
             lines="1"/>
     <suppress checks="LineLength"
             files="helidon-archetype/engine/src/test/resources/META-INF/test.properties" />
+    <suppress checks="LineLength"
+            files="helidon-archetype/maven-plugin/src/test/resources/io/helidon/build/archetype/maven/test.properties" />
 </suppressions>
 

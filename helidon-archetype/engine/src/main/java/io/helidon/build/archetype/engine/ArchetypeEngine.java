@@ -21,6 +21,9 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.util.Collections;
 import java.util.HashMap;
@@ -47,10 +50,17 @@ import com.github.mustachejava.MustacheFactory;
 /**
  * Archetype engine.
  */
-final class ArchetypeEngine {
+public final class ArchetypeEngine {
 
-    static final String DESCRIPTOR_RESOURCE_NAME = "META-INF/helidon-archetype.xml";
-    static final String RESOURCES_LIST = "META-INF/helidon-archetype-resources.txt";
+    /**
+     * Constant for the archetype descriptor path.
+     */
+    public static final String DESCRIPTOR_RESOURCE_NAME = "META-INF/helidon-archetype.xml";
+
+    /**
+     * Constant for the archetype resources manifest path.
+     */
+    public static final String RESOURCES_LIST = "META-INF/helidon-archetype-resources.txt";
 
     private final MustacheFactory mf;
     private final ClassLoader cl;
@@ -59,7 +69,22 @@ final class ArchetypeEngine {
     private final Map<String, List<Transformation>> templates;
     private final Map<String, List<Transformation>> files;
 
-    ArchetypeEngine(ClassLoader cl, Properties userProperties) {
+    /**
+     * Create a new archetype engine instance.
+     * @param archetype archetype file
+     * @param userProperties user properties
+     * @throws MalformedURLException if an error occurred converting the file to a URL
+     */
+    public ArchetypeEngine(File archetype, Properties userProperties) throws MalformedURLException {
+        this(new URLClassLoader(new URL[] {archetype.toURI().toURL()}), userProperties);
+    }
+
+    /**
+     * Create a new archetype engine instance.
+     * @param cl class loader used to load the archetype
+     * @param userProperties user properties
+     */
+    public ArchetypeEngine(ClassLoader cl, Properties userProperties) {
         this.cl = Objects.requireNonNull(cl, "class-loader is null");
         this.mf = new DefaultMustacheFactory();
         this.descriptor = loadDescriptor(cl);
@@ -170,9 +195,9 @@ final class ArchetypeEngine {
             String regexp = null;
             String replace = null;
             if (matchStart > 0 && matchEnd > matchStart) {
+                regexp = propName.substring(matchStart + 1, matchEnd);
+                replace = propName.substring(matchEnd + 1);
                 propName = propName.substring(0, matchStart);
-                regexp = propName.substring(matchStart, matchEnd);
-                replace = propName.substring(matchEnd);
             }
 
             String propValue = properties.get(propName);
@@ -223,8 +248,9 @@ final class ArchetypeEngine {
 
     /**
      * Run the archetype.
+     * @param outputDirectory output directory
      */
-    void generate(File outputDirectory) {
+    public void generate(File outputDirectory) {
         for (Entry<String, List<Transformation>> entry : templates.entrySet()) {
             String resourcePath = entry.getKey().substring(1);
             InputStream is = cl.getResourceAsStream(resourcePath);

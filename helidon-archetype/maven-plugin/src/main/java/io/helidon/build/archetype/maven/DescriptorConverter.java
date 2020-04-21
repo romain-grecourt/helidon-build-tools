@@ -15,9 +15,11 @@
  */
 package io.helidon.build.archetype.maven;
 
+import java.io.Writer;
+
 import io.helidon.build.archetype.engine.ArchetypeDescriptor;
 import io.helidon.build.archetype.engine.ArchetypeDescriptor.Property;
-import java.io.Writer;
+
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.codehaus.plexus.util.xml.Xpp3DomWriter;
 
@@ -25,6 +27,12 @@ import org.codehaus.plexus.util.xml.Xpp3DomWriter;
  * Converts an {@link ArchetypeDescriptor} to a minimal {@code archetype-metadata.xml}.
  */
 final class DescriptorConverter {
+
+    /**
+     * Cannot be instantiated.
+     */
+    private DescriptorConverter() {
+    }
 
     static void convert(ArchetypeDescriptor descriptor, Writer writer) {
         Xpp3Dom properties = new Xpp3Dom("requiredProperties");

@@ -15,9 +15,21 @@
  */
 package io.helidon.build.archetype.maven;
 
-import io.helidon.build.archetype.engine.ArchetypeDescriptor;
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
+import java.util.Properties;
+import java.util.Base64;
+
+import io.helidon.build.archetype.engine.ArchetypeDescriptor;
+
 import org.junit.jupiter.api.Test;
+
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.not;
+import static org.hamcrest.CoreMatchers.nullValue;
+import static org.hamcrest.MatcherAssert.assertThat;
 
 /**
  * Tests {@link DescriptorConverter}.
@@ -25,10 +37,17 @@ import org.junit.jupiter.api.Test;
 public class DescriptorConverterTest {
 
     @Test
-    public void testConvert() {
+    public void testConvert() throws IOException {
+        InputStream is = DescriptorConverterTest.class.getResourceAsStream("test.properties");
+        assertThat(is, is(not(nullValue())));
+        Properties testProps = new Properties();
+        testProps.load(is);
+        String mavenArchetypeMetadata = testProps.getProperty("archetype-metadata.xml");
+        assertThat(mavenArchetypeMetadata, is(not(nullValue())));
         ArchetypeDescriptor desc = ArchetypeDescriptor.read(DescriptorConverterTest.class.getResourceAsStream("helidon-archetype.xml"));
         StringWriter sw = new StringWriter();
         DescriptorConverter.convert(desc, sw);
-        System.out.println(sw.toString());
+        String convertedDescriptor = sw.toString();
+        assertThat(convertedDescriptor, is (new String(Base64.getDecoder().decode(mavenArchetypeMetadata), StandardCharsets.UTF_8)));
     }
 }

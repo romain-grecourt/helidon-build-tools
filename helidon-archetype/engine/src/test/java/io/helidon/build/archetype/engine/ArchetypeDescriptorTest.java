@@ -71,7 +71,7 @@ public class ArchetypeDescriptorTest {
         assertThat(packaged, is(not(empty())));
         assertThat(packaged.stream().map(Replacement::regex).collect(Collectors.toList()), hasItems("__pkg__"));
         assertThat(packaged.stream().map(Replacement::replacement).collect(Collectors.toList()),
-                hasItems("${package/(?!\\.[a-z]+$)\\./\\/}"));
+                hasItems("${package/\\./\\/}"));
         List<Replacement> mustache = transformations.get("mustache").replacements();
         assertThat(mustache, is(not(empty())));
         assertThat(mustache.stream().map(Replacement::regex).collect(Collectors.toList()), hasItems("\\.mustache$"));
