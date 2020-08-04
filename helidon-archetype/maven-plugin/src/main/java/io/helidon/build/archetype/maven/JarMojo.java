@@ -179,7 +179,7 @@ public class JarMojo extends AbstractMojo {
         Path archetypeDescriptor = archetypeDir.resolve(ArchetypeEngine.DESCRIPTOR_RESOURCE_NAME);
         Path archetypeResourcesList = archetypeDir.resolve(ArchetypeEngine.RESOURCES_LIST);
 
-        Map<String, List<String>> resources = scanResources();
+        Map<String, List<String>> resources = scanResources(baseDir);
         processDescriptor(resources, baseDir, archetypeDescriptor);
         if (mavenArchetypeCompatible) {
             processMavenCompat(archetypeDir, archetypeDescriptor);
@@ -397,13 +397,13 @@ public class JarMojo extends AbstractMojo {
      *
      * @return list of resources
      */
-    private Map<String, List<String>> scanResources() {
+    private Map<String, List<String>> scanResources(Path baseDir) {
         getLog().debug("Scanning project resources");
         Map<String, List<String>> allResources = new HashMap<>();
         for (Resource resource : project.getResources()) {
             List<String> resources = new ArrayList<>();
-            allResources.put(resource.getDirectory(), resources);
             File resourcesDir = new File(resource.getDirectory());
+            allResources.put(baseDir.relativize(resourcesDir.toPath()).toString(), resources);
             Scanner scanner = buildContext.newScanner(resourcesDir);
             String[] includes = null;
             if (resource.getIncludes() != null
@@ -422,7 +422,7 @@ public class JarMojo extends AbstractMojo {
             scanner.scan();
             for (String included : scanner.getIncludedFiles()) {
                 getLog().debug("Found resource: " + included);
-                resources.add(included);
+                resources.add(included.replaceAll("\\\\", "/"));
             }
         }
         return allResources;
