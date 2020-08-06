@@ -580,10 +580,14 @@ public final class ProcessMonitor {
 
     private static final class ProcessRegistry extends HashSet<Process> {
 
-        final Thread shutdownThread = new Thread(() -> forEach(Process::destroyForcibly));
+        final Thread shutdownThread = new Thread(this::destroyAll);
 
         ProcessRegistry() {
             Runtime.getRuntime().addShutdownHook(shutdownThread);
+        }
+
+        void destroyAll() {
+            forEach(Process::destroyForcibly);
         }
     }
 
