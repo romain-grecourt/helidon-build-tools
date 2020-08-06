@@ -568,7 +568,7 @@ public final class ProcessMonitor {
 
     private static class RunningProcesses {
 
-        private static final ProcessRegistry REGISTRY = new ProcessRegistry();
+        static final ProcessRegistry REGISTRY = new ProcessRegistry();
 
         static void add(Process process) {
             REGISTRY.add(process);
