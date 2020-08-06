@@ -73,16 +73,12 @@ public class AnsiConsoleInstaller {
      * @return {@code true} if Ansi escapes are enabled.
      */
     public static boolean install() {
-        if (!INSTALLED.get()) {
-            synchronized (AnsiConsoleInstaller.class) {
-                if (INSTALLED.compareAndSet(false, true)) {
-                    ConsoleType desiredType = desiredConsoleType();
-                    AnsiConsole.systemInstall();
-                    ConsoleType installedType = installedConsoleType(desiredType);
-                    CONSOLE_TYPE.set(installedType);
-                    ENABLED.set(installedType == ConsoleType.ANSI);
-                }
-            }
+        if (!INSTALLED.getAndSet(true)) {
+            ConsoleType desiredType = desiredConsoleType();
+            AnsiConsole.systemInstall();
+            ConsoleType installedType = installedConsoleType(desiredType);
+            CONSOLE_TYPE.set(installedType);
+            ENABLED.set(installedType == ConsoleType.ANSI);
         }
         return ENABLED.get();
     }
@@ -166,8 +162,7 @@ public class AnsiConsoleInstaller {
      * @return {@code true} if enabled.
      */
     public static ConsoleType consoleType() {
-        install();
-        return CONSOLE_TYPE.get();
+        return install() ? CONSOLE_TYPE.get() : ConsoleType.STRIP_ANSI;
     }
 
     /**
