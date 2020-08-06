@@ -111,7 +111,7 @@ public final class ProcessMonitor {
         /**
          * Sets whether or not to capture output.
          *
-         * @param capture {@code true} if output should be capturee.
+         * @param capture {@code true} if output should be captured.
          * @return This builder.
          */
         public Builder capture(boolean capture) {

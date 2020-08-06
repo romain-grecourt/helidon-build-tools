@@ -454,7 +454,7 @@ public class MavenCommand {
 
             // Create the process builder
 
-            processBuilder = new ProcessBuilder().directory(directory.toFile()).command(command).inheritIO();
+            processBuilder = new ProcessBuilder().directory(directory.toFile()).command(command);
 
             // Ensure we use the current Maven version
 
