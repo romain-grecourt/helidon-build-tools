@@ -588,12 +588,7 @@ public final class ProcessMonitor {
         }
 
         void destroyAll() {
-            System.out.println("### DESTROY ALL PROCESSED ###" + stream().map(Process::pid).collect(Collectors.toList()));
-            stream().flatMap(p -> p.descendants())
-                    .forEach(p -> {
-                        System.out.println("### DESTROY ### " + p.pid());
-                        p.destroyForcibly();
-                    });
+            stream().flatMap(Process::descendants).forEach(ProcessHandle::destroyForcibly);
         }
     }
 
