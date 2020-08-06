@@ -587,6 +587,7 @@ public final class ProcessMonitor {
         }
 
         void destroyAll() {
+            System.out.println("### DESTROY ALL PROCESSED ###");
             forEach(Process::destroyForcibly);
         }
     }
