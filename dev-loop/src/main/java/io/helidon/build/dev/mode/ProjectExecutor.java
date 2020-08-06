@@ -242,7 +242,8 @@ public class ProjectExecutor {
         hasStdErrMessage = false;
         ProcessBuilder processBuilder = JavaProcessBuilder.newInstance()
                                                           .directory(project.root().path().toFile())
-                                                          .command(command);
+                                                          .command(command)
+                                                          .inheritIO();
 
         try {
             stateChanged(STARTING);
