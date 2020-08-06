@@ -23,6 +23,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ForkJoinPool;
@@ -268,6 +269,7 @@ public final class ProcessMonitor {
             builder.redirectInput(stdIn);
         }
         process = builder.start();
+        RunningProcesses.add(process);
         running.set(true);
         out = monitor(process.getInputStream(), filter, transform, capturing ? this::captureStdOut : stdOut, running);
         err = monitor(process.getErrorStream(), filter, transform, capturing ? this::captureStdErr : stdErr, running);
@@ -318,6 +320,7 @@ public final class ProcessMonitor {
         } else {
             process.destroy();
         }
+        RunningProcesses.remove(process);
         cancelTasks();
         return this;
     }
@@ -339,21 +342,25 @@ public final class ProcessMonitor {
             ProcessFailedException,
             InterruptedException {
         assertRunning();
-        final boolean completed = process.waitFor(timeout, unit);
-        if (completed) {
-            stopTasks();
-            if (process.exitValue() != 0) {
-                throw new ProcessFailedException(this);
+        try {
+            final boolean completed = process.waitFor(timeout, unit);
+            if (completed) {
+                stopTasks();
+                if (process.exitValue() != 0) {
+                    throw new ProcessFailedException(this);
+                }
+                return this;
+            } else {
+                destroy(false);
+                throw new ProcessTimeoutException(this);
             }
-            return this;
-        } else {
-            destroy(false);
-            throw new ProcessTimeoutException(this);
+        } finally {
+            RunningProcesses.remove(process);
         }
     }
 
     /**
-     * Tests whether or not the proces is alive.
+     * Tests whether or not the process is alive.
      *
      * @return {@code true} if the process is alive.
      */
@@ -498,6 +505,7 @@ public final class ProcessMonitor {
     private void assertRunning() {
         final Process process = assertStarted();
         if (!process.isAlive()) {
+            RunningProcesses.remove(process);
             throw new IllegalStateException("already completed");
         }
     }
@@ -556,4 +564,27 @@ public final class ProcessMonitor {
             }
         });
     }
+
+    private static class RunningProcesses {
+
+        private static final ProcessRegistry REGISTRY = new ProcessRegistry();
+
+        static void add(Process process) {
+            REGISTRY.add(process);
+        }
+
+        static void remove(Process process) {
+            REGISTRY.remove(process);
+        }
+    }
+
+    private static final class ProcessRegistry extends HashSet<Process> {
+
+        final Thread shutdownThread = new Thread(() -> forEach(Process::destroyForcibly));
+
+        ProcessRegistry() {
+            Runtime.getRuntime().addShutdownHook(shutdownThread);
+        }
+    }
+
 }
