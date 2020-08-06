@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 import static java.util.Collections.emptyList;
 import static java.util.Objects.requireNonNullElseGet;
@@ -587,7 +588,7 @@ public final class ProcessMonitor {
         }
 
         void destroyAll() {
-            System.out.println("### DESTROY ALL PROCESSED ###");
+            System.out.println("### DESTROY ALL PROCESSED ###" + stream().map(Process::pid).collect(Collectors.toList()));
             forEach(Process::destroyForcibly);
         }
     }
