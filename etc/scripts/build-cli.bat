@@ -19,8 +19,20 @@ call %~dp0\pipeline-env.bat
 
 cd %~dp0\..\..
 
+if /i "%~1"=="/release" (
+    for /f "delims=*" %a in ('^
+        mvn %MAVEN_ARGS% -q -N ^
+        org.codehaus.mojo:exec-maven-plugin:1.3.1:exec ^
+        -Dexec.executable^="cmd" ^
+        -Dexec.args^="/c echo ${project.version}"' ^
+    ) do set MVN_VERSION=%a
+    set FULL_VERSION=%MVN_VERSION:-SNAPSHOT=%
+    git fetch origin %FULL_VERSION%
+    git checkout %FULL_VERSION%
+)
+
 mvn %MAVEN_ARGS% ^
-    -f helidon-cli/impl/pom.xml
+    -f helidon-cli/impl/pom.xml ^
     clean install ^
     -DskipTests ^
     -Pnative-image ^
