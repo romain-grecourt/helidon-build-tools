@@ -14,7 +14,6 @@
 @REM limitations under the License.
 @REM
 
-@echo off
 call %~dp0\pipeline-env.bat
 
 cd %~dp0\..\..
