@@ -1,0 +1,153 @@
+package io.helidon.build.cli.codegen;
+
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Function;
+
+/**
+ * Utility to deal with checked exceptions in lambdas.
+ */
+interface Unchecked {
+
+    /**
+     * Checked consumer.
+     *
+     * @param <T> item type
+     * @param <E> checked exception type
+     */
+    interface CheckedConsumer<T, E extends Exception> {
+        /**
+         * Accept an item.
+         *
+         * @param item item
+         * @throws E if an error occurs
+         */
+        void accept(T item) throws E;
+    }
+
+    /**
+     * Checked consumer.
+     *
+     * @param <T> 1st item type
+     * @param <U> 2nd item type
+     * @param <E> checked exception type
+     */
+    interface CheckedBiConsumer<T, U, E extends Exception> {
+
+        /**
+         * Accept an item.
+         *
+         * @param item1 1st item
+         * @param item2 2nd item
+         * @throws E if an error occurs
+         */
+        void accept(T item1, U item2) throws E;
+    }
+
+    /**
+     * Checked consumer.
+     *
+     * @param <T> input type
+     * @param <U> output type
+     * @param <E> checked exception type
+     */
+    interface CheckedFunction<T, U, E extends Exception> {
+
+        /**
+         * Accept an item.
+         *
+         * @param item input item
+         * @return U
+         * @throws E if an error occurs
+         */
+        U apply(T item) throws E;
+    }
+
+    /**
+     * Checked runnable.
+     *
+     * @param <E> checked exception type
+     */
+    interface CheckedRunnable<E extends Exception> {
+
+        /**
+         * Run.
+         *
+         * @throws E if an error occurs
+         */
+        void run() throws E;
+    }
+
+    /**
+     * Wrap a {@link CheckedRunnable} into a {@link Runnable}.
+     *
+     * @param runnable checked runnable
+     * @param <E>      checked exception type
+     * @return Consumer
+     */
+    static <E extends Exception> Runnable unchecked(CheckedRunnable<E> runnable) {
+        return () -> {
+            try {
+                runnable.run();
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        };
+    }
+
+    /**
+     * Wrap a {@link CheckedConsumer} into a {@link Consumer}.
+     *
+     * @param consumer checked consumer
+     * @param <T>      item type
+     * @param <E>      checked exception type
+     * @return Consumer
+     */
+    static <T, E extends Exception> Consumer<T> unchecked(CheckedConsumer<T, E> consumer) {
+        return t -> {
+            try {
+                consumer.accept(t);
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        };
+    }
+
+    /**
+     * Wrap a {@link CheckedBiConsumer} into a {@link BiConsumer}.
+     *
+     * @param consumer checked consumer
+     * @param <T>      1st item type
+     * @param <U>      2nd item type
+     * @param <E>      checked exception type
+     * @return BiConsumer
+     */
+    static <T, U, E extends Exception> BiConsumer<T, U> unchecked(CheckedBiConsumer<T, U, E> consumer) {
+        return (t, u) -> {
+            try {
+                consumer.accept(t, u);
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        };
+    }
+
+    /**
+     * Wrap a {@link CheckedBiConsumer} into a {@link BiConsumer}.
+     *
+     * @param function checked function
+     * @param <T>      1st item type
+     * @param <U>      2nd item type
+     * @param <E>      checked exception type
+     * @return Function
+     */
+    static <T, U, E extends Exception> Function<T, U> unchecked(CheckedFunction<T, U, E> function) {
+        return t -> {
+            try {
+                return function.apply(t);
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        };
+    }
+}

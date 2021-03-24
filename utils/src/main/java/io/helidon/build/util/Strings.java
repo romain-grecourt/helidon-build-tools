@@ -53,6 +53,22 @@ public class Strings {
         return value.replaceAll("\r\n", "\n");
     }
 
+    /**
+     * Returns a padding string.
+     *
+     * @param maxKeyWidth The maximum key width.
+     * @param key The key.
+     * @return The padding.
+     */
+    public static String padding(String pad, int maxKeyWidth, String key) {
+        final int keyLen = key.length();
+        if (maxKeyWidth > keyLen) {
+            return pad.repeat(maxKeyWidth - keyLen);
+        } else {
+            return "";
+        }
+    }
+
     private Strings() {
     }
 }

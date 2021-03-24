@@ -179,24 +179,24 @@
         <version.plugin.source>3.0.1</version.plugin.source>
         <version.plugin.spotbugs>3.1.12</version.plugin.spotbugs>
         <version.plugin.surefire.provider.junit>1.0.3</version.plugin.surefire.provider.junit>
-        <version.plugin.surefire>3.0.0-M4</version.plugin.surefire>
-        <version.plugin.failsafe>3.0.0-M4</version.plugin.failsafe>
+        <version.plugin.surefire>3.0.0-M5</version.plugin.surefire>
+        <version.plugin.failsafe>3.0.0-M5</version.plugin.failsafe>
         <version.plugin.toolchains>1.1</version.plugin.toolchains>
     </properties>
 
     <modules>
-        <module>sitegen-maven-plugin</module>
-        <module>helidon-maven-plugin</module>
-        <module>helidon-cli-maven-plugin</module>
-        <module>helidon-cli</module>
-        <module>helidon-archetype</module>
-        <module>helidon-linker</module>
-        <module>snakeyaml-codegen-maven-plugin</module>
+        <module>cli</module>
+        <module>archetype</module>
+        <module>linker</module>
         <module>utils</module>
         <module>licensing</module>
         <module>dev-loop</module>
-        <module>stager-maven-plugin</module>
-        <module>build-cache-maven-plugin</module>
+        <module>maven-plugins/helidon-sitegen-maven-plugin</module>
+        <module>maven-plugins/helidon-maven-plugin</module>
+        <module>maven-plugins/helidon-cli-maven-plugin</module>
+        <module>maven-plugins/helidon-snakeyaml-codegen-maven-plugin</module>
+        <module>maven-plugins/helidon-stager-maven-plugin</module>
+        <module>maven-plugins/helidon-build-cache-maven-plugin</module>
     </modules>
 
     <build>
