@@ -319,7 +319,7 @@ public class SourcePath {
                     }
                 } else if (!subSegment.equals(subPattern)) {
                     // not expanding a wildcard
-                    // the sub-segment needs to stricly filter the sub-pattern
+                    // the sub-segment needs to strictly filter the sub-pattern
                     matched = false;
                 }
                 break;
@@ -354,7 +354,6 @@ public class SourcePath {
         }
         return sb.toString();
     }
-
 
     @Override
     public String toString() {
