@@ -36,7 +36,7 @@ import io.helidon.build.cli.harness.Option.KeyValue;
 import io.helidon.build.cli.harness.Option.KeyValues;
 
 /**
- * Meta model API to represent the processed annotations.
+ * Meta-model API to represent the processed annotations.
  */
 abstract class MetaModel<T, U extends TypeInfo> {
 

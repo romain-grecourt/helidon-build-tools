@@ -27,9 +27,8 @@ import java.net.UnknownHostException;
 
 import static java.util.Objects.requireNonNull;
 
-
 /**
- * A builder for accessing a network stream. Supports retries.
+ * A builder for accessing a network stream. Supports retry.
  */
 public class NetworkConnection {
 
@@ -41,7 +40,7 @@ public class NetworkConnection {
          * Returns the stream after connecting to the given url.
          *
          * @param url            The url.
-         * @param connectTimeout The connect timeout, in milliseconds.
+         * @param connectTimeout The connection timeout, in milliseconds.
          * @param readTimeout    The read timeout, in milliseconds.
          * @return The stream.
          * @throws IOException If an error occurs.
@@ -198,7 +197,7 @@ public class NetworkConnection {
         }
 
         /**
-         * Sets the connect timeout.
+         * Sets the connection timeout.
          *
          * @param connectTimeout The timeout.
          * @return This instance, for chaining.

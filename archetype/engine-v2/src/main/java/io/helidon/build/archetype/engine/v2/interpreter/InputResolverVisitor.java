@@ -16,32 +16,40 @@
 
 package io.helidon.build.archetype.engine.v2.interpreter;
 
-import java.util.LinkedList;
-import java.util.stream.Collectors;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextEnumNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextListNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputEnumNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputListNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputOptionNode;
+import io.helidon.build.archetype.engine.v2.ast.Node;
 
-class InputResolverVisitor extends VisitorEmptyImpl<ASTNode> {
+import java.util.List;
+
+import static java.util.stream.Collectors.toList;
+
+class InputResolverVisitor implements Visitor<Node, Void> {
 
     @Override
-    public void visit(InputEnumAST input, ASTNode arg) {
-        if (arg instanceof ContextEnumAST) {
-            LinkedList<Visitable> resolvedOptions = input.children().stream()
-                    .filter(c -> c instanceof OptionAST)
-                    .filter(o -> ((OptionAST) o).value().equals(((ContextEnumAST) arg).value()))
-                    .collect(Collectors.toCollection(LinkedList::new));
-            input.children().removeIf(c -> c instanceof OptionAST);
+    public Void visit(InputEnumNode input, Node arg) {
+        if (arg instanceof ContextEnumNode) {
+            List<Node> resolvedOptions = input.childrenOf(InputOptionNode.class)
+                                              .filter(o -> o.is((ContextEnumNode) arg))
+                                              .collect(toList());
+            input.children().removeIf(c -> c instanceof InputOptionNode);
             input.children().addAll(resolvedOptions);
         }
+        return null;
     }
 
     @Override
-    public void visit(InputListAST input, ASTNode arg) {
-        if (arg instanceof ContextListAST) {
-            LinkedList<Visitable> resolvedOptions = input.children().stream()
-                    .filter(c -> c instanceof OptionAST)
-                    .filter(o -> ((ContextListAST) arg).values().contains(((OptionAST) o).value()))
-                    .collect(Collectors.toCollection(LinkedList::new));
-            input.children().removeIf(c -> c instanceof OptionAST);
+    public Void visit(InputListNode input, Node arg) {
+        if (arg instanceof ContextListNode) {
+            List<Node> resolvedOptions = input.childrenOf(InputOptionNode.class)
+                                              .filter(o -> o.is((ContextListNode) arg))
+                                              .collect(toList());
+            input.children().removeIf(c -> c instanceof InputOptionNode);
             input.children().addAll(resolvedOptions);
         }
+        return null;
     }
 }

@@ -19,9 +19,9 @@ package io.helidon.build.archetype.engine.v2.descriptor;
 import java.util.Objects;
 
 /**
- * Archetype boolean in {@link Context} nodes.
+ * Archetype boolean in {@link ContextBlock} nodes.
  */
-public class ContextBoolean extends ContextNode {
+public class ContextBoolean extends Context {
 
     private boolean bool;
 

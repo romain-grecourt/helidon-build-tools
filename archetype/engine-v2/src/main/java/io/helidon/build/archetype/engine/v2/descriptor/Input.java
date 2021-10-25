@@ -16,95 +16,70 @@
 
 package io.helidon.build.archetype.engine.v2.descriptor;
 
-import java.util.LinkedList;
 import java.util.Objects;
 
 /**
- * Archetype Input.
+ * Base class for {@link InputBlock} nodes.
  */
-public class Input {
+public abstract class Input {
 
-    private final LinkedList<InputNode> nodes = new LinkedList<>();
-    private final LinkedList<Context> contexts = new LinkedList<>();
-    private final LinkedList<Step> steps = new LinkedList<>();
-    private final LinkedList<Input> inputs = new LinkedList<>();
-    private final LinkedList<Source> sources = new LinkedList<>();
-    private final LinkedList<Exec> execs = new LinkedList<>();
-    private Output output;
+    private final String label;
+    private final String name;
+    private final String def;
+    private final String prompt;
+    private boolean optional = false;
 
-    protected Input() {
+    Input(String label, String name, String def, String prompt, boolean optional) {
+        this.label = label;
+        this.name = name;
+        this.def = def;
+        this.prompt = prompt;
+        this.optional = optional;
     }
 
     /**
-     * Get the Input nodes: {@link InputText}, {@link InputBoolean}, {@link InputEnum}, {@link InputList}.
+     * Get the label.
      *
-     * @return nodes
+     * @return label
      */
-    public LinkedList<InputNode> nodes() {
-        return nodes;
+    public String label() {
+        return label;
     }
 
     /**
-     * Get input contexts.
+     * Get the name.
      *
-     * @return contexts
+     * @return name
      */
-    public LinkedList<Context> contexts() {
-        return contexts;
+    public String name() {
+        return name;
     }
 
     /**
-     * Get input steps.
+     * Get the default value.
      *
-     * @return steps
+     * @return default value
      */
-    public LinkedList<Step> steps() {
-        return steps;
+    public String defaultValue() {
+        return def;
     }
 
     /**
-     * Get input inputs.
+     * Get the prompt.
      *
-     * @return inputs
+     * @return prompt
      */
-    public LinkedList<Input> inputs() {
-        return inputs;
+    public String prompt() {
+        return prompt;
     }
 
     /**
-     * Get input sources.
+     * Get the optional attribute.
      *
-     * @return sources
+     * @return boolean
      */
-    public LinkedList<Source> sources() {
-        return sources;
-    }
-
-    /**
-     * Get input execs.
-     *
-     * @return execs
-     */
-    public LinkedList<Exec> execs() {
-        return execs;
-    }
-
-    /**
-     * Get input output.
-     *
-     * @return output
-     */
-    public Output output() {
-        return output;
-    }
-
-    /**
-     * Set input output.
-     *
-     * @param  output output
-     */
-    public void output(Output output) {
-        this.output = output;
+    public boolean isOptional() {
+        return optional;
     }
 
     @Override
@@ -112,30 +87,17 @@ public class Input {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         if (!super.equals(o)) return false;
-        Input input = (Input) o;
-        return nodes.equals(input.nodes)
-                && contexts.equals(input.contexts)
-                && steps.equals(input.steps)
-                && inputs.equals(input.inputs)
-                && sources.equals(input.sources)
-                && execs.equals(input.execs);
+        Input inputNode = (Input) o;
+        return label.equals(inputNode.label)
+                && name.equals(inputNode.name)
+                && def.equals(inputNode.def)
+                && prompt.equals(inputNode.prompt)
+                && optional == inputNode.optional;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), nodes, contexts, steps, inputs, sources, execs, output);
+        return Objects.hash(super.hashCode(), label, name, def, prompt, optional);
     }
 
-    @Override
-    public String toString() {
-        return "Input{"
-                + "nodes=" + nodes()
-                + ", contexts=" + contexts()
-                + ", steps=" + steps()
-                + ", inputs=" + inputs()
-                + ", sources=" + sources()
-                + ", execs=" + execs()
-                + ", output=" + output()
-                + '}';
-    }
 }

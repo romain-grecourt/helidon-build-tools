@@ -16,6 +16,8 @@
 
 package io.helidon.build.archetype.engine.v2.interpreter;
 
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes;
+
 import java.util.Optional;
 
 /**
@@ -25,7 +27,7 @@ public abstract class FlowState {
 
     abstract Optional<Flow.Result> result();
 
-    abstract void build(ContextAST context);
+    abstract void build(DescriptorNodes.ContextBlockNode context);
 
     /**
      * Get the type of the current {@code FlowState} instance.

@@ -16,9 +16,9 @@
 
 package io.helidon.build.archetype.engine.v2.prompter;
 
-import io.helidon.build.archetype.engine.v2.interpreter.ContextNodeAST;
-import io.helidon.build.archetype.engine.v2.interpreter.InputNodeAST;
-import io.helidon.build.archetype.engine.v2.interpreter.UserInputAST;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputNode;
+import io.helidon.build.archetype.engine.v2.ast.UserInputNode;
 
 /**
  * Prompt.
@@ -37,26 +37,16 @@ public abstract class Prompt<T> {
     private final boolean optional;
     private final boolean canBeGenerated;
 
-    Prompt(
-            String stepLabel,
-            String stepHelp,
-            String help,
-            String label,
-            String name,
-            String def,
-            String prompt,
-            boolean optional,
-            boolean canBeGenerated
-    ) {
-        this.stepLabel = stepLabel;
-        this.stepHelp = stepHelp;
-        this.help = help;
-        this.label = label;
-        this.name = name;
-        this.def = def;
-        this.prompt = prompt;
-        this.optional = optional;
-        this.canBeGenerated = canBeGenerated;
+    Prompt(Builder<?, ?> builder) {
+        this.stepLabel = builder.stepLabel;
+        this.stepHelp = builder.stepHelp;
+        this.help = builder.help;
+        this.label = builder.label;
+        this.name = builder.name;
+        this.def = builder.def;
+        this.prompt = builder.prompt;
+        this.optional = builder.optional;
+        this.canBeGenerated = builder.canBeGenerated;
     }
 
     /**
@@ -74,7 +64,7 @@ public abstract class Prompt<T> {
      * @param path     path that used to identify new ContextNodeAST instance.
      * @return a new instance of the {@code ContextNodeAST}
      */
-    public abstract ContextNodeAST acceptAndConvert(Prompter prompter, String path);
+    public abstract DescriptorNodes.ContextNode<?> acceptAndConvert(Prompter prompter, String path);
 
     /**
      * Get the step label.
@@ -316,7 +306,7 @@ public abstract class Prompt<T> {
          * @param userInputAST userInputAST
          * @return reference to the Builder
          */
-        public abstract B userInputAST(UserInputAST userInputAST);
+        public abstract B userInputAST(UserInputNode userInputAST);
 
         /**
          * Returns the reference to the actual builder.
@@ -332,18 +322,16 @@ public abstract class Prompt<T> {
          */
         public abstract T build();
 
-        void initFields(UserInputAST userInputAST) {
-            stepHelp(userInputAST.help());
-            stepLabel(userInputAST.help());
-
-            InputNodeAST inputNodeAST = (InputNodeAST) userInputAST.children().get(0);
-
+        void initFields(UserInputNode userInput) {
+            stepHelp(userInput.help());
+            stepLabel(userInput.help());
+            InputNode<?> inputNodeAST = (InputNode<?>) userInput.children().get(0);
             help(inputNodeAST.help());
-            label(inputNodeAST.label());
-            name(inputNodeAST.name());
+            label(inputNodeAST.descriptor().label());
+            name(inputNodeAST.descriptor().name());
             defaultValue(inputNodeAST.defaultValue());
-            prompt(inputNodeAST.prompt());
-            optional(inputNodeAST.isOptional());
+            prompt(inputNodeAST.descriptor().prompt());
+            optional(inputNodeAST.descriptor().isOptional());
         }
     }
 }

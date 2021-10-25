@@ -16,6 +16,9 @@
 
 package io.helidon.build.archetype.engine.v2.interpreter;
 
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes;
+import io.helidon.build.archetype.engine.v2.ast.Node;
+
 import java.util.Optional;
 
 public class WaitingFlowState extends FlowState {
@@ -32,8 +35,8 @@ public class WaitingFlowState extends FlowState {
     }
 
     @Override
-    void build(ContextAST context) {
-        ASTNode lastNode = flow.interpreter().stack().peek();
+    void build(DescriptorNodes.ContextBlockNode context) {
+        Node lastNode = flow.interpreter().stack().peek();
         flow.interpreter().visit(context, lastNode);
         try {
             while (!flow.interpreter().stack().isEmpty()) {

@@ -289,8 +289,8 @@ class AST {
         /**
          * Create a new value cast.
          *
-         * @param type  the type to be casted to
-         * @param value the value being casted
+         * @param type  the type to cast to
+         * @param value the value being cast
          */
         static ValueCast valueCast(TypeInfo type, Value value) {
             return new ValueCast(type, value);
@@ -299,8 +299,8 @@ class AST {
         /**
          * Create a new value cast.
          *
-         * @param aClass the type to be casted to
-         * @param value  the value being casted
+         * @param aClass the type to be cast to
+         * @param value  the value being cast
          */
         static ValueCast valueCast(Class<?> aClass, Value value) {
             return new ValueCast(TypeInfo.of(aClass), value);
@@ -368,8 +368,8 @@ class AST {
         /**
          * Create a new reference cast.
          *
-         * @param type the type to be casted to
-         * @param ref  the reference being casted
+         * @param type the type to be cast to
+         * @param ref  the reference being cast
          */
         static RefCast refCast(TypeInfo type, Ref ref) {
             return new RefCast(type, ref);
@@ -378,8 +378,8 @@ class AST {
         /**
          * Create a new reference cast.
          *
-         * @param aClass the type to be casted to
-         * @param ref    the reference being casted
+         * @param aClass the type to be cast to
+         * @param ref    the reference being cast
          */
         static RefCast refCast(Class<?> aClass, Ref ref) {
             return new RefCast(TypeInfo.of(aClass), ref);
@@ -1040,7 +1040,7 @@ class AST {
         }
 
         /**
-         * Get the casted type.
+         * Get the cast type.
          *
          * @return TypeInfo, never {@code null}
          */
@@ -1078,7 +1078,7 @@ class AST {
         }
 
         /**
-         * Get the casted type.
+         * Get the cast type.
          *
          * @return TypeInfo, never {@code null}
          */

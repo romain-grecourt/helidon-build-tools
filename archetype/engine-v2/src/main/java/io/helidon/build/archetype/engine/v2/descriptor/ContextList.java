@@ -17,14 +17,15 @@
 package io.helidon.build.archetype.engine.v2.descriptor;
 
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Objects;
 
 /**
- * Archetype list in {@link Context} nodes.
+ * Archetype list in {@link ContextBlock} nodes.
  */
-public class ContextList extends ContextNode {
+public class ContextList extends Context {
 
-    private final LinkedList<String> values;
+    private final List<String> values;
 
     protected ContextList(String path) {
         super(path);
@@ -36,7 +37,7 @@ public class ContextList extends ContextNode {
      *
      * @return values
      */
-    public LinkedList<String> values() {
+    public List<String> values() {
         return values;
     }
 

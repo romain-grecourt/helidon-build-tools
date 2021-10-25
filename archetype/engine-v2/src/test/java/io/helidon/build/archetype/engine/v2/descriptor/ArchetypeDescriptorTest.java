@@ -32,18 +32,18 @@ public class ArchetypeDescriptorTest {
     @Test
     public void testUnmarshall() {
         InputStream is = ArchetypeDescriptorTest.class.getClassLoader()
-                .getResourceAsStream(DESCRIPTOR_RESOURCE_NAME);
+                                                      .getResourceAsStream(DESCRIPTOR_RESOURCE_NAME);
 
         assertThat(is, is(notNullValue()));
 
         ArchetypeDescriptor desc = ArchetypeDescriptor.read(is);
 
-        assertThat(desc.archetypeAttributes(), is(notNullValue()));
-        assertThat(desc.archetypeAttributes().get("xmlns"), is("https://helidon.io/archetype/2.0"));
+        assertThat(desc.attributes(), is(notNullValue()));
+        assertThat(desc.attributes().get("xmlns"), is("https://helidon.io/archetype/2.0"));
 
         assertThat(desc.contexts().size(), is(1));
 
-        Context context = desc.contexts().getLast();
+        ContextBlock context = desc.contexts().get(desc.contexts().size() - 1);
 
         assertThat(context.nodes().size(), is(4));
         assertThat(context.nodes().getFirst().path(), is("test.option1"));
@@ -53,35 +53,35 @@ public class ArchetypeDescriptorTest {
         assertThat(list.values().size(), is(1));
         assertThat(list.values().getFirst(), is("hello"));
 
-        Step step = desc.steps().getLast();
+        Step step = desc.steps().get(desc.steps().size() - 1);
 
         assertThat(step.label(), is("A Step Title"));
         assertThat(step.help(), is("help message"));
 
-        Input input = step.inputs().getLast();
-        InputText text = (InputText) input.nodes().getLast();
+        InputBlock input = step.inputBlocks().getLast();
+        InputText text = (InputText) input.inputs().getLast();
 
         assertThat(text.label(), is("Some text input"));
         assertThat(text.name(), is("some-input"));
 
-        input = desc.inputs().getFirst();
-        Exec exec = input.execs().getFirst();
+        input = desc.inputBlocks().get(0);
+        Exec exec = input.execs().get(0);
 
         assertThat(exec.src(), is("test.xml"));
         assertThat(exec.url(), is(nullValue()));
 
-        InputList inputList = (InputList) input.steps().getFirst().inputs().getFirst().nodes().get(3);
+        InputList inputList = (InputList) input.steps().getFirst().inputBlocks().getFirst().inputs().get(3);
 
         assertThat(inputList.min(), is("0"));
         assertThat(inputList.max(), is("100"));
         assertThat(inputList.name(), is("array1"));
 
-        Option option = inputList.options().getFirst();
+        InputOption option = inputList.options().getFirst();
 
         assertThat(option.label(), is("Foo"));
         assertThat(option.value(), is("foo"));
 
-        Source source = desc.sources().getFirst();
+        Source source = desc.sources().get(0);
 
         assertThat(source.source(), is("dir1/dir2/file.xml"));
 
@@ -91,15 +91,15 @@ public class ArchetypeDescriptorTest {
 
         Model model = output.model();
 
-        assertThat(model.keyValues().getFirst().order(), is(100));
-        assertThat(model.keyMaps().getFirst().key(), is("foo"));
-        assertThat(model.keyMaps().getFirst().keyValues().getFirst().key(), is("first"));
-        assertThat(model.keyMaps().getFirst().keyLists().getFirst().key(), is("second"));
-        assertThat(model.keyMaps().getLast().keyMaps().getLast().keyLists().getLast().maps().getLast().keyValues().getFirst().value(),
+        assertThat(model.keyedValues().getFirst().order(), is(100));
+        assertThat(model.keyedMaps().getFirst().key(), is("foo"));
+        assertThat(model.keyedMaps().getFirst().keyValues().getFirst().key(), is("first"));
+        assertThat(model.keyedMaps().getFirst().keyLists().getFirst().key(), is("second"));
+        assertThat(model.keyedMaps().getLast().keyMaps().getLast().keyLists().getLast().maps().getLast().keyValues().getFirst().value(),
                 is("io.helidon.build-tools"));
 
-        ModelKeyValue execution = model.keyMaps().getLast().keyMaps().getLast().keyLists().getLast().maps().getLast()
-                .keyMaps().getLast().keyMaps().getLast().keyValues().getLast();
+        ModelKeyedValue execution = model.keyedMaps().getLast().keyMaps().getLast().keyLists().getLast().maps().getLast()
+                                         .keyMaps().getLast().keyMaps().getLast().keyValues().getLast();
         assertThat(execution.key(), is("id"));
         assertThat(execution.value(), is("third-party-license-report"));
 

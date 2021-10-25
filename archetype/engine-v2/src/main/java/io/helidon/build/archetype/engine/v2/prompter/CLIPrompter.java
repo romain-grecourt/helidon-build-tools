@@ -35,7 +35,7 @@ import static io.helidon.build.common.ansi.AnsiTextStyles.BoldBlue;
 /**
  * Prompter that uses CLI for input/output.
  */
-public class CLIPrompter extends DefaultPrompterImpl {
+public class CLIPrompter extends DefaultPrompter {
 
     private String lastStepLabel;
 

@@ -17,12 +17,17 @@
 package io.helidon.build.archetype.engine.v2.interpreter;
 
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodeFactory;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextBlockNode;
 import io.helidon.build.archetype.engine.v2.descriptor.ArchetypeDescriptor;
-import io.helidon.build.archetype.engine.v2.descriptor.Context;
+import io.helidon.build.archetype.engine.v2.descriptor.ContextBlock;
 import io.helidon.build.archetype.engine.v2.descriptor.Step;
+
+import static java.util.stream.Collectors.toList;
 
 public class InitialFlowState extends FlowState {
 
@@ -38,15 +43,15 @@ public class InitialFlowState extends FlowState {
     }
 
     @Override
-    void build(ContextAST context) {
+    void build(ContextBlockNode context) {
         flow.interpreter().visit(context, null);
-        getContexts(flow.entryPoint()).forEach(archContext -> flow.interpreter().visit(archContext, null));
-        LinkedList<StepAST> steps = getSteps(flow.entryPoint());
+        getContexts(flow.entrypoint()).forEach(ctx -> ctx.accept(flow.interpreter(), null));
+        LinkedList<DescriptorNode<Step>> steps = new LinkedList<>(getSteps(flow.entrypoint()));
         flow.interpreter().stack().addAll(steps);
         flow.tree().addAll(steps);
         try {
             while (!steps.isEmpty()) {
-                flow.interpreter().visit(steps.pop(), null);
+                steps.pop().accept(flow.interpreter(), null);
             }
         } catch (WaitForUserInput waitForUserInput) {
             flow.state(new WaitingFlowState(flow));
@@ -59,21 +64,21 @@ public class InitialFlowState extends FlowState {
         throw new InterpreterException("Script interpreter finished in unexpected state.");
     }
 
-    private LinkedList<ContextAST> getContexts(ArchetypeDescriptor entryPoint) {
-        LinkedList<Context> contexts = entryPoint.contexts() != null ? entryPoint.contexts() : new LinkedList<>();
-        return contexts.stream()
-                .map(context -> ContextAST.create(context, null, ASTNode.Location.builder().build()))
-                .collect(Collectors.toCollection(LinkedList::new));
+    private List<DescriptorNode<ContextBlock>> getContexts(ArchetypeDescriptor entryPoint) {
+        return entryPoint.contexts()
+                         .stream()
+                         .map(DescriptorNodeFactory::create)
+                         .collect(toList());
     }
 
-    private LinkedList<StepAST> getSteps(ArchetypeDescriptor entryPoint) {
-        LinkedList<Step> steps = entryPoint.steps() != null ? entryPoint.steps() : new LinkedList<>();
-        if (steps.isEmpty()) {
+    private List<DescriptorNode<Step>> getSteps(ArchetypeDescriptor entryPoint) {
+        if (entryPoint.steps().isEmpty()) {
             throw new InterpreterException("Archetype descriptor does not contain steps");
         }
-        return steps.stream()
-                .map(step -> StepAST.create(step, null, ASTNode.Location.builder().build()))
-                .collect(Collectors.toCollection(LinkedList::new));
+        return entryPoint.steps()
+                         .stream()
+                         .map(DescriptorNodeFactory::create)
+                         .collect(toList());
     }
 
     @Override

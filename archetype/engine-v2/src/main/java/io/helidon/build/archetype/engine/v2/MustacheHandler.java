@@ -31,10 +31,10 @@ import java.util.Map;
 import java.util.Set;
 
 import io.helidon.build.archetype.engine.v2.descriptor.Model;
-import io.helidon.build.archetype.engine.v2.descriptor.ModelKeyList;
-import io.helidon.build.archetype.engine.v2.descriptor.ModelKeyMap;
-import io.helidon.build.archetype.engine.v2.descriptor.ModelKeyValue;
-import io.helidon.build.archetype.engine.v2.descriptor.ValueType;
+import io.helidon.build.archetype.engine.v2.descriptor.ModelKeyedList;
+import io.helidon.build.archetype.engine.v2.descriptor.ModelKeyedMap;
+import io.helidon.build.archetype.engine.v2.descriptor.ModelKeyedValue;
+import io.helidon.build.archetype.engine.v2.descriptor.ModelValue;
 import io.helidon.build.archetype.engine.v2.template.MergingMap;
 import io.helidon.build.archetype.engine.v2.template.ModelSorter;
 import io.helidon.build.archetype.engine.v2.template.ModelTransformer;
@@ -56,7 +56,7 @@ public class MustacheHandler {
      * Mustache factory.
      */
     private static final MustacheFactory MUSTACHE_FACTORY = new DefaultMustacheFactory();
-    private static final MergingMap<String, ValueType>      TEMPLATE_VALUES_MAP = new MergingMap<>();
+    private static final MergingMap<String, ModelValue>      TEMPLATE_VALUES_MAP = new MergingMap<>();
     private static final MergingMap<String, TemplateList>   TEMPLATE_LISTS_MAP  = new MergingMap<>();
     private static final MergingMap<String, TemplateMap>    TEMPLATE_MAPS_MAP   = new MergingMap<>();
     private static final Set<String> TEMPLATE_FILES = new HashSet<>();
@@ -137,13 +137,13 @@ public class MustacheHandler {
     }
 
     private static void resolveModel(Model model) {
-        for (ModelKeyValue value : model.keyValues()) {
+        for (ModelKeyedValue value : model.keyedValues()) {
             TEMPLATE_VALUES_MAP.put(value.key(), value);
         }
-        for (ModelKeyList list : model.keyLists()) {
+        for (ModelKeyedList list : model.keyedLists()) {
             TEMPLATE_LISTS_MAP.put(list.key(), new TemplateList(list));
         }
-        for (ModelKeyMap map : model.keyMaps()) {
+        for (ModelKeyedMap map : model.keyedMaps()) {
             TEMPLATE_MAPS_MAP.put(map.key(), new TemplateMap(map));
         }
     }

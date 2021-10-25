@@ -16,15 +16,44 @@
 
 package io.helidon.build.archetype.engine.v2.interpreter;
 
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextBlockNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextBooleanNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextEnumNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextListNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextTextNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ExecNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.FileSetNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.FileSetsNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.IfStatementNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputBlockNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputEnumNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputListNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputOptionNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputTextNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelKeyedListNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelKeyedMapNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelKeyedValueNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelListNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelMapNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelValueNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.OutputNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.SourceNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.StepNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.TemplateNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.TemplatesNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.TransformationNode;
+import io.helidon.build.archetype.engine.v2.ast.Node;
+
 import java.util.HashSet;
 import java.util.Set;
 import java.util.logging.Logger;
 
-public class DebugVisitor extends VisitorEmptyImpl<ASTNode> {
+public class DebugVisitor implements Visitor<Node, Void> {
 
     private static final Logger LOGGER = Logger.getLogger(DebugVisitor.class.getName());
     private final boolean showVisits;
-    private final Set<ASTNode> visitedNodes = new HashSet<>();
+    private final Set<Node> visitedNodes = new HashSet<>();
 
     static {
         System.setProperty("java.util.logging.SimpleFormatter.format", "%5$s %n");
@@ -35,208 +64,274 @@ public class DebugVisitor extends VisitorEmptyImpl<ASTNode> {
     }
 
     @Override
-    public void visit(InputTextAST input, ASTNode parent) {
-        String message = String.format("%s InputTextAST {path=\"%s\"; label=\"%s\"}", indent(input), input.path(), input.label());
+    public Void visit(InputTextNode input, Node parent) {
+        String message = String.format("%s InputText {path=\"%s\"; label=\"%s\"}",
+                indent(input),
+                input.path(),
+                input.descriptor().label());
         processMessage(input, message);
+        return null;
     }
 
     @Override
-    public void visit(StepAST input, ASTNode parent) {
-        String message = String.format("%s StepAST {label=\"%s\"}", indent(input), input.label());
+    public Void visit(StepNode input, Node parent) {
+        String message = String.format("%s Step {label=\"%s\"}",
+                indent(input),
+                input.descriptor().label());
         processMessage(input, message);
+        return null;
     }
 
     @Override
-    public void visit(InputAST input, ASTNode parent) {
-        String message = String.format("%s InputAST", indent(input));
+    public Void visit(InputBlockNode input, Node parent) {
+        String message = String.format("%s Input", indent(input));
         processMessage(input, message);
+        return null;
     }
 
     @Override
-    public void visit(InputBooleanAST input, ASTNode parent) {
-        String message = String.format("%s InputBooleanAST {path=\"%s\"; label=\"%s\"}", indent(input), input.path(),
-                input.label());
+    public Void visit(DescriptorNodes.InputBooleanNode input, Node parent) {
+        String message = String.format("%s InputBoolean {path=\"%s\"; label=\"%s\"}",
+                indent(input),
+                input.path(),
+                input.descriptor().label());
         processMessage(input, message);
+        return null;
     }
 
     @Override
-    public void visit(InputEnumAST input, ASTNode parent) {
-        String message = String.format("%s InputEnumAST {path=\"%s\"; label=\"%s\"}", indent(input), input.path(), input.label());
+    public Void visit(InputEnumNode input, Node parent) {
+        String message = String.format("%s InputEnum {path=\"%s\"; label=\"%s\"}",
+                indent(input),
+                input.path(),
+                input.descriptor().label());
         processMessage(input, message);
+        return null;
     }
 
     @Override
-    public void visit(InputListAST input, ASTNode parent) {
-        String message = String.format("%s InputListAST {path=\"%s\"; label=\"%s\"}", indent(input), input.path(), input.label());
+    public Void visit(InputListNode input, Node parent) {
+        String message = String.format("%s InputList {path=\"%s\"; label=\"%s\"}",
+                indent(input),
+                input.path(),
+                input.descriptor().label());
         processMessage(input, message);
+        return null;
     }
 
     @Override
-    public void visit(ExecAST input, ASTNode parent) {
-        String message = String.format("%s ExecAST {src=\"%s\"}", indent(input), input.src());
+    public Void visit(ExecNode input, Node parent) {
+        String message = String.format("%s Exec {src=\"%s\"}",
+                indent(input),
+                input.descriptor().src());
         processMessage(input, message);
+        return null;
     }
 
     @Override
-    public void visit(SourceAST input, ASTNode parent) {
-        String message = String.format("%s SourceAST {source=\"%s\"}", indent(input), input.source());
+    public Void visit(SourceNode input, Node parent) {
+        String message = String.format("%s Source {source=\"%s\"}",
+                indent(input),
+                input.descriptor().source());
         processMessage(input, message);
+        return null;
     }
 
     @Override
-    public void visit(ContextAST input, ASTNode parent) {
-        if (input.children().isEmpty()) {
-            return;
+    public Void visit(ContextBlockNode input, Node parent) {
+        if (!input.children().isEmpty()) {
+            String message = String.format("%s Context", indent(input));
+            processMessage(input, message);
         }
-        String message = String.format("%s ContextAST", indent(input));
-        processMessage(input, message);
+        return null;
     }
 
     @Override
-    public void visit(ContextBooleanAST input, ASTNode parent) {
-        String message = String.format("%s ContextBooleanAST {path=\"%s\"; bool=%s}", indent(input), input.path(), input.bool());
-        processMessage(input, message);
-    }
-
-    @Override
-    public void visit(ContextEnumAST input, ASTNode parent) {
-        String message = String.format("%s ContextEnumAST {path=\"%s\"; value=\"%s\"}", indent(input), input.path(),
+    public Void visit(ContextBooleanNode input, Node parent) {
+        String message = String.format("%s ContextBoolean {path=\"%s\"; bool=%s}",
+                indent(input),
+                input.path(),
                 input.value());
         processMessage(input, message);
+        return null;
     }
 
     @Override
-    public void visit(ContextListAST input, ASTNode parent) {
-        String message = String.format("%s ContextListAST {path=\"%s\"; values=\"%s\"}", indent(input), input.path(),
-                input.values());
-        processMessage(input, message);
-    }
-
-    @Override
-    public void visit(ContextTextAST input, ASTNode parent) {
-        String message = String.format("%s ContextTextAST {path=\"%s\"; text=\"%s\"}", indent(input), input.path(), input.text());
-        processMessage(input, message);
-    }
-
-    @Override
-    public void visit(OptionAST input, ASTNode parent) {
-        String message = String.format("%s OptionAST {label=\"%s\"; value=\"%s\"}", indent(input), input.label(), input.value());
-        processMessage(input, message);
-    }
-
-    @Override
-    public void visit(OutputAST input, ASTNode parent) {
-        String message = String.format("%s OutputAST", indent(input));
-        processMessage(input, message);
-    }
-
-    @Override
-    public void visit(TransformationAST input, ASTNode parent) {
-        String message = String.format("%s TransformationAST {id=\"%s\"}", indent(input), input.id());
-        processMessage(input, message);
-    }
-
-    @Override
-    public void visit(TemplatesAST input, ASTNode parent) {
-        String message = String.format(
-                "%s TemplatesAST {transformation=\"%s\"; directory=\"%s\"; engine=\"%s\"}",
+    public Void visit(ContextEnumNode input, Node parent) {
+        String message = String.format("%s ContextEnum {path=\"%s\"; value=\"%s\"}",
                 indent(input),
-                input.transformation(),
+                input.path(),
+                input.value());
+        processMessage(input, message);
+        return null;
+    }
+
+    @Override
+    public Void visit(ContextListNode input, Node parent) {
+        String message = String.format("%s ContextList {path=\"%s\"; values=\"%s\"}",
+                indent(input),
+                input.path(),
+                input.descriptor().values());
+        processMessage(input, message);
+        return null;
+    }
+
+    @Override
+    public Void visit(ContextTextNode input, Node parent) {
+        String message = String.format("%s ContextText {path=\"%s\"; text=\"%s\"}",
+                indent(input),
+                input.path(),
+                input.value());
+        processMessage(input, message);
+        return null;
+    }
+
+    @Override
+    public Void visit(InputOptionNode input, Node parent) {
+        String message = String.format("%s Option {label=\"%s\"; value=\"%s\"}",
+                indent(input),
+                input.descriptor().label(),
+                input.descriptor().value());
+        processMessage(input, message);
+        return null;
+    }
+
+    @Override
+    public Void visit(OutputNode input, Node parent) {
+        String message = String.format("%s Output", indent(input));
+        processMessage(input, message);
+        return null;
+    }
+
+    @Override
+    public Void visit(TransformationNode input, Node parent) {
+        String message = String.format("%s Transformation {id=\"%s\"}",
+                indent(input),
+                input.descriptor().id());
+        processMessage(input, message);
+        return null;
+    }
+
+    @Override
+    public Void visit(TemplatesNode input, Node parent) {
+        String message = String.format(
+                "%s Templates {transformation=\"%s\"; directory=\"%s\"; engine=\"%s\"}",
+                indent(input),
+                input.descriptor().transformation(),
                 input.directory(),
-                input.engine());
+                input.descriptor().engine());
         processMessage(input, message);
+        return null;
     }
 
     @Override
-    public void visit(ModelAST input, ASTNode parent) {
-        String message = String.format("%s ModelAST", indent(input));
+    public Void visit(DescriptorNodes.ModelNode input, Node parent) {
+        String message = String.format("%s Model", indent(input));
         processMessage(input, message);
+        return null;
     }
 
     @Override
-    public void visit(FileSetsAST input, ASTNode parent) {
-        String message = String.format("%s FileSetsAST {directory=\"%s\"}", indent(input), input.directory());
-        processMessage(input, message);
-    }
-
-    @Override
-    public void visit(FileSetAST input, ASTNode parent) {
-        String message = String.format(
-                "%s FileSetAST {source=\"%s\"; target=\"%s\"}", indent(input), input.source(), input.target());
-        processMessage(input, message);
-    }
-
-    @Override
-    public void visit(ModelKeyValueAST input, ASTNode parent) {
-        String message = String.format(
-                "%s ModelKeyValueAST {key=\"%s\"; order=\"%s\"}", indent(input), input.key(), input.order());
-        processMessage(input, message);
-    }
-
-    @Override
-    public void visit(ModelKeyListAST input, ASTNode parent) {
-        String message = String.format(
-                "%s ModelKeyListAST {key=\"%s\"; order=\"%s\"}", indent(input), input.key(), input.order());
-        processMessage(input, message);
-    }
-
-    @Override
-    public void visit(ModelKeyMapAST input, ASTNode parent) {
-        String message = String.format(
-                "%s ModelKeyMapAST {key=\"%s\"; order=\"%s\"}", indent(input), input.key(), input.order());
-        processMessage(input, message);
-    }
-
-    @Override
-    public void visit(TemplateAST input, ASTNode parent) {
-        String message = String.format(
-                "%s TemplateAST {engine=\"%s\"; source=\"%s\"; target=\"%s\"}",
+    public Void visit(FileSetsNode input, Node parent) {
+        String message = String.format("%s FileSets {directory=\"%s\"}",
                 indent(input),
-                input.engine(),
-                input.source(),
-                input.target());
+                input.directory());
         processMessage(input, message);
+        return null;
     }
 
     @Override
-    public void visit(ValueTypeAST input, ASTNode parent) {
+    public Void visit(FileSetNode input, Node parent) {
         String message = String.format(
-                "%s ValueTypeAST {file=\"%s\"; url=\"%s\"; template=\"%s\"}",
+                "%s FileSet {source=\"%s\"; target=\"%s\"}",
                 indent(input),
-                input.file(),
-                input.url(),
-                input.template());
+                input.descriptor().source(),
+                input.descriptor().target());
         processMessage(input, message);
+        return null;
     }
 
     @Override
-    public void visit(MapTypeAST input, ASTNode parent) {
-        String message = String.format(
-                "%s MapTypeAST {order=\"%s\"}",
+    public Void visit(ModelKeyedValueNode input, Node parent) {
+        String message = String.format("%s ModelKeyValue {key=\"%s\"; order=\"%s\"}",
                 indent(input),
-                input.order());
+                input.descriptor().key(),
+                input.descriptor().order());
         processMessage(input, message);
+        return null;
     }
 
     @Override
-    public void visit(ListTypeAST input, ASTNode parent) {
+    public Void visit(ModelKeyedListNode input, Node parent) {
         String message = String.format(
-                "%s ListTypeAST {order=\"%s\"}",
+                "%s ModelKeyList {key=\"%s\"; order=\"%s\"}",
                 indent(input),
-                input.order());
+                input.descriptor().key(),
+                input.descriptor().order());
         processMessage(input, message);
+        return null;
     }
 
     @Override
-    public void visit(IfStatement input, ASTNode parent) {
-        String message = String.format(
-                "%s IfStatement {expression=\"%s\"}",
+    public Void visit(ModelKeyedMapNode input, Node parent) {
+        String message = String.format("%s ModelKeyMap {key=\"%s\"; order=\"%s\"}",
+                indent(input),
+                input.descriptor().key(),
+                input.descriptor().order());
+        processMessage(input, message);
+        return null;
+    }
+
+    @Override
+    public Void visit(TemplateNode input, Node parent) {
+        String message = String.format("%s Template {engine=\"%s\"; source=\"%s\"; target=\"%s\"}",
+                indent(input),
+                input.descriptor().engine(),
+                input.descriptor().source(),
+                input.descriptor().target());
+        processMessage(input, message);
+        return null;
+    }
+
+    @Override
+    public Void visit(ModelValueNode<?> input, Node parent) {
+        String message = String.format("%s ModelValue {file=\"%s\"; url=\"%s\"; template=\"%s\"}",
+                indent(input),
+                input.descriptor().file(),
+                input.descriptor().url(),
+                input.descriptor().template());
+        processMessage(input, message);
+        return null;
+    }
+
+    @Override
+    public Void visit(ModelMapNode<?> input, Node parent) {
+        String message = String.format("%s ModelMap {order=\"%s\"}",
+                indent(input),
+                input.descriptor().order());
+        processMessage(input, message);
+        return null;
+    }
+
+    @Override
+    public Void visit(ModelListNode<?> input, Node parent) {
+        String message = String.format("%s ModelList {order=\"%s\"}",
+                indent(input),
+                input.descriptor().order());
+        processMessage(input, message);
+        return null;
+    }
+
+    @Override
+    public Void visit(IfStatementNode input, Node parent) {
+        String message = String.format("%s IfStatement {expression=\"%s\"}",
                 indent(input),
                 input.expression().expression());
         processMessage(input, message);
+        return null;
     }
 
-    private void processMessage(ASTNode input, String message) {
+    private void processMessage(Node input, String message) {
         if (showVisits) {
             LOGGER.info(message);
             return;
@@ -248,19 +343,19 @@ public class DebugVisitor extends VisitorEmptyImpl<ASTNode> {
     }
 
     /**
-     * Show all nodes' visits that interpreter does during the interpreting the scripts.
+     * Get the {@code showVisits} flag.
      *
-     * @return true if show, false otherwise.
+     * @return showVisits
      */
     public boolean showVisits() {
         return showVisits;
     }
 
-    private String indent(ASTNode input) {
+    private String indent(Node input) {
         return " ".repeat(getLevel(input, 0));
     }
 
-    private int getLevel(ASTNode input, int startLevel) {
+    private int getLevel(Node input, int startLevel) {
         if (input.parent() == null) {
             return startLevel;
         } else {
@@ -274,7 +369,16 @@ public class DebugVisitor extends VisitorEmptyImpl<ASTNode> {
      * @return a new builder
      */
     public static Builder builder() {
-        return new DebugVisitor.Builder();
+        return new Builder();
+    }
+
+    /**
+     * Create a new default debug visitor.
+     *
+     * @return visitor
+     */
+    public static DebugVisitor create() {
+        return builder().build();
     }
 
     /**

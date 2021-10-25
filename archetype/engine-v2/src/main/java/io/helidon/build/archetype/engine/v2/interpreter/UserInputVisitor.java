@@ -16,63 +16,55 @@
 
 package io.helidon.build.archetype.engine.v2.interpreter;
 
-import java.util.LinkedList;
-import java.util.stream.Collectors;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputBooleanNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputEnumNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputListNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputOptionNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputTextNode;
+import io.helidon.build.archetype.engine.v2.ast.Location;
+import io.helidon.build.archetype.engine.v2.ast.Node;
+
+import static java.util.stream.Collectors.toList;
 
 /**
  * Visitor to prepare user input AST node.
  */
-public class UserInputVisitor extends GenericVisitorEmptyImpl<InputNodeAST, ASTNode> {
+public class UserInputVisitor implements Visitor<InputNode, Node> {
 
     @Override
-    public InputNodeAST visit(InputEnumAST input, ASTNode arg) {
-        InputEnumAST result = new InputEnumAST(
-                input.label(), input.name(), input.defaultValue(), input.prompt(), input.isOptional(), null,
-                ASTNode.Location.builder().build());
-        result.help(input.help());
-        result.children().addAll(input.children().stream()
-                .filter(c -> c instanceof OptionAST)
-                .map(o -> copyOption((OptionAST) o))
-                .collect(Collectors.toCollection(LinkedList::new)));
+    public InputNode visit(InputEnumNode input, Node arg) {
+        InputEnumNode result = new InputEnumNode(input.descriptor(), null, Location.create());
+        result.children().addAll(input.children()
+                                      .stream()
+                                      .filter(c -> c instanceof InputOptionNode)
+                                      .map(o -> copyOption((InputOptionNode) o))
+                                      .collect(toList()));
         return result;
     }
 
     @Override
-    public InputNodeAST visit(InputListAST input, ASTNode arg) {
-        InputListAST result = new InputListAST(
-                input.label(), input.name(), input.defaultValue(), input.prompt(), input.min(),
-                input.max(), input.isOptional(), null, ASTNode.Location.builder().build());
-        result.help(input.help());
-        result.children().addAll(input.children().stream()
-                .filter(c -> c instanceof OptionAST)
-                .map(o -> copyOption((OptionAST) o))
-                .collect(Collectors.toCollection(LinkedList::new)));
+    public InputNode visit(InputListNode input, Node arg) {
+        InputListNode result = new InputListNode(input.descriptor(), null, Location.create());
+        result.children().addAll(input.children()
+                                      .stream()
+                                      .filter(c -> c instanceof InputOptionNode)
+                                      .map(o -> copyOption((InputOptionNode) o))
+                                      .collect(toList()));
         return result;
     }
 
     @Override
-    public InputNodeAST visit(InputBooleanAST input, ASTNode arg) {
-        InputBooleanAST result = new InputBooleanAST(
-                input.label(), input.name(), input.defaultValue(), input.prompt(), input.isOptional(), null,
-                ASTNode.Location.builder().build());
-        result.help(input.help());
-        return result;
+    public InputNode visit(InputBooleanNode input, Node arg) {
+        return new InputBooleanNode(input.descriptor(), null, Location.create());
     }
 
     @Override
-    public InputNodeAST visit(InputTextAST input, ASTNode arg) {
-        return new InputTextAST(
-                input.label(),
-                input.name(),
-                input.defaultValue(),
-                input.prompt(),
-                input.placeHolder(),
-                input.isOptional(),
-                null,
-                ASTNode.Location.builder().build());
+    public InputNode visit(InputTextNode input, Node arg) {
+        return new InputTextNode(input.descriptor(), null, Location.create());
     }
 
-    private OptionAST copyOption(OptionAST optionFrom) {
-        return new OptionAST(optionFrom.label(), optionFrom.value(), optionFrom.help(), null, ASTNode.Location.builder().build());
+    private InputOptionNode copyOption(InputOptionNode optionFrom) {
+        return new InputOptionNode(optionFrom.descriptor(), null, Location.create());
     }
 }

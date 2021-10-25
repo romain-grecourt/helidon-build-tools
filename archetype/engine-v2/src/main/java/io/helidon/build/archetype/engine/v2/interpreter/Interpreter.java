@@ -19,7 +19,6 @@ package io.helidon.build.archetype.engine.v2.interpreter;
 import java.nio.file.Paths;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
@@ -28,37 +27,64 @@ import java.util.Queue;
 
 import io.helidon.build.archetype.engine.v2.PropertyEvaluator;
 import io.helidon.build.archetype.engine.v2.archive.Archetype;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ArchetypeNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextBlockNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextBooleanNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextTextNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ExecNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.FileSetNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.FileSetsNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.IfStatementNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputBlockNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputBooleanNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputEnumNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputListNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputOptionNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputTextNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelKeyedListNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelKeyedMapNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelKeyedValueNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelListNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelMapNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelValueNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.OutputNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.SourceNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.StepNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.TemplateNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.TemplatesNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.TransformationNode;
+import io.helidon.build.archetype.engine.v2.ast.Location;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodeFactory;
 import io.helidon.build.archetype.engine.v2.descriptor.ArchetypeDescriptor;
+import io.helidon.build.archetype.engine.v2.ast.Node;
+import io.helidon.build.archetype.engine.v2.ast.UserInputNode;
 
 /**
  * Interpret user inputs and produce new steps.
  */
-public class Interpreter implements Visitor<ASTNode> {
+public class Interpreter implements Visitor<Node, Void> {
 
     private final Archetype archetype;
-    private final Map<String, ContextNodeAST> pathToContextNodeMap;
+    private final Map<String, ContextNode<?>> contextByPath = new HashMap<>();
     private final InputResolverVisitor inputResolverVisitor = new InputResolverVisitor();
     private final UserInputVisitor userInputVisitor = new UserInputVisitor();
-    private final ContextToStringConvertor contextToStringConvertor = new ContextToStringConvertor();
-    private final ContextNodeFromDefaultValueCreator contextNodeFromDefaultValueCreator =
-            new ContextNodeFromDefaultValueCreator();
-    private final List<UserInputAST> unresolvedInputs = new ArrayList<>();
-    private final Deque<ASTNode> stack = new ArrayDeque<>();
-    private final List<Visitor<ASTNode>> additionalVisitors;
+    private final ContextConvertor contextConvertor = new ContextConvertor();
+    private final ContextNodeCreator defaultValueCreator = new ContextNodeCreator();
+    private final List<UserInputNode> unresolvedInputs = new ArrayList<>();
+    private final Deque<Node> stack = new ArrayDeque<>();
+    private final List<Visitor<Node, Void>> additionalVisitors;
     private boolean skipOptional;
-    private String startDescriptorPath;
+    private final String entrypoint;
     private boolean canBeGenerated = false;
 
-    Interpreter(
-            Archetype archetype,
-            String startDescriptorPath,
-            boolean skipOptional,
-            List<Visitor<ASTNode>> additionalVisitors
-    ) {
+    Interpreter(Archetype archetype, String entrypoint, boolean skipOptional, List<Visitor<Node, Void>> additionalVisitors) {
         this.archetype = archetype;
-        pathToContextNodeMap = new HashMap<>();
         this.additionalVisitors = additionalVisitors;
-        this.startDescriptorPath = startDescriptorPath;
+        this.entrypoint = entrypoint;
         this.skipOptional = skipOptional;
     }
 
@@ -70,256 +96,266 @@ public class Interpreter implements Visitor<ASTNode> {
         this.skipOptional = skipOptional;
     }
 
-    Map<String, ContextNodeAST> pathToContextNodeMap() {
-        return pathToContextNodeMap;
+    Map<String, ContextNode<?>> contextByPath() {
+        return contextByPath;
     }
 
-    Queue<ASTNode> stack() {
+    Queue<Node> stack() {
         return stack;
     }
 
-    List<UserInputAST> unresolvedInputs() {
+    List<UserInputNode> unresolvedInputs() {
         return unresolvedInputs;
     }
 
     @Override
-    public void visit(XmlDescriptor xmlDescriptor, ASTNode parent) {
-        pushToStack(xmlDescriptor);
-        acceptAll(xmlDescriptor, parent);
+    public Void visit(ArchetypeNode node, Node parent) {
+        pushToStack(node);
+        acceptAll(node, parent);
         stack.pop();
+        return null;
     }
 
     @Override
-    public void visit(Visitable input, ASTNode arg) {
-        //class do not process other types of the nodes
-    }
-
-    @Override
-    public void visit(StepAST input, ASTNode parent) {
-        applyAdditionalVisitors(input);
-        pushToStack(input);
-        acceptAll(input);
+    public Void visit(StepNode node, Node parent) {
+        applyAdditionalVisitors(node);
+        pushToStack(node);
+        acceptAll(node);
         stack.pop();
+        return null;
     }
 
     @Override
-    public void visit(InputAST input, ASTNode parent) {
-        applyAdditionalVisitors(input);
-        pushToStack(input);
-        acceptAll(input);
+    public Void visit(InputBlockNode node, Node parent) {
+        applyAdditionalVisitors(node);
+        pushToStack(node);
+        acceptAll(node);
         stack.pop();
+        return null;
     }
 
     @Override
-    public void visit(InputBooleanAST input, ASTNode parent) {
-        applyAdditionalVisitors(input);
-        input.defaultValue(replaceDefaultValue(input.defaultValue()));
-        validate(input);
-        pushToStack(input);
-        boolean result = resolve(input);
+    public Void visit(InputBooleanNode node, Node parent) {
+        applyAdditionalVisitors(node);
+        node.defaultValue(replaceDefaultValue(node.defaultValue()));
+        validate(node);
+        pushToStack(node);
+        boolean result = resolve(node);
         if (!result) {
-            InputNodeAST unresolvedUserInputNode = userInputVisitor.visit(input, parent);
-            processUnresolvedInput(input, unresolvedUserInputNode);
+            InputNode<?> unresolvedUserInputNode = userInputVisitor.visit(node, parent);
+            processUnresolvedInput(node, unresolvedUserInputNode);
         } else {
-            if (((ContextBooleanAST) getContextNode(input)).bool()) {
-                acceptAll(input);
+            if (((ContextBooleanNode) getContextNode(node)).value()) {
+                acceptAll(node);
             } else {
-                input.children().clear();
+                node.children().clear();
             }
         }
         stack.pop();
+        return null;
     }
 
     @Override
-    public void visit(InputEnumAST input, ASTNode parent) {
-        applyAdditionalVisitors(input);
-        input.defaultValue(replaceDefaultValue(input.defaultValue()));
-        validate(input);
-        pushToStack(input);
-        boolean result = resolve(input);
+    public Void visit(InputEnumNode node, Node parent) {
+        applyAdditionalVisitors(node);
+        node.defaultValue(replaceDefaultValue(node.defaultValue()));
+        validate(node);
+        pushToStack(node);
+        boolean result = resolve(node);
         if (!result) {
-            InputNodeAST unresolvedUserInputNode = userInputVisitor.visit(input, parent);
-            processUnresolvedInput(input, unresolvedUserInputNode);
+            InputNode<?> unresolvedUserInputNode = userInputVisitor.visit(node, parent);
+            processUnresolvedInput(node, unresolvedUserInputNode);
         }
-        acceptAll(input);
+        acceptAll(node);
         stack.pop();
+        return null;
     }
 
     @Override
-    public void visit(InputListAST input, ASTNode parent) {
-        applyAdditionalVisitors(input);
-        input.defaultValue(replaceDefaultValue(input.defaultValue()));
-        validate(input);
-        pushToStack(input);
-        boolean result = resolve(input);
+    public Void visit(InputListNode node, Node parent) {
+        applyAdditionalVisitors(node);
+        node.defaultValue(replaceDefaultValue(node.defaultValue()));
+        validate(node);
+        pushToStack(node);
+        boolean result = resolve(node);
         if (!result) {
-            InputNodeAST unresolvedUserInputNode = userInputVisitor.visit(input, parent);
-            processUnresolvedInput(input, unresolvedUserInputNode);
+            InputNode<?> unresolvedUserInputNode = userInputVisitor.visit(node, parent);
+            processUnresolvedInput(node, unresolvedUserInputNode);
         }
-        acceptAll(input);
+        acceptAll(node);
         stack.pop();
+        return null;
     }
 
     @Override
-    public void visit(InputTextAST input, ASTNode parent) {
-        applyAdditionalVisitors(input);
-        input.defaultValue(replaceDefaultValue(input.defaultValue()));
-        input.placeHolder(replaceDefaultValue(input.placeHolder()));
-        validate(input);
-        pushToStack(input);
-        boolean result = resolve(input);
+    public Void visit(InputTextNode node, Node parent) {
+        applyAdditionalVisitors(node);
+        node.defaultValue(replaceDefaultValue(node.defaultValue()));
+        node.placeHolder(replaceDefaultValue(node.placeHolder()));
+        validate(node);
+        pushToStack(node);
+        boolean result = resolve(node);
         if (!result) {
-            InputNodeAST unresolvedUserInputNode = userInputVisitor.visit(input, parent);
-            processUnresolvedInput(input, unresolvedUserInputNode);
+            InputNode<?> unresolvedUserInputNode = userInputVisitor.visit(node, parent);
+            processUnresolvedInput(node, unresolvedUserInputNode);
         }
         stack.pop();
+        return null;
     }
 
     @Override
-    public void visit(ExecAST exec, ASTNode parent) {
-        applyAdditionalVisitors(exec);
-        if (pushToStack(exec)) {
+    public Void visit(ExecNode node, Node parent) {
+        applyAdditionalVisitors(node);
+        if (pushToStack(node)) {
             ArchetypeDescriptor descriptor = archetype
-                    .getDescriptor(resolveScriptPath(exec.location().scriptDirectory(), exec.src()));
+                    .getDescriptor(resolveScriptPath(node.location().scriptDirectory(), node.descriptor().src()));
             String currentDir = Paths
-                    .get(resolveScriptPath(exec.location().scriptDirectory(), exec.src()))
+                    .get(resolveScriptPath(node.location().scriptDirectory(), node.descriptor().src()))
                     .getParent().toString();
-            ASTNode.Location newLocation = ASTNode.Location.builder()
-                    .scriptDirectory(currentDir)
-                    .currentDirectory(currentDir)
-                    .build();
-            XmlDescriptor xmlDescriptor = XmlDescriptor.create(descriptor, exec, newLocation);
-            exec.help(xmlDescriptor.help());
-            exec.children().addAll(xmlDescriptor.children());
-            xmlDescriptor.accept(this, exec);
+            Location location = Location.create(currentDir, currentDir);
+            ArchetypeNode archetypeNode = DescriptorNodeFactory.create(descriptor, node, location);
+            node.help(archetypeNode.descriptor().help());
+            node.children().addAll(archetypeNode.children());
+            archetypeNode.accept(this, node);
         }
         stack.pop();
+        return null;
     }
 
     @Override
-    public void visit(SourceAST source, ASTNode parent) {
-        applyAdditionalVisitors(source);
-        if (pushToStack((source))) {
-            ArchetypeDescriptor descriptor = archetype
-                    .getDescriptor(resolveScriptPath(source.location().scriptDirectory(), source.source()));
+    public Void visit(SourceNode node, Node parent) {
+        applyAdditionalVisitors(node);
+        if (pushToStack((node))) {
+            ArchetypeDescriptor descriptor = archetype.getDescriptor(
+                    resolveScriptPath(node.location().scriptDirectory(), node.descriptor().source()));
             String currentDir = Paths
-                    .get(resolveScriptPath(source.location().scriptDirectory(), source.source()))
+                    .get(resolveScriptPath(node.location().scriptDirectory(), node.descriptor().source()))
                     .getParent().toString();
-            ASTNode.Location newLocation = ASTNode.Location.builder()
-                    .scriptDirectory(currentDir)
-                    .currentDirectory(source.location().currentDirectory())
-                    .build();
-            XmlDescriptor xmlDescriptor = XmlDescriptor.create(descriptor, source, newLocation);
-            source.help(xmlDescriptor.help());
-            source.children().addAll(xmlDescriptor.children());
-            xmlDescriptor.accept(this, source);
+            Location location = Location.create(currentDir, node.location().currentDirectory());
+            ArchetypeNode archetypeNode = DescriptorNodeFactory.create(descriptor, node, location);
+            node.children().addAll(archetypeNode.children());
+            archetypeNode.accept(this, node);
         }
         stack.pop();
+        return null;
     }
 
     @Override
-    public void visit(ContextAST context, ASTNode parent) {
+    public Void visit(ContextBlockNode context, Node parent) {
         if (context.parent() == null && parent != null) {
             context.parent(parent);
         }
         applyAdditionalVisitors(context);
         cleanUnresolvedInputs(context);
         acceptAll(context);
+        return null;
     }
 
     @Override
-    public void visit(ContextBooleanAST contextBoolean, ASTNode parent) {
+    public Void visit(ContextBooleanNode contextBoolean, Node parent) {
         if (contextBoolean.parent() == null && parent != null) {
             contextBoolean.parent(parent);
         }
         applyAdditionalVisitors(contextBoolean);
-        pathToContextNodeMap.putIfAbsent(contextBoolean.path(), contextBoolean);
+        contextByPath.putIfAbsent(contextBoolean.path(), contextBoolean);
+        return null;
     }
 
     @Override
-    public void visit(ContextEnumAST contextEnum, ASTNode parent) {
+    public Void visit(DescriptorNodes.ContextEnumNode contextEnum, Node parent) {
         if (contextEnum.parent() == null && parent != null) {
             contextEnum.parent(parent);
         }
         applyAdditionalVisitors(contextEnum);
-        pathToContextNodeMap.putIfAbsent(contextEnum.path(), contextEnum);
+        contextByPath.putIfAbsent(contextEnum.path(), contextEnum);
+        return null;
     }
 
     @Override
-    public void visit(ContextListAST contextList, ASTNode parent) {
+    public Void visit(DescriptorNodes.ContextListNode contextList, Node parent) {
         if (contextList.parent() == null && parent != null) {
             contextList.parent(parent);
         }
         applyAdditionalVisitors(contextList);
-        pathToContextNodeMap.putIfAbsent(contextList.path(), contextList);
+        contextByPath.putIfAbsent(contextList.path(), contextList);
+        return null;
     }
 
     @Override
-    public void visit(ContextTextAST contextText, ASTNode parent) {
+    public Void visit(ContextTextNode contextText, Node parent) {
         if (contextText.parent() == null && parent != null) {
             contextText.parent(parent);
         }
         applyAdditionalVisitors(contextText);
-        pathToContextNodeMap.putIfAbsent(contextText.path(), contextText);
+        contextByPath.putIfAbsent(contextText.path(), contextText);
+        return null;
     }
 
     @Override
-    public void visit(OptionAST input, ASTNode parent) {
+    public Void visit(InputOptionNode input, Node parent) {
         applyAdditionalVisitors(input);
         pushToStack(input);
         acceptAll(input);
         stack.pop();
+        return null;
     }
 
     @Override
-    public void visit(OutputAST output, ASTNode parent) {
+    public Void visit(OutputNode output, Node parent) {
         applyAdditionalVisitors(output);
         pushToStack(output);
         acceptAll(output);
         stack.pop();
+        return null;
     }
 
     @Override
-    public void visit(TransformationAST transformation, ASTNode parent) {
+    public Void visit(TransformationNode transformation, Node parent) {
         applyAdditionalVisitors(transformation);
+        return null;
     }
 
     @Override
-    public void visit(FileSetsAST fileSets, ASTNode parent) {
+    public Void visit(FileSetsNode fileSets, Node parent) {
         applyAdditionalVisitors(fileSets);
+        return null;
     }
 
     @Override
-    public void visit(FileSetAST fileSet, ASTNode parent) {
+    public Void visit(FileSetNode fileSet, Node parent) {
         applyAdditionalVisitors(fileSet);
+        return null;
     }
 
     @Override
-    public void visit(TemplateAST template, ASTNode parent) {
+    public Void visit(TemplateNode template, Node parent) {
         applyAdditionalVisitors(template);
         pushToStack(template);
         acceptAll(template);
         stack.pop();
+        return null;
     }
 
     @Override
-    public void visit(TemplatesAST templates, ASTNode parent) {
+    public Void visit(TemplatesNode templates, Node parent) {
         applyAdditionalVisitors(templates);
         pushToStack(templates);
         acceptAll(templates);
         stack.pop();
+        return null;
     }
 
     @Override
-    public void visit(ModelAST model, ASTNode parent) {
+    public Void visit(ModelNode model, Node parent) {
         applyAdditionalVisitors(model);
         pushToStack(model);
         acceptAll(model);
         stack.pop();
+        return null;
     }
 
     @Override
-    public void visit(IfStatement input, ASTNode parent) {
+    public Void visit(IfStatementNode input, Node parent) {
         applyAdditionalVisitors(input);
         pushToStack(input);
         Map<String, String> contextValuesMap = convertContext();
@@ -329,71 +365,78 @@ public class Interpreter implements Visitor<ASTNode> {
             input.children().clear();
         }
         stack.pop();
+        return null;
     }
 
     @Override
-    public void visit(ModelKeyValueAST value, ASTNode parent) {
+    public Void visit(ModelKeyedValueNode value, Node parent) {
         applyAdditionalVisitors(value);
         pushToStack(value);
         acceptAll(value);
         stack.pop();
+        return null;
     }
 
     @Override
-    public void visit(ValueTypeAST value, ASTNode parent) {
+    public Void visit(ModelValueNode<?> value, Node parent) {
         applyAdditionalVisitors(value);
         pushToStack(value);
         acceptAll(value);
         stack.pop();
+        return null;
     }
 
     @Override
-    public void visit(ModelKeyListAST list, ASTNode parent) {
+    public Void visit(ModelKeyedListNode list, Node parent) {
         applyAdditionalVisitors(list);
         pushToStack(list);
         acceptAll(list);
         stack.pop();
+        return null;
     }
 
     @Override
-    public void visit(MapTypeAST map, ASTNode parent) {
+    public Void visit(ModelMapNode<?> node, Node parent) {
+        applyAdditionalVisitors(node);
+        pushToStack(node);
+        acceptAll(node);
+        stack.pop();
+        return null;
+    }
+
+    @Override
+    public Void visit(ModelListNode<?> node, Node parent) {
+        applyAdditionalVisitors(node);
+        pushToStack(node);
+        acceptAll(node);
+        stack.pop();
+        return null;
+    }
+
+    @Override
+    public Void visit(ModelKeyedMapNode map, Node parent) {
         applyAdditionalVisitors(map);
         pushToStack(map);
         acceptAll(map);
         stack.pop();
+        return null;
     }
 
-    @Override
-    public void visit(ListTypeAST list, ASTNode parent) {
-        applyAdditionalVisitors(list);
-        pushToStack(list);
-        acceptAll(list);
-        stack.pop();
-    }
-
-    @Override
-    public void visit(ModelKeyMapAST map, ASTNode parent) {
-        applyAdditionalVisitors(map);
-        pushToStack(map);
-        acceptAll(map);
-        stack.pop();
-    }
-
-    private void acceptAll(ASTNode node) {
+    private void acceptAll(Node node) {
         while (node.hasNext()) {
-            Visitable visitable = node.next();
-            visitable.accept(this, node);
+            Node next = node.next();
+            next.accept(this, node);
         }
     }
 
-    private void acceptAll(ASTNode node, ASTNode parent) {
+    private void acceptAll(Node node, Node parent) {
         while (node.hasNext()) {
-            Visitable visitable = node.next();
-            visitable.accept(this, parent);
+            Node next = node.next();
+            next.accept(this, parent);
         }
     }
 
-    private boolean pushToStack(ASTNode node) {
+    private boolean pushToStack(Node node) {
         if (node != stack.peek()) {
             stack.push(node);
             return true;
@@ -401,36 +444,37 @@ public class Interpreter implements Visitor<ASTNode> {
         return false;
     }
 
-    private boolean resolve(InputNodeAST input) {
-        ContextNodeAST contextNodeAST = pathToContextNodeMap.get(input.path());
-        if (input.isOptional() && skipOptional && contextNodeAST == null) {
-            contextNodeAST = input.accept(contextNodeFromDefaultValueCreator, input);
-            if (contextNodeAST != null) {
-                pathToContextNodeMap.put(contextNodeAST.path(), contextNodeAST);
+    private boolean resolve(InputNode<?> input) {
+        ContextNode<?> contextNode = contextByPath.get(input.path());
+        if (input.descriptor().isOptional() && skipOptional && contextNode == null) {
+            contextNode = input.accept(defaultValueCreator, input);
+            if (contextNode != null) {
+                contextByPath.put(contextNode.path(), contextNode);
             }
         }
-        if (contextNodeAST != null) {
-            input.accept(inputResolverVisitor, contextNodeAST);
+        if (contextNode != null) {
+            input.accept(inputResolverVisitor, contextNode);
         }
-        return contextNodeAST != null;
+        return contextNode != null;
     }
 
-    private ContextNodeAST getContextNode(InputNodeAST input) {
-        return pathToContextNodeMap.get(input.path());
+    private ContextNode<?> getContextNode(InputNode<?> input) {
+        return contextByPath.get(input.path());
     }
 
     /**
      * Create unresolvedInput, add it to the {@code unresolvedInputs} and throw {@link WaitForUserInput} to stop the
      * interpreting process.
      *
-     * @param input                   initial unresolved {@code InputNodeAST} from the AST tree.
-     * @param unresolvedUserInputNode unresolvedUserInputNode that will be sent to the user
+     * @param inputNode     initial unresolved {@code InputNodeAST} from the AST tree.
+     * @param userInputNode userInput that will be sent to the user
      */
-    private void processUnresolvedInput(InputNodeAST input, InputNodeAST unresolvedUserInputNode) {
-        UserInputAST unresolvedInput = UserInputAST.create(input, getParentStep(input));
-        unresolvedInput.children().add(unresolvedUserInputNode);
+    private void processUnresolvedInput(InputNode<?> inputNode, InputNode<?> userInputNode) {
+        StepNode stepNode = getParentStep(inputNode);
+        UserInputNode unresolvedInput = new UserInputNode(stepNode, inputNode);
+        unresolvedInput.children().add(userInputNode);
         unresolvedInputs.add(unresolvedInput);
-        if (input.isOptional()) {
+        if (inputNode.descriptor().isOptional()) {
             updateCanBeGenerated();
         }
         throw new WaitForUserInput();
@@ -440,61 +484,63 @@ public class Interpreter implements Visitor<ASTNode> {
         if (canBeGenerated) {
             return;
         }
-        Flow flow = new Flow(archetype, startDescriptorPath, true, Collections.emptyList());
-        ContextAST context = new ContextAST();
-        context.children().addAll(pathToContextNodeMap.values());
-        FlowState state = flow.build(context);
+        ContextBlockNode context = new ContextBlockNode();
+        context.children().addAll(contextByPath.values());
+        FlowState state = Flow.builder()
+                              .archetype(archetype)
+                              .entrypoint(entrypoint)
+                              .skipOptional(true)
+                              .build()
+                              .build(context);
         if (state.type() == FlowStateEnum.READY) {
             canBeGenerated = true;
         }
     }
 
-    private StepAST getParentStep(ASTNode node) {
+    private StepNode getParentStep(Node node) {
         if (node.parent() == null) {
-            return (StepAST) node;
+            return (StepNode) node;
         }
-        if (node.parent() instanceof StepAST) {
-            return (StepAST) node.parent();
+        if (node.parent() instanceof StepNode) {
+            return (StepNode) node.parent();
         }
         return getParentStep(node.parent());
     }
 
-    private void cleanUnresolvedInputs(ContextAST context) {
+    private void cleanUnresolvedInputs(ContextBlockNode context) {
         unresolvedInputs.removeIf(input -> context
                 .children().stream()
-                .anyMatch(contextNote -> ((ContextNodeAST) contextNote).path().equals(input.path())));
+                .anyMatch(contextNote -> ((ContextNode<?>) contextNote).path().equals(input.path())));
     }
 
     private String resolveScriptPath(String currentDirectory, String scriptSrc) {
         return Paths.get(currentDirectory).resolve(scriptSrc).normalize().toString();
     }
 
-    private String resolveDirectory(String currentValue, ASTNode.Location location) {
+    private String resolveDirectory(String currentValue, Location location) {
         if (currentValue.startsWith("/")) {
             return currentValue;
         }
         return Paths.get(location.currentDirectory()).resolve(currentValue).normalize().toString();
     }
 
-    private void validate(InputNodeAST input) {
-        if (input.isOptional() && input.defaultValue() == null) {
-            if (input instanceof InputTextAST && ((InputTextAST) input).placeHolder() != null) {
-                return;
+    private void validate(InputNode<?> input) {
+        if (input.descriptor().isOptional() && input.defaultValue() == null) {
+            if (!(input instanceof InputTextNode && ((InputTextNode) input).placeHolder() != null)) {
+                throw new InterpreterException(
+                        "Input node %s is optional but it does not have a default value",
+                        input.path());
             }
-            throw new InterpreterException(
-                    String.format("Input node %s is optional but it does not have a default value", input.path()));
         }
     }
 
-    private void applyAdditionalVisitors(ASTNode node) {
+    private void applyAdditionalVisitors(Node node) {
         additionalVisitors.forEach(visitor -> node.accept(visitor, null));
     }
 
     private Map<String, String> convertContext() {
         Map<String, String> result = new HashMap<>();
-        pathToContextNodeMap.forEach((key, value) -> {
-            result.putIfAbsent(key, value.accept(contextToStringConvertor, null));
-        });
+        contextByPath.forEach((key, value) -> result.putIfAbsent(key, value.accept(contextConvertor, null)));
         return result;
     }
 

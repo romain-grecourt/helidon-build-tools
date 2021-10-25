@@ -46,9 +46,9 @@ public class TemplateModel {
             return;
         }
 
-        this.model.keyValues().addAll(model.keyValues());
-        this.model.keyLists().addAll(model.keyLists());
-        this.model.keyMaps().addAll(model.keyMaps());
+        this.model.keyedValues().addAll(model.keyedValues());
+        this.model.keyedLists().addAll(model.keyedLists());
+        this.model.keyedMaps().addAll(model.keyedMaps());
     }
 
     /**

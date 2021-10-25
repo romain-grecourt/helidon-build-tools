@@ -19,16 +19,16 @@ package io.helidon.build.archetype.engine.v2.template;
 import java.util.LinkedList;
 import java.util.List;
 
-import io.helidon.build.archetype.engine.v2.descriptor.ListType;
-import io.helidon.build.archetype.engine.v2.descriptor.MapType;
-import io.helidon.build.archetype.engine.v2.descriptor.ValueType;
+import io.helidon.build.archetype.engine.v2.descriptor.ModelList;
+import io.helidon.build.archetype.engine.v2.descriptor.ModelMap;
+import io.helidon.build.archetype.engine.v2.descriptor.ModelValue;
 
 /**
  * Template list used in {@link TemplateModel}.
  */
 public class TemplateList implements Comparable {
 
-    private final List<ValueType> templateValues = new LinkedList<>();
+    private final List<ModelValue> templateValues = new LinkedList<>();
     private final List<TemplateList> templateLists = new LinkedList<>();
     private final List<TemplateMap> templateMaps = new LinkedList<>();
     private final int order;
@@ -38,13 +38,13 @@ public class TemplateList implements Comparable {
      *
      * @param list list containing xml descriptor data
      */
-    public TemplateList(ListType list) {
+    public TemplateList(ModelList list) {
         this.order = list.order();
         templateValues.addAll(list.values());
-        for (MapType map : list.maps()) {
+        for (ModelMap map : list.maps()) {
             templateMaps.add(new TemplateMap(map));
         }
-        for (ListType listType : list.lists()) {
+        for (ModelList listType : list.lists()) {
             templateLists.add(new TemplateList(listType));
         }
     }
@@ -59,11 +59,11 @@ public class TemplateList implements Comparable {
     }
 
     /**
-     * Get the map of {@link ValueType} merged by key for this {@link TemplateList}.
+     * Get the map of {@link ModelValue} merged by key for this {@link TemplateList}.
      *
      * @return values
      */
-    public List<ValueType> values() {
+    public List<ModelValue> values() {
         return templateValues;
     }
 

@@ -27,10 +27,10 @@ public class Step extends Conditional {
     private final String label;
     private String help;
 
-    private final LinkedList<Context> contexts = new LinkedList<>();
+    private final LinkedList<ContextBlock> contexts = new LinkedList<>();
     private final LinkedList<Exec> execs = new LinkedList<>();
     private final LinkedList<Source> sources = new LinkedList<>();
-    private final LinkedList<Input> inputs = new LinkedList<>();
+    private final LinkedList<InputBlock> inputs = new LinkedList<>();
 
     protected Step(String label, String ifProperty) {
         super(ifProperty);
@@ -60,7 +60,7 @@ public class Step extends Conditional {
      *
      * @return list of contexts
      */
-    public LinkedList<Context> contexts() {
+    public LinkedList<ContextBlock> contexts() {
         return contexts;
     }
 
@@ -87,7 +87,7 @@ public class Step extends Conditional {
      *
      * @return list of input
      */
-    public LinkedList<Input> inputs() {
+    public LinkedList<InputBlock> inputBlocks() {
         return inputs;
     }
 
@@ -127,7 +127,7 @@ public class Step extends Conditional {
                 + ", contexts=" + contexts()
                 + ", execs=" + execs()
                 + ", sources=" + sources()
-                + ", inputs=" + inputs()
+                + ", inputs=" + inputBlocks()
                 + '}';
     }
 }

@@ -24,7 +24,13 @@ import java.util.Map;
 import java.util.Optional;
 
 import io.helidon.build.archetype.engine.v2.archive.Archetype;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextNode;
 import io.helidon.build.archetype.engine.v2.descriptor.ArchetypeDescriptor;
+import io.helidon.build.archetype.engine.v2.ast.Node;
+import io.helidon.build.archetype.engine.v2.ast.UserInputNode;
+import io.helidon.build.archetype.engine.v2.descriptor.Step;
 
 /**
  * Resolver for the archetype output files.
@@ -34,9 +40,8 @@ public class Flow {
     private final Interpreter interpreter;
     private final Archetype archetype;
     private final ArchetypeDescriptor entryPoint;
-    private final LinkedList<StepAST> tree = new LinkedList<>();
+    private final LinkedList<DescriptorNode<Step>> tree = new LinkedList<>();
     private FlowState state;
-    private final List<Visitor<ASTNode>> additionalVisitors;
     private boolean skipOptional;
 
     /**
@@ -66,7 +71,7 @@ public class Flow {
      * @return true if the project can be generated if optional inputs will be skipped, false - otherwise.
      */
     public boolean canBeGenerated() {
-        return state().canBeGenerated();
+        return state.canBeGenerated();
     }
 
     /**
@@ -83,7 +88,7 @@ public class Flow {
      *
      * @return List of the unresolved inputs
      */
-    public List<UserInputAST> unresolvedInputs() {
+    public List<UserInputNode> unresolvedInputs() {
         return interpreter.unresolvedInputs();
     }
 
@@ -92,8 +97,8 @@ public class Flow {
      *
      * @return Map
      */
-    public Map<String, ContextNodeAST> pathToContextNodeMap() {
-        return interpreter.pathToContextNodeMap();
+    public Map<String, ContextNode<?>> contextByPath() {
+        return interpreter.contextByPath();
     }
 
     Interpreter interpreter() {
@@ -123,43 +128,33 @@ public class Flow {
     }
 
     /**
-     * Returns {@code ArchetypeDescriptor} that represents the entry point script.
+     * Returns the descriptor for the entry point.
      *
      * @return ArchetypeDescriptor
      */
-    public ArchetypeDescriptor entryPoint() {
+    public ArchetypeDescriptor entrypoint() {
         return entryPoint;
     }
 
-    /**
-     * Returns additional visitors used to process nodes in the archetype descriptors.
-     *
-     * @return list of the additional visitors
-     */
-    public List<Visitor<ASTNode>> additionalVisitors() {
-        return additionalVisitors;
-    }
-
-    Flow(Archetype archetype, String startDescriptorPath, boolean skipOptional, List<Visitor<ASTNode>> additionalVisitors) {
-        this.archetype = archetype;
-        this.additionalVisitors = additionalVisitors;
-        entryPoint = archetype.getDescriptor(startDescriptorPath);
-        interpreter = new Interpreter(archetype, startDescriptorPath, skipOptional, additionalVisitors);
-        this.skipOptional = skipOptional;
+    private Flow(Builder builder) {
+        this.archetype = builder.archetype;
+        entryPoint = archetype.getDescriptor(builder.entrypoint);
+        this.skipOptional = builder.skipOptional;
+        interpreter = new Interpreter(archetype, builder.entrypoint, skipOptional, builder.additionalVisitors);
         state = new InitialFlowState(this);
     }
 
-    LinkedList<StepAST> tree() {
+    List<DescriptorNode<Step>> tree() {
         return tree;
     }
 
     /**
-     * Build the flow, that can be used to create a new Helidon project.
+     * Build the flow, that can be used to create a new project.
      *
      * @param context initial context
      * @return current state of the flow.
      */
-    public FlowState build(ContextAST context) {
+    public FlowState build(DescriptorNodes.ContextBlockNode context) {
         state.build(context);
         return state;
     }
@@ -174,23 +169,23 @@ public class Flow {
     }
 
     /**
-     * {@code Flow} builder static inner class.
+     * {@link Flow} builder.
      */
     public static final class Builder {
 
         private Archetype archetype;
-        private String startDescriptorPath = "flavor.xml";
-        private final List<Visitor<ASTNode>> additionalVisitors = new ArrayList<>();
+        private String entrypoint = "flavor.xml";
+        private final List<Visitor<Node, Void>> additionalVisitors = new ArrayList<>();
         private boolean skipOptional = false;
 
         private Builder() {
         }
 
         /**
-         * Sets the {@code skipOptional} and returns a reference to this Builder so that the methods can be chained together.
+         * Sets the {@code skipOptional} flag.
          *
          * @param skipOptional skipOptional
-         * @return a reference to this Builder
+         * @return this builder
          */
         public Builder skipOptional(boolean skipOptional) {
             this.skipOptional = skipOptional;
@@ -198,10 +193,10 @@ public class Flow {
         }
 
         /**
-         * Sets the {@code archetype} and returns a reference to this Builder so that the methods can be chained together.
+         * Sets the archetype archive.
          *
-         * @param archetype the {@code archetype} to set
-         * @return a reference to this Builder
+         * @param archetype the archetype archive
+         * @return this builder
          */
         public Builder archetype(Archetype archetype) {
             this.archetype = archetype;
@@ -209,75 +204,71 @@ public class Flow {
         }
 
         /**
-         * Sets a path to the start descriptor and returns a reference to this Builder so that the methods can be chained
-         * together.
+         * Sets the entry point.
          *
-         * @param startDescriptorPath the {@code startDescriptorPath} to set
-         * @return a reference to this Builder
+         * @param entrypoint the entry point
+         * @return this builder
          */
-        public Builder startDescriptorPath(String startDescriptorPath) {
-            this.startDescriptorPath = startDescriptorPath;
+        public Builder entrypoint(String entrypoint) {
+            this.entrypoint = entrypoint;
             return this;
         }
 
         /**
-         * Add an additional visitor and returns a reference to this Builder so that the methods can be chained
-         * together.
+         * Add an additional visitor.
          *
-         * @param visitor the {@code visitor} to add
-         * @return a reference to this Builder
+         * @param visitor the visitor to add
+         * @return this builder
          */
-        public Builder addAdditionalVisitor(Visitor<ASTNode> visitor) {
+        public Builder additionalVisitor(Visitor<Node, Void> visitor) {
             additionalVisitors.add(visitor);
             return this;
         }
 
         /**
-         * Add a list of additional visitors and returns a reference to this Builder so that the methods can be chained
-         * together.
+         * Add additional visitors.
          *
-         * @param visitors the {@code visitors} to add
-         * @return a reference to this Builder
+         * @param visitors the visitors to add
+         * @return this builder
          */
-        public Builder addAdditionalVisitor(List<Visitor<ASTNode>> visitors) {
+        public Builder additionalVisitor(List<Visitor<Node, Void>> visitors) {
             additionalVisitors.addAll(visitors);
             return this;
         }
 
         /**
-         * Returns a {@code Flow} built from the parameters previously set.
+         * Build the {@link Flow} instance.
          *
-         * @return a {@code Flow} built with parameters of this {@code Flow.Builder}
+         * @return created instance
          */
         public Flow build() {
             if (archetype == null) {
                 throw new InterpreterException("Archetype must be specified.");
             }
-            return new Flow(archetype, startDescriptorPath, skipOptional, additionalVisitors);
+            return new Flow(this);
         }
     }
 
     /**
-     * Final result of the script interpreter work.
+     * Interpreter result.
      */
     public static class Result {
 
-        private final Map<String, ContextNodeAST> context = new HashMap<>();
-        private final List<ASTNode> outputs = new ArrayList<>();
+        private final Map<String, ContextNode<?>> context = new HashMap<>();
+        private final List<Node> outputs = new ArrayList<>();
         private final Archetype archetype;
 
         /**
          * Create a new instance.
          *
-         * @param archetype archetype instance that can be used to obtain files that mentioned in {@code outputs()}
+         * @param archetype archetype archive
          */
         public Result(Archetype archetype) {
             this.archetype = archetype;
         }
 
         /**
-         * Get instance of the {@code Archetype} that can be used to obtain files that mentioned in {@code outputs()}.
-         * Archetype must be closed after its using ({@code archetype.close()}).
+         * Get the archetype archive.
          *
          * @return archetype
          */
@@ -286,20 +277,20 @@ public class Flow {
         }
 
         /**
-         * Returns Map that contains path to the context node and corresponding context node.
+         * Get the flow context map.
          *
-         * @return map
+         * @return  flow context map
          */
-        public Map<String, ContextNodeAST> context() {
+        public Map<String, ContextNode<?>> context() {
             return context;
         }
 
         /**
-         * Returns list of the {@code ContextNodeAST} nodes.
+         * Get the output nodes for this interpretation.
          *
-         * @return list
+         * @return output nodes
          */
-        public List<ASTNode> outputs() {
+        public List<Node> outputs() {
             return outputs;
         }
     }

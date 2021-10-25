@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import io.helidon.build.archetype.engine.v2.prompter.DefaultPrompterImpl;
+import io.helidon.build.archetype.engine.v2.prompter.DefaultPrompter;
 import io.helidon.build.common.Strings;
 import io.helidon.build.common.test.utils.TestFiles;
 import org.junit.jupiter.api.Test;
@@ -59,7 +59,7 @@ class ArchetypeEngineV2Test extends ArchetypeBaseTest {
         ArchetypeEngineV2 archetypeEngineV2 = new ArchetypeEngineV2(getArchetype(
                 Paths.get("src/main/resources/archetype").toFile()),
                 "flavor.xml",
-                new DefaultPrompterImpl(true),
+                new DefaultPrompter(true),
                 initContextValues,
                 true,
                 List.of());

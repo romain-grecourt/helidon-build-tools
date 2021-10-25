@@ -16,60 +16,71 @@
 
 package io.helidon.build.archetype.engine.v2.interpreter;
 
-public class OutputConverterVisitor extends GenericVisitorEmptyImpl<ASTNode, ASTNode> {
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.FileSetNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.FileSetsNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.IfStatementNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelKeyedListNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelKeyedMapNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelKeyedValueNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelListNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelMapNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelValueNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.OutputNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.TemplateNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.TemplatesNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.TransformationNode;
+import io.helidon.build.archetype.engine.v2.ast.Node;
+
+public class OutputConverterVisitor implements Visitor<Node, Node> {
 
     @Override
-    public ASTNode visit(OutputAST input, ASTNode arg) {
-        OutputAST result = new OutputAST(input.parent(), input.location());
+    public Node visit(OutputNode input, Node arg) {
+        OutputNode result = new OutputNode(input.parent(), input.location());
         acceptAll(input, result);
         return result;
     }
 
     @Override
-    public ASTNode visit(TransformationAST input, ASTNode arg) {
+    public Node visit(TransformationNode input, Node arg) {
         return input;
     }
 
     @Override
-    public ASTNode visit(FileSetsAST input, ASTNode arg) {
+    public Node visit(FileSetsNode input, Node arg) {
         return input;
     }
 
     @Override
-    public ASTNode visit(FileSetAST input, ASTNode arg) {
+    public Node visit(FileSetNode input, Node arg) {
         return input;
     }
 
     @Override
-    public ASTNode visit(TemplateAST input, ASTNode arg) {
-        TemplateAST result = new TemplateAST(input.engine(), input.source(), input.target(), input.parent(), input.location());
+    public Node visit(TemplateNode input, Node arg) {
+        TemplateNode result = new TemplateNode(input.descriptor(),input.parent(), input.location());
         acceptAll(input, result);
         return result;
     }
 
     @Override
-    public ASTNode visit(TemplatesAST input, ASTNode arg) {
-        TemplatesAST result = new TemplatesAST(
-                input.engine(),
-                input.transformation(),
-                input.directory(),
-                input.includes(),
-                input.excludes(),
-                input.parent(),
-                input.location());
+    public Node visit(TemplatesNode input, Node arg) {
+        // TODO directory
+        TemplatesNode result = new TemplatesNode(input.descriptor(), input.parent, input.location());
         acceptAll(input, result);
         return result;
     }
 
     @Override
-    public ASTNode visit(ModelAST input, ASTNode arg) {
-        ModelAST result = new ModelAST(input.parent(), input.location());
+    public Node visit(ModelNode input, Node arg) {
+        ModelNode result = new ModelNode(input.parent(), input.location());
         acceptAll(input, result);
         return result;
     }
 
     @Override
-    public ASTNode visit(IfStatement input, ASTNode arg) {
+    public Node visit(IfStatementNode input, Node arg) {
         if (input.children().size() == 0) {
             return null;
         } else {
@@ -78,13 +89,8 @@ public class OutputConverterVisitor extends GenericVisitorEmptyImpl<ASTNode, AST
     }
 
     @Override
-    public ASTNode visit(ModelKeyValueAST input, ASTNode arg) {
-        ModelKeyValueAST result = new ModelKeyValueAST(
-                input.key(),
-                input.url(),
-                input.file(),
-                input.template(),
-                input.order(),
+    public Node visit(ModelKeyedValueNode input, Node arg) {
+        ModelKeyedValueNode result = new ModelKeyedValueNode(input.descriptor(),
                 input.value(),
                 input.parent(),
                 input.location()
@@ -94,12 +100,9 @@ public class OutputConverterVisitor extends GenericVisitorEmptyImpl<ASTNode, AST
     }
 
     @Override
-    public ASTNode visit(ValueTypeAST input, ASTNode arg) {
-        ValueTypeAST result = new ValueTypeAST(
-                input.url(),
-                input.file(),
-                input.template(),
-                input.order(),
+    public Node visit(ModelValueNode<?> input, Node arg) {
+        ModelValueNode<?> result = new ModelValueNode<>(
+                input.descriptor(),
                 input.value(),
                 input.parent(),
                 input.location());
@@ -108,38 +111,38 @@ public class OutputConverterVisitor extends GenericVisitorEmptyImpl<ASTNode, AST
     }
 
     @Override
-    public ASTNode visit(ModelKeyListAST input, ASTNode arg) {
-        ModelKeyListAST result = new ModelKeyListAST(input.key(), input.order(), input.parent(), input.location());
+    public Node visit(ModelKeyedListNode input, Node arg) {
+        ModelKeyedListNode result = new ModelKeyedListNode(input.descriptor(), input.parent(), input.location());
         acceptAll(input, result);
         return result;
     }
 
     @Override
-    public ASTNode visit(MapTypeAST input, ASTNode arg) {
-        MapTypeAST result = new MapTypeAST(input.order(), input.parent(), input.location());
+    public Node visit(ModelMapNode<?> input, Node arg) {
+        ModelMapNode<?> result = new ModelMapNode<?>(input.descriptor(), input.parent(), input.location());
         acceptAll(input, result);
         return result;
     }
 
     @Override
-    public ASTNode visit(ListTypeAST input, ASTNode arg) {
-        ListTypeAST result = new ListTypeAST(input.order(), input.parent(), input.location());
+    public Node visit(ModelListNode<?> input, Node arg) {
+        ModelListNode<?> result = new ModelListNode<?>(input.descriptor(), input.parent(), input.location());
         acceptAll(input, result);
         return result;
     }
 
     @Override
-    public ASTNode visit(ModelKeyMapAST input, ASTNode arg) {
-        ModelKeyMapAST result = new ModelKeyMapAST(input.key(), input.order(), input.parent(), input.location());
+    public Node visit(ModelKeyedMapNode input, Node arg) {
+        ModelKeyedMapNode result = new ModelKeyedMapNode(input.descriptor(), input.parent(), input.location());
         acceptAll(input, result);
         return result;
     }
 
-    private void acceptAll(ASTNode input, ASTNode result) {
-        for (Visitable visitable : input.children()) {
-            ASTNode child = visitable.accept(this, input);
-            if (child != null) {
-                result.children().add(child);
+    private void acceptAll(Node node, Node parent) {
+        for (Node child : node.children()) {
+            Node result = child.accept(this, node);
+            if (result != null) {
+                parent.children().add(result);
             }
         }
     }

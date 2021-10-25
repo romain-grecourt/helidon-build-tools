@@ -21,12 +21,14 @@ import java.util.Map;
 import java.util.Optional;
 
 import io.helidon.build.archetype.engine.v2.PropertyEvaluator;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes;
+import io.helidon.build.archetype.engine.v2.ast.Node;
 
 public class ReadyFlowState extends FlowState {
 
     private final Flow flow;
     private final OutputConverterVisitor outputConverterVisitor = new OutputConverterVisitor();
-    private final ContextToStringConvertor contextToStringConvertor = new ContextToStringConvertor();
+    private final ContextConvertor contextToStringConvertor = new ContextConvertor();
 
     ReadyFlowState(Flow flow) {
         this.flow = flow;
@@ -38,12 +40,12 @@ public class ReadyFlowState extends FlowState {
     }
 
     @Override
-    void build(ContextAST context) {
-        ASTNode lastNode = flow.interpreter().stack().peek();
+    void build(DescriptorNodes.ContextBlockNode context) {
+        Node lastNode = flow.interpreter().stack().peek();
         flow.interpreter().visit(context, lastNode);
         Flow.Result result = new Flow.Result(flow.archetype());
 
-        result.context().putAll(flow.interpreter().pathToContextNodeMap());
+        result.context().putAll(flow.interpreter().contextByPath());
 
         flow.tree().forEach(step -> traverseTree(step, result));
 
@@ -52,18 +54,18 @@ public class ReadyFlowState extends FlowState {
         flow.state(new DoneFlowState(result));
     }
 
-    private void traverseOutput(ASTNode node, Map<String, String> contextValuesMap) {
-        if (node instanceof ValueTypeAST) {
-            String value = ((ValueTypeAST) node).value();
+    private void traverseOutput(Node node, Map<String, String> contextValuesMap) {
+        if (node instanceof DescriptorNodes.ModelValueNode) {
+            String value = ((DescriptorNodes.ModelValueNode) node).value();
             if (value != null && value.contains("${")) {
                 value = PropertyEvaluator.resolve(value, contextValuesMap);
-                ((ValueTypeAST) node).value(value);
+                ((DescriptorNodes.ModelValueNode) node).value(value);
             }
         }
-        node.children().forEach(child -> traverseOutput((ASTNode) child, contextValuesMap));
+        node.children().forEach(child -> traverseOutput((Node) child, contextValuesMap));
     }
 
-    private Map<String, String> convertContext(Map<String, ContextNodeAST> context) {
+    private Map<String, String> convertContext(Map<String, DescriptorNodes.ContextNode> context) {
         Map<String, String> result = new HashMap<>();
         context.forEach((key, value) -> {
             result.putIfAbsent(key, value.accept(contextToStringConvertor, null).replaceAll("[\\['\\]]", ""));
@@ -71,11 +73,11 @@ public class ReadyFlowState extends FlowState {
         return result;
     }
 
-    private void traverseTree(ASTNode node, Flow.Result result) {
-        if (node instanceof OutputAST) {
+    private void traverseTree(Node node, Flow.Result result) {
+        if (node instanceof DescriptorNodes.OutputNode) {
             result.outputs().add(node.accept(outputConverterVisitor, null));
         } else {
-            node.children().forEach(child -> traverseTree((ASTNode) child, result));
+            node.children().forEach(child -> traverseTree((Node) child, result));
         }
     }
 

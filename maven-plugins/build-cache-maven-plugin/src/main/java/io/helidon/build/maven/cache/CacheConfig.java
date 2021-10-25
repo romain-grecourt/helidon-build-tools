@@ -38,7 +38,7 @@ final class CacheConfig {
     private static final String GROUPID = "io.helidon.build-tools";
     private static final String ARTIFACTID = "helidon-build-cache-maven-plugin";
     private static final String POM_PROPERTIES = "META-INF/maven/" + GROUPID + "/" + ARTIFACTID + "/pom.properties";
-    private static String version;
+    private static volatile String version;
     private static final Properties EMPTY_PROPS = new Properties();
     private static final CacheConfig EMPTY_CONFIG = new CacheConfig(null, null);
     private static final WeakHashMap<MavenProject, CacheConfig> CONFIG_CACHE = new WeakHashMap<>();

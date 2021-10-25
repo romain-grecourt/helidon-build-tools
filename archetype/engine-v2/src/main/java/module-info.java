@@ -20,6 +20,7 @@ import io.helidon.build.archetype.engine.v2.MustacheTemplateEngine;
 /**
  * Helidon archetype engine.
  */
+@SuppressWarnings("JavaModuleNaming")
 module io.helidon.build.archetype.engine.v2 {
     requires io.helidon.build.common;
     requires io.helidon.build.common.ansi;
@@ -28,6 +29,7 @@ module io.helidon.build.archetype.engine.v2 {
     requires java.logging;
 
     exports io.helidon.build.archetype.engine.v2;
+    exports io.helidon.build.archetype.engine.v2.ast;
     exports io.helidon.build.archetype.engine.v2.prompter;
     exports io.helidon.build.archetype.engine.v2.archive;
 

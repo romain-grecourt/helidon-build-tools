@@ -20,15 +20,15 @@ import java.util.LinkedList;
 import java.util.Objects;
 
 /**
- * Archetype enum in {@link Input}.
+ * Archetype enum in {@link InputBlock}.
  */
-public class InputEnum extends InputNode {
+public class InputEnum extends Input {
 
     private String help;
-    private final LinkedList<Option> options = new LinkedList<>();
-    private final LinkedList<Context> contexts = new LinkedList<>();
+    private final LinkedList<InputOption> options = new LinkedList<>();
+    private final LinkedList<ContextBlock> contexts = new LinkedList<>();
     private final LinkedList<Step> steps = new LinkedList<>();
-    private final LinkedList<Input> inputs = new LinkedList<>();
+    private final LinkedList<InputBlock> inputs = new LinkedList<>();
     private final LinkedList<Source> sources = new LinkedList<>();
     private final LinkedList<Exec> execs = new LinkedList<>();
     private Output output;
@@ -64,7 +64,7 @@ public class InputEnum extends InputNode {
      *
      * @return options
      */
-    public LinkedList<Option> options() {
+    public LinkedList<InputOption> options() {
         return options;
     }
 
@@ -73,7 +73,7 @@ public class InputEnum extends InputNode {
      *
      * @return contexts
      */
-    public LinkedList<Context> contexts() {
+    public LinkedList<ContextBlock> contexts() {
         return contexts;
     }
 
@@ -91,7 +91,7 @@ public class InputEnum extends InputNode {
      *
      * @return inputs
      */
-    public LinkedList<Input> inputs() {
+    public LinkedList<InputBlock> inputsBlocks() {
         return inputs;
     }
 
@@ -159,13 +159,13 @@ public class InputEnum extends InputNode {
                 + ", options=" + options()
                 + ", contexts=" + contexts()
                 + ", steps=" + steps()
-                + ", inputs=" + inputs()
+                + ", inputs=" + inputsBlocks()
                 + ", sources=" + sources()
                 + ", execs=" + execs()
                 + ", output=" + output()
                 + ", label=" + label()
                 + ", name=" + name()
-                + ", default=" + def()
+                + ", default=" + defaultValue()
                 + ", prompt=" + prompt()
                 + ", optional=" + isOptional()
                 + '}';

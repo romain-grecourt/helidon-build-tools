@@ -20,14 +20,14 @@ import java.util.LinkedList;
 import java.util.Objects;
 
 /**
- * Archetype boolean in {@link Input} archetype.
+ * Archetype boolean in {@link InputBlock} archetype.
  */
-public class InputBoolean extends InputNode {
+public class InputBoolean extends Input {
 
     private String help;
-    private final LinkedList<Context> contexts = new LinkedList<>();
+    private final LinkedList<ContextBlock> contexts = new LinkedList<>();
     private final LinkedList<Step> steps = new LinkedList<>();
-    private final LinkedList<Input> inputs = new LinkedList<>();
+    private final LinkedList<InputBlock> inputs = new LinkedList<>();
     private final LinkedList<Source> sources = new LinkedList<>();
     private final LinkedList<Exec> execs = new LinkedList<>();
     private Output output;
@@ -63,7 +63,7 @@ public class InputBoolean extends InputNode {
      *
      * @return contexts
      */
-    public LinkedList<Context> contexts() {
+    public LinkedList<ContextBlock> contexts() {
         return contexts;
     }
 
@@ -81,7 +81,7 @@ public class InputBoolean extends InputNode {
      *
      * @return inputs
      */
-    public LinkedList<Input> inputs() {
+    public LinkedList<InputBlock> inputBlocks() {
         return inputs;
     }
 
@@ -141,13 +141,13 @@ public class InputBoolean extends InputNode {
                 + "help=" + help()
                 + ", contexts=" + contexts()
                 + ", steps=" + steps()
-                + ", inputs=" + inputs()
+                + ", inputs=" + inputBlocks()
                 + ", sources=" + sources()
                 + ", execs=" + execs()
                 + ", output=" + output()
                 + ", label=" + label()
                 + ", name=" + name()
-                + ", default=" + def()
+                + ", default=" + defaultValue()
                 + ", prompt=" + prompt()
                 + ", optional=" + isOptional()
                 + '}';

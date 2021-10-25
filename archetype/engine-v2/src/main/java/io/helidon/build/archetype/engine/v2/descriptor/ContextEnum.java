@@ -20,9 +20,9 @@ import java.util.LinkedList;
 import java.util.Objects;
 
 /**
- * Archetype enum in {@link Context} nodes.
+ * Archetype enum in {@link ContextBlock} nodes.
  */
-public class ContextEnum extends ContextNode {
+public class ContextEnum extends Context {
 
     private final LinkedList<String> values;
 

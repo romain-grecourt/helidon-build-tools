@@ -24,9 +24,9 @@ import java.util.Objects;
  */
 public class Model extends Conditional {
 
-    private final LinkedList<ModelKeyValue> keyValues = new LinkedList<>();
-    private final LinkedList<ModelKeyList> keyLists = new LinkedList<>();
-    private final LinkedList<ModelKeyMap> keyMaps = new LinkedList<>();
+    private final LinkedList<ModelKeyedValue> keyValues = new LinkedList<>();
+    private final LinkedList<ModelKeyedList> keyLists = new LinkedList<>();
+    private final LinkedList<ModelKeyedMap> keyMaps = new LinkedList<>();
 
     /**
      * Model constructor.
@@ -42,7 +42,7 @@ public class Model extends Conditional {
      *
      * @return values
      */
-    public LinkedList<ModelKeyValue> keyValues() {
+    public LinkedList<ModelKeyedValue> keyedValues() {
         return keyValues;
     }
 
@@ -51,7 +51,7 @@ public class Model extends Conditional {
      *
      * @return lists
      */
-    public LinkedList<ModelKeyList> keyLists() {
+    public LinkedList<ModelKeyedList> keyedLists() {
         return keyLists;
     }
 
@@ -60,7 +60,7 @@ public class Model extends Conditional {
      *
      * @return maps
      */
-    public LinkedList<ModelKeyMap> keyMaps() {
+    public LinkedList<ModelKeyedMap> keyedMaps() {
         return keyMaps;
     }
 
@@ -81,9 +81,9 @@ public class Model extends Conditional {
     @Override
     public String toString() {
         return "Model{"
-                + "keyValues=" + keyValues()
-                + "keyLists=" + keyLists()
-                + "keyMaps=" + keyMaps()
+                + "keyValues=" + keyedValues()
+                + "keyLists=" + keyedLists()
+                + "keyMaps=" + keyedMaps()
                 + "if=" + ifProperties()
                 + '}';
     }

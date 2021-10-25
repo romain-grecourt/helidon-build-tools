@@ -16,10 +16,8 @@
 
 package io.helidon.build.archetype.engine.v2.prompter;
 
-import io.helidon.build.archetype.engine.v2.interpreter.ContextBooleanAST;
-import io.helidon.build.archetype.engine.v2.interpreter.ContextNodeAST;
-import io.helidon.build.archetype.engine.v2.interpreter.InputBooleanAST;
-import io.helidon.build.archetype.engine.v2.interpreter.UserInputAST;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes;
+import io.helidon.build.archetype.engine.v2.ast.UserInputNode;
 
 /**
  * Prompt of the boolean value.
@@ -46,9 +44,9 @@ public class BooleanPrompt extends Prompt<Boolean> {
     }
 
     @Override
-    public ContextNodeAST acceptAndConvert(Prompter prompter, String path) {
+    public DescriptorNodes.ContextNode acceptAndConvert(Prompter prompter, String path) {
         boolean value = prompter.prompt(this);
-        ContextBooleanAST result = new ContextBooleanAST(path);
+        DescriptorNodes.ContextBooleanNode result = new DescriptorNodes.ContextBooleanNode(path);
         result.bool(value);
         return result;
     }
@@ -70,18 +68,18 @@ public class BooleanPrompt extends Prompt<Boolean> {
         }
 
         @Override
-        public BooleanPrompt.Builder userInputAST(UserInputAST userInputAST) {
+        public BooleanPrompt.Builder userInputAST(UserInputNode userInputAST) {
             if (userInputAST.children().isEmpty()) {
                 throw new IllegalArgumentException("UserInputAST must contain a child note");
             }
-            if (userInputAST.children().get(0) instanceof InputBooleanAST) {
+            if (userInputAST.children().get(0) instanceof DescriptorNodes.InputBooleanNode) {
                 initFields(userInputAST);
                 return this;
             }
             throw new IllegalArgumentException(
                     String.format(
                             "Incorrect type of the child node in the UserInputAST instance. Must be - %s. Actual - %s.",
-                            InputBooleanAST.class.getName(),
+                            DescriptorNodes.InputBooleanNode.class.getName(),
                             userInputAST.children().get(0).getClass().getName()
                     )
             );

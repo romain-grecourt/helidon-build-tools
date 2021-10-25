@@ -16,6 +16,8 @@
 
 package io.helidon.build.archetype.engine.v2.interpreter;
 
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes;
+
 import java.util.Optional;
 
 public class DoneFlowState extends FlowState {
@@ -32,7 +34,7 @@ public class DoneFlowState extends FlowState {
     }
 
     @Override
-    void build(ContextAST context) {
+    void build(DescriptorNodes.ContextBlockNode context) {
 
     }
 

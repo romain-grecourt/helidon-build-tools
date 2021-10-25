@@ -20,17 +20,17 @@ import java.util.LinkedList;
 import java.util.Objects;
 
 /**
- * Archetype list in {@link Input} archetype.
+ * Archetype list in {@link InputBlock} archetype.
  */
-public class InputList extends InputNode {
+public class InputList extends Input {
 
     private final String min;
     private final String max;
     private String help;
-    private final LinkedList<Option> options = new LinkedList<>();
-    private final LinkedList<Context> contexts = new LinkedList<>();
+    private final LinkedList<InputOption> options = new LinkedList<>();
+    private final LinkedList<ContextBlock> contexts = new LinkedList<>();
     private final LinkedList<Step> steps = new LinkedList<>();
-    private final LinkedList<Input> inputs = new LinkedList<>();
+    private final LinkedList<InputBlock> inputs = new LinkedList<>();
     private final LinkedList<Source> sources = new LinkedList<>();
     private final LinkedList<Exec> execs = new LinkedList<>();
     private Output output;
@@ -90,7 +90,7 @@ public class InputList extends InputNode {
      *
      * @return options
      */
-    public LinkedList<Option> options() {
+    public LinkedList<InputOption> options() {
         return options;
     }
 
@@ -99,7 +99,7 @@ public class InputList extends InputNode {
      *
      * @return contexts
      */
-    public LinkedList<Context> contexts() {
+    public LinkedList<ContextBlock> contexts() {
         return contexts;
     }
 
@@ -117,7 +117,7 @@ public class InputList extends InputNode {
      *
      * @return inputs
      */
-    public LinkedList<Input> inputs() {
+    public LinkedList<InputBlock> inputBlocks() {
         return inputs;
     }
 
@@ -181,13 +181,13 @@ public class InputList extends InputNode {
                 + ", options=" + options()
                 + ", contexts=" + contexts()
                 + ", steps=" + steps()
-                + ", inputs=" + inputs()
+                + ", inputs=" + inputBlocks()
                 + ", sources=" + sources()
                 + ", execs=" + execs()
                 + ", output=" + output()
                 + ", label=" + label()
                 + ", name=" + name()
-                + ", default=" + def()
+                + ", default=" + defaultValue()
                 + ", prompt=" + prompt()
                 + ", optional=" + isOptional()
                 + '}';

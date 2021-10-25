@@ -31,39 +31,35 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 import io.helidon.build.archetype.engine.v2.archive.Archetype;
 import io.helidon.build.archetype.engine.v2.archive.ArchetypeException;
 import io.helidon.build.archetype.engine.v2.archive.ZipArchetype;
-import io.helidon.build.archetype.engine.v2.descriptor.ListType;
-import io.helidon.build.archetype.engine.v2.descriptor.MapType;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextBooleanNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextTextNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelKeyedListNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelKeyedMapNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelKeyedValueNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelListNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelMapNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelValueNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.OutputNode;
+import io.helidon.build.archetype.engine.v2.ast.Node;
+import io.helidon.build.archetype.engine.v2.descriptor.ModelList;
+import io.helidon.build.archetype.engine.v2.descriptor.ModelMap;
 import io.helidon.build.archetype.engine.v2.descriptor.Model;
-import io.helidon.build.archetype.engine.v2.descriptor.ModelKeyList;
-import io.helidon.build.archetype.engine.v2.descriptor.ModelKeyMap;
-import io.helidon.build.archetype.engine.v2.descriptor.ModelKeyValue;
+import io.helidon.build.archetype.engine.v2.descriptor.ModelKeyedList;
+import io.helidon.build.archetype.engine.v2.descriptor.ModelKeyedMap;
+import io.helidon.build.archetype.engine.v2.descriptor.ModelKeyedValue;
 import io.helidon.build.archetype.engine.v2.descriptor.Replacement;
-import io.helidon.build.archetype.engine.v2.descriptor.ValueType;
-import io.helidon.build.archetype.engine.v2.interpreter.ASTNode;
-import io.helidon.build.archetype.engine.v2.interpreter.ContextBooleanAST;
-import io.helidon.build.archetype.engine.v2.interpreter.ContextNodeAST;
-import io.helidon.build.archetype.engine.v2.interpreter.ContextTextAST;
-import io.helidon.build.archetype.engine.v2.interpreter.FileSetAST;
-import io.helidon.build.archetype.engine.v2.interpreter.FileSetsAST;
+import io.helidon.build.archetype.engine.v2.descriptor.ModelValue;
 import io.helidon.build.archetype.engine.v2.interpreter.Flow;
-import io.helidon.build.archetype.engine.v2.interpreter.ListTypeAST;
-import io.helidon.build.archetype.engine.v2.interpreter.MapTypeAST;
-import io.helidon.build.archetype.engine.v2.interpreter.ModelAST;
-import io.helidon.build.archetype.engine.v2.interpreter.ModelKeyListAST;
-import io.helidon.build.archetype.engine.v2.interpreter.ModelKeyMapAST;
-import io.helidon.build.archetype.engine.v2.interpreter.ModelKeyValueAST;
-import io.helidon.build.archetype.engine.v2.interpreter.OutputAST;
-import io.helidon.build.archetype.engine.v2.interpreter.TemplateAST;
-import io.helidon.build.archetype.engine.v2.interpreter.TemplatesAST;
-import io.helidon.build.archetype.engine.v2.interpreter.TransformationAST;
-import io.helidon.build.archetype.engine.v2.interpreter.ValueTypeAST;
-import io.helidon.build.archetype.engine.v2.interpreter.Visitable;
 import io.helidon.build.archetype.engine.v2.template.TemplateModel;
+
+import static io.helidon.build.archetype.engine.v2.MustacheHandler.renderMustacheTemplate;
+import static java.util.stream.Collectors.toList;
 
 /**
  * Generate Output files from interpreter.
@@ -73,12 +69,12 @@ public class OutputGenerator {
     private final TemplateModel model;
     private final Archetype archetype;
     private final Map<String, String> properties;
-    private final List<OutputAST> nodes;
-    private final List<TransformationAST> transformations;
-    private final List<TemplateAST> template;
-    private final List<TemplatesAST> templates;
-    private final List<FileSetAST> file;
-    private final List<FileSetsAST> files;
+    private final List<OutputNode> nodes;
+    private final List<DescriptorNodes.TransformationNode> transformations;
+    private final List<DescriptorNodes.TemplateNode> template;
+    private final List<DescriptorNodes.TemplatesNode> templates;
+    private final List<DescriptorNodes.FileSetNode> file;
+    private final List<DescriptorNodes.FileSetsNode> files;
 
     /**
      * OutputGenerator constructor.
@@ -94,51 +90,51 @@ public class OutputGenerator {
         this.properties = parseContextProperties(result.context());
 
         this.transformations = nodes.stream()
-                .flatMap(output -> output.children().stream())
-                .filter(o -> o instanceof TransformationAST)
-                .map(t -> (TransformationAST) t)
-                .collect(Collectors.toList());
+                                    .flatMap(output -> output.children().stream())
+                                    .filter(o -> o instanceof DescriptorNodes.TransformationNode)
+                                    .map(t -> (DescriptorNodes.TransformationNode) t)
+                                    .collect(toList());
 
         this.template = nodes.stream()
-                .flatMap(output -> output.children().stream())
-                .filter(o -> o instanceof TemplateAST)
-                .map(t -> (TemplateAST) t)
-                .filter(t -> t.engine().equals("mustache"))
-                .collect(Collectors.toList());
+                             .flatMap(output -> output.children().stream())
+                             .filter(o -> o instanceof DescriptorNodes.TemplateNode)
+                             .map(t -> (DescriptorNodes.TemplateNode) t)
+                             .filter(t -> t.descriptor().engine().equals("mustache"))
+                             .collect(toList());
 
         this.templates = nodes.stream()
-                .flatMap(output -> output.children().stream())
-                .filter(o -> o instanceof TemplatesAST)
-                .map(t -> (TemplatesAST) t)
-                .filter(t -> t.engine().equals("mustache"))
-                .collect(Collectors.toList());
+                              .flatMap(output -> output.children().stream())
+                              .filter(o -> o instanceof DescriptorNodes.TemplatesNode)
+                              .map(t -> (DescriptorNodes.TemplatesNode) t)
+                              .filter(t -> t.descriptor().engine().equals("mustache"))
+                              .collect(toList());
 
         this.file = nodes.stream()
-                .flatMap(output -> output.children().stream())
-                .filter(o -> o instanceof FileSetAST)
-                .map(t -> (FileSetAST) t)
-                .collect(Collectors.toList());
+                         .flatMap(output -> output.children().stream())
+                         .filter(o -> o instanceof DescriptorNodes.FileSetNode)
+                         .map(t -> (DescriptorNodes.FileSetNode) t)
+                         .collect(toList());
 
         this.files = nodes.stream()
-                .flatMap(output -> output.children().stream())
-                .filter(o -> o instanceof FileSetsAST)
-                .map(t -> (FileSetsAST) t)
-                .collect(Collectors.toList());
+                          .flatMap(output -> output.children().stream())
+                          .filter(o -> o instanceof DescriptorNodes.FileSetsNode)
+                          .map(t -> (DescriptorNodes.FileSetsNode) t)
+                          .collect(toList());
     }
 
-    private Map<String, String> parseContextProperties(Map<String, ContextNodeAST> context) {
+    private Map<String, String> parseContextProperties(Map<String, DescriptorNodes.ContextNode<?>> context) {
         if (context == null) {
             return new HashMap<>();
         }
 
         Map<String, String> resolved = new HashMap<>();
-        for (Map.Entry<String, ContextNodeAST> entry : context.entrySet()) {
-            ContextNodeAST node = entry.getValue();
-            if (node instanceof ContextBooleanAST) {
-                resolved.put(entry.getKey(), String.valueOf(((ContextBooleanAST) node).bool()));
+        for (Map.Entry<String, DescriptorNodes.ContextNode<?>> entry : context.entrySet()) {
+            DescriptorNodes.ContextNode<?> node = entry.getValue();
+            if (node instanceof ContextBooleanNode) {
+                resolved.put(entry.getKey(), String.valueOf(((ContextBooleanNode) node).value()));
             }
-            if (node instanceof ContextTextAST) {
-                resolved.put(entry.getKey(), ((ContextTextAST) node).text());
+            if (node instanceof ContextTextNode) {
+                resolved.put(entry.getKey(), ((ContextTextNode) node).value());
             }
         }
         return resolved;
@@ -152,36 +148,35 @@ public class OutputGenerator {
     public void generate(File outputDirectory) throws IOException {
         Objects.requireNonNull(outputDirectory, "output directory is null");
 
-        for (TemplateAST templateAST : template) {
-            File outputFile = new File(outputDirectory, templateAST.target());
+        for (DescriptorNodes.TemplateNode templateNode : template) {
+            File outputFile = new File(outputDirectory, templateNode.descriptor().target());
             outputFile.getParentFile().mkdirs();
-            try (InputStream inputStream = archetype.getInputStream(templateAST.source())) {
-                if (templateAST.engine().equals("mustache")) {
-                    MustacheHandler.renderMustacheTemplate(
+            try (InputStream inputStream = archetype.getInputStream(templateNode.descriptor().source())) {
+                if (templateNode.descriptor().engine().equals("mustache")) {
+                    renderMustacheTemplate(
                             inputStream,
-                            templateAST.source(),
+                            templateNode.descriptor().source(),
                             new FileOutputStream(outputFile),
                             model);
                 } else {
-                    Files.copy(
-                            inputStream,
-                            outputFile.toPath());
+                    Files.copy(inputStream, outputFile.toPath());
                 }
             }
         }
 
-        for (TemplatesAST templatesAST : templates) {
-            Path rootDirectory = Path.of(templatesAST.location().currentDirectory()).resolve(templatesAST.directory());
-            TemplateModel templatesModel = createTemplatesModel(templatesAST);
+        for (DescriptorNodes.TemplatesNode templatesNode : templates) {
+            Path rootDirectory = Path.of(templatesNode.location().currentDirectory())
+                                     .resolve(templatesNode.directory());
+            TemplateModel templatesModel = createTemplatesModel(templatesNode);
 
-            for (String include : resolveIncludes(templatesAST)) {
+            for (String include : resolveIncludes(templatesNode)) {
                 String outPath = transform(
-                        targetPath(templatesAST.directory(), include),
-                        templatesAST.transformation());
+                        targetPath(templatesNode.directory(), include),
+                        templatesNode.descriptor().transformation());
                 File outputFile = new File(outputDirectory, outPath);
                 outputFile.getParentFile().mkdirs();
                 try (InputStream inputStream = archetype.getInputStream(rootDirectory.resolve(include).toString())) {
-                    MustacheHandler.renderMustacheTemplate(
+                    renderMustacheTemplate(
                             inputStream,
                             outPath,
                             new FileOutputStream(outputFile),
@@ -190,20 +185,20 @@ public class OutputGenerator {
             }
         }
 
-        for (FileSetAST fileAST : file) {
-            File outputFile = new File(outputDirectory, fileAST.target());
+        for (DescriptorNodes.FileSetNode fileSet : file) {
+            File outputFile = new File(outputDirectory, fileSet.descriptor().target());
             outputFile.getParentFile().mkdirs();
-            try (InputStream inputStream = archetype.getInputStream(fileAST.source())) {
+            try (InputStream inputStream = archetype.getInputStream(fileSet.descriptor().source())) {
                 Files.copy(inputStream, outputFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
             }
         }
 
-        for (FileSetsAST filesAST : files) {
-            Path rootDirectory = Path.of(filesAST.location().currentDirectory()).resolve(filesAST.directory());
-            for (String include : resolveIncludes(filesAST)) {
+        for (DescriptorNodes.FileSetsNode fileSets : files) {
+            Path rootDirectory = Path.of(fileSets.location().currentDirectory()).resolve(fileSets.directory());
+            for (String include : resolveIncludes(fileSets)) {
                 String outPath = processTransformation(
-                        targetPath(filesAST.directory(), include),
-                        filesAST.transformations());
+                        targetPath(fileSets.directory(), include),
+                        fileSets.descriptor().transformations());
                 File outputFile = new File(outputDirectory, outPath);
                 outputFile.getParentFile().mkdirs();
                 try (InputStream inputStream = archetype.getInputStream(rootDirectory.resolve(include).toString())) {
@@ -216,51 +211,50 @@ public class OutputGenerator {
     private String targetPath(String directory, String filePath) {
         String resolved = directory.replaceFirst("files", "");
         return Path.of(resolved)
-                .resolve(filePath)
-                .toString();
+                   .resolve(filePath)
+                   .toString();
     }
 
-    private List<String> resolveIncludes(TemplatesAST templatesAST) {
+    private List<String> resolveIncludes(DescriptorNodes.TemplatesNode templatesAST) {
         return resolveIncludes(
                 Path.of(templatesAST.location().currentDirectory()).resolve(templatesAST.directory()).toString(),
-                templatesAST.includes(),
-                templatesAST.excludes());
+                templatesAST.descriptor().includes(),
+                templatesAST.descriptor().excludes());
     }
 
-    private List<String> resolveIncludes(FileSetsAST filesAST) {
+    private List<String> resolveIncludes(DescriptorNodes.FileSetsNode filesAST) {
         return resolveIncludes(
                 Path.of(filesAST.location().currentDirectory()).resolve(filesAST.directory()).toString(),
-                filesAST.includes(),
-                filesAST.excludes());
+                filesAST.descriptor().includes(),
+                filesAST.descriptor().excludes());
     }
 
     private List<String> resolveIncludes(String directory, List<String> includes, List<String> excludes) {
         List<String> excludesPath = getPathsFromDirectory(directory, excludes);
         List<String> includesPath = getPathsFromDirectory(directory, includes);
         return includesPath.stream()
-                .filter(s -> !excludesPath.contains(s))
-                .collect(Collectors.toList());
+                           .filter(s -> !excludesPath.contains(s))
+                           .collect(toList());
     }
 
     private List<String> getPathsFromDirectory(String directory, List<String> paths) {
         List<String> resolved = new LinkedList<>();
-
         for (String path : paths) {
             if (path.contains("**/*")) {
                 try {
                     String extension = path.substring(path.lastIndexOf("."));
                     resolved.addAll(archetype.getPaths().stream()
-                            .map(s -> getPath(directory, s))
-                            .filter(Objects::nonNull)
-                            .filter(s -> !Path.of(s).toUri().toString().contains("../"))
-                            .filter(s -> s.contains(extension))
-                            .collect(Collectors.toList()));
+                                             .map(s -> getPath(directory, s))
+                                             .filter(Objects::nonNull)
+                                             .filter(s -> !Path.of(s).toUri().toString().contains("../"))
+                                             .filter(s -> s.contains(extension))
+                                             .collect(toList()));
                 } catch (IndexOutOfBoundsException e) {
                     resolved.addAll(archetype.getPaths().stream()
-                            .map(s -> getPath(directory, s))
-                            .filter(Objects::nonNull)
-                            .filter(s -> !Path.of(s).toUri().toString().contains("../"))
-                            .collect(Collectors.toList()));
+                                             .map(s -> getPath(directory, s))
+                                             .filter(Objects::nonNull)
+                                             .filter(s -> !Path.of(s).toUri().toString().contains("../"))
+                                             .collect(toList()));
                 }
             } else {
                 if (checkFullPath(path, directory)) {
@@ -296,12 +290,13 @@ public class OutputGenerator {
         return path;
     }
 
-    private TemplateModel createTemplatesModel(TemplatesAST templatesAST) {
+    private TemplateModel createTemplatesModel(DescriptorNodes.TemplatesNode templates) {
         TemplateModel templatesModel = new TemplateModel();
-        Optional<ModelAST> modelAST = templatesAST.children().stream()
-                .filter(o -> o instanceof ModelAST)
-                .map(m -> (ModelAST) m)
-                .findFirst();
+        Optional<ModelNode> modelAST = templates.children()
+                                                .stream()
+                                                .filter(o -> o instanceof ModelNode)
+                                                .map(m -> (ModelNode) m)
+                                                .findFirst();
         templatesModel.mergeModel(model.model());
         modelAST.ifPresent(ast -> templatesModel.mergeModel(convertASTModel(ast)));
         return templatesModel;
@@ -318,9 +313,9 @@ public class OutputGenerator {
         }
 
         List<Replacement> replacements = transformations.stream()
-                .filter(t -> applicable.contains(t.id()))
-                .flatMap((t) -> t.replacements().stream())
-                .collect(Collectors.toList());
+                                                        .filter(t -> applicable.contains(t.descriptor().id()))
+                                                        .flatMap((t) -> t.descriptor().replacements().stream())
+                                                        .collect(toList());
 
         for (Replacement rep : replacements) {
             String replacement = evaluate(rep.replacement(), properties);
@@ -332,7 +327,7 @@ public class OutputGenerator {
     /**
      * Resolve a property of the form <code>${prop}</code>.
      *
-     * @param input input to be resolved
+     * @param input      input to be resolved
      * @param properties properties values
      * @return resolved property
      */
@@ -393,61 +388,62 @@ public class OutputGenerator {
         Objects.requireNonNull(nodes, "outputNodes is null");
 
         TemplateModel templateModel = new TemplateModel();
-        List<ModelAST> models = nodes.stream()
-                .flatMap(output -> output.children().stream())
-                .filter(o -> o instanceof ModelAST)
-                .map(o -> (ModelAST) o)
-                .collect(Collectors.toList());
+        List<ModelNode> models = nodes.stream()
+                                      .flatMap(output -> output.children().stream())
+                                      .filter(o -> o instanceof ModelNode)
+                                      .map(o -> (ModelNode) o)
+                                      .collect(toList());
 
-        for (ModelAST node : models) {
+        for (ModelNode node : models) {
             templateModel.mergeModel(convertASTModel(node));
         }
         return templateModel;
     }
 
-    private Model convertASTModel(ModelAST model) {
+    private Model convertASTModel(ModelNode model) {
         Model modelDescriptor = new Model("true");
-        convertKeyElements(modelDescriptor.keyValues(),
-                modelDescriptor.keyLists(),
-                modelDescriptor.keyMaps(),
+        convertKeyElements(modelDescriptor.keyedValues(),
+                modelDescriptor.keyedLists(),
+                modelDescriptor.keyedMaps(),
                 model.children());
         return modelDescriptor;
     }
 
-    private Collection<? extends ModelKeyMap> convertASTKeyMaps(List<ModelKeyMapAST> astMaps) {
-        LinkedList<ModelKeyMap> maps = new LinkedList<>();
-
-        for (ModelKeyMapAST map : astMaps) {
-            ModelKeyMap keyMap = new ModelKeyMap(map.key(), map.order(), "true");
+    private Collection<? extends ModelKeyedMap> convertASTKeyMaps(List<ModelKeyedMapNode> astMaps) {
+        LinkedList<ModelKeyedMap> maps = new LinkedList<>();
+        for (ModelKeyedMapNode map : astMaps) {
+            ModelKeyedMap keyMap = new ModelKeyedMap(
+                    map.descriptor().key(),
+                    map.descriptor().order(),
+                    "true");
             convertKeyElements(keyMap.keyValues(), keyMap.keyLists(), keyMap.keyMaps(), map.children());
             maps.add(keyMap);
         }
-
         return maps;
     }
 
-    private Collection<? extends ModelKeyList> convertASTKeyLists(List<ModelKeyListAST> astLists) {
-        LinkedList<ModelKeyList> lists = new LinkedList<>();
-
-        for (ModelKeyListAST list : astLists) {
-            ModelKeyList keyList = new ModelKeyList(list.key(), list.order(), "true");
+    private Collection<? extends ModelKeyedList> convertASTKeyLists(List<ModelKeyedListNode> astLists) {
+        LinkedList<ModelKeyedList> lists = new LinkedList<>();
+        for (ModelKeyedListNode list : astLists) {
+            ModelKeyedList keyList = new ModelKeyedList(
+                    list.descriptor().key(),
+                    list.descriptor().order(),
+                    "true");
             convertElements(keyList.values(), keyList.lists(), keyList.maps(), list.children());
             lists.add(keyList);
         }
-
         return lists;
     }
 
-    private Collection<? extends ModelKeyValue> convertASTKeyValues(List<ModelKeyValueAST> astValues) {
-        LinkedList<ModelKeyValue> values = new LinkedList<>();
-
-        for (ModelKeyValueAST value : astValues) {
-            ModelKeyValue keyValue = new ModelKeyValue(
-                    value.key(),
-                    value.url(),
-                    value.file(),
-                    value.template(),
-                    value.order(),
+    private Collection<? extends ModelKeyedValue> convertASTKeyValues(List<ModelKeyedValueNode> astValues) {
+        LinkedList<ModelKeyedValue> values = new LinkedList<>();
+        for (ModelKeyedValueNode value : astValues) {
+            ModelKeyedValue keyValue = new ModelKeyedValue(
+                    value.descriptor().key(),
+                    value.descriptor().url(),
+                    value.descriptor().file(),
+                    value.descriptor().template(),
+                    value.descriptor().order(),
                     "true");
             keyValue.value(value.value());
             values.add(keyValue);
@@ -455,15 +451,14 @@ public class OutputGenerator {
         return values;
     }
 
-    private Collection<? extends ValueType> convertASTValues(List<ValueTypeAST> astValues) {
-        LinkedList<ValueType> values = new LinkedList<>();
-
-        for (ValueTypeAST value : astValues) {
-            ValueType valueType = new ValueType(
-                    value.url(),
-                    value.file(),
-                    value.template(),
-                    value.order(),
+    private Collection<? extends ModelValue> convertASTValues(List<ModelValueNode<?>> astValues) {
+        LinkedList<ModelValue> values = new LinkedList<>();
+        for (ModelValueNode<?> value : astValues) {
+            ModelValue valueType = new ModelValue(
+                    value.descriptor().url(),
+                    value.descriptor().file(),
+                    value.descriptor().template(),
+                    value.descriptor().order(),
                     "true");
             valueType.value(value.value());
             values.add(valueType);
@@ -471,83 +466,73 @@ public class OutputGenerator {
         return values;
     }
 
-    private Collection<? extends ListType> convertASTLists(List<ListTypeAST> astList) {
-        LinkedList<ListType> lists = new LinkedList<>();
-
-        for (ListTypeAST list : astList) {
-            ListType listType = new ListType(list.order(), "true");
+    private Collection<? extends ModelList> convertASTLists(List<ModelListNode<?>> astList) {
+        LinkedList<ModelList> lists = new LinkedList<>();
+        for (ModelListNode<?> list : astList) {
+            ModelList listType = new ModelList(list.descriptor().order(), "true");
             convertElements(listType.values(), listType.lists(), listType.maps(), list.children());
             lists.add(listType);
         }
-
         return lists;
     }
 
-    private Collection<? extends MapType> convertASTMaps(List<MapTypeAST> astMap) {
-        LinkedList<MapType> maps = new LinkedList<>();
-
-        for (MapTypeAST map : astMap) {
-            MapType mapType = new MapType(map.order(), "true");
-            convertKeyElements(mapType.keyValues(), mapType.keyLists(), mapType.keyMaps(), map.children());
-            maps.add(mapType);
+    private Collection<? extends ModelMap> convertASTMaps(List<ModelMapNode<?>> mapNode) {
+        LinkedList<ModelMap> maps = new LinkedList<>();
+        for (ModelMapNode<?> map : mapNode) {
+            ModelMap modelMap = new ModelMap(map.descriptor().order(), "true");
+            convertKeyElements(modelMap.keyValues(), modelMap.keyLists(), modelMap.keyMaps(), map.children());
+            maps.add(modelMap);
         }
-
         return maps;
     }
 
-    private void convertKeyElements(LinkedList<ModelKeyValue> modelKeyValues,
-                                    LinkedList<ModelKeyList> modelKeyLists,
-                                    LinkedList<ModelKeyMap> modelKeyMaps,
-                                    LinkedList<Visitable> children) {
+    private void convertKeyElements(LinkedList<ModelKeyedValue> modelKeyValues,
+                                    LinkedList<ModelKeyedList> modelKeyLists,
+                                    LinkedList<ModelKeyedMap> modelKeyMaps,
+                                    List<Node> children) {
 
         modelKeyValues.addAll(convertASTKeyValues(children.stream()
-                .filter(v -> v instanceof ModelKeyValueAST)
-                .map(v -> (ModelKeyValueAST) v)
-                .collect(Collectors.toList()))
-        );
+                                                          .filter(v -> v instanceof ModelKeyedValueNode)
+                                                          .map(v -> (ModelKeyedValueNode) v)
+                                                          .collect(toList())));
 
         modelKeyLists.addAll(convertASTKeyLists(children.stream()
-                .filter(v -> v instanceof ModelKeyListAST)
-                .map(v -> (ModelKeyListAST) v)
-                .collect(Collectors.toList()))
-        );
+                                                        .filter(v -> v instanceof ModelKeyedListNode)
+                                                        .map(v -> (ModelKeyedListNode) v)
+                                                        .collect(toList())));
 
         modelKeyMaps.addAll(convertASTKeyMaps(children.stream()
-                .filter(v -> v instanceof ModelKeyMapAST)
-                .map(v -> (ModelKeyMapAST) v)
-                .collect(Collectors.toList()))
-        );
+                                                      .filter(v -> v instanceof ModelKeyedMapNode)
+                                                      .map(v -> (ModelKeyedMapNode) v)
+                                                      .collect(toList())));
     }
 
-    private void convertElements(LinkedList<ValueType> values,
-                                 LinkedList<ListType> lists,
-                                 LinkedList<MapType> maps,
-                                 LinkedList<Visitable> children) {
+    private void convertElements(LinkedList<ModelValue> values,
+                                 LinkedList<ModelList> lists,
+                                 LinkedList<ModelMap> maps,
+                                 List<Node> children) {
 
         values.addAll(convertASTValues(children.stream()
-                .filter(v -> v instanceof ValueTypeAST)
-                .map(v -> (ValueTypeAST) v)
-                .collect(Collectors.toList()))
-        );
+                                               .filter(v -> v instanceof ModelValueNode)
+                                               .map(v -> (ModelValueNode<?>) v)
+                                               .collect(toList())));
 
         lists.addAll(convertASTLists(children.stream()
-                .filter(v -> v instanceof ListTypeAST)
-                .map(v -> (ListTypeAST) v)
-                .collect(Collectors.toList()))
-        );
+                                             .filter(v -> v instanceof ModelListNode)
+                                             .map(v -> (ModelListNode<?>) v)
+                                             .collect(toList())));
 
         maps.addAll(convertASTMaps(children.stream()
-                .filter(v -> v instanceof MapTypeAST)
-                .map(v -> (MapTypeAST) v)
-                .collect(Collectors.toList()))
-        );
+                                           .filter(v -> v instanceof ModelMapNode)
+                                           .map(v -> (ModelMapNode<?>) v)
+                                           .collect(toList())));
     }
 
-    private List<OutputAST> getOutputNodes(List<ASTNode> nodes) {
+    private List<OutputNode> getOutputNodes(List<Node> nodes) {
         return nodes.stream()
-                .filter(o -> o instanceof OutputAST)
-                .map(o -> (OutputAST) o)
-                .collect(Collectors.toList());
+                    .filter(o -> o instanceof OutputNode)
+                    .map(o -> (OutputNode) o)
+                    .collect(toList());
     }
 
 }

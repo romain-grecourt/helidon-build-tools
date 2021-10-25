@@ -19,15 +19,25 @@ package io.helidon.build.archetype.engine.v2.interpreter;
 /**
  * Script interpreter exception.
  */
-public class InterpreterException extends RuntimeException {
+public final class InterpreterException extends RuntimeException {
 
     /**
      * Create a new exception.
      *
      * @param message error message
      */
-    InterpreterException(String message) {
+    public InterpreterException(String message) {
         super(message);
+    }
+
+    /**
+     * Create a new exception.
+     *
+     * @param format error message format
+     * @param format error message args
+     */
+    public InterpreterException(String format, Object... args) {
+        super(String.format(format, args));
     }
 
     /**

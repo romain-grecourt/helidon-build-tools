@@ -17,7 +17,7 @@
 package io.helidon.build.archetype.engine.v2.descriptor;
 
 import java.io.InputStream;
-import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -26,35 +26,36 @@ import java.util.Objects;
  */
 public class ArchetypeDescriptor {
 
-    private final Map<String, String> archetypeAttributes;
-    private final LinkedList<Context> contexts;
-    private final LinkedList<Step> steps;
-    private final LinkedList<Input> inputs;
-    private final LinkedList<Source> sources;
-    private final LinkedList<Exec> execs;
+    private final Map<String, String> attributes;
+    private final List<ContextBlock> contexts;
+    private final List<Step> steps;
+    private final List<InputBlock> inputs;
+    private final List<Source> sources;
+    private final List<Exec> execs;
     private final Output output;
     private String help;
 
     ArchetypeDescriptor(Map<String, String> archetypeAttributes,
-                               LinkedList<Context> context,
-                               LinkedList<Step> step,
-                               LinkedList<Input> inputs,
-                               LinkedList<Source> source,
-                               LinkedList<Exec> exec,
-                               Output output,
-                               String help) {
-        this.archetypeAttributes = archetypeAttributes;
-        this.contexts = context;
-        this.steps = step;
-        this.inputs = inputs;
-        this.sources = source;
-        this.execs = exec;
+                        List<ContextBlock> context,
+                        List<Step> step,
+                        List<InputBlock> inputs,
+                        List<Source> source,
+                        List<Exec> exec,
+                        Output output,
+                        String help) {
+
+        this.attributes = archetypeAttributes;
+        this.contexts = context == null ? List.of() : context;
+        this.steps = step == null ? List.of() : step;
+        this.inputs = inputs == null ? List.of() : inputs;
+        this.sources = source == null ? List.of() : source;
+        this.execs = exec == null ? List.of() : exec;
         this.output = output;
         this.help = help;
     }
 
     /**
-     * Create a archetype descriptor instance from an input stream.
+     * Create an archetype descriptor instance from an input stream.
      *
      * @param is input stream
      * @return ArchetypeDescriptor
@@ -68,7 +69,7 @@ public class ArchetypeDescriptor {
      *
      * @return List of Context
      */
-    public LinkedList<Context> contexts() {
+    public List<ContextBlock> contexts() {
         return contexts;
     }
 
@@ -77,7 +78,7 @@ public class ArchetypeDescriptor {
      *
      * @return List of Step
      */
-    public LinkedList<Step> steps() {
+    public List<Step> steps() {
         return steps;
     }
 
@@ -86,7 +87,7 @@ public class ArchetypeDescriptor {
      *
      * @return List of Input
      */
-    public LinkedList<Input> inputs() {
+    public List<InputBlock> inputBlocks() {
         return inputs;
     }
 
@@ -95,7 +96,7 @@ public class ArchetypeDescriptor {
      *
      * @return List of Source
      */
-    public LinkedList<Source> sources() {
+    public List<Source> sources() {
         return sources;
     }
 
@@ -104,7 +105,7 @@ public class ArchetypeDescriptor {
      *
      * @return List of Exec
      */
-    public LinkedList<Exec> execs() {
+    public List<Exec> execs() {
         return execs;
     }
 
@@ -131,8 +132,8 @@ public class ArchetypeDescriptor {
      *
      * @return Map of attributes
      */
-    public Map<String, String> archetypeAttributes() {
-        return archetypeAttributes;
+    public Map<String, String> attributes() {
+        return attributes;
     }
 
     /**
@@ -160,16 +161,16 @@ public class ArchetypeDescriptor {
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), archetypeAttributes, contexts, steps, inputs, sources, execs, output);
+        return Objects.hash(super.hashCode(), attributes, contexts, steps, inputs, sources, execs, output);
     }
 
     @Override
     public String toString() {
         return "ArchetypeDescriptor{"
-                + "archetypeAttributes=" + archetypeAttributes()
+                + "archetypeAttributes=" + attributes()
                 + ", contexts=" + contexts()
                 + ", steps=" + steps()
-                + ", inputs=" + inputs()
+                + ", inputs=" + inputBlocks()
                 + ", sources=" + sources()
                 + ", execs=" + execs()
                 + ", output=" + output()

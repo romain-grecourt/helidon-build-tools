@@ -16,250 +16,369 @@
 
 package io.helidon.build.archetype.engine.v2.interpreter;
 
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ArchetypeNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextBlockNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextBooleanNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextEnumNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextListNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextTextNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ExecNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.FileSetNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.FileSetsNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.IfStatementNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputBlockNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputBooleanNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputEnumNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputListNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputOptionNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputTextNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelKeyedListNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelKeyedMapNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelKeyedValueNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelListNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelMapNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ModelValueNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.OutputNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.SourceNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.StepNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.TemplateNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.TemplatesNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.TransformationNode;
+import io.helidon.build.archetype.engine.v2.ast.UserInputNode;
+
 /**
  * Visitor for the  script interpreter.
  *
  * @param <A> argument
+ * @param <R> type of the returned value
  */
-public interface Visitor<A> {
+public interface Visitor<A, R> {
 
     /**
-     * Process {@code XmlDescriptor} element.
+     * Visit an archetype.
      *
-     * @param input XmlDescriptor
-     * @param arg   argument
+     * @param node node
+     * @param arg  argument
+     * @return visit result
      */
-    void visit(XmlDescriptor input, A arg);
+    default R visit(ArchetypeNode node, A arg) {
+        return null;
+    }
 
     /**
-     * Process {@code Visitable} element.
+     * Visit a step.
      *
-     * @param input Visitable
-     * @param arg   argument
+     * @param node node
+     * @param arg  argument
+     * @return visit result
      */
-    void visit(Visitable input, A arg);
+    default R visit(StepNode node, A arg) {
+        return null;
+    }
 
     /**
-     * Process {@code StepAST} element.
+     * Visit an input block.
      *
-     * @param step StepAST
+     * @param node node
+     * @param arg  argument
+     * @return visit result
+     */
+    default R visit(InputBlockNode node, A arg) {
+        return null;
+    }
+
+    /**
+     * Visit an input boolean.
+     *
+     * @param node node
+     * @param arg  argument
+     * @return visit result
+     */
+    default R visit(InputBooleanNode node, A arg) {
+        return null;
+    }
+
+    /**
+     * Visit an input enum.
+     *
+     * @param node node
+     * @param arg  argument
+     * @return visit result
+     */
+    default R visit(InputEnumNode node, A arg) {
+        return null;
+    }
+
+    /**
+     * Visit an input list.
+     *
+     * @param node node
      * @param arg  argument
      */
-    void visit(StepAST step, A arg);
+    default R visit(InputListNode node, A arg) {
+        return null;
+    }
 
     /**
-     * Process {@code InputAST} element.
+     * Visit an input text.
      *
-     * @param input InputAST
-     * @param arg   argument
+     * @param node node
+     * @param arg  argument
+     * @return visit result
      */
-    void visit(InputAST input, A arg);
+    default R visit(InputTextNode node, A arg) {
+        return null;
+    }
 
     /**
-     * Process {@code InputBooleanAST} element.
+     * Visit an exec.
      *
-     * @param input InputBooleanAST
-     * @param arg   argument
+     * @param node node
+     * @param arg  argument
+     * @return visit result
      */
-    void visit(InputBooleanAST input, A arg);
+    default R visit(ExecNode node, A arg) {
+        return null;
+    }
 
     /**
-     * Process {@code InputEnumAST} element.
+     * Visit a source.
      *
-     * @param input InputEnumAST
-     * @param arg   argument
+     * @param node node
+     * @param arg  argument
+     * @return visit result
      */
-    void visit(InputEnumAST input, A arg);
+    default R visit(SourceNode node, A arg) {
+        return null;
+    }
 
     /**
-     * Process {@code InputListAST} element.
+     * Visit a context block.
      *
-     * @param input InputListAST
-     * @param arg   argument
+     * @param node node
+     * @param arg  argument
+     * @return visit result
      */
-    void visit(InputListAST input, A arg);
+    default R visit(ContextBlockNode node, A arg) {
+        return null;
+    }
 
     /**
-     * Process {@code InputTextAST} element.
+     * Visit a context boolean.
      *
-     * @param input InputTextAST
-     * @param arg   argument
+     * @param node node
+     * @param arg  argument
+     * @return visit result
      */
-    void visit(InputTextAST input, A arg);
+    default R visit(ContextBooleanNode node, A arg) {
+        return null;
+    }
 
     /**
-     * Process {@code ExecAST} element.
+     * Visit a context enum.
      *
-     * @param exec ExecAST
+     * @param node node
+     * @param arg  argument
+     * @return visit result
+     */
+    default R visit(ContextEnumNode node, A arg) {
+        return null;
+    }
+
+    /**
+     * Visit a context list.
+     *
+     * @param node node
+     * @param arg  argument
+     * @return visit result
+     */
+    default R visit(ContextListNode node, A arg) {
+        return null;
+    }
+
+    /**
+     * Visit a context text.
+     *
+     * @param node node
+     * @param arg  argument
+     * @return visit result
+     */
+    default R visit(ContextTextNode node, A arg) {
+        return null;
+    }
+
+    /**
+     * Visit an input option.
+     *
+     * @param node node
+     * @param arg  argument
+     * @return visit result
+     */
+    default R visit(InputOptionNode node, A arg) {
+        return null;
+    }
+
+    /**
+     * Visit an output.
+     *
+     * @param node node
      * @param arg  argument
      */
-    void visit(ExecAST exec, A arg);
+    default R visit(OutputNode node, A arg) {
+        return null;
+    }
 
     /**
-     * Process {@code SourceAST} element.
+     * Visit a transformation.
      *
-     * @param source SourceAST
-     * @param arg    argument
+     * @param node node
+     * @param arg  argument
+     * @return visit result
      */
-    void visit(SourceAST source, A arg);
+    default R visit(TransformationNode node, A arg) {
+        return null;
+    }
 
     /**
-     * Process {@code ContextAST} element.
+     * Visit a filesets.
      *
-     * @param context ContextAST
-     * @param arg     argument
+     * @param node node
+     * @param arg  argument
+     * @return visit result
      */
-    void visit(ContextAST context, A arg);
+    default R visit(FileSetsNode node, A arg) {
+        return null;
+    }
 
     /**
-     * Process {@code ContextBooleanAST} element.
+     * Visit a fileset.
      *
-     * @param contextBoolean ContextBooleanAST
-     * @param arg            argument
+     * @param node node
+     * @param arg  argument
+     * @return visit result
      */
-    void visit(ContextBooleanAST contextBoolean, A arg);
+    default R visit(FileSetNode node, A arg) {
+        return null;
+    }
 
     /**
-     * Process {@code ContextEnumAST} element.
+     * Visit a template.
      *
-     * @param contextEnum ContextEnumAST
-     * @param arg         argument
-     */
-    void visit(ContextEnumAST contextEnum, A arg);
-
-    /**
-     * Process {@code ContextListAST} element.
-     *
-     * @param contextList ContextListAST
-     * @param arg         argument
-     */
-    void visit(ContextListAST contextList, A arg);
-
-    /**
-     * Process {@code ContextTextAST} element.
-     *
-     * @param contextText ContextTextAST
-     * @param arg         argument
-     */
-    void visit(ContextTextAST contextText, A arg);
-
-    /**
-     * Process {@code OptionAST} element.
-     *
-     * @param option OptionAST
-     * @param arg    argument
-     */
-    void visit(OptionAST option, A arg);
-
-    /**
-     * Process {@code OutputAST} element.
-     *
-     * @param output OutputAST
-     * @param arg    argument
-     */
-    void visit(OutputAST output, A arg);
-
-    /**
-     * Process {@code TransformationAST} element.
-     *
-     * @param transformation TransformationAST
-     * @param arg            argument
-     */
-    void visit(TransformationAST transformation, A arg);
-
-    /**
-     * Process {@code FileSetsAST} element.
-     *
-     * @param fileSets FileSetsAST
-     * @param arg      argument
-     */
-    void visit(FileSetsAST fileSets, A arg);
-
-    /**
-     * Process {@code FileSetAST} element.
-     *
-     * @param fileSet FileSetAST
-     * @param arg     argument
-     */
-    void visit(FileSetAST fileSet, A arg);
-
-    /**
-     * Process {@code TemplateAST} element.
-     *
-     * @param template TemplateAST
-     * @param arg      argument
-     */
-    void visit(TemplateAST template, A arg);
-
-    /**
-     * Process {@code TemplatesAST} element.
-     *
-     * @param templates TemplatesAST
-     * @param arg       argument
-     */
-    void visit(TemplatesAST templates, A arg);
-
-    /**
-     * Process {@code ModelAST} element.
-     *
-     * @param model ModelAST
-     * @param arg   argument
-     */
-    void visit(ModelAST model, A arg);
-
-    /**
-     * Process {@code IfStatement} element.
-     *
-     * @param statement IfStatement
-     * @param arg       argument
-     */
-    void visit(IfStatement statement, A arg);
-
-    /**
-     * Process {@code ModelKeyValueAST} element.
-     *
-     * @param value ModelKeyValueAST
-     * @param arg   argument
-     */
-    void visit(ModelKeyValueAST value, A arg);
-
-    /**
-     * Process {@code ValueTypeAST} element.
-     *
-     * @param value ValueTypeAST
-     * @param arg   argument
-     */
-    void visit(ValueTypeAST value, A arg);
-
-    /**
-     * Process {@code ModelKeyListAST} element.
-     *
-     * @param list ModelKeyListAST
+     * @param node node
      * @param arg  argument
      */
-    void visit(ModelKeyListAST list, A arg);
+    default R visit(TemplateNode node, A arg) {
+        return null;
+    }
 
     /**
-     * Process {@code MapTypeAST} element.
+     * Visit a templates.
      *
-     * @param map MapTypeAST
-     * @param arg argument
-     */
-    void visit(MapTypeAST map, A arg);
-
-    /**
-     * Process {@code ListTypeAST} element.
-     *
-     * @param list ListTypeAST
+     * @param node node
      * @param arg  argument
+     * @return visit result
      */
-    void visit(ListTypeAST list, A arg);
+    default R visit(TemplatesNode node, A arg) {
+        return null;
+    }
 
     /**
-     * Process {@code ModelKeyMapAST} element.
+     * Visit model.
      *
-     * @param map ModelKeyMapAST
-     * @param arg argument
+     * @param node node
+     * @param arg  argument
+     * @return visit result
      */
-    void visit(ModelKeyMapAST map, A arg);
+    default R visit(DescriptorNodes.ModelNode node, A arg) {
+        return null;
+    }
+
+    /**
+     * Visit an if statement.
+     *
+     * @param node node
+     * @param arg  argument
+     * @return visit result
+     */
+    default R visit(IfStatementNode node, A arg) {
+        return null;
+    }
+
+    /**
+     * Visit a model keyed value.
+     *
+     * @param node node
+     * @param arg  argument
+     * @return visit result
+     */
+    default R visit(ModelKeyedValueNode node, A arg) {
+        return null;
+    }
+
+    /**
+     * Visit a model key value.
+     *
+     * @param node node
+     * @param arg  argument
+     * @return visit result
+     */
+    default R visit(ModelValueNode<?> node, A arg) {
+        return null;
+    }
+
+    /**
+     * Visit a model keyed list.
+     *
+     * @param node node
+     * @param arg  argument
+     * @return visit result
+     */
+    default R visit(ModelKeyedListNode node, A arg) {
+        return null;
+    }
+
+    /**
+     * Visit a model map.
+     *
+     * @param node node
+     * @param arg  argument
+     * @return visit result
+     */
+    default R visit(ModelMapNode<?> node, A arg) {
+        return null;
+    }
+
+    /**
+     * Visit a model list.
+     *
+     * @param node node
+     * @param arg  argument
+     * @return visit result
+     */
+    default R visit(ModelListNode<?> node, A arg) {
+        return null;
+    }
+
+    /**
+     * Visit a model keyed map.
+     *
+     * @param node node
+     * @param arg  argument
+     * @return visit result
+     */
+    default R visit(ModelKeyedMapNode node, A arg) {
+        return null;
+    }
+
+    /**
+     * Visit a user input.
+     *
+     * @param node node
+     * @param arg  argument
+     * @return visit result
+     */
+    default R visit(UserInputNode node, A arg) {
+        return null;
+    }
 }

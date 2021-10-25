@@ -19,9 +19,9 @@ package io.helidon.build.archetype.engine.v2.descriptor;
 import java.util.Objects;
 
 /**
- * Archetype text in {@link Input} nodes.
+ * Archetype text in {@link InputBlock} nodes.
  */
-public class InputText extends InputNode {
+public class InputText extends Input {
 
     private final String placeHolder;
     private String help;
@@ -85,7 +85,7 @@ public class InputText extends InputNode {
                 + ", help=" + help()
                 + ", label=" + label()
                 + ", name=" + name()
-                + ", default=" + def()
+                + ", default=" + defaultValue()
                 + ", prompt=" + prompt()
                 + ", optional=" + isOptional()
                 + '}';

@@ -19,9 +19,9 @@ package io.helidon.build.archetype.engine.v2.descriptor;
 import java.util.Objects;
 
 /**
- * Archetype text in {@link Context} nodes.
+ * Archetype text in {@link ContextBlock} nodes.
  */
-public class ContextText extends ContextNode {
+public class ContextText extends Context {
 
     private String text;
 

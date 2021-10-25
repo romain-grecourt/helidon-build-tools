@@ -18,7 +18,7 @@ package io.helidon.build.archetype.engine.v2;
 
 import io.helidon.build.archetype.engine.v2.archive.Archetype;
 import io.helidon.build.archetype.engine.v2.archive.ArchetypeFactory;
-import io.helidon.build.archetype.engine.v2.interpreter.ContextAST;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes;
 import io.helidon.build.archetype.engine.v2.interpreter.Flow;
 
 import org.junit.jupiter.api.BeforeAll;
@@ -29,7 +29,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -52,9 +51,9 @@ public class OutputGeneratorTest {
         List<String> expectedFiles = List.of("generatedDocker.xml", "Readme2.md", "pom.xml", "README.md");
         archetype = getArchetype();
 
-        Flow flow = Flow.builder().archetype(archetype).startDescriptorPath("archetype.xml").build();
-        flow.build(new ContextAST());
-        flow.build(new ContextAST());
+        Flow flow = Flow.builder().archetype(archetype).entrypoint("archetype.xml").build();
+        flow.build(new DescriptorNodes.ContextBlockNode());
+        flow.build(new DescriptorNodes.ContextBlockNode());
         OutputGenerator generator = new OutputGenerator(flow.result().get());
 
         generator.generate(tempDir.toFile());

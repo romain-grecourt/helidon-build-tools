@@ -16,42 +16,39 @@
 
 package io.helidon.build.archetype.engine.v2.descriptor;
 
-import java.util.LinkedList;
 import java.util.Objects;
 
 /**
- * Archetype Context.
+ * Base class for context nodes.
  */
-public class Context {
+public abstract class Context {
 
-    private final LinkedList<ContextNode> nodes = new LinkedList<>();
+    private final String path;
+
+    protected Context(String path) {
+        this.path = Objects.requireNonNull(path, "path is null");
+    }
 
     /**
-     * Get the context nodes.
+     * Get the context path for this node.
      *
-     * @return list of context node, never {@code null}
+     * @return path
      */
-    public LinkedList<ContextNode> nodes() {
-        return nodes;
+    public String path() {
+        return path;
     }
 
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        Context context = (Context) o;
-        return Objects.equals(nodes, context.nodes);
+        if (!super.equals(o)) return false;
+        Context contextNode = (Context) o;
+        return path.equals(contextNode.path);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(nodes);
-    }
-
-    @Override
-    public String toString() {
-        return "Context{"
-                + "nodes=" + nodes
-                + '}';
+        return Objects.hash(super.hashCode(), path);
     }
 }

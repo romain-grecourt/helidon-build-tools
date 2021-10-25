@@ -18,13 +18,14 @@ package io.helidon.build.archetype.engine.v2.prompter;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
-import io.helidon.build.archetype.engine.v2.interpreter.ContextEnumAST;
-import io.helidon.build.archetype.engine.v2.interpreter.ContextNodeAST;
-import io.helidon.build.archetype.engine.v2.interpreter.InputEnumAST;
-import io.helidon.build.archetype.engine.v2.interpreter.OptionAST;
-import io.helidon.build.archetype.engine.v2.interpreter.UserInputAST;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextEnumNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputEnumNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputOptionNode;
+import io.helidon.build.archetype.engine.v2.ast.UserInputNode;
+
+import static java.util.stream.Collectors.toList;
 
 /**
  * Prompt of the one value from the enum.
@@ -33,22 +34,9 @@ public class EnumPrompt extends Prompt<String> {
 
     private final List<Option> options = new ArrayList<>();
 
-    private EnumPrompt(
-            String stepLabel,
-            String stepHelp,
-            String help,
-            String label,
-            String name,
-            String def,
-            String prompt,
-            List<Option> options,
-            boolean optional,
-            boolean canBeGenerated
-    ) {
-        super(stepLabel, stepHelp, help, label, name, def, prompt, optional, canBeGenerated);
-        if (options != null) {
-            this.options.addAll(options);
-        }
+    private EnumPrompt(Builder builder) {
+        super(builder);
+        this.options.addAll(builder.options);
     }
 
     /**
@@ -75,14 +63,11 @@ public class EnumPrompt extends Prompt<String> {
     }
 
     @Override
-    public ContextNodeAST acceptAndConvert(Prompter prompter, String path) {
-        String value = prompter.prompt(this);
-        ContextEnumAST result = new ContextEnumAST(path);
-        result.value(value);
-        return result;
+    public ContextNode<?> acceptAndConvert(Prompter prompter, String path) {
+        return new ContextEnumNode(path, prompter.prompt(this));
     }
 
-    public static class Builder extends Prompt.Builder<EnumPrompt, EnumPrompt.Builder> {
+    public static class Builder extends Prompt.Builder<EnumPrompt, Builder> {
 
         private List<Option> options = new ArrayList<>();
 
@@ -92,7 +77,7 @@ public class EnumPrompt extends Prompt<String> {
          * @param options list of options
          * @return Builder
          */
-        public EnumPrompt.Builder options(List<Option> options) {
+        public Builder options(List<Option> options) {
             if (options != null) {
                 this.options = options;
             }
@@ -100,52 +85,36 @@ public class EnumPrompt extends Prompt<String> {
         }
 
         @Override
-        public EnumPrompt.Builder instance() {
+        public Builder instance() {
             return this;
         }
 
         @Override
-        public EnumPrompt.Builder userInputAST(UserInputAST userInputAST) {
-            if (userInputAST.children().isEmpty()) {
-                throw new IllegalArgumentException("UserInputAST must contain a child note");
+        public Builder userInputAST(UserInputNode userInput) {
+            if (userInput.children().isEmpty()) {
+                throw new IllegalArgumentException("UserInputNode must contain a child");
             }
-            if (userInputAST.children().get(0) instanceof InputEnumAST) {
-                InputEnumAST inputEnumAST = (InputEnumAST) userInputAST.children().get(0);
-
-                initFields(userInputAST);
+            if (userInput.children().get(0) instanceof InputEnumNode) {
+                InputEnumNode inputEnum = (InputEnumNode) userInput.children().get(0);
+                initFields(userInput);
                 options.addAll(
-                        inputEnumAST.children().stream()
-                                .filter(ch -> ch instanceof OptionAST)
-                                .map(ch -> (OptionAST) ch)
-                                .map(o -> new Option(o.label(), o.value(), o.help()))
-                                .collect(Collectors.toList())
-                );
-
+                        inputEnum.children()
+                                 .stream()
+                                 .filter(ch -> ch instanceof InputOptionNode)
+                                 .map(ch -> (InputOptionNode) ch)
+                                 .map(o -> new Option(o.descriptor().label(), o.value(), o.descriptor().help()))
+                                 .collect(toList()));
                 return this;
             }
-            throw new IllegalArgumentException(
-                    String.format(
-                            "Incorrect type of the child node in the UserInputAST instance. Must be - %s. Actual - %s.",
-                            EnumPrompt.class.getName(),
-                            userInputAST.children().get(0).getClass().getName()
-                    )
-            );
+            throw new IllegalArgumentException(String.format(
+                    "Incorrect child type, expected: %s, actual: %s",
+                    EnumPrompt.class.getName(),
+                    userInput.children().get(0).getClass().getName()));
         }
 
         @Override
         public EnumPrompt build() {
-            return new EnumPrompt(
-                    stepLabel(),
-                    stepHelp(),
-                    help(),
-                    label(),
-                    name(),
-                    defaultValue(),
-                    prompt(),
-                    options,
-                    optional(),
-                    canBeGenerated()
-            );
+            return new EnumPrompt(this);
         }
     }
 }

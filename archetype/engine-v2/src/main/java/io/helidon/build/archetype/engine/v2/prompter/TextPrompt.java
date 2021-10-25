@@ -16,10 +16,8 @@
 
 package io.helidon.build.archetype.engine.v2.prompter;
 
-import io.helidon.build.archetype.engine.v2.interpreter.ContextNodeAST;
-import io.helidon.build.archetype.engine.v2.interpreter.ContextTextAST;
-import io.helidon.build.archetype.engine.v2.interpreter.InputTextAST;
-import io.helidon.build.archetype.engine.v2.interpreter.UserInputAST;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes;
+import io.helidon.build.archetype.engine.v2.ast.UserInputNode;
 
 /**
  * Prompt of the text value.
@@ -68,10 +66,10 @@ public class TextPrompt extends Prompt<String> {
     }
 
     @Override
-    public ContextNodeAST acceptAndConvert(Prompter prompter, String path) {
+    public DescriptorNodes.ContextNode acceptAndConvert(Prompter prompter, String path) {
         String value = prompter.prompt(this);
-        ContextTextAST result = new ContextTextAST(path);
-        result.text(value);
+        DescriptorNodes.ContextTextNode result = new DescriptorNodes.ContextTextNode(path);
+        result.value(value);
         return result;
     }
 
@@ -96,12 +94,12 @@ public class TextPrompt extends Prompt<String> {
         }
 
         @Override
-        public Builder userInputAST(UserInputAST userInputAST) {
+        public Builder userInputAST(UserInputNode userInputAST) {
             if (userInputAST.children().isEmpty()) {
                 throw new IllegalArgumentException("UserInputAST must contain a child note");
             }
-            if (userInputAST.children().get(0) instanceof InputTextAST) {
-                InputTextAST inputTextAST = (InputTextAST) userInputAST.children().get(0);
+            if (userInputAST.children().get(0) instanceof DescriptorNodes.InputTextNode) {
+                DescriptorNodes.InputTextNode inputTextAST = (DescriptorNodes.InputTextNode) userInputAST.children().get(0);
 
                 initFields(userInputAST);
                 placeHolder = inputTextAST.placeHolder();
@@ -111,7 +109,7 @@ public class TextPrompt extends Prompt<String> {
             throw new IllegalArgumentException(
                     String.format(
                             "Incorrect type of the child node in the UserInputAST instance. Must be - %s. Actual - %s.",
-                            InputTextAST.class.getName(),
+                            DescriptorNodes.InputTextNode.class.getName(),
                             userInputAST.children().get(0).getClass().getName()
                     )
             );

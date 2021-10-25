@@ -20,11 +20,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import io.helidon.build.archetype.engine.v2.interpreter.ContextListAST;
-import io.helidon.build.archetype.engine.v2.interpreter.ContextNodeAST;
-import io.helidon.build.archetype.engine.v2.interpreter.InputListAST;
-import io.helidon.build.archetype.engine.v2.interpreter.OptionAST;
-import io.helidon.build.archetype.engine.v2.interpreter.UserInputAST;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes;
+import io.helidon.build.archetype.engine.v2.ast.UserInputNode;
 
 /**
  * Prompt of the one or more values from the list.
@@ -35,53 +32,11 @@ public class ListPrompt extends Prompt<List<String>> {
     private final String max;
     private final List<Option> options = new ArrayList<>();
 
-    private ListPrompt(
-            String stepLabel,
-            String stepHelp,
-            String help,
-            String label,
-            String name,
-            String def,
-            String prompt,
-            String min,
-            String max,
-            List<Option> options,
-            boolean optional,
-            boolean canBeGenerated
-    ) {
-        super(stepLabel, stepHelp, help, label, name, def, prompt, optional, canBeGenerated);
-        this.max = max;
-        this.min = min;
-        if (options != null) {
-            this.options.addAll(options);
-        }
-    }
-
-    /**
-     * Get the options.
-     *
-     * @return options
-     */
-    public List<Option> options() {
-        return options;
-    }
-
-    /**
-     * Get the minimum.
-     *
-     * @return minimum
-     */
-    public String min() {
-        return min;
-    }
-
-    /**
-     * Get the maximum.
-     *
-     * @return maximum
-     */
-    public String max() {
-        return max;
+    private ListPrompt(Builder builder) {
+        super(builder);
+        this.max = builder.max;
+        this.min = builder.min;
+        this.options.addAll(builder.options);
     }
 
     /**
@@ -99,11 +54,8 @@ public class ListPrompt extends Prompt<List<String>> {
     }
 
     @Override
-    public ContextNodeAST acceptAndConvert(Prompter prompter, String path) {
-        List<String> values = prompter.prompt(this);
-        ContextListAST result = new ContextListAST(path);
-        result.values().addAll(values);
-        return result;
+    public DescriptorNodes.ContextNode<?> acceptAndConvert(Prompter prompter, String path) {
+        return new DescriptorNodes.ContextListNode(path, prompter.prompt(this));
     }
 
     public static class Builder extends Prompt.Builder<ListPrompt, ListPrompt.Builder> {
@@ -118,7 +70,7 @@ public class ListPrompt extends Prompt<List<String>> {
          * @param options list of options
          * @return Builder
          */
-        public ListPrompt.Builder options(List<Option> options) {
+        public Builder options(List<Option> options) {
             if (options != null) {
                 this.options = options;
             }
@@ -131,7 +83,7 @@ public class ListPrompt extends Prompt<List<String>> {
          * @param min min
          * @return Builder
          */
-        public ListPrompt.Builder min(String min) {
+        public Builder min(String min) {
             this.min = min;
             return this;
         }
@@ -142,32 +94,32 @@ public class ListPrompt extends Prompt<List<String>> {
          * @param max max
          * @return Builder
          */
-        public ListPrompt.Builder max(String max) {
+        public Builder max(String max) {
             this.max = max;
             return this;
         }
 
         @Override
-        public ListPrompt.Builder instance() {
+        public Builder instance() {
             return this;
         }
 
         @Override
-        public ListPrompt.Builder userInputAST(UserInputAST userInputAST) {
-            if (userInputAST.children().isEmpty()) {
+        public Builder userInputAST(UserInputNode userInput) {
+            if (userInput.children().isEmpty()) {
                 throw new IllegalArgumentException("UserInputAST must contain a child note");
             }
-            if (userInputAST.children().get(0) instanceof InputListAST) {
-                InputListAST inputListAST = (InputListAST) userInputAST.children().get(0);
+            if (userInput.children().get(0) instanceof DescriptorNodes.InputListNode) {
+                DescriptorNodes.InputListNode inputList = (DescriptorNodes.InputListNode) userInput.children().get(0);
 
-                initFields(userInputAST);
-                min = inputListAST.min();
-                max = inputListAST.max();
+                initFields(userInput);
+                min = inputList.descriptor().min();
+                max = inputList.descriptor().max();
                 options.addAll(
-                        inputListAST.children().stream()
-                                .filter(ch -> ch instanceof OptionAST)
-                                .map(ch -> (OptionAST) ch)
-                                .map(o -> new Option(o.label(), o.value(), o.help()))
+                        inputList.children().stream()
+                                .filter(ch -> ch instanceof DescriptorNodes.InputOptionNode)
+                                .map(ch -> (DescriptorNodes.InputOptionNode) ch)
+                                .map(o -> new Option(o.descriptor().label(), o.value(), o.descriptor().help()))
                                 .collect(Collectors.toList())
                 );
 
@@ -177,27 +129,14 @@ public class ListPrompt extends Prompt<List<String>> {
                     String.format(
                             "Incorrect type of the child node in the UserInputAST instance. Must be - %s. Actual - %s.",
                             ListPrompt.class.getName(),
-                            userInputAST.children().get(0).getClass().getName()
+                            userInput.children().get(0).getClass().getName()
                     )
             );
         }
 
         @Override
         public ListPrompt build() {
-            return new ListPrompt(
-                    stepLabel(),
-                    stepHelp(),
-                    help(),
-                    label(),
-                    name(),
-                    defaultValue(),
-                    prompt(),
-                    min,
-                    max,
-                    options,
-                    optional(),
-                    canBeGenerated()
-            );
+            return new ListPrompt(this);
         }
     }
 }

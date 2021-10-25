@@ -26,14 +26,14 @@ import java.util.List;
 import java.util.Map;
 
 import io.helidon.build.archetype.engine.v2.archive.Archetype;
-import io.helidon.build.archetype.engine.v2.interpreter.ASTNode;
-import io.helidon.build.archetype.engine.v2.interpreter.ContextAST;
-import io.helidon.build.archetype.engine.v2.interpreter.ContextNodeAST;
-import io.helidon.build.archetype.engine.v2.interpreter.ContextNodeASTFactory;
-import io.helidon.build.archetype.engine.v2.interpreter.ContextTextAST;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodeFactory;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextBlockNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.ContextTextNode;
+import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes.InputNode;
+import io.helidon.build.archetype.engine.v2.ast.Node;
 import io.helidon.build.archetype.engine.v2.interpreter.Flow;
-import io.helidon.build.archetype.engine.v2.interpreter.InputNodeAST;
-import io.helidon.build.archetype.engine.v2.interpreter.UserInputAST;
+import io.helidon.build.archetype.engine.v2.ast.UserInputNode;
 import io.helidon.build.archetype.engine.v2.interpreter.Visitor;
 import io.helidon.build.archetype.engine.v2.prompter.Prompt;
 import io.helidon.build.archetype.engine.v2.prompter.PromptFactory;
@@ -48,8 +48,8 @@ public class ArchetypeEngineV2 {
     private final String startPoint;
     private final Prompter prompter;
     private final Map<String, String> contextValues = new HashMap<>();
+    private final List<Visitor<Node, Void>> visitors = new ArrayList<>();
     private boolean skipOptional;
-    private List<Visitor<ASTNode>> additionalVisitors = new ArrayList<>();
 
     /**
      * Create a new archetype engine instance.
@@ -59,16 +59,14 @@ public class ArchetypeEngineV2 {
      * @param prompter           prompter
      * @param params             external Flow Context Values
      * @param skipOptional       mark that indicates whether to skip optional input
-     * @param additionalVisitors additional Visitor for the {@code Interpreter}
+     * @param visitors additional Visitor for the {@code Interpreter}
      */
-    public ArchetypeEngineV2(
-            Archetype archetype,
-            String startPoint,
-            Prompter prompter,
-            Map<String, String> params,
-            boolean skipOptional,
-            List<Visitor<ASTNode>> additionalVisitors
-    ) {
+    public ArchetypeEngineV2(Archetype archetype,
+                             String startPoint,
+                             Prompter prompter,
+                             Map<String, String> params,
+                             boolean skipOptional,
+                             List<Visitor<Node, Void>> visitors) {
         this.archetype = archetype;
         this.startPoint = startPoint;
         this.prompter = prompter;
@@ -76,8 +74,8 @@ public class ArchetypeEngineV2 {
             contextValues.putAll(params);
         }
         this.skipOptional = skipOptional;
-        if (additionalVisitors != null) {
-            this.additionalVisitors.addAll(additionalVisitors);
+        if (visitors != null) {
+            this.visitors.addAll(visitors);
         }
     }
 
@@ -89,34 +87,33 @@ public class ArchetypeEngineV2 {
     public void generate(File outputDirectory) {
         Flow flow = Flow.builder()
                 .archetype(archetype)
-                .startDescriptorPath(startPoint)
+                .entrypoint(startPoint)
                 .skipOptional(skipOptional)
-                .addAdditionalVisitor(additionalVisitors)
+                .additionalVisitor(visitors)
                 .build();
 
-        ContextAST context = new ContextAST();
+        ContextBlockNode context = new ContextBlockNode();
         initContext(context, outputDirectory);
         flow.build(context);
         while (!flow.unresolvedInputs().isEmpty()) {
-            UserInputAST userInputAST = flow.unresolvedInputs().get(0);
-            ContextNodeAST contextNodeAST = null;
-            if (contextValues.containsKey(userInputAST.path())) {
-                contextNodeAST = ContextNodeASTFactory.create(
-                        (InputNodeAST) userInputAST.children().get(0),
-                        userInputAST.path(),
-                        contextValues.get(userInputAST.path())
-                );
+            UserInputNode userInputNode = flow.unresolvedInputs().get(0);
+            DescriptorNodes.ContextNode<?> contextNode;
+            if (contextValues.containsKey(userInputNode.path())) {
+                contextNode = DescriptorNodeFactory.create(
+                        (InputNode<?>) userInputNode.children().get(0),
+                        userInputNode.path(),
+                        contextValues.get(userInputNode.path()));
             } else {
-                Prompt<?> prompt = PromptFactory.create(userInputAST, flow.canBeGenerated());
-                contextNodeAST = prompt.acceptAndConvert(prompter, userInputAST.path());
+                Prompt<?> prompt = PromptFactory.create(userInputNode, flow.canBeGenerated());
+                contextNode = prompt.acceptAndConvert(prompter, userInputNode.path());
                 flow.skipOptional(prompter.skipOptional());
             }
-            ContextAST contextAST = new ContextAST();
-            contextAST.children().add(contextNodeAST);
+            ContextBlockNode contextAST = new ContextBlockNode();
+            contextAST.children().add(contextNode);
             flow.build(contextAST);
         }
 
-        flow.build(new ContextAST());
+        flow.build(new ContextBlockNode());
         Flow.Result result = flow.result().orElseThrow(() -> {
             throw new RuntimeException("No results after the Flow instance finished its work. Project cannot be generated.");
         });
@@ -135,14 +132,14 @@ public class ArchetypeEngineV2 {
         }
     }
 
-    private void initContext(ContextAST context, File outputDirectory) {
-        ContextTextAST currentDateNode = new ContextTextAST("current.date");
+    private void initContext(ContextBlockNode context, File outputDirectory) {
+        ContextTextNode currentDateNode = new ContextTextNode("current.date");
         DateTimeFormatter dtf = DateTimeFormatter.ofPattern("EEE MMM dd HH:mm:ss z yyyy");
         ZonedDateTime now = ZonedDateTime.now();
-        currentDateNode.text(dtf.format(now));
+        currentDateNode.value(dtf.format(now));
         context.children().add(currentDateNode);
-        ContextTextAST currentDirNode = new ContextTextAST("project.directory");
-        currentDirNode.text(outputDirectory.toString());
+        ContextTextNode currentDirNode = new ContextTextNode("project.directory");
+        currentDirNode.value(outputDirectory.toString());
         context.children().add(currentDirNode);
     }
 }
