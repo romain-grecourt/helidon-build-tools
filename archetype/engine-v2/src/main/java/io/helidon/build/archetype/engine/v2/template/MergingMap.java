@@ -20,7 +20,7 @@ import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import io.helidon.build.archetype.engine.v2.descriptor.ModelValue;
+import io.helidon.build.archetype.engine.v2.descriptor.ArchetypeDescriptor;
 
 /**
  * Map with unique key. For the same key, Object are merge together
@@ -57,8 +57,8 @@ public class MergingMap<K, V> extends LinkedHashMap<K, V> {
             return second;
         }
 
-        if (first instanceof ModelValue) {
-            return mergeValues((ModelValue) first, (ModelValue) second);
+        if (first instanceof ArchetypeDescriptor.ModelValue) {
+            return mergeValues((ArchetypeDescriptor.ModelValue) first, (ArchetypeDescriptor.ModelValue) second);
         }
 
         if (first instanceof TemplateList) {
@@ -85,22 +85,22 @@ public class MergingMap<K, V> extends LinkedHashMap<K, V> {
         return (V) second;
     }
 
-    private V mergeValues(ModelValue first, ModelValue second) throws IOException {
+    private V mergeValues(ArchetypeDescriptor.ModelValue first, ArchetypeDescriptor.ModelValue second) throws IOException {
         String value = mergeValue(first, second);
         String url = mergeURL(first, second);
         String file = mergeFile(first, second);
         String template = mergeTemplate(first, second);
         int order = mergeOrder(first, second);
-        ModelValue valueType =  new ModelValue(url, file, template, order, first.ifProperties());
+        ArchetypeDescriptor.ModelValue valueType =  new ArchetypeDescriptor.ModelValue(url, file, template, order, first.ifProperties());
         valueType.value(value);
         return (V) valueType;
     }
 
-    private int mergeOrder(ModelValue first, ModelValue second) {
+    private int mergeOrder(ArchetypeDescriptor.ModelValue first, ArchetypeDescriptor.ModelValue second) {
         return Math.min(first.order(), second.order());
     }
 
-    private String mergeTemplate(ModelValue first, ModelValue second) {
+    private String mergeTemplate(ArchetypeDescriptor.ModelValue first, ArchetypeDescriptor.ModelValue second) {
         if (first.template() == null || second.template() == null) {
             return "mustache";
         }
@@ -110,15 +110,15 @@ public class MergingMap<K, V> extends LinkedHashMap<K, V> {
         return first.template();
     }
 
-    private String mergeFile(ModelValue first, ModelValue second) throws IOException {
+    private String mergeFile(ArchetypeDescriptor.ModelValue first, ArchetypeDescriptor.ModelValue second) throws IOException {
         return first.file();
     }
 
-    private String mergeURL(ModelValue first, ModelValue second) {
+    private String mergeURL(ArchetypeDescriptor.ModelValue first, ArchetypeDescriptor.ModelValue second) {
         return first.url() == null ? second.url() : first.url();
     }
 
-    private String mergeValue(ModelValue first, ModelValue second) {
+    private String mergeValue(ArchetypeDescriptor.ModelValue first, ArchetypeDescriptor.ModelValue second) {
         return first.value() + second.value();
     }
 

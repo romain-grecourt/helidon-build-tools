@@ -16,6 +16,11 @@
 
 package io.helidon.build.archetype.engine.v2.prompter;
 
+import io.helidon.build.archetype.engine.v2.ast.BooleanInput;
+import io.helidon.build.archetype.engine.v2.ast.EnumInput;
+import io.helidon.build.archetype.engine.v2.ast.ListInput;
+import io.helidon.build.archetype.engine.v2.ast.TextInput;
+
 import java.util.List;
 
 /**
@@ -26,39 +31,40 @@ public interface Prompter {
     /**
      * Prompt a text value.
      *
-     * @param inputInfo information about the current request.
-     * @return user input (response from the user)
+     * @param input input
+     * @return value
      */
-    String prompt(TextPrompt inputInfo);
+    default String prompt(TextInput input) {
+        throw new UnsupportedOperationException();
+    }
 
     /**
-     * Prompt for a selection.
+     * Prompt an enum value.
      *
-     * @param inputInfo information about the current requests.
-     * @return user input (the value of the chosen option)
+     * @param input input
+     * @return value
      */
-    String prompt(EnumPrompt inputInfo);
+    default String prompt(EnumInput input) {
+        throw new UnsupportedOperationException();
+    }
 
     /**
-     * Prompt for a multiply selection.
+     * Prompt a list value.
      *
-     * @param inputInfo information about the current requests.
-     * @return user input (the values of the chosen options)
+     * @param input input
+     * @return value
      */
-    List<String> prompt(ListPrompt inputInfo);
+    default List<String> prompt(ListInput input) {
+        throw new UnsupportedOperationException();
+    }
 
     /**
-     * Prompt for a yes no.
+     * Prompt a boolean value.
      *
-     * @param inputInfo information about the current requests.
-     * @return user input (true if user chose yes, no - otherwise)
+     * @param input input
+     * @return value
      */
-    boolean prompt(BooleanPrompt inputInfo);
-
-    /**
-     * Indicates if interpreter has to skip optional inputs.
-     *
-     * @return true if interpreter has to skip optional inputs, false - otherwise.
-     */
-    boolean skipOptional();
+    default boolean prompt(BooleanInput input) {
+        throw new UnsupportedOperationException();
+    }
 }

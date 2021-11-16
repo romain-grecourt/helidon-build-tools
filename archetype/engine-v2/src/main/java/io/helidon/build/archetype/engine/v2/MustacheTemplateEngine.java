@@ -21,12 +21,14 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.io.UncheckedIOException;
 import java.io.Writer;
 import java.nio.charset.Charset;
 
 import com.github.mustachejava.DefaultMustacheFactory;
 import com.github.mustachejava.Mustache;
 import com.github.mustachejava.MustacheFactory;
+import io.helidon.build.archetype.engine.v2.ast.Model;
 
 /**
  * Implementation of the {@link TemplateEngine} for Mustache.
@@ -39,13 +41,18 @@ public class MustacheTemplateEngine implements TemplateEngine {
     }
 
     @Override
-    public void render(
-            InputStream template, String templateName, Charset charset, OutputStream target, Object scope
-    ) throws IOException {
+    public void render(InputStream template,
+                       String templateName,
+                       Charset charset,
+                       OutputStream target,
+                       Model scope) {
+
         MustacheFactory factory = new DefaultMustacheFactory();
         Mustache mustache = factory.compile(new InputStreamReader(template), templateName);
         try (Writer writer = new OutputStreamWriter(target, charset)) {
             mustache.execute(writer, scope).flush();
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
         }
     }
 }

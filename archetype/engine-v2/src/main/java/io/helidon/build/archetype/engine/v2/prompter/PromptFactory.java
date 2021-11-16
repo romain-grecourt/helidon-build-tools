@@ -15,49 +15,46 @@
  */
 package io.helidon.build.archetype.engine.v2.prompter;
 
-import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes;
-import io.helidon.build.archetype.engine.v2.ast.UserInputNode;
-
 /**
  * Factory methods to create {@link Prompt} instances.
  */
 public abstract class PromptFactory {
 
-    /**
-     * Creates {@link Prompt} instance depending on the type of the input {@code UserInputAST} parameter.
-     *
-     * @param userInputAST   userInputAST
-     * @param canBeGenerated mark that indicates whether project can be generated if optional inputs will be skipped
-     * @return {@link Prompt} instance
-     */
-    public static Prompt<?> create(UserInputNode userInputAST, boolean canBeGenerated) {
-        if (userInputAST.children().isEmpty()) {
-            throw new IllegalArgumentException("UserInputAST must contain a child note");
-        }
-        if (userInputAST.children().get(0) instanceof DescriptorNodes.InputBooleanNode) {
-            return BooleanPrompt.builder()
-                    .userInputAST(userInputAST)//(UserInputAST) userInputAST.children().get(0)
-                    .canBeGenerated(canBeGenerated)
-                    .build();
-        }
-        if (userInputAST.children().get(0) instanceof DescriptorNodes.InputTextNode) {
-            return TextPrompt.builder()
-                    .userInputAST(userInputAST)//(UserInputAST) userInputAST.children().get(0)
-                    .canBeGenerated(canBeGenerated)
-                    .build();
-        }
-        if (userInputAST.children().get(0) instanceof DescriptorNodes.InputEnumNode) {
-            return EnumPrompt.builder()
-                    .userInputAST(userInputAST)//.children().get(0)
-                    .canBeGenerated(canBeGenerated)
-                    .build();
-        }
-        if (userInputAST.children().get(0) instanceof DescriptorNodes.InputListNode) {
-            return ListPrompt.builder()
-                    .userInputAST(userInputAST)//(UserInputAST) userInputAST.children().get(0)
-                    .canBeGenerated(canBeGenerated)
-                    .build();
-        }
-        throw new IllegalArgumentException("Unexpected type of a child note in UserInputAST object");
-    }
+//    /**
+//     * Creates {@link Prompt} instance depending on the type of the input {@code UserInputAST} parameter.
+//     *
+//     * @param userInputAST   userInputAST
+//     * @param canBeGenerated mark that indicates whether project can be generated if optional inputs will be skipped
+//     * @return {@link Prompt} instance
+//     */
+//    public static Prompt<?> create(UserInputNode userInputAST, boolean canBeGenerated) {
+//        if (userInputAST.children().isEmpty()) {
+//            throw new IllegalArgumentException("UserInputAST must contain a child note");
+//        }
+//        if (userInputAST.children().get(0) instanceof DescriptorNodes.InputBooleanNode) {
+//            return BooleanPrompt.builder()
+//                    .userInputAST(userInputAST)//(UserInputAST) userInputAST.children().get(0)
+//                    .canBeGenerated(canBeGenerated)
+//                    .build();
+//        }
+//        if (userInputAST.children().get(0) instanceof DescriptorNodes.InputTextNode) {
+//            return TextPrompt.builder()
+//                    .userInputAST(userInputAST)//(UserInputAST) userInputAST.children().get(0)
+//                    .canBeGenerated(canBeGenerated)
+//                    .build();
+//        }
+//        if (userInputAST.children().get(0) instanceof DescriptorNodes.InputEnumNode) {
+//            return EnumPrompt.builder()
+//                    .userInputAST(userInputAST)//.children().get(0)
+//                    .canBeGenerated(canBeGenerated)
+//                    .build();
+//        }
+//        if (userInputAST.children().get(0) instanceof DescriptorNodes.InputListNode) {
+//            return ListPrompt.builder()
+//                    .userInputAST(userInputAST)//(UserInputAST) userInputAST.children().get(0)
+//                    .canBeGenerated(canBeGenerated)
+//                    .build();
+//        }
+//        throw new IllegalArgumentException("Unexpected type of a child note in UserInputAST object");
+//    }
 }

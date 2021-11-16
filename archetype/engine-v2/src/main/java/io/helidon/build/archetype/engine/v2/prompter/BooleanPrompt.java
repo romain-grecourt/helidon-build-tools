@@ -16,88 +16,85 @@
 
 package io.helidon.build.archetype.engine.v2.prompter;
 
-import io.helidon.build.archetype.engine.v2.ast.DescriptorNodes;
-import io.helidon.build.archetype.engine.v2.ast.UserInputNode;
-
 /**
  * Prompt of the boolean value.
  */
 public class BooleanPrompt extends Prompt<Boolean> {
 
-    private BooleanPrompt(
-            String stepLabel,
-            String stepHelp,
-            String help,
-            String label,
-            String name,
-            String def,
-            String prompt,
-            boolean optional,
-            boolean canBeGenerated
-    ) {
-        super(stepLabel, stepHelp, help, label, name, def, prompt, optional, canBeGenerated);
-    }
-
-    @Override
-    public Boolean accept(Prompter prompter) {
-        return prompter.prompt(this);
-    }
-
-    @Override
-    public DescriptorNodes.ContextNode acceptAndConvert(Prompter prompter, String path) {
-        boolean value = prompter.prompt(this);
-        DescriptorNodes.ContextBooleanNode result = new DescriptorNodes.ContextBooleanNode(path);
-        result.bool(value);
-        return result;
-    }
-
-    /**
-     * Create a new builder.
-     *
-     * @return a new builder
-     */
-    public static BooleanPrompt.Builder builder() {
-        return new BooleanPrompt.Builder();
-    }
-
-    public static class Builder extends Prompt.Builder<BooleanPrompt, BooleanPrompt.Builder> {
-
-        @Override
-        public BooleanPrompt.Builder instance() {
-            return this;
-        }
-
-        @Override
-        public BooleanPrompt.Builder userInputAST(UserInputNode userInputAST) {
-            if (userInputAST.children().isEmpty()) {
-                throw new IllegalArgumentException("UserInputAST must contain a child note");
-            }
-            if (userInputAST.children().get(0) instanceof DescriptorNodes.InputBooleanNode) {
-                initFields(userInputAST);
-                return this;
-            }
-            throw new IllegalArgumentException(
-                    String.format(
-                            "Incorrect type of the child node in the UserInputAST instance. Must be - %s. Actual - %s.",
-                            DescriptorNodes.InputBooleanNode.class.getName(),
-                            userInputAST.children().get(0).getClass().getName()
-                    )
-            );
-        }
-
-        @Override
-        public BooleanPrompt build() {
-            return new BooleanPrompt(
-                    stepLabel(),
-                    stepHelp(),
-                    help(),
-                    label(),
-                    name(),
-                    defaultValue(),
-                    prompt(),
-                    optional(),
-                    canBeGenerated()
-            );
-        }
-    }
+//    private BooleanPrompt(
+//            String stepLabel,
+//            String stepHelp,
+//            String help,
+//            String label,
+//            String name,
+//            String def,
+//            String prompt,
+//            boolean optional,
+//            boolean canBeGenerated
+//    ) {
+//        super(stepLabel, stepHelp, help, label, name, def, prompt, optional, canBeGenerated);
+//    }
+//
+//    @Override
+//    public Boolean accept(Prompter prompter) {
+//        return prompter.prompt(this);
+//    }
+//
+//    @Override
+//    public DescriptorNodes.ContextNode acceptAndConvert(Prompter prompter, String path) {
+//        boolean value = prompter.prompt(this);
+//        DescriptorNodes.ContextBooleanNode result = new DescriptorNodes.ContextBooleanNode(path);
+//        result.bool(value);
+//        return result;
+//    }
+//
+//    /**
+//     * Create a new builder.
+//     *
+//     * @return a new builder
+//     */
+//    public static BooleanPrompt.Builder builder() {
+//        return new BooleanPrompt.Builder();
+//    }
+//
+//    public static class Builder extends Prompt.Builder<BooleanPrompt, BooleanPrompt.Builder> {
+//
+//        @Override
+//        public BooleanPrompt.Builder instance() {
+//            return this;
+//        }
+//
+//        @Override
+//        public BooleanPrompt.Builder userInputAST(UserInputNode userInputAST) {
+//            if (userInputAST.children().isEmpty()) {
+//                throw new IllegalArgumentException("UserInputAST must contain a child note");
+//            }
+//            if (userInputAST.children().get(0) instanceof DescriptorNodes.InputBooleanNode) {
+//                initFields(userInputAST);
+//                return this;
+//            }
+//            throw new IllegalArgumentException(
+//                    String.format(
+//                            "Incorrect type of the child node in the UserInputAST instance. Must be - %s. Actual - %s.",
+//                            DescriptorNodes.InputBooleanNode.class.getName(),
+//                            userInputAST.children().get(0).getClass().getName()
+//                    )
+//            );
+//        }
+//
+//        @Override
+//        public BooleanPrompt build() {
+//            return new BooleanPrompt(
+//                    stepLabel(),
+//                    stepHelp(),
+//                    help(),
+//                    label(),
+//                    name(),
+//                    defaultValue(),
+//                    prompt(),
+//                    optional(),
+//                    canBeGenerated()
+//            );
+//        }
+//    }
 }

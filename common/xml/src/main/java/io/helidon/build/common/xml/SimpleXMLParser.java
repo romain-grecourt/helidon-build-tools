@@ -40,7 +40,7 @@ public final class SimpleXMLParser {
          *
          * @param name       the element name
          * @param attributes the element attributes
-         * @throws Exception if any error occurs
+         * @throws IllegalStateException if any error occurs
          */
         default void startElement(String name, Map<String, String> attributes) {
         }
@@ -49,7 +49,7 @@ public final class SimpleXMLParser {
          * Receive notification of the end of an element.
          *
          * @param name the element name
-         * @throws Exception if any error occurs
+         * @throws IllegalStateException if any error occurs
          */
         default void endElement(String name) {
         }
@@ -58,7 +58,7 @@ public final class SimpleXMLParser {
          * Receive notification of text data inside an element.
          *
          * @param data the text data
-         * @throws Exception if any error occurs
+         * @throws IllegalStateException if any error occurs
          */
         default void elementText(String data) {
         }
@@ -96,6 +96,7 @@ public final class SimpleXMLParser {
          * @param defaultValue the fallback value, may be {@code null}
          * @return attribute value, may be {@code null} if fallback is null
          */
+        @SuppressWarnings("unused")
         default String readAttribute(String name, String qName, Map<String, String> attr, String defaultValue) {
             String value = attr.get(name);
             if (value == null) {
@@ -132,6 +133,7 @@ public final class SimpleXMLParser {
          * @param attr  attributes
          * @return list of values, empty if the attribute is not found
          */
+        @SuppressWarnings("unused")
         default List<String> readAttributeList(String name, String qName, Map<String, String> attr) {
             String value = attr.get(name);
             if (value == null) {
@@ -204,7 +206,36 @@ public final class SimpleXMLParser {
      * @throws IOException          If any IO error occurs
      */
     public static void parse(InputStream is, Reader reader) throws IOException {
-        new SimpleXMLParser(is, reader).doParse();
+        new SimpleXMLParser(is, reader).parse();
+    }
+
+    /**
+     * Create a new parser.
+     *
+     * @param is     InputStream containing the content to be parsed.
+     * @param reader the reader to use.
+     * @throws NullPointerException if the given InputStream or Reader is {@code null}
+     */
+    public static SimpleXMLParser create(InputStream is, Reader reader) {
+        return new SimpleXMLParser(is, reader);
+    }
+
+    /**
+     * Get the current line number.
+     *
+     * @return line number
+     */
+    public int lineNumber() {
+        return lineNo;
+    }
+
+    /**
+     * Get the current line character number.
+     *
+     * @return line character number
+     */
+    public int charNumber() {
+        return charNo;
     }
 
     private void processStart() throws IOException {
@@ -234,7 +265,7 @@ public final class SimpleXMLParser {
             position += CDATA_START.length();
         } else if (hasToken(CDATA_END)) {
             state = STATE.END_ELEMENT;
-            position +=  CDATA_END.length();
+            position += CDATA_END.length();
         } else if (hasToken(COMMENT_START)) {
             state = STATE.COMMENT;
             resumeState = STATE.ELEMENT;
@@ -340,22 +371,8 @@ public final class SimpleXMLParser {
         }
     }
 
-    private void processSingleQuoteValue() {
-        if (hasToken(SINGLE_QUOTE)) {
-            position++;
-            state = STATE.ATTRIBUTES;
-            attributes.put(attrNameBuilder.toString(), decode(attrValueBuilder.toString()));
-            attrNameBuilder = new StringBuilder();
-            attrValueBuilder = new StringBuilder();
-        } else {
-            validateAttrValueChar(c);
-            position++;
-            attrValueBuilder.append(c);
-        }
-    }
-
-    private void processDoubleQuotedValue() {
-        if (hasToken(DOUBLE_QUOTE)) {
+    private void processQuoteValue(char token) {
+        if (hasToken(token)) {
             position++;
             state = STATE.ATTRIBUTES;
             attributes.put(attrNameBuilder.toString(), decode(attrValueBuilder.toString()));
@@ -400,7 +417,12 @@ public final class SimpleXMLParser {
         }
     }
 
-    private void doParse() throws IOException {
+    /**
+     * Start parsing.
+     *
+     * @throws IOException if an IO error occurs
+     */
+    public void parse() throws IOException {
         while (limit >= 0) {
             position = 0;
             limit = isr.read(buf);
@@ -434,10 +456,10 @@ public final class SimpleXMLParser {
                         processAttributeValue();
                         break;
                     case SINGLE_QUOTED_VALUE:
-                        processSingleQuoteValue();
+                        processQuoteValue(SINGLE_QUOTE);
                         break;
                     case DOUBLE_QUOTED_VALUE:
-                        processDoubleQuotedValue();
+                        processQuoteValue(DOUBLE_QUOTE);
                         break;
                     case TEXT:
                         processText();
@@ -489,7 +511,7 @@ public final class SimpleXMLParser {
             int offset = limit - position;
             System.arraycopy(buf, position, buf, 0, offset);
             int read = isr.read(buf, offset, buf.length - offset);
-            limit = offset + (read == -1  ? 0 : read);
+            limit = offset + (read == -1 ? 0 : read);
             position = 0;
         }
         return String.valueOf(buf, position, expected.length()).contentEquals(expected);

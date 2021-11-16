@@ -25,6 +25,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
 
+import io.helidon.build.archetype.engine.v2.ArchetypeArchive;
 import io.helidon.build.archetype.engine.v2.descriptor.ArchetypeDescriptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,120 +39,120 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class DirectoryArchetypeTest {
 
-    private static final String archetypeDirName = "arch";
-    private static final String wrongDirName = "wrong";
-    public static final String DESCRIPTOR_RESOURCE_NAME = "archetype.xml";
-
-    @TempDir
-    Path workDir;
-
-    private Path archDir;
-    private Path wrongDir;
-
-    @BeforeEach
-    public void setUp() throws IOException {
-        archDir = workDir.resolve(archetypeDirName);
-        archDir.toFile().mkdir();
-        wrongDir = workDir.resolve(wrongDirName);
-        wrongDir.toFile().mkdir();
-        for (int dir = 0; dir < 10; dir++) {
-            File directory = archDir.resolve("dir" + dir).toFile();
-            directory.mkdir();
-            for (int file = 0; file < 10; file++) {
-                directory.toPath().resolve("file" + file).toFile().createNewFile();
-            }
-        }
-    }
-
-    @Test
-    public void testGetPaths() {
-        Archetype archetype = new DirectoryArchetype(new File(archDir.toString()));
-
-        List<String> paths = archetype.getPaths();
-
-        assertThat(paths.size(), is(100));
-        assertThat(paths.stream().allMatch(path -> path.contains("file")), is(true));
-    }
-
-    @Test
-    public void testGetDescriptor() throws IOException {
-        String fileName = "schema" + workDir.getFileSystem().getSeparator() + "archetype.xml";
-        archDir.resolve("schema").toFile().mkdir();
-        Path path = archDir.resolve(fileName);
-        copyDescriptor(path);
-        Archetype archetype = new DirectoryArchetype(new File(archDir.toString()));
-
-        //absolute path
-        ArchetypeDescriptor descriptor = archetype.getDescriptor(fileName);
-        assertThat(descriptor, notNullValue());
-
-        //relative path
-        descriptor = archetype.getDescriptor(fileName);
-        assertThat(descriptor, notNullValue());
-
-        //incorrect path
-        Exception e = assertThrows(ArchetypeException.class, () -> {
-            String testValue = "someNonexistentFile";
-            archetype.getDescriptor(testValue);
-        });
-        assertThat(e.getMessage(), containsString("File someNonexistentFile does not exist"));
-    }
-
-    @Test
-    public void testGetInputStream() throws IOException {
-        Archetype archetype = new DirectoryArchetype(new File(archDir.toString()));
-        String testPathString;
-        InputStream inputStream;
-        FileSystem workFileSystem = workDir.getFileSystem();
-
-        //relative path
-        testPathString = "dir0" + workFileSystem.getSeparator() + "file5";
-        inputStream = archetype.getInputStream(testPathString);
-        assertThat(inputStream, notNullValue());
-        inputStream.close();
-
-        //absolute path
-        inputStream = archetype.getInputStream(workFileSystem.getSeparator() + testPathString);
-        assertThat(inputStream, notNullValue());
-        inputStream.close();
-
-        //Nonexistent file
-        Exception e = assertThrows(ArchetypeException.class, () -> {
-            String testValue = "someNonexistentFile";
-            archetype.getInputStream(testValue);
-        });
-        assertThat(e.getMessage(), containsString("File someNonexistentFile does not exist"));
-    }
-
-    @Test
-    public void testGetPath() {
-        Archetype archetype = new DirectoryArchetype(new File(archDir.toString()));
-        String testPathString;
-        Path expectedPath;
-        Path resultPath;
-        FileSystem workFileSystem = workDir.getFileSystem();
-
-        //relative path
-        testPathString = "dir0" + workFileSystem.getSeparator() + "file5";
-        expectedPath = Path.of(testPathString);
-        resultPath = archetype.getPath(testPathString);
-        assertThat(resultPath, is(expectedPath));
-
-        //absolute path
-        resultPath = archetype.getPath(expectedPath.toString());
-        assertThat(resultPath, is(expectedPath));
-
-        //Nonexistent file
-        Exception e = assertThrows(ArchetypeException.class, () -> {
-            String testValue = "someNonexistentFile";
-            archetype.getPath(testValue);
-        });
-        assertThat(e.getMessage(), containsString("File someNonexistentFile does not exist"));
-    }
-
-    private void copyDescriptor(Path destination) throws IOException {
-        InputStream is = DirectoryArchetypeTest.class.getClassLoader()
-                .getResourceAsStream("schema" + workDir.getFileSystem().getSeparator() + DESCRIPTOR_RESOURCE_NAME);
-        Files.copy(is, destination, StandardCopyOption.REPLACE_EXISTING);
-    }
+//    private static final String archetypeDirName = "arch";
+//    private static final String wrongDirName = "wrong";
+//    public static final String DESCRIPTOR_RESOURCE_NAME = "archetype.xml";
+//
+//    @TempDir
+//    Path workDir;
+//
+//    private Path archDir;
+//    private Path wrongDir;
+//
+//    @BeforeEach
+//    public void setUp() throws IOException {
+//        archDir = workDir.resolve(archetypeDirName);
+//        archDir.toFile().mkdir();
+//        wrongDir = workDir.resolve(wrongDirName);
+//        wrongDir.toFile().mkdir();
+//        for (int dir = 0; dir < 10; dir++) {
+//            File directory = archDir.resolve("dir" + dir).toFile();
+//            directory.mkdir();
+//            for (int file = 0; file < 10; file++) {
+//                directory.toPath().resolve("file" + file).toFile().createNewFile();
+//            }
+//        }
+//    }
+//
+//    @Test
+//    public void testGetPaths() {
+//        ArchetypeArchive archetype = new ExplodedArchetypeArchive(new File(archDir.toString()));
+//
+//        List<String> paths = archetype.path();
+//
+//        assertThat(paths.size(), is(100));
+//        assertThat(paths.stream().allMatch(path -> path.contains("file")), is(true));
+//    }
+//
+//    @Test
+//    public void testGetDescriptor() throws IOException {
+//        String fileName = "schema" + workDir.getFileSystem().getSeparator() + "archetype.xml";
+//        archDir.resolve("schema").toFile().mkdir();
+//        Path path = archDir.resolve(fileName);
+//        copyDescriptor(path);
+//        ArchetypeArchive archetype = new ExplodedArchetypeArchive(new File(archDir.toString()));
+//
+//        //absolute path
+//        ArchetypeDescriptor descriptor = archetype.script(fileName);
+//        assertThat(descriptor, notNullValue());
+//
+//        //relative path
+//        descriptor = archetype.script(fileName);
+//        assertThat(descriptor, notNullValue());
+//
+//        //incorrect path
+//        Exception e = assertThrows(ArchetypeException.class, () -> {
+//            String testValue = "someNonexistentFile";
+//            archetype.script(testValue);
+//        });
+//        assertThat(e.getMessage(), containsString("File someNonexistentFile does not exist"));
+//    }
+//
+//    @Test
+//    public void testGetInputStream() throws IOException {
+//        ArchetypeArchive archetype = new ExplodedArchetypeArchive(new File(archDir.toString()));
+//        String testPathString;
+//        InputStream inputStream;
+//        FileSystem workFileSystem = workDir.getFileSystem();
+//
+//        //relative path
+//        testPathString = "dir0" + workFileSystem.getSeparator() + "file5";
+//        inputStream = archetype.inputStream(testPathString);
+//        assertThat(inputStream, notNullValue());
+//        inputStream.close();
+//
+//        //absolute path
+//        inputStream = archetype.inputStream(workFileSystem.getSeparator() + testPathString);
+//        assertThat(inputStream, notNullValue());
+//        inputStream.close();
+//
+//        //Nonexistent file
+//        Exception e = assertThrows(ArchetypeException.class, () -> {
+//            String testValue = "someNonexistentFile";
+//            archetype.inputStream(testValue);
+//        });
+//        assertThat(e.getMessage(), containsString("File someNonexistentFile does not exist"));
+//    }
+//
+//    @Test
+//    public void testGetPath() {
+//        ArchetypeArchive archetype = new ExplodedArchetypeArchive(new File(archDir.toString()));
+//        String testPathString;
+//        Path expectedPath;
+//        Path resultPath;
+//        FileSystem workFileSystem = workDir.getFileSystem();
+//
+//        //relative path
+//        testPathString = "dir0" + workFileSystem.getSeparator() + "file5";
+//        expectedPath = Path.of(testPathString);
+//        resultPath = archetype.path(testPathString);
+//        assertThat(resultPath, is(expectedPath));
+//
+//        //absolute path
+//        resultPath = archetype.path(expectedPath.toString());
+//        assertThat(resultPath, is(expectedPath));
+//
+//        //Nonexistent file
+//        Exception e = assertThrows(ArchetypeException.class, () -> {
+//            String testValue = "someNonexistentFile";
+//            archetype.path(testValue);
+//        });
+//        assertThat(e.getMessage(), containsString("File someNonexistentFile does not exist"));
+//    }
+//
+//    private void copyDescriptor(Path destination) throws IOException {
+//        InputStream is = DirectoryArchetypeTest.class.getClassLoader()
+//                .getResourceAsStream("schema" + workDir.getFileSystem().getSeparator() + DESCRIPTOR_RESOURCE_NAME);
+//        Files.copy(is, destination, StandardCopyOption.REPLACE_EXISTING);
+//    }
 }

@@ -191,7 +191,8 @@ final class Token {
          */
         public static Type getByValue(String tokenValue) {
             return Arrays.stream(Type.values())
-                    .filter(type -> type.pattern().matcher(tokenValue).find()).findFirst().orElse(null);
+                    .filter(type -> type.pattern().matcher(tokenValue).find())
+                         .findFirst().orElse(null);
         }
     }
 }

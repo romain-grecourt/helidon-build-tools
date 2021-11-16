@@ -47,152 +47,152 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ZipArchetypeTest {
 
-    private static final String archetypeDirName = "arch";
-    public static final String DESCRIPTOR_RESOURCE_NAME = "archetype.xml";
-
-    @TempDir
-    Path workDir;
-
-    private Path archDir;
-    private String zipFileName;
-    private FileSystem fileSystem;
-    private ZipArchetype archetype;
-
-    @AfterEach
-    public void cleanUp() throws IOException {
-        fileSystem.close();
-        archetype.close();
-    }
-
-    @BeforeEach
-    public void setUp() throws IOException {
-        Path zipPath = workDir.resolve("test.zip");
-        zipFileName = zipPath.toString();
-        createContentForZip();
-        zipFolder(archDir);
-        fileSystem = FileSystems.newFileSystem(zipPath, null);
-        archetype = new ZipArchetype(new File(zipFileName));
-    }
-
-    @Test
-    void testGetPath() {
-        String expectedPath = "dir0" + fileSystem.getSeparator() + "file0";
-
-        //relative path
-        Path path = archetype.getPath(expectedPath);
-        assertThat(path.toString(), is(expectedPath));
-
-        //absolute path
-        expectedPath = fileSystem.getSeparator() + expectedPath;
-        path = archetype.getPath(expectedPath);
-        assertThat(path.toString(), is(expectedPath));
-
-        //incorrect path
-        Exception e = assertThrows(ArchetypeException.class, () -> {
-            String testValue = "someNonexistentFile";
-            archetype.getPath(testValue);
-        });
-        assertThat(e.getMessage(), containsString("File someNonexistentFile does not exist"));
-    }
-
-    @Test
-    void testGetInputStream() throws IOException {
-        String expectedPath = "dir0" + fileSystem.getSeparator() + "file0";
-
-        //relative path
-        InputStream inputStream = archetype.getInputStream(expectedPath);
-        assertThat(inputStream, notNullValue());
-        inputStream.close();
-
-        //absolute path
-        expectedPath = fileSystem.getSeparator() + expectedPath;
-        inputStream = archetype.getInputStream(expectedPath);
-        assertThat(inputStream, notNullValue());
-        inputStream.close();
-
-        //incorrect path
-        Exception e = assertThrows(ArchetypeException.class, () -> {
-            String testValue = "someNonexistentFile";
-            archetype.getPath(testValue);
-        });
-        assertThat(e.getMessage(), containsString("File someNonexistentFile does not exist"));
-    }
-
-    @Test
-    void testGetDescriptor() {
-        String expectedPath = "schema" + fileSystem.getSeparator() + "archetype.xml";
-
-        //relative path
-        ArchetypeDescriptor descriptor = archetype.getDescriptor(expectedPath);
-        assertThat(descriptor, notNullValue());
-
-        //absolute path
-        expectedPath = fileSystem.getSeparator() + expectedPath;
-        descriptor = archetype.getDescriptor(expectedPath);
-        assertThat(descriptor, notNullValue());
-
-        //incorrect path
-        Exception e = assertThrows(ArchetypeException.class, () -> {
-            String testValue = "someNonexistentFile";
-            archetype.getDescriptor(testValue);
-        });
-        assertThat(e.getMessage(), containsString("File someNonexistentFile does not exist"));
-    }
-
-    @Test
-    void testGetPaths() {
-        List<String> paths = archetype.getPaths();
-
-        assertThat(paths.size(), is(101));
-    }
-
-    private void createContentForZip() throws IOException {
-        archDir = workDir.resolve(archetypeDirName);
-        archDir.toFile().mkdir();
-        for (int dir = 0; dir < 10; dir++) {
-            File directory = archDir.resolve("dir" + dir).toFile();
-            directory.mkdir();
-            for (int file = 0; file < 10; file++) {
-                directory.toPath().resolve("file" + file).toFile().createNewFile();
-            }
-        }
-        copyDescriptor();
-    }
-
-    private void zipFolder(Path workDir) throws IOException {
-        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipFileName))) {
-            Files.walkFileTree(workDir, new SimpleFileVisitor<>() {
-                @Override
-                public FileVisitResult visitFile(
-                        Path file,
-                        BasicFileAttributes attributes
-                ) {
-                    try (FileInputStream fis = new FileInputStream(file.toFile())) {
-                        Path targetFile = workDir.relativize(file);
-                        zos.putNextEntry(new ZipEntry(targetFile.toString().replace(File.separator.charAt(0), '/')));
-                        byte[] buffer = new byte[1024];
-                        int len;
-                        while ((len = fis.read(buffer)) > 0) {
-                            zos.write(buffer, 0, len);
-                        }
-                        zos.closeEntry();
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                    return FileVisitResult.CONTINUE;
-                }
-            });
-        }
-    }
-
-    private void copyDescriptor() throws IOException {
-        String descriptorFileName = "schema" + workDir.getFileSystem().getSeparator() + "archetype.xml";
-        archDir.resolve("schema").toFile().mkdir();
-        Path destination = archDir.resolve(descriptorFileName);
-
-        try (InputStream is = ZipArchetypeTest.class.getClassLoader()
-                .getResourceAsStream("schema" + workDir.getFileSystem().getSeparator() + DESCRIPTOR_RESOURCE_NAME)) {
-            Files.copy(is, destination, StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
+//    private static final String archetypeDirName = "arch";
+//    public static final String DESCRIPTOR_RESOURCE_NAME = "archetype.xml";
+//
+//    @TempDir
+//    Path workDir;
+//
+//    private Path archDir;
+//    private String zipFileName;
+//    private FileSystem fileSystem;
+//    private ZipArchetypeArchive archetype;
+//
+//    @AfterEach
+//    public void cleanUp() throws IOException {
+//        fileSystem.close();
+//        archetype.close();
+//    }
+//
+//    @BeforeEach
+//    public void setUp() throws IOException {
+//        Path zipPath = workDir.resolve("test.zip");
+//        zipFileName = zipPath.toString();
+//        createContentForZip();
+//        zipFolder(archDir);
+//        fileSystem = FileSystems.newFileSystem(zipPath, null);
+//        archetype = new ZipArchetypeArchive(new File(zipFileName));
+//    }
+//
+//    @Test
+//    void testGetPath() {
+//        String expectedPath = "dir0" + fileSystem.getSeparator() + "file0";
+//
+//        //relative path
+//        Path path = archetype.path(expectedPath);
+//        assertThat(path.toString(), is(expectedPath));
+//
+//        //absolute path
+//        expectedPath = fileSystem.getSeparator() + expectedPath;
+//        path = archetype.path(expectedPath);
+//        assertThat(path.toString(), is(expectedPath));
+//
+//        //incorrect path
+//        Exception e = assertThrows(ArchetypeException.class, () -> {
+//            String testValue = "someNonexistentFile";
+//            archetype.path(testValue);
+//        });
+//        assertThat(e.getMessage(), containsString("File someNonexistentFile does not exist"));
+//    }
+//
+//    @Test
+//    void testGetInputStream() throws IOException {
+//        String expectedPath = "dir0" + fileSystem.getSeparator() + "file0";
+//
+//        //relative path
+//        InputStream inputStream = archetype.inputStream(expectedPath);
+//        assertThat(inputStream, notNullValue());
+//        inputStream.close();
+//
+//        //absolute path
+//        expectedPath = fileSystem.getSeparator() + expectedPath;
+//        inputStream = archetype.inputStream(expectedPath);
+//        assertThat(inputStream, notNullValue());
+//        inputStream.close();
+//
+//        //incorrect path
+//        Exception e = assertThrows(ArchetypeException.class, () -> {
+//            String testValue = "someNonexistentFile";
+//            archetype.path(testValue);
+//        });
+//        assertThat(e.getMessage(), containsString("File someNonexistentFile does not exist"));
+//    }
+//
+//    @Test
+//    void testGetDescriptor() {
+//        String expectedPath = "schema" + fileSystem.getSeparator() + "archetype.xml";
+//
+//        //relative path
+//        ArchetypeDescriptor descriptor = archetype.script(expectedPath);
+//        assertThat(descriptor, notNullValue());
+//
+//        //absolute path
+//        expectedPath = fileSystem.getSeparator() + expectedPath;
+//        descriptor = archetype.script(expectedPath);
+//        assertThat(descriptor, notNullValue());
+//
+//        //incorrect path
+//        Exception e = assertThrows(ArchetypeException.class, () -> {
+//            String testValue = "someNonexistentFile";
+//            archetype.script(testValue);
+//        });
+//        assertThat(e.getMessage(), containsString("File someNonexistentFile does not exist"));
+//    }
+//
+//    @Test
+//    void testGetPaths() {
+//        List<String> paths = archetype.path();
+//
+//        assertThat(paths.size(), is(101));
+//    }
+//
+//    private void createContentForZip() throws IOException {
+//        archDir = workDir.resolve(archetypeDirName);
+//        archDir.toFile().mkdir();
+//        for (int dir = 0; dir < 10; dir++) {
+//            File directory = archDir.resolve("dir" + dir).toFile();
+//            directory.mkdir();
+//            for (int file = 0; file < 10; file++) {
+//                directory.toPath().resolve("file" + file).toFile().createNewFile();
+//            }
+//        }
+//        copyDescriptor();
+//    }
+//
+//    private void zipFolder(Path workDir) throws IOException {
+//        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipFileName))) {
+//            Files.walkFileTree(workDir, new SimpleFileVisitor<>() {
+//                @Override
+//                public FileVisitResult visitFile(
+//                        Path file,
+//                        BasicFileAttributes attributes
+//                ) {
+//                    try (FileInputStream fis = new FileInputStream(file.toFile())) {
+//                        Path targetFile = workDir.relativize(file);
+//                        zos.putNextEntry(new ZipEntry(targetFile.toString().replace(File.separator.charAt(0), '/')));
+//                        byte[] buffer = new byte[1024];
+//                        int len;
+//                        while ((len = fis.read(buffer)) > 0) {
+//                            zos.write(buffer, 0, len);
+//                        }
+//                        zos.closeEntry();
+//                    } catch (IOException e) {
+//                        throw new RuntimeException(e);
+//                    }
+//                    return FileVisitResult.CONTINUE;
+//                }
+//            });
+//        }
+//    }
+//
+//    private void copyDescriptor() throws IOException {
+//        String descriptorFileName = "schema" + workDir.getFileSystem().getSeparator() + "archetype.xml";
+//        archDir.resolve("schema").toFile().mkdir();
+//        Path destination = archDir.resolve(descriptorFileName);
+//
+//        try (InputStream is = ZipArchetypeTest.class.getClassLoader()
+//                .getResourceAsStream("schema" + workDir.getFileSystem().getSeparator() + DESCRIPTOR_RESOURCE_NAME)) {
+//            Files.copy(is, destination, StandardCopyOption.REPLACE_EXISTING);
+//        }
+//    }
 }

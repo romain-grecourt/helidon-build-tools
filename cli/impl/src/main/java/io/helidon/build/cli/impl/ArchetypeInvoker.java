@@ -38,8 +38,7 @@ import io.helidon.build.archetype.engine.v1.FlowNodeControllers;
 import io.helidon.build.archetype.engine.v1.FlowNodeControllers.FlowNodeController;
 import io.helidon.build.archetype.engine.v1.Maps;
 import io.helidon.build.archetype.engine.v2.ArchetypeEngineV2;
-import io.helidon.build.archetype.engine.v2.archive.Archetype;
-import io.helidon.build.archetype.engine.v2.archive.ArchetypeFactory;
+import io.helidon.build.archetype.engine.v2.ArchetypeArchive;
 import io.helidon.build.archetype.engine.v2.prompter.CLIPrompter;
 import io.helidon.build.cli.impl.InitOptions.Flavor;
 import io.helidon.build.common.maven.MavenVersion;
@@ -297,9 +296,7 @@ abstract class ArchetypeInvoker {
                     "flavor.xml",
                     new CLIPrompter(),
                     new HashMap<>(),
-                    false,
-                    List.of()
-            );
+                    false);
 
             engine.generate(projectDir.toFile());
             deleteArchetype(projectDir.resolve("cli-data.zip"));
@@ -319,7 +316,7 @@ abstract class ArchetypeInvoker {
          * @param directory directory
          * @return  archetype
          */
-        private Archetype getArchetype(File directory) {
+        private ArchetypeArchive getArchetype(File directory) {
             try (
                     InputStream is = getClass().getResourceAsStream("/cli-data.zip")
             ) {

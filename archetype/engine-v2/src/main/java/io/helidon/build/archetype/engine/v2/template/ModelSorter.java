@@ -21,7 +21,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
-import io.helidon.build.archetype.engine.v2.descriptor.ModelValue;
+import io.helidon.build.archetype.engine.v2.descriptor.ArchetypeDescriptor;
 
 /**
  * Class used to sort {@link TemplateModel} by order.
@@ -38,7 +38,7 @@ public class ModelSorter {
      * @param lists     Model lists
      * @param maps      Model maps
      */
-    public static void sortModelByOrder(MergingMap<String, ModelValue> values,
+    public static void sortModelByOrder(MergingMap<String, ArchetypeDescriptor.ModelValue> values,
                                         MergingMap<String, TemplateList> lists,
                                         MergingMap<String, TemplateMap> maps) {
         sortValuesOrder(values);
@@ -74,11 +74,11 @@ public class ModelSorter {
         }
     }
 
-    private static void sortValuesOrder(MergingMap<String, ModelValue> values) {
-        List<Map.Entry<String, ModelValue>> list = new ArrayList<>(values.entrySet());
+    private static void sortValuesOrder(MergingMap<String, ArchetypeDescriptor.ModelValue> values) {
+        List<Map.Entry<String, ArchetypeDescriptor.ModelValue>> list = new ArrayList<>(values.entrySet());
         list.sort(Map.Entry.comparingByValue());
         values.clear();
-        for (Map.Entry<String, ModelValue> entry : list) {
+        for (Map.Entry<String, ArchetypeDescriptor.ModelValue> entry : list) {
             values.put(entry.getKey(), entry.getValue());
         }
     }
@@ -101,7 +101,7 @@ public class ModelSorter {
         }
     }
 
-    private static void sortValuesOrder(List<ModelValue> values) {
-        values.sort(Comparator.comparingInt(ModelValue::order));
+    private static void sortValuesOrder(List<ArchetypeDescriptor.ModelValue> values) {
+        values.sort(Comparator.comparingInt(ArchetypeDescriptor.ModelValue::order));
     }
 }

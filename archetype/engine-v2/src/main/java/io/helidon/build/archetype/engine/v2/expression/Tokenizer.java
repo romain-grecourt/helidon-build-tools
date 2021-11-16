@@ -62,7 +62,7 @@ final class Tokenizer {
             }
         }
 
-        throw new ParserException("unexpected token - " + current);
+        throw new ParserException("Unexpected token - " + current);
     }
 
     /**

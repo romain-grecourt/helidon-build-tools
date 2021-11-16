@@ -16,6 +16,8 @@
 
 package io.helidon.build.archetype.engine.v2;
 
+import io.helidon.build.archetype.engine.v2.ast.Model;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -45,9 +47,12 @@ public interface TemplateEngine {
      * @param charset      charset for the written characters
      * @param target       path to target file to create
      * @param scope        the scope for the template
-     * @throws IOException if an IO error occurs
      */
-    void render(InputStream template, String templateName, Charset charset, OutputStream target, Object scope) throws IOException;
+    void render(InputStream template,
+                String templateName,
+                Charset charset,
+                OutputStream target,
+                Model scope);
 
     /**
      * Get all found template engines.

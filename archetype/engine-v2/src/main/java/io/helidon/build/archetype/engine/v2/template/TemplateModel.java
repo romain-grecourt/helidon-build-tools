@@ -16,14 +16,14 @@
 
 package io.helidon.build.archetype.engine.v2.template;
 
-import io.helidon.build.archetype.engine.v2.descriptor.Model;
+import io.helidon.build.archetype.engine.v2.descriptor.ArchetypeDescriptor;
 
 /**
  * Template Model Archetype.
  */
 public class TemplateModel {
 
-    private Model model;
+    private ArchetypeDescriptor.Model model;
 
     /**
      * Template default constructor.
@@ -37,7 +37,7 @@ public class TemplateModel {
      *
      * @param model model to be merged
      */
-    public void mergeModel(Model model) {
+    public void mergeModel(ArchetypeDescriptor.Model model) {
         if (model == null) {
             return;
         }
@@ -56,7 +56,7 @@ public class TemplateModel {
      *
      * @return model descriptor
      */
-    public Model model() {
+    public ArchetypeDescriptor.Model model() {
         return model;
     }
 

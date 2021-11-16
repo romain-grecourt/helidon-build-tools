@@ -31,6 +31,7 @@
         <enum path="test.array1">
             <value>bob</value> <!-- error, this is declared as an array -->
         </enum>
+        <text path="test.text1">foo</text>
     </context>
     <step label="A Step Title">
         <help><![CDATA[
