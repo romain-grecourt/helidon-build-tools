@@ -16,75 +16,88 @@
 
 package io.helidon.build.archetype.engine.v2.ast;
 
-import io.helidon.build.common.GenericType;
-
 import java.util.Objects;
 
 /**
- * Base class for all statements.
+ * Executable block.
  */
-public abstract class Statement extends Node {
+public final class Executable extends Block {
 
     private final Kind kind;
 
-    protected Statement(Builder<?, ?> builder) {
+    private Executable(Builder builder) {
         super(builder);
         this.kind = Objects.requireNonNull(builder.kind, "kind is null");
     }
 
     /**
-     * Get the statement kind.
+     * Get the executable block kind.
+     *
      * @return kind
      */
-    public Kind statementKind() {
+    public Kind executableKind() {
         return kind;
     }
 
     /**
-     * Statements kind.
+     * Executable blocks kind.
      */
     public enum Kind {
 
         /**
-         * If statement.
+         * Script.
          */
-        IF,
+        SCRIPT,
 
         /**
-         * Expression.
+         * Step.
          */
-        EXPRESSION,
+        STEP,
 
         /**
-         * Block.
+         * Input.
          */
-        BLOCK,
+        INPUT,
 
         /**
-         * Data.
+         * Option.
          */
-        DATA
+        OPTION,
+
+        /**
+         * Output.
+         */
+        OUTPUT
     }
 
     /**
-     * Base builder class for statement types.
-     *
-     * @param <T> sub-type
-     * @param <U> builder sub-type
+     * Executable builder.
      */
-    public static abstract class Builder<T extends Statement, U extends Builder<T, U>> extends Node.Builder<T, U> {
+    public static class Builder extends Block.Builder<Executable, Builder> {
 
-        private final Kind kind;
+        private Kind kind;
 
         /**
-         * Create a new statement builder.
+         * Create a new executable builder.
+         */
+        Builder() {
+            super(Block.Kind.EXECUTABLE, BuilderTypes.EXECUTABLE);
+        }
+
+        /**
+         * Set the executable block kind.
          *
          * @param kind kind
-         * @param type builder type
+         * @return this builder
          */
-        protected Builder(Kind kind, GenericType<U> type) {
-            super(Node.Kind.STATEMENT, type);
+        public Builder executableKind(Kind kind) {
             this.kind = kind;
+            return this;
+        }
+
+        @Override
+        public Executable build() {
+            return new Executable(this);
         }
     }
 }

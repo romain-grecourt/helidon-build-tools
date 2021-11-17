@@ -20,36 +20,11 @@ import java.io.InputStream;
 import java.util.Iterator;
 import java.util.List;
 
-import io.helidon.build.archetype.engine.v2.ast.BooleanInput;
-import io.helidon.build.archetype.engine.v2.ast.BooleanInputValue;
-import io.helidon.build.archetype.engine.v2.ast.EnumInput;
-import io.helidon.build.archetype.engine.v2.ast.EnumInputValue;
-import io.helidon.build.archetype.engine.v2.ast.Files;
-import io.helidon.build.archetype.engine.v2.ast.Help;
 import io.helidon.build.archetype.engine.v2.ast.IfStatement;
-import io.helidon.build.archetype.engine.v2.ast.Input;
-import io.helidon.build.archetype.engine.v2.ast.InputValue;
-import io.helidon.build.archetype.engine.v2.ast.InputValues;
-import io.helidon.build.archetype.engine.v2.ast.Inputs;
-import io.helidon.build.archetype.engine.v2.ast.Invocation;
-import io.helidon.build.archetype.engine.v2.ast.ListInput;
-import io.helidon.build.archetype.engine.v2.ast.ListInputValue;
 import io.helidon.build.archetype.engine.v2.ast.Model;
-import io.helidon.build.archetype.engine.v2.ast.ModelListValue;
-import io.helidon.build.archetype.engine.v2.ast.ModelMapValue;
-import io.helidon.build.archetype.engine.v2.ast.ModelStringValue;
-import io.helidon.build.archetype.engine.v2.ast.ModelValue;
-import io.helidon.build.archetype.engine.v2.ast.Option;
 import io.helidon.build.archetype.engine.v2.ast.Output;
-import io.helidon.build.archetype.engine.v2.ast.Replacement;
-import io.helidon.build.archetype.engine.v2.ast.Script;
-import io.helidon.build.archetype.engine.v2.ast.Step;
-import io.helidon.build.archetype.engine.v2.ast.Template;
-import io.helidon.build.archetype.engine.v2.ast.Templates;
-import io.helidon.build.archetype.engine.v2.ast.TextInput;
-import io.helidon.build.archetype.engine.v2.ast.TextInputValue;
-import io.helidon.build.archetype.engine.v2.ast.Transformation;
 
+import io.helidon.build.archetype.engine.v2.ast.Script;
 import org.junit.jupiter.api.Test;
 
 import static java.util.stream.Collectors.toList;
@@ -66,6 +41,13 @@ public class ScriptLoaderTest {
 
     public static final String DESCRIPTOR_RESOURCE_NAME = "script-loader-test.xml";
 
+    // TODO split into multiple files and multiple tests
+    // TODO test output separately
+    // TODO test deep nesting of model values
+    // TODO test deep nesting of inputs and steps
+    // TODO test conditional for all supported elements
+    // TODO test default values
+
     @Test
     public void testLoad0() {
         InputStream is = ScriptLoaderTest.class.getClassLoader().getResourceAsStream(DESCRIPTOR_RESOURCE_NAME);
@@ -73,10 +55,11 @@ public class ScriptLoaderTest {
 
         Script script = ScriptLoader.load0(is);
 
+        // TODO model codeBlock ?
         List<InputValue> iv = script.statements(InputValues.class)
                                     .findFirst()
                                     .stream()
-                                    .flatMap(values -> values.statements(InputValue.class))
+                                    .flatMap(InputValues::inputValues)
                                     .collect(toList());
 
         assertThat(iv.size(), is(4));
@@ -295,11 +278,11 @@ public class ScriptLoaderTest {
 
         Invocation inv1 = invocationsIt.next();
         assertThat(inv1.src(), is("./dir1/script1.xml"));
-        assertThat(inv1.kind(), is(Invocation.Kind.SOURCE));
+        assertThat(inv1.invocationKind(), is(Invocation.Kind.SOURCE));
 
         Invocation inv2 = invocationsIt.next();
         assertThat(inv2.src(), is("./dir2/script2.xml"));
-        assertThat(inv2.kind(), is(Invocation.Kind.EXEC));
+        assertThat(inv2.invocationKind(), is(Invocation.Kind.EXEC));
 
         Output o1 = script.statements(IfStatement.class)
               .map(IfStatement::thenStatement)

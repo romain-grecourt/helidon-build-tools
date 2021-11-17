@@ -30,6 +30,55 @@ import java.util.Objects;
  */
 public final class SimpleXMLParser {
 
+    // TODO class XMLException extends IllegalStateException
+    // TODO class XMLParserException extends XMLException
+    // TODO class XMLReaderException extends XMLException
+
+    /**
+     * Base type for all XML exceptions.
+     */
+    public static class XMLException extends IllegalStateException {
+
+        /**
+         * Create a new XML exception.
+         *
+         * @param msg message
+         */
+        protected XMLException(String msg) {
+            super(msg);
+        }
+    }
+
+    /**
+     * XML parser exception.
+     */
+    public static class XMLParserException extends XMLException {
+
+        /**
+         * Create a new XML parser exception.
+         *
+         * @param msg message
+         */
+        public XMLParserException(String msg) {
+            super(msg);
+        }
+    }
+
+    /**
+     * XML reader exception.
+     */
+    public static class XMLReaderException extends XMLException {
+
+        /**
+         * Create a new XML reader exception.
+         *
+         * @param msg message
+         */
+        public XMLReaderException(String msg) {
+            super(msg);
+        }
+    }
+
     /**
      * XML Reader.
      */
@@ -40,7 +89,7 @@ public final class SimpleXMLParser {
          *
          * @param name       the element name
          * @param attributes the element attributes
-         * @throws IllegalStateException if any error occurs
+         * @throws XMLReaderException if any error occurs
          */
         default void startElement(String name, Map<String, String> attributes) {
         }
@@ -49,7 +98,7 @@ public final class SimpleXMLParser {
          * Receive notification of the end of an element.
          *
          * @param name the element name
-         * @throws IllegalStateException if any error occurs
+         * @throws XMLReaderException if any error occurs
          */
         default void endElement(String name) {
         }
@@ -58,7 +107,7 @@ public final class SimpleXMLParser {
          * Receive notification of text data inside an element.
          *
          * @param data the text data
-         * @throws IllegalStateException if any error occurs
+         * @throws XMLReaderException if any error occurs
          */
         default void elementText(String data) {
         }
@@ -78,12 +127,11 @@ public final class SimpleXMLParser {
          * @param child  expected child name
          * @param parent parent name
          * @param qName  element name to be compared
-         * @throws IllegalStateException if the child name does not match qName
+         * @throws XMLReaderException if the child name does not match qName
          */
-        default void validateChild(String child, String parent, String qName) throws IllegalStateException {
+        default void validateChild(String child, String parent, String qName) throws XMLReaderException {
             if (!child.equals(qName)) {
-                throw new IllegalStateException(String.format(
-                        "Invalid child for '%s', node: '%s'", parent, qName));
+                throw new XMLReaderException(String.format("Invalid child for '%s', node: '%s'", parent, qName));
             }
         }
 
@@ -112,14 +160,14 @@ public final class SimpleXMLParser {
          * @param qName element name
          * @param attr  attributes
          * @return attribute value, never {@code null}
-         * @throws IllegalStateException if the attribute is not found
+         * @throws XMLReaderException if the attribute is not found
          */
         default String readRequiredAttribute(String name, String qName, Map<String, String> attr)
-                throws IllegalStateException {
+                throws XMLReaderException {
 
             String value = attr.get(name);
             if (value == null) {
-                throw new IllegalStateException(String.format(
+                throw new XMLReaderException(String.format(
                         "Missing required attribute '%s', element: '%s'", name, qName));
             }
             return value;

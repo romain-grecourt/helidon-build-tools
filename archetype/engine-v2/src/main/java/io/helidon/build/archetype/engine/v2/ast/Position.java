@@ -17,39 +17,44 @@
 package io.helidon.build.archetype.engine.v2.ast;
 
 /**
- * Enum input value.
+ * Source position.
  */
-public final class EnumInputValue extends InputValue<String> {
+public final class Position {
 
-    private EnumInputValue(Builder builder) {
-        super(builder);
+    private final int lineNo;
+    private final int charNo;
+
+    /**
+     * Create a new position.
+     *
+     * @param lineNo line number
+     * @param charNo line character number
+     */
+    public Position(int lineNo, int charNo) {
+        this.lineNo = lineNo;
+        this.charNo = charNo;
+    }
+
+    /**
+     * Get the current line number.
+     *
+     * @return line number
+     */
+    public int lineNumber() {
+        return lineNo;
+    }
+
+    /**
+     * Get the current line character number.
+     *
+     * @return line character number
+     */
+    public int charNumber() {
+        return charNo;
     }
 
     @Override
-    public <A, R> R accept(Visitor<A, R> visitor, A arg) {
-        return visitor.visit(this, arg);
-    }
-
-    /**
-     * Create a new builder.
-     *
-     * @return builder
-     */
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    /**
-     * Enum input value builder.
-     */
-    public static final class Builder extends InputValue.Builder<EnumInputValue, String, Builder> {
-
-        private Builder() {
-        }
-
-        @Override
-        public EnumInputValue build() {
-            return new EnumInputValue(this);
-        }
+    public String toString() {
+        return lineNo + ":" + charNo;
     }
 }

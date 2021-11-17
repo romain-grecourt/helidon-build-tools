@@ -54,15 +54,6 @@ public final class IfStatement extends Statement {
     }
 
     /**
-     * Create a new builder
-     *
-     * @return builder
-     */
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    /**
      * If statement builder.
      */
     public static final class Builder extends Statement.Builder<IfStatement, Builder> {
@@ -70,7 +61,11 @@ public final class IfStatement extends Statement {
         private String expression;
         private Statement.Builder<?, ?> thenStmt;
 
-        private Builder() {
+        /**
+         * Create a new if statement builder.
+         */
+        Builder() {
+            super(Statement.Kind.IF, BuilderTypes.IF);
         }
 
         /**

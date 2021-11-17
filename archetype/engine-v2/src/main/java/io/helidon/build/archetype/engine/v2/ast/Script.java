@@ -16,62 +16,56 @@
 
 package io.helidon.build.archetype.engine.v2.ast;
 
-import java.nio.file.Path;
 import java.util.Objects;
 
 /**
  * Script.
  */
-public class Script extends BlockStatement {
+public final class Script extends Node {
 
-    private final Path path;
+    private final Block body;
 
     private Script(Builder builder) {
         super(builder);
-        this.path = Objects.requireNonNull(builder.path, ()-> "path is null, " + position).toAbsolutePath();
+        this.body = Objects.requireNonNull(builder.body, "body is null").build();
     }
 
     /**
-     * Get the script path.
+     * Get the script body.
      *
-     * @return path
+     * @return body
      */
-    public Path path() {
-        return path;
+    public Block body() {
+        return body;
     }
 
     @Override
     public <A, R> R accept(Visitor<A, R> visitor, A arg) {
-        return visitor.visit(this, arg);
-    }
-
-    /**
-     * Create a new builder.
-     *
-     * @return builder
-     */
-    public static Builder builder() {
-        return new Builder();
+        return null;
     }
 
     /**
      * Script builder.
      */
-    public static final class Builder extends BlockStatement.Builder<Script, Builder> {
+    public static final class Builder extends Node.Builder<Script, Builder> {
 
-        private Path path;
+        private Block.Builder<?, ?> body;
 
-        private Builder() {
+        /**
+         * Create a new script builder.
+         */
+        Builder() {
+            super(Kind.SCRIPT, BuilderTypes.SCRIPT);
         }
 
         /**
-         * Set the path.
+         * Set the script body.
          *
-         * @param path path
+         * @param body body
          * @return this builder
          */
-        public Builder path(Path path) {
-            this.path = path;
+        public Builder body(Block.Builder<?, ?> body) {
+            this.body = body;
             return this;
         }
 

@@ -15,13 +15,18 @@
  */
 package io.helidon.build.archetype.engine.v2.ast;
 
+import java.util.Objects;
+
 /**
- * Output.
+ * Output block.
  */
-public final class Output extends BlockStatement {
+public final class Output extends Block {
+
+    private final Kind kind;
 
     private Output(Builder builder) {
         super(builder);
+        this.kind = Objects.requireNonNull(builder.kind, "kind is null");
     }
 
     @Override
@@ -30,20 +35,73 @@ public final class Output extends BlockStatement {
     }
 
     /**
-     * Create a new builder.
+     * Get the output block kind.
      *
-     * @return builder
+     * @return kind
      */
-    public static Builder builder() {
-        return new Builder();
+    public Kind outputKind() {
+        return kind;
     }
 
     /**
-     * Output builder.
+     * Output blocks kind.
      */
-    public static final class Builder extends BlockStatement.Builder<Output, Builder> {
+    public enum Kind {
 
-        private Builder() {
+        /**
+         * Transformation.
+         */
+        TRANSFORMATION,
+
+        /**
+         * File.
+         */
+        FILE,
+
+        /**
+         * Files.
+         */
+        FILES,
+
+        /**
+         * Template.
+         */
+        TEMPLATE,
+
+        /**
+         * Templates.
+         */
+        TEMPLATES,
+
+        /**
+         * Model.
+         */
+        MODEL
+    }
+
+    /**
+     * Output block builder.
+     */
+    public static final class Builder extends Block.Builder<Output, Builder> {
+
+        private Kind kind;
+
+        /**
+         * Create a new output block builder.
+         */
+        Builder() {
+            super(Block.Kind.UNKNOWN, Node.BuilderTypes.OUTPUT);
+        }
+
+        /**
+         * Set the output block kind.
+         *
+         * @param kind kind
+         * @return this builder
+         */
+        public Builder outputKind(Kind kind) {
+            this.kind = kind;
+            return this;
         }
 
         @Override

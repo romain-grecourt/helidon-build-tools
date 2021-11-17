@@ -24,14 +24,17 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Stream;
 
-import io.helidon.build.archetype.engine.v2.ast.BooleanInput;
-import io.helidon.build.archetype.engine.v2.ast.EnumInput;
-import io.helidon.build.archetype.engine.v2.ast.ListInput;
-import io.helidon.build.archetype.engine.v2.ast.TextInput;
+import io.helidon.build.archetype.engine.v2.ast.Attributes.InputType;
+import io.helidon.build.archetype.engine.v2.ast.Executable;
+import io.helidon.build.archetype.engine.v2.ast.Value;
 import io.helidon.build.archetype.engine.v2.prompter.Prompter;
+import io.helidon.build.common.GenericType;
 
 import static java.util.Arrays.stream;
 import static java.util.stream.Collectors.joining;
+import static io.helidon.build.archetype.engine.v2.ast.Attributes.INPUT_NAME;
+import static io.helidon.build.archetype.engine.v2.ast.Attributes.INPUT_TYPE;
+import static io.helidon.build.archetype.engine.v2.ast.Attributes.INPUT_TYPE_INFO;
 
 /**
  * Context node.
@@ -43,7 +46,7 @@ interface Context {
      *
      * @return optional of context value
      */
-    Optional<ContextValue<?>> value();
+    Optional<ContextValue> value();
 
     /**
      * Get the unresolved outputs
@@ -81,34 +84,7 @@ interface Context {
      * @param prompter prompted to resolve the value
      * @return created child node containing the resolved value
      */
-    Context resolve(TextInput input, Prompter prompter);
-
-    /**
-     * Resolve a context value in the current context node.
-     *
-     * @param input    input to be resolved
-     * @param prompter prompted to resolve the value
-     * @return created child node containing the resolved value
-     */
-    Context resolve(BooleanInput input, Prompter prompter);
-
-    /**
-     * Resolve a context value in the current context node.
-     *
-     * @param input    input to be resolved
-     * @param prompter prompted to resolve the value
-     * @return created child node containing the resolved value
-     */
-    Context resolve(EnumInput input, Prompter prompter);
-
-    /**
-     * Resolve a context value in the current context node.
-     *
-     * @param input    input to be resolved
-     * @param prompter prompted to resolve the value
-     * @return created child node containing the resolved value
-     */
-    Context resolve(ListInput input, Prompter prompter);
+    Context resolve(Executable input, Prompter prompter);
 
     /**
      * Lookup a context node by input path.
@@ -147,7 +123,7 @@ interface Context {
         private final List<ContextNode> children;
         private final Deque<WorkDirRef> workDirRefs;
         private final UnresolvedOutputs outputs;
-        private ContextValue<?> value;
+        private ContextValue value;
 
         private ContextNode(ContextNode parent, String name, UnresolvedOutputs outputs) {
             this.parent = parent;
@@ -163,7 +139,7 @@ interface Context {
         }
 
         @Override
-        public Optional<ContextValue<?>> value() {
+        public Optional<ContextValue> value() {
             return Optional.ofNullable(value);
         }
 
@@ -187,35 +163,10 @@ interface Context {
         }
 
         @Override
-        public Context resolve(TextInput input, Prompter prompter) {
-            ContextNode ctx = addChild(input.name());
-            ctx.value = new TextContextValue(prompter.prompt(input));
-            return ctx;
-        }
-
-        @Override
-        public Context resolve(BooleanInput input, Prompter prompter) {
-            ContextNode ctx = addChild(input.name());
-            ctx.value = new BooleanContextValue(prompter.prompt(input));
-            return ctx;
-        }
-
-        @Override
-        public Context resolve(EnumInput input, Prompter prompter) {
-            ContextNode ctx = addChild(input.name());
-            ctx.value = new EnumContextValue(prompter.prompt(input));
-            return ctx;
-        }
-
-        @Override
-        public Context resolve(ListInput input, Prompter prompter) {
-            ContextNode ctx = addChild(input.name());
-            ctx.value = new ListContextValue(prompter.prompt(input));
-            return ctx;
-        }
-
-        private ContextNode addChild(String name) {
-            ContextNode node = new ContextNode(this, name, outputs);
+        public Context resolve(Executable input, Prompter prompter) {
+            InputType inputType = INPUT_TYPE.get(input, INPUT_TYPE_INFO);
+            String inputName = INPUT_NAME.get(input, Value.Types.STRING);
+            ContextNode node = new ContextNode(this, inputName, outputs);
             this.children.add(node);
             return node;
         }
@@ -330,7 +281,7 @@ interface Context {
         }
 
         @Override
-        public Optional<ContextValue<?>> value() {
+        public Optional<ContextValue> value() {
             return delegate.value();
         }
 
@@ -350,22 +301,7 @@ interface Context {
         }
 
         @Override
-        public Context resolve(TextInput input, Prompter prompter) {
-            return delegate.resolve(input, prompter);
-        }
-
-        @Override
-        public Context resolve(BooleanInput input, Prompter prompter) {
-            return delegate.resolve(input, prompter);
-        }
-
-        @Override
-        public Context resolve(EnumInput input, Prompter prompter) {
-            return delegate.resolve(input, prompter);
-        }
-
-        @Override
-        public Context resolve(ListInput input, Prompter prompter) {
+        public Context resolve(Executable input, Prompter prompter) {
             return delegate.resolve(input, prompter);
         }
 
@@ -382,26 +318,17 @@ interface Context {
 
     /**
      * Context value.
-     *
-     * @param <T> value type
      */
-    abstract class ContextValue<T> {
+    final class ContextValue implements Value {
 
         private final boolean external;
         private final boolean readOnly;
-        private final T value;
+        private final Value value;
 
-        /**
-         * Create a new context value.
-         *
-         * @param external external flag (i.e. passed via env)
-         * @param readOnly read-only flag (i.e. passed via env, or set via input value directive)
-         * @param value    actual value
-         */
-        protected ContextValue(boolean external, boolean readOnly, T value) {
+        private ContextValue(Value value, boolean external, boolean readOnly) {
+            this.value = Objects.requireNonNull(value, "value is null");
             this.external = external;
             this.readOnly = readOnly;
-            this.value = Objects.requireNonNull(value, "value is null");
         }
 
         /**
@@ -409,7 +336,7 @@ interface Context {
          *
          * @return value
          */
-        T value() {
+        Value value() {
             return value;
         }
 
@@ -430,61 +357,15 @@ interface Context {
         boolean readOnly() {
             return readOnly;
         }
-    }
 
-    /**
-     * Text context value.
-     */
-    final class TextContextValue extends ContextValue<String> {
-
-        private TextContextValue(boolean external, boolean readOnly, String value) {
-            super(external, readOnly, value);
+        @Override
+        public GenericType<?> type() {
+            return value.type();
         }
 
-        private TextContextValue(String value) {
-            this(false, false, value);
-        }
-    }
-
-    /**
-     * Boolean context value.
-     */
-    final class BooleanContextValue extends ContextValue<Boolean> {
-
-        private BooleanContextValue(boolean external, boolean readOnly, Boolean value) {
-            super(external, readOnly, value);
-        }
-
-        private BooleanContextValue(Boolean value) {
-            this(false, false, value);
-        }
-    }
-
-    /**
-     * Enum context value.
-     */
-    final class EnumContextValue extends ContextValue<String> {
-
-        private EnumContextValue(boolean external, boolean readOnly, String value) {
-            super(external, readOnly, value);
-        }
-
-        private EnumContextValue(String value) {
-            this(false, false, value);
-        }
-    }
-
-    /**
-     * List context value.
-     */
-    final class ListContextValue extends ContextValue<List<String>> {
-
-        private ListContextValue(boolean external, boolean readOnly, List<String> value) {
-            super(external, readOnly, value);
-        }
-
-        private ListContextValue(List<String> value) {
-            this(false, false, value);
+        @Override
+        public <T> T as(GenericType<T> type) {
+            return value.as(type);
         }
     }
 

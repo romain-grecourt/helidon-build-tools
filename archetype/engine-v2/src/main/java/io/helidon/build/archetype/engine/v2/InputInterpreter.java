@@ -1,14 +1,7 @@
 package io.helidon.build.archetype.engine.v2;
 
-import io.helidon.build.archetype.engine.v2.ast.BlockStatement;
-import io.helidon.build.archetype.engine.v2.ast.BooleanInput;
-import io.helidon.build.archetype.engine.v2.ast.EnumInput;
-import io.helidon.build.archetype.engine.v2.ast.Inputs;
-import io.helidon.build.archetype.engine.v2.ast.Invocation;
-import io.helidon.build.archetype.engine.v2.ast.ListInput;
+import io.helidon.build.archetype.engine.v2.ast.Block;
 import io.helidon.build.archetype.engine.v2.ast.Script;
-import io.helidon.build.archetype.engine.v2.ast.Step;
-import io.helidon.build.archetype.engine.v2.ast.TextInput;
 import io.helidon.build.archetype.engine.v2.ast.Visitor;
 import io.helidon.build.archetype.engine.v2.prompter.Prompter;
 
@@ -25,66 +18,66 @@ class InputInterpreter implements Visitor<Context, Void> {
         this.batch = batch;
     }
 
-    @Override
-    public Void visit(Script script, Context ctx) {
-        script.accept(this, ctx);
-        return null;
-    }
-
-    @Override
-    public Void visit(BlockStatement block, Context ctx) {
-        block.statements().forEach(stmt -> stmt.accept(this, ctx));
-        return null;
-    }
-
-    @Override
-    public Void visit(Step step, Context ctx) {
-        step.accept(this, ctx);
-        return null;
-    }
-
-    @Override
-    public Void visit(Inputs inputs, Context ctx) {
-        inputs.statements().forEach(stmt -> stmt.accept(this, ctx));
-        return null;
-    }
-
-    @Override
-    public Void visit(TextInput input, Context ctx) {
-        input.statements().forEach(stmt -> stmt.accept(this, ctx));
-        return null;
-    }
-
-    @Override
-    public Void visit(BooleanInput input, Context ctx) {
-        input.statements().forEach(stmt -> stmt.accept(this, ctx));
-        return null;
-    }
-
-    @Override
-    public Void visit(EnumInput input, Context ctx) {
-        input.statements().forEach(stmt -> stmt.accept(this, ctx));
-        return null;
-    }
-
-    @Override
-    public Void visit(ListInput input, Context ctx) {
-        input.statements().forEach(stmt -> stmt.accept(this, ctx));
-        return null;
-    }
-
-    @Override
-    public Void visit(Invocation invocation, Context ctx) {
-        Script script = ScriptLoader.load(ctx.cwd().resolve(invocation.src()));
-        switch (invocation.kind()) {
-            case EXEC:
-                script.accept(this, ctx.pushd(script.path().getParent()));
-                ctx.popd();
-            case SOURCE:
-                script.accept(this, ctx);
-            default:
-                // do nothing
-        }
-        return null;
-    }
+//    @Override
+//    public Void visit(Script script, Context ctx) {
+//        script.accept(this, ctx);
+//        return null;
+//    }
+//
+//    @Override
+//    public Void visit(Block block, Context ctx) {
+//        block.statements().forEach(stmt -> stmt.accept(this, ctx));
+//        return null;
+//    }
+//
+//    @Override
+//    public Void visit(Step step, Context ctx) {
+//        step.accept(this, ctx);
+//        return null;
+//    }
+//
+//    @Override
+//    public Void visit(Inputs inputs, Context ctx) {
+//        inputs.statements().forEach(stmt -> stmt.accept(this, ctx));
+//        return null;
+//    }
+//
+//    @Override
+//    public Void visit(TextInput input, Context ctx) {
+//        input.statements().forEach(stmt -> stmt.accept(this, ctx));
+//        return null;
+//    }
+//
+//    @Override
+//    public Void visit(BooleanInput input, Context ctx) {
+//        input.statements().forEach(stmt -> stmt.accept(this, ctx));
+//        return null;
+//    }
+//
+//    @Override
+//    public Void visit(EnumInput input, Context ctx) {
+//        input.statements().forEach(stmt -> stmt.accept(this, ctx));
+//        return null;
+//    }
+//
+//    @Override
+//    public Void visit(ListInput input, Context ctx) {
+//        input.statements().forEach(stmt -> stmt.accept(this, ctx));
+//        return null;
+//    }
+//
+//    @Override
+//    public Void visit(Invocation invocation, Context ctx) {
+//        Script script = ScriptLoader.load(ctx.cwd().resolve(invocation.src()));
+//        switch (invocation.invocationKind()) {
+//            case EXEC:
+//                script.accept(this, ctx.pushd(script.path().getParent()));
+//                ctx.popd();
+//            case SOURCE:
+//                script.accept(this, ctx);
+//            default:
+//                // do nothing
+//        }
+//        return null;
+//    }
 }

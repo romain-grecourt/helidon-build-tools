@@ -15,59 +15,42 @@
  */
 package io.helidon.build.archetype.engine.v2;
 
-import io.helidon.build.archetype.engine.v2.ast.ASTNode;
-import io.helidon.build.archetype.engine.v2.ast.BooleanInput;
-import io.helidon.build.archetype.engine.v2.ast.BooleanInputValue;
-import io.helidon.build.archetype.engine.v2.ast.EnumInput;
-import io.helidon.build.archetype.engine.v2.ast.EnumInputValue;
-import io.helidon.build.archetype.engine.v2.ast.File;
-import io.helidon.build.archetype.engine.v2.ast.Files;
-import io.helidon.build.archetype.engine.v2.ast.AbstractFiles;
-import io.helidon.build.archetype.engine.v2.ast.Help;
+import io.helidon.build.archetype.engine.v2.ast.Attributes.InputType;
+import io.helidon.build.archetype.engine.v2.ast.Attributes.Replacement;
+import io.helidon.build.archetype.engine.v2.ast.Executable;
+import io.helidon.build.archetype.engine.v2.ast.Expression;
+import io.helidon.build.archetype.engine.v2.ast.Literal;
+import io.helidon.build.archetype.engine.v2.ast.Node;
 import io.helidon.build.archetype.engine.v2.ast.IfStatement;
-import io.helidon.build.archetype.engine.v2.ast.Input;
-import io.helidon.build.archetype.engine.v2.ast.InputValue;
-import io.helidon.build.archetype.engine.v2.ast.InputValues;
-import io.helidon.build.archetype.engine.v2.ast.Inputs;
-import io.helidon.build.archetype.engine.v2.ast.Invocation;
-import io.helidon.build.archetype.engine.v2.ast.ListInput;
-import io.helidon.build.archetype.engine.v2.ast.ListInputValue;
 import io.helidon.build.archetype.engine.v2.ast.Model;
-import io.helidon.build.archetype.engine.v2.ast.ModelListValue;
-import io.helidon.build.archetype.engine.v2.ast.ModelMapValue;
-import io.helidon.build.archetype.engine.v2.ast.ModelStringValue;
-import io.helidon.build.archetype.engine.v2.ast.ModelValue;
-import io.helidon.build.archetype.engine.v2.ast.Option;
 import io.helidon.build.archetype.engine.v2.ast.Output;
-import io.helidon.build.archetype.engine.v2.ast.Replacement;
+import io.helidon.build.archetype.engine.v2.ast.Position;
 import io.helidon.build.archetype.engine.v2.ast.Script;
 import io.helidon.build.archetype.engine.v2.ast.Statement;
-import io.helidon.build.archetype.engine.v2.ast.BlockStatement;
-import io.helidon.build.archetype.engine.v2.ast.Step;
-import io.helidon.build.archetype.engine.v2.ast.Template;
-import io.helidon.build.archetype.engine.v2.ast.Templates;
-import io.helidon.build.archetype.engine.v2.ast.TextInput;
-import io.helidon.build.archetype.engine.v2.ast.TextInputValue;
-import io.helidon.build.archetype.engine.v2.ast.Transformation;
+import io.helidon.build.archetype.engine.v2.ast.Block;
+import io.helidon.build.archetype.engine.v2.ast.Value;
+import io.helidon.build.common.GenericType;
 import io.helidon.build.common.xml.SimpleXMLParser;
+import io.helidon.build.common.xml.SimpleXMLParser.XMLReaderException;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.lang.ref.WeakReference;
 import java.nio.file.FileSystem;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedList;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.WeakHashMap;
-import java.util.stream.Collectors;
 
-import static java.util.stream.Collectors.toList;
+import static io.helidon.build.archetype.engine.v2.ast.Attributes.INPUT_TYPE;
+import static io.helidon.build.archetype.engine.v2.ast.Attributes.INPUT_VALUE;
+import static io.helidon.build.archetype.engine.v2.ast.Attributes.INVOCATION_TYPE;
+import static io.helidon.build.archetype.engine.v2.ast.Attributes.REPLACEMENT;
+import static io.helidon.build.archetype.engine.v2.ast.Attributes.REPLACEMENT_TYPE_INFO;
 
 /**
  * Script loader.
@@ -92,7 +75,7 @@ public class ScriptLoader {
 
     static Script load0(Path path) {
         try {
-            return load0(java.nio.file.Files.newInputStream(path), path);
+            return load0(Files.newInputStream(path), path);
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }
@@ -112,11 +95,14 @@ public class ScriptLoader {
 
     private static final class ReaderImpl implements SimpleXMLParser.Reader {
 
-        private volatile Path path;
-        private volatile SimpleXMLParser parser;
-        private volatile LinkedList<Item> stack;
-        private volatile Script.Builder scriptBuilder;
-        private volatile Item parent;
+        private Path path;
+        private SimpleXMLParser parser;
+        private LinkedList<Context> stack;
+        private Script.Builder builder;
+        private Context context;
+        private Position position;
+        private String qName;
+        private Map<String, String> attrs;
 
         private ReaderImpl() {
         }
@@ -126,105 +112,122 @@ public class ScriptLoader {
             this.stack = new LinkedList<>();
             this.parser = SimpleXMLParser.create(is, this);
             parser.parse();
-            return scriptBuilder.build();
+            return builder.build();
         }
 
-        private final class Item {
+        private final class Context {
 
             final String id;
-            final ASTNode.Builder<?, ?> builder;
+            final Node.Builder<?, ?> builder;
 
-            Item(String id, ASTNode.Builder<?, ?> builder) {
+            Context(String id, Node.Builder<?, ?> builder) {
                 this.id = id;
-                if (parent != null) {
-                    this.builder = builder == null ? parent.builder : builder;
+                if (context != null) {
+                    this.builder = builder == null ? context.builder : builder;
                 } else {
                     this.builder = Objects.requireNonNull(builder, "builder is null");
                 }
+            }
+
+            @SuppressWarnings("SameParameterValue")
+            <T extends Node, U extends Node.Builder<T, U>> U as(GenericType<U> type) {
+                if (!type.equals(builder.type())) {
+                    throw new XMLReaderException(String.format(
+                            "Builder type mismatch, expected=%s, actual=%s, file=%s, position=%s",
+                            type, builder.type(), path, position));
+                }
+                return type.cast(builder);
             }
         }
 
         @Override
         public void startElement(String qName, Map<String, String> attrs) {
-            parent = stack.peek();
-            if (parent == null) {
+            this.context = stack.peek();
+            this.position = new Position(parser.lineNumber(), parser.charNumber());
+            this.qName = qName;
+            this.attrs = attrs;
+            if (context == null) {
                 if (!"archetype-script".equals(qName)) {
-                    throw new IllegalStateException("Invalid root element '" + qName + "'");
+                    throw new XMLReaderException(String.format(
+                            "Invalid root element '%s', file=%s, position=%s",
+                            qName, path, position));
                 }
-                scriptBuilder = Script.builder()
-                                      .path(path)
-                                      .position(parser.lineNumber(), parser.charNumber());
-                stack.push(new Item(qName, scriptBuilder));
-            } else if (!startElement0(qName, attrs)) {
-                throw new IllegalStateException(String.format(
-                        "Invalid element: %s, line=%s, char=%s",
-                        qName, parser.lineNumber(), parser.charNumber()));
+                this.builder = newNode(Node.BuilderTypes.SCRIPT);
+                stack.push(new Context(qName, this.builder));
+            } else if (!processElement()) {
+                throw new XMLReaderException(String.format(
+                        "Invalid element '%s', file=%s, position=%s",
+                        qName, path, position));
             }
         }
 
         @Override
         public void endElement(String name) {
             stack.pop();
+            context = null;
+            qName = null;
+            attrs = null;
+            position = null;
         }
 
         @Override
         public void elementText(String value) {
-            parent = stack.peek();
-            if (parent == null) {
+            context = stack.peek();
+            if (context == null) {
                 return;
             }
-            switch (parent.id) {
+            switch (context.id) {
                 case "help":
-                    ((Help.Builder) parent.builder).help(value);
+                    context.builder.attribute("help", parseLiteral(Value.Types.STRING, value));
                     break;
                 case "context/list/value":
-                    ((ListInputValue.Builder) parent.builder).value0(value);
-                    break;
-                case "context/enum/value":
-                    ((EnumInputValue.Builder) parent.builder).value(value);
-                    break;
-                case "context/boolean":
-                    ((BooleanInputValue.Builder) parent.builder).value(parseBoolean(value));
+                    context.builder.attribute("value", parseLiteral(Value.Types.STRING_LIST, value));
                     break;
                 case "context/text":
-                    ((TextInputValue.Builder) parent.builder).value(value);
+                case "context/enum/value":
+                case "output/model/value":
+                    context.builder.attribute("value", parseLiteral(Value.Types.STRING, value));
+                    break;
+                case "context/boolean":
+                    context.builder.attribute("value", parseLiteral(Value.Types.BOOLEAN, value));
                     break;
                 case "output/files/includes/include":
                 case "output/templates/includes/include":
-                    ((AbstractFiles.Builder<?, ?>) parent.builder).include(value);
+                    context.builder.attribute("include",
+                            (k, v) -> Literal.listAdd(this::newLiteral, v, Value.Types.STRING_LIST, value));
                     break;
                 case "output/files/excludes/exclude":
                 case "output/templates/excludes/exclude":
-                    ((AbstractFiles.Builder<?, ?>) parent.builder).exclude(value);
+                    context.builder.attribute("exclude",
+                            (k, v) -> Literal.listAdd(this::newLiteral, v, Value.Types.STRING_LIST, value));
                     break;
                 case "output/files/directory":
                 case "output/templates/directory":
-                    ((AbstractFiles.Builder<?, ?>) parent.builder).directory(value);
-                    break;
-                case "output/model/value":
-                    ((ModelStringValue.Builder) parent.builder).value(value);
+                    context.builder.attribute("directory", parseLiteral(Value.Types.STRING, value));
                     break;
                 default:
             }
         }
 
-        private boolean startElement0(String qName, Map<String, String> attrs) {
-            switch (parent.id) {
+        private boolean processElement() {
+            switch (context.id) {
                 case "archetype-script":
+                    context.as(Node.BuilderTypes.SCRIPT)
+                           .body(newExecutable(Executable.Kind.SCRIPT));
                 case "step":
                 case "option":
                 case "input/boolean":
                 case "input/text":
-                    return codeBlock(qName, attrs);
+                    return executable();
                 case "context":
-                    return inputValue(qName, attrs);
+                    return inputValue();
                 case "input":
                     switch (qName) {
                         case "text":
                         case "boolean":
                         case "enum":
                         case "list":
-                            return input(qName, attrs);
+                            return input();
                         default:
                             return false;
                     }
@@ -232,44 +235,44 @@ public class ScriptLoader {
                 case "input/enum":
                     switch (qName) {
                         case "option":
-                            return statement(qName,
-                                    Option.builder()
-                                          .label(attrs.get("label"))
-                                          .value(attrs.get("value")));
+                            return statement(qName, newExecutable(Executable.Kind.OPTION));
                         case "help":
-                            return statement(qName, Help.builder());
+                            return noop();
                         default:
                             return false;
                     }
                 case "output":
-                    return output(qName, attrs);
+                    return output();
                 case "output/transformation":
                     if (qName.equals("replace")) {
-                        return statement(qName,
-                                Replacement.builder()
-                                           .regex(readRequiredAttribute("regex", qName, attrs))
-                                           .replacement(readRequiredAttribute("replacement", qName, attrs)));
+                        // TODO improve this
+                        Replacement replacement = Replacement.create(
+                                readRequiredAttribute("regex", qName, attrs),
+                                readRequiredAttribute("replacement", qName, attrs));
+                        context.builder.attribute(REPLACEMENT, (k, v) -> Literal.listAdd(this::newLiteral, v,
+                                REPLACEMENT_TYPE_INFO, replacement));
+                        return true;
                     }
                     return false;
                 case "output/model":
                 case "output/model/list":
                 case "output/model/map":
-                    return model(qName, attrs);
+                    return model();
                 case "output/template":
                     if (qName.equals("model")) {
-                        return conditional("output/" + qName, attrs, Model.builder());
+                        return conditional("output/" + qName, newOutput(Output.Kind.MODEL));
                     }
                     return false;
                 case "output/templates":
                 case "output/files":
-                    return files(qName, attrs);
+                    return files();
                 case "output/templates/includes":
                 case "output/templates/excludes":
                 case "output/files/includes":
                 case "output/files/excludes":
                 case "context/list":
                 case "context/enum":
-                    return wrapper(qName);
+                    return noop();
                 case "exec":
                 case "source":
                     // do nothing for attributes-only elements
@@ -279,19 +282,17 @@ public class ScriptLoader {
             }
         }
 
-        private boolean wrapper(String qName) {
-            stack.push(new Item(parent.id + "/" + qName, null));
+        private boolean noop() {
+            stack.push(new Context(context.id + "/" + qName, null));
             return true;
         }
 
-        private boolean invocation(String qName, Map<String, String> attrs) {
-            Invocation.Builder builder = Invocation.builder().src(attrs.get("src"));
+        private boolean invocation() {
+            Expression.Builder builder = newExpression(Expression.Kind.INVOCATION);
             switch (qName) {
                 case "exec":
-                    builder.kind(Invocation.Kind.EXEC);
-                    break;
                 case "source":
-                    builder.kind(Invocation.Kind.SOURCE);
+                    builder.attribute(INVOCATION_TYPE, parseLiteral(Value.Types.STRING, qName));
                     break;
                 default:
                     return false;
@@ -300,47 +301,45 @@ public class ScriptLoader {
             return true;
         }
 
-        private boolean files(String qName, Map<String, String> attrs) {
+        private boolean files() {
             switch (qName) {
                 case "model":
-                    if (parent.id.equals("output/templates")) {
-                        return conditional("output/" + qName, attrs, Model.builder());
+                    if (context.id.equals("output/templates")) {
+                        return conditional("output/" + qName, newOutput(Output.Kind.MODEL));
                     }
                     return false;
                 case "directory":
                 case "includes":
                 case "excludes":
-                    return wrapper(qName);
+                    return noop();
                 default:
                     return false;
             }
         }
 
-        private boolean codeBlock(String qName, Map<String, String> attrs) {
+        private boolean executable() {
             switch (qName) {
                 case "context":
-                    return statement(qName, InputValues.builder());
+                    return statement(qName, newBlock(Block.Kind.INPUT_VALUES));
                 case "exec":
                 case "source":
-                    return invocation(qName, attrs);
+                    return invocation();
                 case "input":
-                    return statement(qName, Inputs.builder());
+                    return conditional(qName, newBlock(Block.Kind.INPUTS));
                 case "step":
-                    if (!parent.id.equals("step")) {
-                        return conditional("step", attrs,
-                                Step.builder()
-                                    .label(attrs.get("label")));
+                    if (!context.id.equals("step")) {
+                        return conditional(qName, newExecutable(Executable.Kind.STEP));
                     }
                     return false;
                 case "output":
-                    return conditional(qName, attrs, Output.builder());
+                    return conditional(qName, newExecutable(Executable.Kind.OUTPUT));
                 case "help":
-                    switch (parent.id) {
+                    switch (context.id) {
                         case "step":
                         case "option":
                         case "input/boolean":
                         case "input/text":
-                            return statement(qName, Help.builder());
+                            return true;
                         default:
                             return false;
                     }
@@ -349,158 +348,131 @@ public class ScriptLoader {
             }
         }
 
-        private boolean input(String qName, Map<String, String> attrs) {
-            Input.Builder<?, ?, ?> builder;
-            switch (qName) {
-                case "boolean":
-                    builder = BooleanInput.builder()
-                                          .defaultValue(parseBoolean(attrs.get("default")));
-                    break;
-                case "list":
-                    builder = ListInput.builder()
-                                       .defaultValue(parseList(attrs.get("default")));
-                    break;
-                case "enum":
-                    builder = EnumInput.builder()
-                                       .defaultValue(attrs.get("default"));
-                    break;
-                case "text":
-                    builder = TextInput.builder()
-                                       .defaultValue(attrs.get("default"));
-                    break;
-                default:
-                    return false;
-            }
-            builder.name(attrs.get("name"))
-                   .label(attrs.get("label"))
-                   .prompt(attrs.get("prompt"))
-                   .position(parser.lineNumber(), parser.charNumber());
+        private boolean input() {
+            InputType inputType = InputType.valueOf(qName.toUpperCase());
+            Executable.Builder builder = newExecutable(Executable.Kind.INPUT)
+                    .attribute(INPUT_TYPE, inputType.toValue(this::newLiteral));
             return statement("input/" + qName, builder);
         }
 
-        private boolean inputValue(String qName, Map<String, String> attrs) {
-            InputValue.Builder<?, ?, ?> builder;
-            switch (qName) {
-                case "boolean":
-                    builder = BooleanInputValue.builder();
-                    break;
-                case "list":
-                    builder = ListInputValue.builder();
-                    break;
-                case "enum":
-                    builder = EnumInputValue.builder();
-                    break;
-                case "text":
-                    builder = TextInputValue.builder();
-                    break;
-                default:
-                    return false;
-            }
-            builder.path(attrs.get("path"));
+        private boolean inputValue() {
+            InputType inputType = InputType.valueOf(qName.toUpperCase());
+            Expression.Builder builder = newExpression(Expression.Kind.INPUT_VALUE)
+                    // TODO improve this
+                    .attribute(INPUT_VALUE, parseLiteral(inputType.valueType(), attrs.get("value")))
+                    .attribute(INPUT_TYPE, inputType.toValue(this::newLiteral));
             return statement("context/" + qName, builder);
         }
 
-        private boolean conditional(String qName, Map<String, String> attrs, Statement.Builder<?, ?> then) {
+        private boolean conditional(String id, Statement.Builder<?, ?> then) {
             Statement.Builder<?, ?> builder;
             String ifExpr = attrs.get("if");
-            then.position(parser.lineNumber(), parser.charNumber());
             if (ifExpr != null) {
-                builder = IfStatement.builder().expression(ifExpr).thenStmt(then);
+                builder = newNode(Node.BuilderTypes.IF).expression(ifExpr).thenStmt(then);
             } else {
                 builder = then;
             }
-            return statement(qName, builder);
+            return statement(id, builder);
         }
 
         private boolean statement(String id, Statement.Builder<? extends Statement, ?> builder) {
-            builder.position(parser.lineNumber(), parser.charNumber());
-            ASTNode.Builder<?, ?> parentBuilder;
-            if (parent.builder instanceof IfStatement.Builder) {
-                parentBuilder = ((IfStatement.Builder) parent.builder).thenStmt();
+            Node.Builder<?, ?> parentBuilder;
+            if (context.builder instanceof IfStatement.Builder) {
+                parentBuilder = ((IfStatement.Builder) context.builder).thenStmt();
             } else {
-                parentBuilder = parent.builder;
+                parentBuilder = context.builder;
             }
-            ((BlockStatement.Builder<?, ?>) parentBuilder).statement(builder);
-            stack.push(new Item(id, builder));
+            ((Block.Builder<?, ?>) parentBuilder).statement(builder);
+            stack.push(new Context(id, builder));
             return true;
         }
 
-        private boolean model(String qName, Map<String, String> attrs) {
-            ModelValue.Builder<?, ?> builder;
+        private boolean model() {
+            Model.Builder builder;
             switch (qName) {
                 case "value":
                     // TODO file, template, url attrs
-                    builder = ModelStringValue.builder();
+                    builder = newModel(Model.Kind.VALUE);
                     break;
                 case "list":
-                    if ("output/model".equals(parent.id)
-                            || "output/model/list".equals(parent.id)
-                            || "output/model/map".equals(parent.id)) {
-                        builder = ModelListValue.builder();
+                    if ("output/model".equals(context.id)
+                            || "output/model/list".equals(context.id)
+                            || "output/model/map".equals(context.id)) {
+                        builder = newModel(Model.Kind.LIST);
                         break;
                     }
                 case "map":
-                    if ("output/model".equals(parent.id)
-                            || "output/model/list".equals(parent.id)) {
-                        builder = ModelMapValue.builder();
+                    if ("output/model".equals(context.id)
+                            || "output/model/list".equals(context.id)) {
+                        builder = newModel(Model.Kind.MAP);
                         break;
                     }
                 default:
                     return false;
             }
-            builder.key(attrs.get("key"))
-                   .order(parseInt(attrs.get("order"), 100));
-            return conditional("output/model/" + qName, attrs, builder);
+            return conditional("output/model/" + qName, builder);
         }
 
-        private boolean output(String qName, Map<String, String> attrs) {
-            Statement.Builder<?, ?> builder;
-            switch (qName) {
-                case "transformation":
-                    builder = Transformation.builder().id(attrs.get("id"));
-                    break;
-                case "file":
-                    builder = File.builder()
-                                  .source(readRequiredAttribute("source", qName, attrs))
-                                  .target(readRequiredAttribute("target", qName, attrs));
-                    break;
-                case "template":
-                    builder = Template.builder()
-                                      .source(readRequiredAttribute("source", qName, attrs))
-                                      .target(readRequiredAttribute("target", qName, attrs))
-                                      .engine(readRequiredAttribute("engine", qName, attrs));
-                    break;
-                case "files":
-                    builder = Files.builder().transformation(attrs.get("transformations"));
-                    break;
-                case "templates":
-                    builder = Templates.builder()
-                                       .transformation(attrs.get("transformations"))
-                                       .engine(attrs.get("engine"));
-                    break;
-                case "model":
-                    builder = Model.builder();
-                    break;
-                default:
-                    return false;
-            }
-            return conditional("output/" + qName, attrs, builder);
+        private boolean output() {
+            Output.Builder builder = newOutput(Output.Kind.valueOf(qName.toUpperCase()));
+            return conditional("output/" + qName, builder);
         }
 
-        @SuppressWarnings("SameParameterValue")
-        private static int parseInt(String value, int defaultValue) {
-            return Optional.ofNullable(value).map(Integer::parseInt).orElse(defaultValue);
+        private <T extends Node, U extends Node.Builder<T, U>> U newNode(GenericType<U> type) {
+            U builder = Node.builder(type).position(position).location(path);
+            attrs.forEach((k, v) -> {
+                GenericType<?> valueType;
+                switch (k) {
+                    case "order":
+                        valueType = Value.Types.INT;
+                        break;
+                    case "transformations":
+                        valueType = Value.Types.STRING_LIST;
+                        break;
+                    case "if":
+                    case "value":
+                        return;
+                    default:
+                        valueType = Value.Types.STRING;
+                }
+                builder.attribute(k, parseLiteral(valueType, v));
+            });
+            return builder;
         }
 
-        private static boolean parseBoolean(String value) {
-            return Boolean.parseBoolean(value == null ? "true" : value);
+        @SuppressWarnings("unchecked")
+        private Block.Builder<?, ?> newBlock(Block.Kind kind) {
+            return newNode(Node.BuilderTypes.BLOCK).blockKind(kind);
         }
 
-        private static List<String> parseList(String value) {
-            return Optional.ofNullable(value)
-                           .stream()
-                           .flatMap(d -> Arrays.stream(d.split(",")))
-                           .collect(toList());
+        private Executable.Builder newExecutable(Executable.Kind kind) {
+            return newNode(Node.BuilderTypes.EXECUTABLE).executableKind(kind);
+        }
+
+        private Expression.Builder newExpression(Expression.Kind kind) {
+            return newNode(Node.BuilderTypes.EXPRESSION).expressionKind(kind);
+        }
+
+        private Output.Builder newOutput(Output.Kind kind) {
+            return newNode(Node.BuilderTypes.OUTPUT).outputKind(kind);
+        }
+
+        private Model.Builder newModel(Model.Kind kind) {
+            return newNode(Node.BuilderTypes.MODEL).modelKind(kind);
+        }
+
+        @SuppressWarnings("rawtypes")
+        private Literal.Builder newLiteral() {
+            return newNode(Node.BuilderTypes.LITERAL);
+        }
+
+        @SuppressWarnings("unchecked")
+        private <T> Literal newLiteral(GenericType<T> type, T value) {
+            return newLiteral().type(type).value(value).build();
+        }
+
+        private <T> Literal parseLiteral(GenericType<T> type, String rawValue) {
+            return Literal.parse(this::newLiteral, type, rawValue);
         }
     }
 }

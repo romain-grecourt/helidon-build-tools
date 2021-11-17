@@ -16,24 +16,14 @@
 
 package io.helidon.build.archetype.engine.v2;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-import io.helidon.build.archetype.engine.v2.MustacheTemplateEngine;
-import io.helidon.build.archetype.engine.v2.TemplateEngine;
-import io.helidon.build.archetype.engine.v2.ast.Model;
-import io.helidon.build.archetype.engine.v2.ast.ModelStringValue;
 import org.junit.jupiter.api.Test;
 
 import static io.helidon.build.archetype.engine.v2.TemplateEngine.getEngineByName;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;

@@ -16,13 +16,18 @@
 
 package io.helidon.build.archetype.engine.v2.ast;
 
+import java.util.Objects;
+
 /**
- * Output model.
+ * Model block.
  */
-public final class Model extends BlockStatement {
+public final class Model extends Block {
+
+    private final Kind kind;
 
     private Model(Builder builder) {
         super(builder);
+        this.kind = Objects.requireNonNull(builder.kind, "kind is null");
     }
 
     @Override
@@ -31,20 +36,58 @@ public final class Model extends BlockStatement {
     }
 
     /**
-     * Create a new builder.
+     * Get the model block kind.
      *
-     * @return builder
+     * @return kind
      */
-    public static Builder builder() {
-        return new Builder();
+    public Kind modelKind() {
+        return kind;
     }
 
     /**
-     * Model builder.
+     * Model blocks kind.
      */
-    public static final class Builder extends BlockStatement.Builder<Model, Builder> {
+    public enum Kind {
 
-        private Builder() {
+        /**
+         * Value.
+         */
+        VALUE,
+
+        /**
+         * Map.
+         */
+        MAP,
+
+        /**
+         * List.
+         */
+        LIST,
+    }
+
+    /**
+     * Model block builder.
+     */
+    public static final class Builder extends Block.Builder<Model, Builder> {
+
+        private Kind kind;
+
+        /**
+         * Create a new model block builder.
+         */
+        Builder() {
+            super(Block.Kind.UNKNOWN, BuilderTypes.MODEL);
+        }
+
+        /**
+         * Set the model block kind.
+         *
+         * @param kind kind
+         * @return this builder
+         */
+        public Builder modelKind(Kind kind) {
+            this.kind = kind;
+            return this;
         }
 
         @Override

@@ -13,78 +13,80 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.helidon.build.archetype.engine.v2.ast;
-
-import io.helidon.build.common.GenericType;
 
 import java.util.Objects;
 
 /**
- * Base class for all statements.
+ * Expression.
  */
-public abstract class Statement extends Node {
+public final class Expression extends Statement {
 
     private final Kind kind;
 
-    protected Statement(Builder<?, ?> builder) {
+    private Expression(Builder builder) {
         super(builder);
         this.kind = Objects.requireNonNull(builder.kind, "kind is null");
     }
 
     /**
-     * Get the statement kind.
+     * Get the expression kind.
+     *
      * @return kind
      */
-    public Kind statementKind() {
+    public Kind expressionKind() {
         return kind;
     }
 
+    @Override
+    public <A, R> R accept(Visitor<A, R> visitor, A arg) {
+        return null;
+    }
+
     /**
-     * Statements kind.
+     * Expressions kind.
      */
     public enum Kind {
 
         /**
-         * If statement.
+         * Invocation.
          */
-        IF,
+        INVOCATION,
 
         /**
-         * Expression.
+         * Input value.
          */
-        EXPRESSION,
-
-        /**
-         * Block.
-         */
-        BLOCK,
-
-        /**
-         * Data.
-         */
-        DATA
+        INPUT_VALUE
     }
 
     /**
-     * Base builder class for statement types.
-     *
-     * @param <T> sub-type
-     * @param <U> builder sub-type
+     * Expression builder.
      */
-    public static abstract class Builder<T extends Statement, U extends Builder<T, U>> extends Node.Builder<T, U> {
+    public static class Builder extends Statement.Builder<Expression, Builder> {
 
-        private final Kind kind;
+        private Kind kind;
 
         /**
-         * Create a new statement builder.
+         * Create a new expression builder.
+         */
+        Builder() {
+            super(Statement.Kind.EXPRESSION, BuilderTypes.EXPRESSION);
+        }
+
+        /**
+         * Set the expression kind.
          *
          * @param kind kind
-         * @param type builder type
+         * @return this builder
          */
-        protected Builder(Kind kind, GenericType<U> type) {
-            super(Node.Kind.STATEMENT, type);
+        public Builder expressionKind(Kind kind) {
             this.kind = kind;
+            return this;
+        }
+
+        @Override
+        public Expression build() {
+            return new Expression(this);
         }
     }
 }

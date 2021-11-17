@@ -16,26 +16,7 @@
 
 package io.helidon.build.archetype.engine.v2.prompter;
 
-import io.helidon.build.archetype.engine.v2.ast.BooleanInput;
-import io.helidon.build.archetype.engine.v2.ast.EnumInput;
-import io.helidon.build.archetype.engine.v2.ast.ListInput;
-import io.helidon.build.archetype.engine.v2.ast.TextInput;
-
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
-import static io.helidon.build.common.ansi.AnsiTextStyles.Bold;
-import static io.helidon.build.common.ansi.AnsiTextStyles.BoldBlue;
 
 /**
  * Prompter that uses CLI for input/output.

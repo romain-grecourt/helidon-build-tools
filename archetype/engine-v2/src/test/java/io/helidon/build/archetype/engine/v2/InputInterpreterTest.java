@@ -23,11 +23,8 @@ import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 
-import io.helidon.build.archetype.engine.v2.ast.BooleanInput;
-import io.helidon.build.archetype.engine.v2.ast.EnumInput;
-import io.helidon.build.archetype.engine.v2.ast.ListInput;
+import io.helidon.build.archetype.engine.v2.ast.Node;
 import io.helidon.build.archetype.engine.v2.ast.Script;
-import io.helidon.build.archetype.engine.v2.ast.TextInput;
 import io.helidon.build.archetype.engine.v2.prompter.Prompter;
 
 import org.junit.jupiter.api.AfterAll;
@@ -37,7 +34,6 @@ import org.junit.jupiter.api.Test;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
-@SuppressWarnings("CodeBlock2Expr")
 public class InputInterpreterTest {
 
     static Path scriptPath;
@@ -56,8 +52,7 @@ public class InputInterpreterTest {
 
     @Test
     public void simpleTest() {
-        Script script =
-                Script.builder()
+        Script script = Node.builder(Node.BuilderTypes.SCRIPT)
 //                      .path(scriptPath)
 //                      .body(s -> {
 //                          s.step(st -> {
@@ -73,14 +68,14 @@ public class InputInterpreterTest {
 //                                });
 //                          });
 //                      })
-                      .build();
+                                   .build();
 
         Context ctx = eval(script, "bar");
         assertThat(lookupString(ctx, "foo"), is("bar"));
     }
 
     private static String lookupString(Context ctx, String inputPath) {
-        return ctx.lookup(inputPath).value().map(cv -> (String) cv.value()).orElse(null);
+        return ctx.lookup(inputPath).value().map(cv -> cv.value().asString()).orElse(null);
     }
 
     private static Context eval(Script script, Object... userInput) {
@@ -97,24 +92,24 @@ public class InputInterpreterTest {
             this.userInput = new LinkedList<>(Arrays.asList(userInput));
         }
 
-        @Override
-        public String prompt(TextInput input) {
-            return (String) userInput.pop();
-        }
-
-        @Override
-        public boolean prompt(BooleanInput input) {
-            return (boolean) userInput.pop();
-        }
-
-        @Override
-        public String prompt(EnumInput input) {
-            return (String) userInput.pop();
-        }
-
-        @Override
-        public List<String> prompt(ListInput input) {
-            return (List<String>) userInput.pop();
-        }
+//        @Override
+//        public String prompt(TextInput input) {
+//            return (String) userInput.pop();
+//        }
+//
+//        @Override
+//        public boolean prompt(BooleanInput input) {
+//            return (boolean) userInput.pop();
+//        }
+//
+//        @Override
+//        public String prompt(EnumInput input) {
+//            return (String) userInput.pop();
+//        }
+//
+//        @Override
+//        public List<String> prompt(ListInput input) {
+//            return (List<String>) userInput.pop();
+//        }
     }
 }

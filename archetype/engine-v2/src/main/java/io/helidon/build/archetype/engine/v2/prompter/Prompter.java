@@ -16,55 +16,10 @@
 
 package io.helidon.build.archetype.engine.v2.prompter;
 
-import io.helidon.build.archetype.engine.v2.ast.BooleanInput;
-import io.helidon.build.archetype.engine.v2.ast.EnumInput;
-import io.helidon.build.archetype.engine.v2.ast.ListInput;
-import io.helidon.build.archetype.engine.v2.ast.TextInput;
-
-import java.util.List;
-
 /**
  * Prompter for user input.
  */
 public interface Prompter {
 
-    /**
-     * Prompt a text value.
-     *
-     * @param input input
-     * @return value
-     */
-    default String prompt(TextInput input) {
-        throw new UnsupportedOperationException();
-    }
-
-    /**
-     * Prompt an enum value.
-     *
-     * @param input input
-     * @return value
-     */
-    default String prompt(EnumInput input) {
-        throw new UnsupportedOperationException();
-    }
-
-    /**
-     * Prompt a list value.
-     *
-     * @param input input
-     * @return value
-     */
-    default List<String> prompt(ListInput input) {
-        throw new UnsupportedOperationException();
-    }
-
-    /**
-     * Prompt a boolean value.
-     *
-     * @param input input
-     * @return value
-     */
-    default boolean prompt(BooleanInput input) {
-        throw new UnsupportedOperationException();
-    }
+// TODO prompter as Executable.Visitor<Value, Context>
 }

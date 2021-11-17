@@ -30,9 +30,9 @@ import java.util.Map;
 public class ArchetypeEngineV2 {
 
     private final Path entryPoint;
-    private final  Prompter prompter;
-    private final  Map<String, String> env;
-    private final  boolean batch;
+    private final Prompter prompter;
+    private final Map<String, String> env;
+    private final boolean batch;
 
     public ArchetypeEngineV2(Path entryPoint, Prompter prompter, Map<String, String> env, boolean batch) {
         this.entryPoint = entryPoint;
@@ -64,8 +64,9 @@ public class ArchetypeEngineV2 {
     private Output evalOutput(Context ctx) {
         // TODO sub-class output builder since the fields are private and have no accessor
         // we need to mutate the underlying data to merge while visiting
-        Output.Builder builder = Output.builder();
-        ctx.outputs().accept(new OutputInterpreter(), builder);
-        return builder.build();
+//        Output.Builder builder = Output.builder();
+//        ctx.outputs().accept(new OutputInterpreter(), builder);
+//        return builder.build();
+        return null;
     }
 }
