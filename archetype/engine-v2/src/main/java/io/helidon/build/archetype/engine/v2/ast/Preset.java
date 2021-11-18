@@ -17,7 +17,6 @@
 package io.helidon.build.archetype.engine.v2.ast;
 
 import java.nio.file.Path;
-import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -154,16 +153,6 @@ public final class Preset extends Expression {
         Builder(Path location, Position position, Input.Kind kind) {
             super(location, position, Kind.PRESET);
             this.kind = kind;
-        }
-
-        /**
-         * Parse the preset value.
-         *
-         * @param rawAttrs raw attributes
-         * @return this builder
-         */
-        public Builder parseValue(Map<String, String> rawAttrs) {
-            return parseAttribute(Attributes.VALUE, kind.valueType(), rawAttrs.get("value"));
         }
 
         @Override

@@ -28,7 +28,7 @@ import java.util.stream.Collectors;
 public class Block extends Statement {
 
     private final Kind kind;
-    private final List<Statement> stmts;
+    private final List<Statement> statements;
 
     /**
      * Create a new block.
@@ -38,9 +38,9 @@ public class Block extends Statement {
     protected Block(Builder<?, ?> builder) {
         super(builder);
         this.kind = Objects.requireNonNull(builder.kind, "kind is null");
-        this.stmts = builder.stmts.stream()
-                                  .map(Statement.Builder::build)
-                                  .collect(Collectors.toUnmodifiableList());
+        this.statements = builder.statements.stream()
+                                            .map(Statement.Builder::build)
+                                            .collect(Collectors.toUnmodifiableList());
     }
 
     /**
@@ -49,7 +49,7 @@ public class Block extends Statement {
      * @return nested statements
      */
     public List<Statement> statements() {
-        return stmts;
+        return statements;
     }
 
     /**
@@ -211,7 +211,7 @@ public class Block extends Statement {
     public static class Builder<T extends Block, U extends Builder<T, U>> extends Statement.Builder<T, U> {
 
         private final Kind kind;
-        private final List<Statement.Builder<Statement, ?>> stmts = new LinkedList<>();
+        private final List<Statement.Builder<Statement, ?>> statements = new LinkedList<>();
 
         /**
          * Create a new block builder.
@@ -227,7 +227,7 @@ public class Block extends Statement {
 
         @Override
         public U statement(Statement.Builder<? extends Statement, ?> builder) {
-            stmts.add((Statement.Builder<Statement, ?>) builder);
+            statements.add((Statement.Builder<Statement, ?>) builder);
             return (U) this;
         }
 

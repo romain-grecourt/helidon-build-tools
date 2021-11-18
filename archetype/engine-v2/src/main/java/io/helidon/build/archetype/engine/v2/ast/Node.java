@@ -25,7 +25,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import static java.util.Objects.requireNonNull;
@@ -35,6 +34,29 @@ import static java.util.stream.Collectors.toMap;
  * AST node.
  */
 public abstract class Node {
+
+    // TODO implement implement Iterable<Node> ?
+    // return an empty iterator in the base class and override in sub-types
+    // can be used to implement a depth first traversal in the base class
+    // use a return value for a stop action. the return value should be an enum similar to FileVisitResult
+    // I.e continue, terminate, skip subtree, skip siblings (not sure we need that)
+    // Make a combined visitor interface (Node.Visitor + Statement.Visitor + Expression.Visitor + Block.Visitor)
+    // TODO model Option, and keep Input (used as facing API for Input.Visitor aka prompter)
+    // Invocation can stay as its nature is very much in the interpreter domain (func call)
+    // Preset can also stay as that's like a variable decl
+
+    // TODO remove Output, Model, Executable, Data (Block becomes final), Remove Constant
+    // Add a qualifier (basically the element name), used with Block.Kind.UNKNOWN
+    // But  Executable / Data / Preset can be destructured
+    // e.g. Executable.Kind.* -> Block.Kind.UNKNOWN
+    // e.g. Data has no kind and represents a leaf node
+
+    // We can remove Output as complexity of visiting the nodes limited to the generator.
+    //      That is not the case for inputs as multiple prompters have to be implemented
+    // Removing all these extra types will make it easier to produce the JSON ast since it does not care
+    // about the output nodes
+
+    // TODO replace is a node with two attributes (no need for pair here)
 
     private final Kind kind;
     private final Path location;
@@ -294,18 +316,6 @@ public abstract class Node {
          */
         public <V> U parseAttribute(Object key, GenericType<V> type, String rawValue) {
             return parseAttribute(key, type, rawValue, null);
-        }
-
-        /**
-         * Add an attribute.
-         *
-         * @param key      key
-         * @param function mapping function
-         * @return this builder
-         */
-        public U attribute(Object key, BiFunction<Object, Value, Value> function) {
-            attributes.compute(key, function);
-            return (U) this;
         }
 
         /**

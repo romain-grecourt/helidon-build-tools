@@ -24,12 +24,12 @@ import java.nio.file.Path;
 public final class IfStatement extends Statement {
 
     private final String expression;
-    private final Statement thenStmt;
+    private final Statement then;
 
     private IfStatement(Builder builder) {
         super(builder);
         this.expression = builder.expression;
-        this.thenStmt = builder.thenStmt.build();
+        this.then = builder.then.build();
     }
 
     /**
@@ -37,8 +37,8 @@ public final class IfStatement extends Statement {
      *
      * @return Statement
      */
-    public Statement thenStatement() {
-        return thenStmt;
+    public Statement then() {
+        return then;
     }
 
     /**
@@ -56,7 +56,7 @@ public final class IfStatement extends Statement {
     public static final class Builder extends Statement.Builder<IfStatement, Builder> {
 
         private String expression;
-        private Statement.Builder<?, ?> thenStmt;
+        private Statement.Builder<?, ?> then;
 
         /**
          * Create a new if statement builder.
@@ -82,11 +82,11 @@ public final class IfStatement extends Statement {
         /**
          * Set the {@code then} statement.
          *
-         * @param thenStmt statement builder
+         * @param then statement builder
          * @return this builder
          */
-        public Builder thenStmt(Statement.Builder<?, ?> thenStmt) {
-            this.thenStmt = thenStmt;
+        public Builder then(Statement.Builder<?, ?> then) {
+            this.then = then;
             return this;
         }
 
@@ -95,8 +95,8 @@ public final class IfStatement extends Statement {
          *
          * @return {@code then} statement
          */
-        public Statement.Builder<?, ?> thenStmt() {
-            return thenStmt;
+        public Statement.Builder<?, ?> then() {
+            return then;
         }
 
         @Override
