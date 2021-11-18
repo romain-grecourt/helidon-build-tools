@@ -21,10 +21,10 @@
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-script-2.0.xsd">
 
     <step optional="true">
-        <input>
+        <inputs>
             <text name="message"
                   label="Message"
                   placeholder="Hello World"/>
-        </input>
+        </inputs>
     </step>
 </archetype-script>

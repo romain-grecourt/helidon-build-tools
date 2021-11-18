@@ -10,36 +10,6 @@ import java.util.List;
 public interface Value {
 
     /**
-     * All supported value types.
-     */
-    final class Types {
-
-        /**
-         * String.
-         */
-        public static final GenericType<String> STRING = GenericType.create(String.class);
-
-        /**
-         * Boolean.
-         */
-        public static final GenericType<Boolean> BOOLEAN = GenericType.create(Boolean.class);
-
-        /**
-         * Integer.
-         */
-        public static final GenericType<Integer> INT = GenericType.create(Integer.class);
-
-        /**
-         * List.
-         */
-        public static final GenericType<List<String>> STRING_LIST = new GenericType<>() {
-        };
-
-        private Types() {
-        }
-    }
-
-    /**
      * Get the value type.
      *
      * @return type
@@ -62,7 +32,7 @@ public interface Value {
      * @return string
      */
     default String asString() {
-        return as(Types.STRING);
+        return as(ValueTypes.STRING);
     }
 
     /**
@@ -71,7 +41,7 @@ public interface Value {
      * @return boolean
      */
     default Boolean asBoolean() {
-        return as(Types.BOOLEAN);
+        return as(ValueTypes.BOOLEAN);
     }
 
     /**
@@ -80,7 +50,7 @@ public interface Value {
      * @return int
      */
     default Integer asInt() {
-        return as(Types.INT);
+        return as(ValueTypes.INT);
     }
 
     /**
@@ -89,7 +59,7 @@ public interface Value {
      * @return list
      */
     default List<String> asList() {
-        return as(Types.STRING_LIST);
+        return as(ValueTypes.STRING_LIST);
     }
 
     /**

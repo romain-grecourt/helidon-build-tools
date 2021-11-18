@@ -20,12 +20,12 @@
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-script-2.0.xsd">
 
-    <context>
+    <presets>
         <enum path="media-support.json.provider">jackson</enum>
         <enum path="tracing.provider">jaeger</enum>
         <boolean path="my-opt-out">false</boolean>
         <text path="my-input-text">foo</text>
-    </context>
+    </presets>
     <source src="../../common/java-files.xml"/>
     <exec src="../bare/bare-se.xml"/>
     <exec src="customize-hello-world.xml"/>

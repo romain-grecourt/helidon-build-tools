@@ -20,7 +20,7 @@
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-script-2.0.xsd">
 
-    <context>
+    <presets>
         <enum path="enum.provider">
             <value>enum value</value>
         </enum>
@@ -31,11 +31,11 @@
         <boolean path="bool_input_context">true</boolean>
         <boolean path="bool_input_context1">false</boolean>
         <text path="user_text_input_context">text input from context</text>
-    </context>
+    </presets>
 
     <step label="User boolean input">
 
-        <input>
+        <inputs>
 
             <boolean name="bool-input"
                      label="User boolean input label">
@@ -73,7 +73,7 @@
                 </output>
             </boolean>
 
-        </input>
+        </inputs>
 
     </step>
 </archetype-script>

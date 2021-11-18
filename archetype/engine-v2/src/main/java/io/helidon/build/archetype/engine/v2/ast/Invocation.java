@@ -13,39 +13,35 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package io.helidon.build.archetype.engine.v2.ast;
 
 import java.nio.file.Path;
 import java.util.Objects;
 
 /**
- * Expression.
+ * Invocation.
  */
-public abstract class Expression extends Statement {
+public final class Invocation extends Expression {
 
     private final Kind kind;
 
-    /**
-     * Create a new expression.
-     *
-     * @param builder builder
-     */
-    protected Expression(Builder<?, ?> builder) {
+    private Invocation(Builder builder) {
         super(builder);
         this.kind = Objects.requireNonNull(builder.kind, "kind is null");
     }
 
     /**
-     * Get the expression kind.
+     * Get the src.
      *
-     * @return kind
+     * @return src
      */
-    public Kind expressionKind() {
-        return kind;
+    public String src() {
+        return Attributes.SRC.get(this, ValueTypes.STRING);
     }
 
     /**
-     * Visit this expression.
+     * Visit this invocation.
      *
      * @param visitor Visitor
      * @param arg     argument
@@ -53,19 +49,19 @@ public abstract class Expression extends Statement {
      * @param <A>     generic type of the arguments
      * @return result
      */
-    public final <A, R> R accept(Visitor<A, R> visitor, A arg) {
+    public <A, R> R accept(Visitor<A, R> visitor, A arg) {
         switch (kind) {
-            case INVOCATION:
-                return visitor.visitInvocation((Invocation) this, arg);
-            case PRESET:
-                return visitor.visitPreset((Preset) this, arg);
+            case EXEC:
+                return visitor.visitExec(this, arg);
+            case SOURCE:
+                return visitor.visitSource(this, arg);
             default:
                 throw new IllegalStateException();
         }
     }
 
     /**
-     * Expression visitor.
+     * Invocation visitor.
      *
      * @param <A> argument
      * @param <R> type of the returned value
@@ -74,64 +70,66 @@ public abstract class Expression extends Statement {
     public interface Visitor<A, R> {
 
         /**
-         * Visit an invocation.
+         * Visit an exec invocation.
          *
          * @param invocation invocation
          * @param arg        argument
          * @return visit result
          */
-        default R visitInvocation(Invocation invocation, A arg) {
+        default R visitExec(Invocation invocation, A arg) {
             return null;
         }
 
         /**
-         * Visit a preset.
+         * Visit a source invocation.
          *
-         * @param preset preset
-         * @param arg    argument
+         * @param invocation invocation
+         * @param arg        argument
          * @return visit result
          */
-        default R visitPreset(Preset preset, A arg) {
+        default R visitSource(Invocation invocation, A arg) {
             return null;
         }
     }
 
     /**
-     * Expressions kind.
+     * Invocation kind.
      */
     public enum Kind {
 
         /**
-         * Invocation.
+         * Exec.
          */
-        INVOCATION,
+        EXEC,
 
         /**
-         * Preset.
+         * Source.
          */
-        PRESET
+        SOURCE
     }
 
     /**
-     * Expression builder.
-     *
-     * @param <T> sub-type
-     * @param <U> builder sub-type
+     * Invocation builder.
      */
-    public static abstract class Builder<T extends Expression, U extends Builder<T, U>> extends Statement.Builder<T, U> {
+    public static final class Builder extends Expression.Builder<Invocation, Builder> {
 
         private final Kind kind;
 
         /**
-         * Create a new expression builder.
+         * Create a new builder.
          *
          * @param location location
          * @param position position
          * @param kind     kind
          */
         Builder(Path location, Position position, Kind kind) {
-            super(location, position, Statement.Kind.EXPRESSION);
+            super(location, position, Expression.Kind.INVOCATION);
             this.kind = kind;
+        }
+
+        @Override
+        public Invocation build() {
+            return new Invocation(this);
         }
     }
 }

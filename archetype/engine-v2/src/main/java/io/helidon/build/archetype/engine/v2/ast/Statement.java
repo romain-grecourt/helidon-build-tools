@@ -16,12 +16,11 @@
 
 package io.helidon.build.archetype.engine.v2.ast;
 
-import io.helidon.build.common.GenericType;
-
+import java.nio.file.Path;
 import java.util.Objects;
 
 /**
- * Base class for all statements.
+ * Statement.
  */
 public abstract class Statement extends Node {
 
@@ -34,10 +33,102 @@ public abstract class Statement extends Node {
 
     /**
      * Get the statement kind.
+     *
      * @return kind
      */
     public Kind statementKind() {
         return kind;
+    }
+
+    /**
+     * Visit this statement.
+     *
+     * @param visitor Visitor
+     * @param arg     argument
+     * @param <R>     generic type of the result
+     * @param <A>     generic type of the arguments
+     * @return result
+     */
+    public final <A, R> R accept(Visitor<A, R> visitor, A arg) {
+        switch (kind) {
+            case IF:
+                return visitor.visitIf((IfStatement) this, arg);
+            case EXPRESSION:
+                return visitor.visitExpression((Expression) this, arg);
+            case BLOCK:
+                return visitor.visitBlock((Block) this, arg);
+            case INPUT:
+                return visitor.visitInput((Input) this, arg);
+            case DATA:
+                return visitor.visitData((Data) this, arg);
+            default:
+                throw new IllegalStateException();
+        }
+    }
+
+    /**
+     * Statement visitor.
+     *
+     * @param <A> argument
+     * @param <R> type of the returned value
+     */
+    @SuppressWarnings("unused")
+    public interface Visitor<A, R> {
+
+        /**
+         * Visit an if statement.
+         *
+         * @param ifStatement if statement
+         * @param arg         argument
+         * @return visit result
+         */
+        default R visitIf(IfStatement ifStatement, A arg) {
+            return null;
+        }
+
+        /**
+         * Visit an expression.
+         *
+         * @param expression expression
+         * @param arg        argument
+         * @return visit result
+         */
+        default R visitExpression(Expression expression, A arg) {
+            return null;
+        }
+
+        /**
+         * Visit a block statement.
+         *
+         * @param block block
+         * @param arg   argument
+         * @return visit result
+         */
+        default R visitBlock(Block block, A arg) {
+            return null;
+        }
+
+        /**
+         * Visit an input statement.
+         *
+         * @param input input
+         * @param arg   argument
+         * @return visit result
+         */
+        default R visitInput(Input input, A arg) {
+            return null;
+        }
+
+        /**
+         * Visit a data statement.
+         *
+         * @param data data
+         * @param arg  argument
+         * @return visit result
+         */
+        default R visitData(Data data, A arg) {
+            return null;
+        }
     }
 
     /**
@@ -61,6 +152,11 @@ public abstract class Statement extends Node {
         BLOCK,
 
         /**
+         * Input.
+         */
+        INPUT,
+
+        /**
          * Data.
          */
         DATA
@@ -79,11 +175,12 @@ public abstract class Statement extends Node {
         /**
          * Create a new statement builder.
          *
-         * @param kind kind
-         * @param type builder type
+         * @param location location
+         * @param position position
+         * @param kind     kind
          */
-        protected Builder(Kind kind, GenericType<U> type) {
-            super(Node.Kind.STATEMENT, type);
+        protected Builder(Path location, Position position, Kind kind) {
+            super(location, position, Node.Kind.STATEMENT);
             this.kind = kind;
         }
     }

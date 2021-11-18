@@ -21,17 +21,17 @@
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-script-2.0.xsd">
 
     <step optional="true" label="Media Support">
-        <input>
+        <inputs>
             <boolean name="media-support"
                      label="Media type support"
                      prompt="Do you want to configure media type support (e.g. JSON, XML)">
 
-                <input>
+                <inputs>
                     <boolean name="json"
                              label="JSON"
                              prompt="Do you want to use JSON">
 
-                        <input>
+                        <inputs>
                             <enum name="provider"
                                   label="Select JSON provider">
 
@@ -39,14 +39,14 @@
                                 <option value="jsonb" label="JSON-B"/>
                                 <option value="jsonp" label="JSON-P"/>
                             </enum>
-                        </input>
+                        </inputs>
                     </boolean>
 
                     <boolean ame="xml"
                              label="XML"
                              prompt="Do you want to use XML">
 
-                        <input>
+                        <inputs>
                             <enum type="select"
                                   name="provider"
                                   label="Select XML provider">
@@ -54,9 +54,9 @@
                                 <option value="jaxp" label="JAX-P"/>
                                 <option value="jaxb" label="JAX-B"/>
                             </enum>
-                        </input>
+                        </inputs>
                     </boolean>
-                </input>
+                </inputs>
                 <output>
                     <model>
                         <list id="dependencies">
@@ -94,6 +94,6 @@
                     </model>
                 </output>
             </boolean>
-        </input>
+        </inputs>
     </step>
 </archetype-script>

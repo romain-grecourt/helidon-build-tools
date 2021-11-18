@@ -18,6 +18,7 @@ package io.helidon.build.archetype.engine.v2.ast;
 
 import io.helidon.build.common.GenericType;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -38,18 +39,13 @@ public final class Literal extends Node implements Value {
     private Literal(Builder<?> builder) {
         super(builder);
         this.value = Objects.requireNonNull(builder.value, "value is null");
-        this.type = Objects.requireNonNull(builder.type, "value is null");
+        this.type = Objects.requireNonNull(builder.type, "type is null");
         this.readonly = builder.readonly;
     }
 
     @Override
     public GenericType<?> type() {
         return type;
-    }
-
-    @Override
-    public <A, R> R accept(Visitor<A, R> visitor, A arg) {
-        return null;
     }
 
     @Override
@@ -69,7 +65,7 @@ public final class Literal extends Node implements Value {
             return this;
         }
         if (type.rawType().equals(List.class)) {
-            return new Builder<List<?>>()
+            return new Builder<List<?>>(location(), position())
                     .type((GenericType<List<?>>) type)
                     .value(unmodifiableList((List<?>) value))
                     .build();
@@ -88,7 +84,11 @@ public final class Literal extends Node implements Value {
      * @return literal
      * @throws IllegalArgumentException if the provided value is not a literal
      */
-    public static <T> Literal listAdd(Supplier<Builder<List<T>>> builder, Value literal, GenericType<List<T>> type, T value) {
+    public static <T> Literal listAdd(Supplier<Builder<List<T>>> builder,
+                                      Value literal,
+                                      GenericType<List<T>> type,
+                                      T value) {
+
         if (literal == null) {
             List<T> list = new ArrayList<>();
             list.add(value);
@@ -109,54 +109,6 @@ public final class Literal extends Node implements Value {
     }
 
     /**
-     * Parse a literal.
-     *
-     * @param builder  builder supplier
-     * @param type     value type
-     * @param rawValue raw value
-     * @param <T>      value type parameter
-     * @return literal
-     */
-    public static <T> Literal parse(Supplier<Builder<T>> builder, GenericType<T> type, String rawValue) {
-        return parse(builder, type, rawValue, null);
-    }
-
-    /**
-     * Parse a literal.
-     *
-     * @param builder      builder supplier
-     * @param type         value type
-     * @param rawValue     raw value
-     * @param defaultValue default value
-     * @param <T>          value type parameter
-     * @return literal
-     */
-    @SuppressWarnings("unchecked")
-    public static <T> Literal parse(Supplier<Builder<T>> builder, GenericType<T> type, String rawValue, T defaultValue) {
-        if (rawValue == null && defaultValue == null) {
-            return null;
-        }
-        T value;
-        if (rawValue != null) {
-            if (type.equals(Value.Types.STRING)) {
-                value = (T) rawValue;
-            } else if (type.equals(Value.Types.BOOLEAN)) {
-                value = (T) Boolean.valueOf(rawValue);
-
-            } else if (type.equals(Value.Types.INT)) {
-                value = (T) Boolean.valueOf(rawValue);
-            } else if (type.equals(Value.Types.STRING_LIST)) {
-                value = (T) Arrays.asList(rawValue.split(","));
-            } else {
-                throw new IllegalArgumentException("Unsupported value type: " + type);
-            }
-        } else {
-            value = defaultValue;
-        }
-        return builder.get().type(type).value(value).build();
-    }
-
-    /**
      * Literal builder.
      *
      * @param <T> value type
@@ -167,8 +119,14 @@ public final class Literal extends Node implements Value {
         private GenericType<T> type;
         private boolean readonly = true;
 
-        Builder() {
-            super(Kind.LITERAL, BuilderTypes.LITERAL);
+        /**
+         * Create a new builder.
+         *
+         * @param location location
+         * @param position position
+         */
+        Builder(Path location, Position position) {
+            super(location, position, Kind.LITERAL);
         }
 
         /**
@@ -183,6 +141,17 @@ public final class Literal extends Node implements Value {
         }
 
         /**
+         * Set the value type.
+         *
+         * @param type type
+         * @return this builder
+         */
+        public Builder<T> type(Class<T> type) {
+            this.type = GenericType.create(type);
+            return this;
+        }
+
+        /**
          * Set the value
          *
          * @param value value
@@ -190,6 +159,38 @@ public final class Literal extends Node implements Value {
          */
         public Builder<T> value(T value) {
             this.value = value;
+            return this;
+        }
+
+        /**
+         * Parse the value.
+         *
+         * @param type         type
+         * @param rawValue     raw value
+         * @param defaultValue default value
+         * @return this builder
+         */
+        @SuppressWarnings("unchecked")
+        public Builder<T> parse(GenericType<T> type, String rawValue, T defaultValue) {
+            if (rawValue == null && defaultValue == null) {
+                return null;
+            }
+            if (rawValue != null) {
+                if (type.equals(ValueTypes.STRING)) {
+                    value = (T) rawValue;
+                } else if (type.equals(ValueTypes.BOOLEAN)) {
+                    value = (T) Boolean.valueOf(rawValue);
+                } else if (type.equals(ValueTypes.INT)) {
+                    value = (T) Boolean.valueOf(rawValue);
+                } else if (type.equals(ValueTypes.STRING_LIST)) {
+                    value = (T) Arrays.asList(rawValue.split(","));
+                } else {
+                    throw new IllegalArgumentException("Unsupported value type: " + type);
+                }
+            } else {
+                value = defaultValue;
+            }
+            this.type = type;
             return this;
         }
 

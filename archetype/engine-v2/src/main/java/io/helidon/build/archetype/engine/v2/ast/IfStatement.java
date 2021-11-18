@@ -16,6 +16,8 @@
 
 package io.helidon.build.archetype.engine.v2.ast;
 
+import java.nio.file.Path;
+
 /**
  * If statement.
  */
@@ -48,11 +50,6 @@ public final class IfStatement extends Statement {
         return expression;
     }
 
-    @Override
-    public <A, R> R accept(Visitor<A, R> visitor, A arg) {
-        return visitor.visit(this, arg);
-    }
-
     /**
      * If statement builder.
      */
@@ -63,9 +60,12 @@ public final class IfStatement extends Statement {
 
         /**
          * Create a new if statement builder.
+         *
+         * @param location location
+         * @param position position
          */
-        Builder() {
-            super(Statement.Kind.IF, BuilderTypes.IF);
+        Builder(Path location, Position position) {
+            super(location, position, Statement.Kind.IF);
         }
 
         /**

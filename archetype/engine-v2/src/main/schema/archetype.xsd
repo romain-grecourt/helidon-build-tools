@@ -490,7 +490,7 @@
         </xs:attribute>
     </xs:attributeGroup>
 
-    <xs:complexType name="context-type">
+    <xs:complexType name="presets-type">
         <xs:annotation>
             <xs:documentation source="version">2.0</xs:documentation>
             <xs:documentation source="description">
@@ -536,14 +536,11 @@
                             Define an enum value.
                         </xs:documentation>
                     </xs:annotation>
-                    <xs:sequence minOccurs="1" maxOccurs="unbounded">
-                        <xs:element name="value">
-                            <xs:simpleType>
-                                <xs:restriction base="xs:string"/>
-                            </xs:simpleType>
-                        </xs:element>
-                    </xs:sequence>
-                    <xs:attributeGroup ref="a:path-group"/>
+                    <xs:simpleContent>
+                        <xs:extension base="xs:string">
+                            <xs:attributeGroup ref="a:path-group"/>
+                        </xs:extension>
+                    </xs:simpleContent>
                 </xs:complexType>
             </xs:element>
             <xs:element name="list">
@@ -657,10 +654,10 @@
     <xs:group name="directive-group">
         <xs:sequence>
             <xs:choice minOccurs="0" maxOccurs="unbounded">
-                <xs:element name="context" type="a:context-type"/>
+                <xs:element name="presets" type="a:presets-type"/>
                 <xs:element name="exec" type="a:exec-type"/>
                 <xs:element name="source" type="a:source-type"/>
-                <xs:element name="input" type="a:input-type"/>
+                <xs:element name="inputs" type="a:input-types"/>
                 <xs:element name="step" type="a:step-type"/>
             </xs:choice>
         </xs:sequence>
@@ -802,7 +799,7 @@
         </xs:attribute>
     </xs:complexType>
 
-    <xs:complexType name="input-type">
+    <xs:complexType name="input-types">
         <xs:annotation>
             <xs:documentation source="version">2.0</xs:documentation>
             <xs:documentation source="description">
@@ -831,10 +828,10 @@
         <xs:sequence>
             <xs:element name="help" type="a:help-type" minOccurs="0" maxOccurs="1"/>
             <xs:choice minOccurs="0" maxOccurs="unbounded">
-                <xs:element name="context" type="a:context-type"/>
+                <xs:element name="presets" type="a:presets-type"/>
                 <xs:element name="exec" type="a:exec-type"/>
                 <xs:element name="source" type="a:source-type"/>
-                <xs:element name="input" type="a:input-type"/>
+                <xs:element name="inputs" type="a:input-types"/>
             </xs:choice>
         </xs:sequence>
         <xs:attributeGroup ref="a:if-group"/>

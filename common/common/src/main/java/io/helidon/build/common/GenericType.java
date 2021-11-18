@@ -1,11 +1,14 @@
 package io.helidon.build.common;
 
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Array;
 import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.lang.reflect.TypeVariable;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Stack;
 
 /**
@@ -15,6 +18,8 @@ import java.util.Stack;
  * @param <T> the generic type parameter
  */
 public class GenericType<T> {
+
+    private static Map<Class<?>, WeakReference<?>> CACHE = new HashMap<>();
 
     private final Type type;
     private final Class<?> rawType;
@@ -26,8 +31,14 @@ public class GenericType<T> {
      * @param clazz the class to represent
      * @return new type wrapping the provided class
      */
+    @SuppressWarnings("unchecked")
     public static <N> GenericType<N> create(Class<N> clazz) {
-        return new GenericType<>(clazz, clazz);
+        return (GenericType<N>) CACHE.compute(clazz, (p, r) -> {
+            if (r == null || r.get() == null) {
+                return new WeakReference<>(new GenericType<>(clazz, clazz));
+            }
+            return r;
+        }).get();
     }
 
     private GenericType(Type type, Class<?> rawType) {

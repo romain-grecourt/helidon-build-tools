@@ -20,34 +20,32 @@
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 file:/archetype.xsd">
 
-    <context>
+    <presets>
         <boolean path="test.option1">true</boolean>
         <list path="test.array1">
             <value>item 1</value>
         </list>
-        <enum path="test.enum1">
-            <value>option 1</value>
-        </enum>
+        <enum path="test.enum1">option1</enum>
         <text path="test.text1">text value 1</text>
-    </context>
+    </presets>
     <step label="Step 1">
         <help><![CDATA[
 Step 1 - Help text line 1
 Step 1 - Help text line 2
 ]]></help>
-        <input>
+        <inputs>
             <text name="input1" label="Input text 1"/>
-        </input>
+        </inputs>
     </step>
-    <input>
-        <text name="input2" label="Input text 2"></text>
+    <inputs>
+        <text name="input2" label="Input text 2"/>
         <boolean name="input3" label="Input boolean 3">
             <step label="Input 3 nested step 1">
                 <help>Input 3 - Nested step 1 - help text</help>
-                <input>
+                <inputs>
                     <text name="nested-input-1" label="Nested input text 1" default="default-value-1"/>
                     <boolean name="nested-input-2" label="Nested input boolean 2">
-                        <input />
+                        <inputs />
                     </boolean>
                     <enum name="nested-input-3" label="Nested input enum 3">
                         <help>Nested input 3 - help text</help>
@@ -62,14 +60,14 @@ Step 1 - Help text line 2
                             <help>Nested input 4 - Item 1 - help text</help>
                         </option>
                     </list>
-                </input>
+                </inputs>
             </step>
         </boolean>
-    </input>
-    <input>
+    </inputs>
+    <inputs>
         <boolean name="input4" label="Input boolean 4">
             <help>Input 4 - help text</help>
-            <input>
+            <inputs>
                 <boolean name="nested-nested-input-5" label="Nested nested input boolean 5">
                     <output>
                         <template engine="tpl-engine-1" source="file1.tpl" target="file1.txt">
@@ -88,14 +86,14 @@ Step 1 - Help text line 2
                         </templates>
                     </output>
                 </boolean>
-            </input>
+            </inputs>
         </boolean>
-    </input>
+    </inputs>
     <source src="./dir1/script1.xml"/>
     <exec src="./dir2/script2.xml"/>
     <output if="${foo} == 'bar'">
         <transformation id="t1">
-            <replace replacement="token1" regex="regex1"></replace>
+            <replace replacement="token1" regex="regex1"/>
         </transformation>
         <templates transformations="t3" engine="tpl-engine-3">
             <directory>dir3</directory>

@@ -55,7 +55,7 @@ public class Constant<T> implements Value {
      * @return constant
      */
     public static Constant create(String value) {
-        return new Constant(value, Types.STRING);
+        return new Constant(value, ValueTypes.STRING);
     }
 
     /**

@@ -18,8 +18,8 @@ package io.helidon.build.archetype.engine.v2.ast;
 
 import io.helidon.build.common.GenericType;
 
-import java.util.List;
-import java.util.function.BiFunction;
+import static io.helidon.build.archetype.engine.v2.ast.ValueTypes.STRING;
+import static io.helidon.build.archetype.engine.v2.ast.ValueTypes.STRING_LIST;
 
 /**
  * Attributes.
@@ -27,33 +27,105 @@ import java.util.function.BiFunction;
 public enum Attributes {
 
     /**
-     * Input type.
+     * Id.
+     */
+    ID(STRING),
+
+    /**
+     * Path.
+     */
+    PATH(STRING),
+
+    /**
+     * Src.
+     */
+    SRC(STRING),
+
+    /**
+     * Directory.
+     */
+    DIRECTORY(STRING),
+
+    /**
+     * Name.
+     */
+    NAME(STRING),
+
+    /**
+     * Label.
+     */
+    LABEL(STRING),
+
+    /**
+     * Help.
+     */
+    HELP(STRING),
+
+    /**
+     * Order.
+     */
+    Order(STRING),
+
+    /**
+     * Replacement.
+     */
+    TRANSFORMATIONS(STRING_LIST),
+
+    /**
+     * Replacement.
+     */
+    REPLACEMENT(STRING),
+
+    /**
+     * Regex.
+     */
+    REGEX(STRING),
+
+    /**
+     * Includes.
+     */
+    INCLUDES(STRING_LIST),
+
+    /**
+     * Excludes.
+     */
+    EXCLUDES(STRING_LIST),
+
+    /**
+     * Value.
+     */
+    VALUE(null);
+
+    private final GenericType<?> type;
+
+    Attributes(GenericType<?> type) {
+        this.type = type;
+    }
+
+    /**
+     * Get the value type.
      *
-     * @see InputType
+     * @return type
      */
-    INPUT_TYPE,
+    public GenericType<?> valueType() {
+        return type;
+    }
 
     /**
-     * Input value.
-     */
-    INPUT_VALUE,
-
-    /**
-     * Input name.
-     */
-    INPUT_NAME,
-
-    /**
-     * Invocation type.
+     * Get an attribute.
      *
-     * @see InvocationType
+     * @param node node
+     * @return value
      */
-    INVOCATION_TYPE,
-
-    /**
-     * Replacement
-     */
-    REPLACEMENT;
+    public Value get(Node node) {
+        Value value = node.attributes().get(this);
+        if (value == null) {
+            throw new IllegalStateException(String.format(
+                    "Unable to get attribute '%s', file=%s, position=%s",
+                    this, node.location(), node.position()));
+        }
+        return value;
+    }
 
     /**
      * Get an attribute.
@@ -69,133 +141,5 @@ public enum Attributes {
                     this, node.location(), node.position()));
         }
         return value.as(type);
-    }
-
-    // TODO parse?
-
-    /**
-     * Type info for {@code INPUT_TYPE}.
-     */
-    public static final GenericType<InputType> INPUT_TYPE_INFO = GenericType.create(InputType.class);
-
-    /**
-     * Type info for {@code INVOCATION_TYPE}.
-     */
-    public static final GenericType<InvocationType> INVOCATION_TYPE_INFO = GenericType.create(InvocationType.class);
-
-    /**
-     * Type info for {@code REPLACEMENT}.
-     */
-    public static final GenericType<List<Replacement>> REPLACEMENT_TYPE_INFO = new GenericType<>() {
-    };
-
-    /**
-     * Input type.
-     */
-    public enum InputType {
-
-        /**
-         * Text.
-         */
-        TEXT(Value.Types.STRING),
-
-        /**
-         * Boolean.
-         */
-        BOOLEAN(Value.Types.BOOLEAN),
-
-        /**
-         * Enum.
-         */
-        ENUM(Value.Types.STRING),
-
-        /**
-         * List.
-         */
-        LIST(Value.Types.STRING_LIST);
-
-        private final GenericType<?> type;
-
-        InputType(GenericType<?> type) {
-            this.type = type;
-        }
-
-        /**
-         * Create a value.
-         *
-         * @param function function
-         * @return value
-         */
-        public Value toValue(BiFunction<GenericType<InputType>, InputType, Value> function) {
-            return function.apply(INPUT_TYPE_INFO, this);
-        }
-
-        /**
-         * Get the value type.
-         *
-         * @return type
-         */
-        public GenericType<?> valueType() {
-            return type;
-        }
-    }
-
-    /**
-     * Invocation type.
-     */
-    public enum InvocationType {
-
-        /**
-         * Exec.
-         */
-        EXEC,
-
-        /**
-         * Source.
-         */
-        SOURCE
-    }
-
-    /**
-     * Replacement.
-     */
-    public static final class Replacement {
-
-        private final String regexp;
-        private final String replace;
-
-        private Replacement(String regexp, String replace) {
-            this.regexp = regexp;
-            this.replace = replace;
-        }
-
-        /**
-         * Get the regexp.
-         *
-         * @return regexp
-         */
-        public String regexp() {
-            return regexp;
-        }
-
-        /**
-         * Get the replacement.
-         *
-         * @return replacement
-         */
-        public String replace() {
-            return replace;
-        }
-
-        /**
-         * Create a new replacement.
-         *
-         * @param regexp  regexp
-         * @param replace replace
-         * @return replacement
-         */
-        public static Replacement create(String regexp, String replace) {
-            return new Replacement(regexp, replace);
-        }
     }
 }

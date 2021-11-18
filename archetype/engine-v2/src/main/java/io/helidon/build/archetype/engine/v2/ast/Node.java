@@ -19,16 +19,20 @@ package io.helidon.build.archetype.engine.v2.ast;
 import io.helidon.build.common.GenericType;
 
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 
 import static java.util.Objects.requireNonNull;
+import static java.util.stream.Collectors.toMap;
 
 /**
- * Base class for AST nodes.
+ * AST node.
  */
 public abstract class Node {
 
@@ -82,7 +86,7 @@ public abstract class Node {
     }
 
     /**
-     * Visit a node.
+     * Visit this node.
      *
      * @param visitor Visitor
      * @param arg     argument
@@ -90,7 +94,18 @@ public abstract class Node {
      * @param <A>     generic type of the arguments
      * @return result
      */
-    public abstract <A, R> R accept(Visitor<A, R> visitor, A arg);
+    public final <A, R> R accept(Visitor<A, R> visitor, A arg) {
+        switch(kind) {
+            case STATEMENT:
+                return visitor.visitStatement((Statement) this, arg);
+            case SCRIPT:
+                return visitor.visitScript((Script) this, arg);
+            case LITERAL:
+                return visitor.visitLiteral((Literal) this, arg);
+            default:
+                throw new IllegalStateException();
+        }
+    }
 
     /**
      * Node kind.
@@ -114,91 +129,46 @@ public abstract class Node {
     }
 
     /**
-     * All builder types.
-     */
-    @SuppressWarnings("rawtypes")
-    public static final class BuilderTypes {
-
-        /**
-         * Builder type for default blocks.
-         */
-        public static final GenericType<Block.Builder> BLOCK = GenericType.create(Block.Builder.class);
-
-        /**
-         * Builder type for executable blocks.
-         */
-        public static final GenericType<Executable.Builder> EXECUTABLE = GenericType.create(Executable.Builder.class);
-
-        /**
-         * Builder type for output blocks.
-         */
-        public static final GenericType<Output.Builder> OUTPUT = GenericType.create(Output.Builder.class);
-
-        /**
-         * Builder type for model blocks.
-         */
-        public static final GenericType<Model.Builder> MODEL = GenericType.create(Model.Builder.class);
-
-        /**
-         * Builder type for if statements.
-         */
-        public static final GenericType<IfStatement.Builder> IF = GenericType.create(IfStatement.Builder.class);
-
-        /**
-         * Builder type for expressions.
-         */
-        public static final GenericType<Expression.Builder> EXPRESSION = GenericType.create(Expression.Builder.class);
-
-        /**
-         * Builder type for scripts.
-         */
-        public static final GenericType<Script.Builder> SCRIPT = GenericType.create(Script.Builder.class);
-
-        /**
-         * Builder type for literals.
-         */
-        public static final GenericType<Literal.Builder<?>> LITERAL = new GenericType<>(){};
-
-        private BuilderTypes() {
-        }
-    }
-
-    /**
-     * Create a new builder.
+     * Visitor.
      *
-     * @param type builder type
-     * @param <T>  block sub-type
-     * @param <U>  block builder sub-type
-     * @return builder
+     * @param <A> argument
+     * @param <R> type of the returned value
      */
-    @SuppressWarnings("unchecked")
-    public static <T extends Node, U extends Node.Builder<T, U>> U builder(GenericType<U> type) {
-        Objects.requireNonNull(type, "type is null");
-        if (type.equals(BuilderTypes.BLOCK)) {
-            return (U) new Block.Builder<>();
+    @SuppressWarnings("unused")
+    public interface Visitor<A, R> {
+
+        /**
+         * Visit a script.
+         *
+         * @param script script
+         * @param arg    argument
+         * @return visit result
+         */
+        default R visitScript(Script script, A arg) {
+            return null;
         }
-        if (type.equals(BuilderTypes.EXECUTABLE)) {
-            return (U) new Executable.Builder();
+
+        /**
+         * Visit a statement.
+         *
+         * @param statement statement
+         * @param arg       argument
+         * @return visit result
+         */
+        default R visitStatement(Statement statement, A arg) {
+            return null;
         }
-        if (type.equals(BuilderTypes.OUTPUT)) {
-            return (U) new Output.Builder();
+
+        /**
+         * Visit a literal.
+         *
+         * @param literal literal
+         * @param arg     argument
+         * @return visit result
+         */
+        default R visitLiteral(Literal literal, A arg) {
+            return null;
         }
-        if (type.equals(BuilderTypes.MODEL)) {
-            return (U) new Model.Builder();
-        }
-        if (type.equals(BuilderTypes.IF)) {
-            return (U) new IfStatement.Builder();
-        }
-        if (type.equals(BuilderTypes.EXPRESSION)) {
-            return (U) new Expression.Builder();
-        }
-        if (type.equals(BuilderTypes.SCRIPT)) {
-            return (U) new Script.Builder();
-        }
-        if (type.rawType().equals(Node.Builder.class)) {
-            return (U) new Literal.Builder<>();
-        }
-        throw new IllegalArgumentException("Unsupported builder type: " + type);
     }
 
     /**
@@ -210,53 +180,42 @@ public abstract class Node {
     @SuppressWarnings("unchecked")
     public static abstract class Builder<T, U extends Builder<T, U>> {
 
-        private static final Path DEFAULT_LOCATION = Path.of("script.xml");
+        private static final Path NULL_LOCATION = Path.of("script.xml");
+        private static final Position NULL_POSITION = Position.of(0, 0);
 
-        private final GenericType<U> type;
+        private static final Map<String, Attributes> ATTRIBUTES_MAP =
+                Arrays.stream(Attributes.values()).collect(toMap(Attributes::name, Function.identity()));
+
         private final Kind kind;
         private final Map<Object, Value> attributes = new HashMap<>();
-        private Path location = DEFAULT_LOCATION;
-        private Position position;
+        private final Path location;
+        private final Position position;
 
         /**
          * Create a new node builder.
          *
-         * @param kind kind
-         */
-        protected Builder(Kind kind, GenericType<U> type) {
-            this.type = requireNonNull(type, "type is null");
-            this.kind = requireNonNull(kind, "kind is null");
-        }
-
-        /**
-         * Get the builder type.
-         *
-         * @return type
-         */
-        public GenericType<U> type() {
-            return type;
-        }
-
-        /**
-         * Set the position.
-         *
-         * @param position position
-         * @return this builder
-         */
-        public U position(Position position) {
-            this.position = position;
-            return (U) this;
-        }
-
-        /**
-         * Set the location.
-         *
          * @param location location
+         * @param position position
+         * @param kind     kind
+         */
+        protected Builder(Path location, Position position, Kind kind) {
+            this.kind = requireNonNull(kind, "kind is null");
+            this.location = location == null ? NULL_LOCATION : location;
+            this.position = position == null ? NULL_POSITION : position;
+        }
+
+        /**
+         * Add a statement.
+         *
+         * @param builder statement builder
          * @return this builder
          */
-        public U location(Path location) {
-            this.location = location;
-            return (U) this;
+        public U statement(Statement.Builder<? extends Statement, ?> builder) {
+            throw new UnsupportedOperationException("Unable to add statement to " + getClass().getName());
+        }
+
+        private <V> Literal.Builder<V> newLiteral() {
+            return new Literal.Builder<>(location, position);
         }
 
         /**
@@ -272,6 +231,69 @@ public abstract class Node {
                 attributes.put(key, value);
             }
             return (U) this;
+        }
+
+        /**
+         * Add a value to a list attribute.
+         *
+         * @param key   key
+         * @param value value
+         * @param type  type
+         * @param <V>   value type
+         * @return this builder
+         */
+        @SuppressWarnings("UnusedReturnValue")
+        public <V> U attributeListAdd(Object key, GenericType<List<V>> type, V value) {
+            attributes.compute(key, (k, v) -> Literal.listAdd(this::newLiteral, v, type, value));
+            return (U) this;
+        }
+
+        /**
+         * Parse attributes.
+         *
+         * @param rawAttrs raw attributes
+         * @return this builder
+         */
+        @SuppressWarnings("UnusedReturnValue")
+        public U parseAttributes(Map<String, String> rawAttrs) {
+            if (rawAttrs != null) {
+                rawAttrs.forEach((k, v) -> {
+                    Attributes attr = ATTRIBUTES_MAP.get(k);
+                    if (attr != null) {
+                        GenericType<?> valueType = attr.valueType();
+                        if (valueType != null) {
+                            parseAttribute(attr, valueType, v);
+                        }
+                    }
+                });
+            }
+            return (U) this;
+        }
+
+        /**
+         * Add an attribute.
+         *
+         * @param key      key
+         * @param rawValue raw value
+         * @return this builder
+         */
+        public <V> U parseAttribute(Object key, GenericType<V> type, String rawValue, V defaultValue) {
+            Objects.requireNonNull(key, "key is null");
+            if (rawValue != null) {
+                attributes.put(key, this.<V>newLiteral().parse(type, rawValue, defaultValue).build());
+            }
+            return (U) this;
+        }
+
+        /**
+         * Add an attribute.
+         *
+         * @param key      key
+         * @param rawValue raw value
+         * @return this builder
+         */
+        public <V> U parseAttribute(Object key, GenericType<V> type, String rawValue) {
+            return parseAttribute(key, type, rawValue, null);
         }
 
         /**

@@ -24,17 +24,13 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Stream;
 
-import io.helidon.build.archetype.engine.v2.ast.Attributes.InputType;
-import io.helidon.build.archetype.engine.v2.ast.Executable;
+import io.helidon.build.archetype.engine.v2.ast.Input;
 import io.helidon.build.archetype.engine.v2.ast.Value;
 import io.helidon.build.archetype.engine.v2.prompter.Prompter;
 import io.helidon.build.common.GenericType;
 
 import static java.util.Arrays.stream;
 import static java.util.stream.Collectors.joining;
-import static io.helidon.build.archetype.engine.v2.ast.Attributes.INPUT_NAME;
-import static io.helidon.build.archetype.engine.v2.ast.Attributes.INPUT_TYPE;
-import static io.helidon.build.archetype.engine.v2.ast.Attributes.INPUT_TYPE_INFO;
 
 /**
  * Context node.
@@ -84,7 +80,7 @@ interface Context {
      * @param prompter prompted to resolve the value
      * @return created child node containing the resolved value
      */
-    Context resolve(Executable input, Prompter prompter);
+    Context resolve(Input input, Prompter prompter);
 
     /**
      * Lookup a context node by input path.
@@ -163,10 +159,9 @@ interface Context {
         }
 
         @Override
-        public Context resolve(Executable input, Prompter prompter) {
-            InputType inputType = INPUT_TYPE.get(input, INPUT_TYPE_INFO);
-            String inputName = INPUT_NAME.get(input, Value.Types.STRING);
-            ContextNode node = new ContextNode(this, inputName, outputs);
+        public Context resolve(Input input, Prompter prompter) {
+            String name = input.name();
+            ContextNode node = new ContextNode(this, name, outputs);
             this.children.add(node);
             return node;
         }
@@ -301,7 +296,7 @@ interface Context {
         }
 
         @Override
-        public Context resolve(Executable input, Prompter prompter) {
+        public Context resolve(Input input, Prompter prompter) {
             return delegate.resolve(input, prompter);
         }
 

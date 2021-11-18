@@ -16,8 +16,8 @@
 
 package io.helidon.build.archetype.engine.v2;
 
+import io.helidon.build.archetype.engine.v2.ast.Node;
 import io.helidon.build.archetype.engine.v2.ast.Output;
-import io.helidon.build.archetype.engine.v2.ast.Visitor;
 
 import java.util.LinkedList;
 import java.util.List;
@@ -54,7 +54,7 @@ class UnresolvedOutputs {
     /**
      * Unresolved visitor.
      */
-    interface UnresolvedVisitor extends Visitor<Output.Builder, Void> {
+    interface UnresolvedVisitor extends Node.Visitor<Output.Builder, Void> {
 
         /**
          * Visit an unresolved output.

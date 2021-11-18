@@ -20,10 +20,10 @@
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-script-2.0.xsd">
 
-    <context>
+    <presets>
         <enum path="media-support.json.provider">jackson</enum>
         <enum path="tracing.provider">jaeger</enum>
-    </context>
+    </presets>
     <source src="../../common/java-files.xml"/>
     <exec src="../bare/bare-se.xml"/>
 </archetype-script>

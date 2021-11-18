@@ -24,13 +24,7 @@ public final class Position {
     private final int lineNo;
     private final int charNo;
 
-    /**
-     * Create a new position.
-     *
-     * @param lineNo line number
-     * @param charNo line character number
-     */
-    public Position(int lineNo, int charNo) {
+    private Position(int lineNo, int charNo) {
         this.lineNo = lineNo;
         this.charNo = charNo;
     }
@@ -56,5 +50,15 @@ public final class Position {
     @Override
     public String toString() {
         return lineNo + ":" + charNo;
+    }
+
+    /**
+     * Create a new position.
+     *
+     * @param lineNo line number
+     * @param charNo line character number
+     */
+    public static Position of(int lineNo, int charNo) {
+        return new Position(lineNo, charNo);
     }
 }

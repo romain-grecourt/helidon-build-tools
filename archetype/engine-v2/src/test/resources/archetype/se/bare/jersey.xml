@@ -22,12 +22,12 @@
 
     <step label="Jersey Security" if="${security}">
 
-        <input>
+        <inputs>
             <text name="username"
                   label="Username"
                   prompt="What username do you want to use"
                   placeholder="myuser"/>
-        </input>
+        </inputs>
 
         <output>
             <model>

@@ -16,15 +16,14 @@
 
 package io.helidon.build.archetype.engine.v2.ast;
 
-import io.helidon.build.common.GenericType;
-
+import java.nio.file.Path;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * Block statements.
+ * Block statement.
  */
 public class Block extends Statement {
 
@@ -53,11 +52,6 @@ public class Block extends Statement {
         return stmts;
     }
 
-    @Override
-    public <A, R> R accept(Visitor<A, R> visitor, A arg) {
-        return visitor.visit(this, arg);
-    }
-
     /**
      * Get the block kind.
      *
@@ -65,6 +59,110 @@ public class Block extends Statement {
      */
     public Kind blockKind() {
         return kind;
+    }
+
+    /**
+     * Visit this block.
+     *
+     * @param visitor Visitor
+     * @param arg     argument
+     * @param <R>     generic type of the result
+     * @param <A>     generic type of the arguments
+     * @return result
+     */
+    public final <A, R> R accept(Visitor<A, R> visitor, A arg) {
+        switch (kind) {
+            case INPUTS:
+                return visitor.visitInputs(this, arg);
+            case PRESETS:
+                return visitor.visitPresets(this, arg);
+            case EXECUTABLE:
+                return visitor.visitExecutable((Executable) this, arg);
+            case OUTPUT:
+                return visitor.visitOutput((Output) this, arg);
+            case MODEL:
+                return visitor.visitModel((Model) this, arg);
+            case UNKNOWN:
+                return visitor.visitUnknown(this, arg);
+            default:
+                throw new IllegalStateException();
+        }
+    }
+
+    /**
+     * Block visitor.
+     *
+     * @param <A> argument
+     * @param <R> type of the returned value
+     */
+    @SuppressWarnings("unused")
+    public interface Visitor<A, R> {
+
+        /**
+         * Visit an inputs block.
+         *
+         * @param block block
+         * @param arg   argument
+         * @return visit result
+         */
+        default R visitInputs(Block block, A arg) {
+            return null;
+        }
+
+        /**
+         * Visit a presets block.
+         *
+         * @param block block
+         * @param arg   argument
+         * @return visit result
+         */
+        default R visitPresets(Block block, A arg) {
+            return null;
+        }
+
+        /**
+         * Visit an executable block.
+         *
+         * @param block block
+         * @param arg   argument
+         * @return visit result
+         */
+        default R visitExecutable(Executable block, A arg) {
+            return null;
+        }
+
+        /**
+         * Visit an executable block.
+         *
+         * @param block block
+         * @param arg   argument
+         * @return visit result
+         */
+        default R visitOutput(Output block, A arg) {
+            return null;
+        }
+
+        /**
+         * Visit a model block.
+         *
+         * @param block block
+         * @param arg   argument
+         * @return visit result
+         */
+        default R visitModel(Model block, A arg) {
+            return null;
+        }
+
+        /**
+         * Visit an unknown block.
+         *
+         * @param block block
+         * @param arg   argument
+         * @return visit result
+         */
+        default R visitUnknown(Block block, A arg) {
+            return null;
+        }
     }
 
     /**
@@ -78,9 +176,9 @@ public class Block extends Statement {
         INPUTS,
 
         /**
-         * Input values.
+         * Presets.
          */
-        INPUT_VALUES,
+        PRESETS,
 
         /**
          * Executable.
@@ -91,6 +189,11 @@ public class Block extends Statement {
          * Output.
          */
         OUTPUT,
+
+        /**
+         * Model.
+         */
+        MODEL,
 
         /**
          * Unknown.
@@ -107,44 +210,22 @@ public class Block extends Statement {
     @SuppressWarnings("unchecked")
     public static class Builder<T extends Block, U extends Builder<T, U>> extends Statement.Builder<T, U> {
 
-        private Kind kind;
+        private final Kind kind;
         private final List<Statement.Builder<Statement, ?>> stmts = new LinkedList<>();
 
         /**
          * Create a new block builder.
-         */
-        Builder() {
-            super(Statement.Kind.BLOCK, (GenericType<U>) Node.BuilderTypes.BLOCK);
-        }
-
-        /**
-         * Create a new block builder.
          *
-         * @param kind kind
-         * @param type builder type
+         * @param location location
+         * @param position position
+         * @param kind     kind
          */
-        protected Builder(Kind kind, GenericType<U> type) {
-            super(Statement.Kind.BLOCK, type);
+        Builder(Path location, Position position, Kind kind) {
+            super(location, position, Statement.Kind.BLOCK);
             this.kind = kind;
         }
 
-        /**
-         * Set the block kind.
-         *
-         * @param kind kind
-         * @return this builder
-         */
-        public U blockKind(Kind kind) {
-            this.kind = kind;
-            return (U) this;
-        }
-
-        /**
-         * Add a statement.
-         *
-         * @param builder statement builder
-         * @return this builder
-         */
+        @Override
         public U statement(Statement.Builder<? extends Statement, ?> builder) {
             stmts.add((Statement.Builder<Statement, ?>) builder);
             return (U) this;

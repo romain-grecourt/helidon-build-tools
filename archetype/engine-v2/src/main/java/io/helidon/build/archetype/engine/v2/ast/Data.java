@@ -13,90 +13,92 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package io.helidon.build.archetype.engine.v2.ast;
+
+import io.helidon.build.common.GenericType;
 
 import java.nio.file.Path;
 import java.util.Objects;
 
 /**
- * Output block.
+ * Data block.
  */
-public final class Output extends Block {
+public final class Data extends Statement {
 
     private final Kind kind;
 
-    private Output(Builder builder) {
+    private Data(Builder builder) {
         super(builder);
         this.kind = Objects.requireNonNull(builder.kind, "kind is null");
     }
 
     /**
-     * Get the output block kind.
+     * Get the data kind.
      *
      * @return kind
      */
-    public Kind outputKind() {
+    public Kind dataKind() {
         return kind;
     }
 
     /**
-     * Output blocks kind.
+     * Data kind.
      */
     public enum Kind {
 
         /**
-         * Transformation.
+         * Replace.
          */
-        TRANSFORMATION,
+        REPLACE(ValueTypes.STRING_PAIR_LIST);
+
+        private final GenericType<?> type;
+
+        Kind(GenericType<?> type) {
+            this.type = type;
+        }
 
         /**
-         * File.
+         * Get the value type.
+         *
+         * @return type
          */
-        FILE,
-
-        /**
-         * Files.
-         */
-        FILES,
-
-        /**
-         * Template.
-         */
-        TEMPLATE,
-
-        /**
-         * Templates.
-         */
-        TEMPLATES,
-
-        /**
-         * Model.
-         */
-        MODEL
+        public GenericType<?> valueType() {
+            return type;
+        }
     }
 
     /**
-     * Output block builder.
+     * Data block builder.
      */
-    public static final class Builder extends Block.Builder<Output, Builder> {
+    public static final class Builder extends Statement.Builder<Data, Builder> {
 
         private final Kind kind;
 
         /**
-         * Create a new output block builder.
+         * Create a new builder.
          *
          * @param location location
          * @param position position
          * @param kind     kind
          */
         Builder(Path location, Position position, Kind kind) {
-            super(location, position, Block.Kind.UNKNOWN);
+            super(location, position, Statement.Kind.DATA);
             this.kind = kind;
         }
 
+        /**
+         * Get the data kind.
+         *
+         * @return kind
+         */
+        public Kind dataKind() {
+            return kind;
+        }
+
         @Override
-        public Output build() {
-            return new Output(this);
+        public Data build() {
+            return new Data(this);
         }
     }
 }

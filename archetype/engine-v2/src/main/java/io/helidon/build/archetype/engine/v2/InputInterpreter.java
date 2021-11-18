@@ -1,14 +1,12 @@
 package io.helidon.build.archetype.engine.v2;
 
-import io.helidon.build.archetype.engine.v2.ast.Block;
-import io.helidon.build.archetype.engine.v2.ast.Script;
-import io.helidon.build.archetype.engine.v2.ast.Visitor;
+import io.helidon.build.archetype.engine.v2.ast.Node;
 import io.helidon.build.archetype.engine.v2.prompter.Prompter;
 
 /**
  * Input interpreter.
  */
-class InputInterpreter implements Visitor<Context, Void> {
+class InputInterpreter implements Node.Visitor<Context, Void> {
 
     private final Prompter prompter;
     private final boolean batch;

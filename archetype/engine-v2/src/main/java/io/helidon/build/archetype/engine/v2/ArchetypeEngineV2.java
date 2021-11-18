@@ -34,6 +34,7 @@ public class ArchetypeEngineV2 {
     private final Map<String, String> env;
     private final boolean batch;
 
+    // TODO batch goes away and it implemented with a prompter
     public ArchetypeEngineV2(Path entryPoint, Prompter prompter, Map<String, String> env, boolean batch) {
         this.entryPoint = entryPoint;
         this.prompter = prompter;
@@ -62,6 +63,11 @@ public class ArchetypeEngineV2 {
     }
 
     private Output evalOutput(Context ctx) {
+        // TODO just do this as another full path on the tree
+        // i.e remove unresolvedOutput from the context
+        // the 2nd pass will need to accumulate the global model, list of file and templates
+        // and do the rendering at the end
+
         // TODO sub-class output builder since the fields are private and have no accessor
         // we need to mutate the underlying data to merge while visiting
 //        Output.Builder builder = Output.builder();

@@ -20,16 +20,16 @@
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-script-2.0.xsd">
 
-    <context>
+    <presets>
         <boolean path="foo">true</boolean>
         <boolean path="foo2">true</boolean>
         <boolean path="bool-input">true</boolean>
         <boolean path="bool-input2">true</boolean>
-    </context>
+    </presets>
 
     <step label="User boolean input">
 
-        <input>
+        <inputs>
 
             <boolean name="bool-input"
                      label="User boolean input label">
@@ -49,7 +49,7 @@
                 </output>
             </boolean>
 
-        </input>
+        </inputs>
 
     </step>
 </archetype-script>

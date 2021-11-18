@@ -16,6 +16,7 @@
 
 package io.helidon.build.archetype.engine.v2.ast;
 
+import java.nio.file.Path;
 import java.util.Objects;
 
 /**
@@ -23,7 +24,7 @@ import java.util.Objects;
  */
 public final class Script extends Node {
 
-    private final Block body;
+    private final Executable body;
 
     private Script(Builder builder) {
         super(builder);
@@ -31,17 +32,12 @@ public final class Script extends Node {
     }
 
     /**
-     * Get the script body.
+     * Get the body.
      *
      * @return body
      */
-    public Block body() {
+    public Executable body() {
         return body;
-    }
-
-    @Override
-    public <A, R> R accept(Visitor<A, R> visitor, A arg) {
-        return null;
     }
 
     /**
@@ -49,23 +45,22 @@ public final class Script extends Node {
      */
     public static final class Builder extends Node.Builder<Script, Builder> {
 
-        private Block.Builder<?, ?> body;
+        private final Executable.Builder body;
 
         /**
-         * Create a new script builder.
+         * Create a new builder.
+         *
+         * @param location location
+         * @param position position
          */
-        Builder() {
-            super(Kind.SCRIPT, BuilderTypes.SCRIPT);
+        Builder(Path location, Position position) {
+            super(location, position, Kind.SCRIPT);
+            this.body = new Executable.Builder(location, position, Executable.Kind.SCRIPT);
         }
 
-        /**
-         * Set the script body.
-         *
-         * @param body body
-         * @return this builder
-         */
-        public Builder body(Block.Builder<?, ?> body) {
-            this.body = body;
+        @Override
+        public Builder statement(Statement.Builder<? extends Statement, ?> builder) {
+            body.statement(builder);
             return this;
         }
 

@@ -21,9 +21,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.LinkedList;
-import java.util.List;
 
-import io.helidon.build.archetype.engine.v2.ast.Node;
+import io.helidon.build.archetype.engine.v2.ast.NodeFactory;
+import io.helidon.build.archetype.engine.v2.ast.Position;
 import io.helidon.build.archetype.engine.v2.ast.Script;
 import io.helidon.build.archetype.engine.v2.prompter.Prompter;
 
@@ -36,23 +36,9 @@ import static org.hamcrest.Matchers.is;
 
 public class InputInterpreterTest {
 
-    static Path scriptPath;
-
-    @BeforeAll
-    static void init() throws IOException {
-        scriptPath = Files.createTempFile("script.xml", null);
-    }
-
-    @AfterAll
-    static void cleanup() throws IOException {
-        if (scriptPath != null) {
-            Files.delete(scriptPath);
-        }
-    }
-
     @Test
     public void simpleTest() {
-        Script script = Node.builder(Node.BuilderTypes.SCRIPT)
+        Script script = NodeFactory.newScript(null, null)
 //                      .path(scriptPath)
 //                      .body(s -> {
 //                          s.step(st -> {
@@ -79,7 +65,7 @@ public class InputInterpreterTest {
     }
 
     private static Context eval(Script script, Object... userInput) {
-        Context ctx = Context.create(scriptPath.getParent());
+        Context ctx = Context.create(script.location().getParent());
         script.accept(new InputInterpreter(new TestPrompter(userInput), true), ctx);
         return ctx;
     }

@@ -21,11 +21,11 @@
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-script-2.0.xsd">
 
     <step optional="true" label="Tracing">
-        <input>
+        <inputs>
             <boolean name="tracing"
                      label="Tracing support"
                      prompt="Do you want tracing support">
-                <input>
+                <inputs>
                     <enum name="provider"
                           label="Select a tracing provider">
 
@@ -71,8 +71,8 @@
                             </item>
                         </model>
                     </output>
-                </input>
+                </inputs>
             </boolean>
-        </input>
+        </inputs>
     </step>
 </archetype-script>

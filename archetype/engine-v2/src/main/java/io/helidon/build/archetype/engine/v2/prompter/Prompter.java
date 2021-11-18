@@ -20,6 +20,6 @@ package io.helidon.build.archetype.engine.v2.prompter;
  * Prompter for user input.
  */
 public interface Prompter {
-
-// TODO prompter as Executable.Visitor<Value, Context>
+    // TODO prompter as Executable.Visitor<Value, Context>
+    // Input.Visitor<Value, Context>
 }

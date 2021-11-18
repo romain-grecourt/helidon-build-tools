@@ -22,25 +22,25 @@ import java.util.List;
  * Prompter that uses CLI for input/output.
  */
 public class CLIPrompter  implements Prompter{
-    @Override
-    public String prompt(TextInput input) {
-        return null;
-    }
-
-    @Override
-    public String prompt(EnumInput input) {
-        return null;
-    }
-
-    @Override
-    public List<String> prompt(ListInput input) {
-        return null;
-    }
-
-    @Override
-    public boolean prompt(BooleanInput input) {
-        return false;
-    }
+//    @Override
+//    public String prompt(TextInput input) {
+//        return null;
+//    }
+//
+//    @Override
+//    public String prompt(EnumInput input) {
+//        return null;
+//    }
+//
+//    @Override
+//    public List<String> prompt(ListInput input) {
+//        return null;
+//    }
+//
+//    @Override
+//    public boolean prompt(BooleanInput input) {
+//        return false;
+//    }
 
 //    private String lastStepLabel;
 //

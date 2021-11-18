@@ -16,6 +16,7 @@
 
 package io.helidon.build.archetype.engine.v2.ast;
 
+import java.nio.file.Path;
 import java.util.Objects;
 
 /**
@@ -40,6 +41,30 @@ public final class Executable extends Block {
     }
 
     /**
+     * Visit this executable block.
+     *
+     * @param visitor Visitor
+     * @param arg     argument
+     * @param <R>     generic type of the result
+     * @param <A>     generic type of the arguments
+     * @return result
+     */
+    public <A, R> R accept(Visitor<A, R> visitor, A arg) {
+        switch (kind) {
+            case SCRIPT:
+                return visitor.visitScript(this, arg);
+            case STEP:
+                return visitor.visitStep(this, arg);
+            case OPTION:
+                return visitor.visitOption(this, arg);
+            case INPUT:
+                return visitor.visitInput(this, arg);
+            default:
+                throw new IllegalStateException();
+        }
+    }
+
+    /**
      * Executable blocks kind.
      */
     public enum Kind {
@@ -55,19 +80,68 @@ public final class Executable extends Block {
         STEP,
 
         /**
-         * Input.
-         */
-        INPUT,
-
-        /**
          * Option.
          */
         OPTION,
 
         /**
-         * Output.
+         * Input.
          */
-        OUTPUT
+        INPUT,
+    }
+
+    /**
+     * Executable block visitor.
+     *
+     * @param <A> argument
+     * @param <R> type of the returned value
+     */
+    @SuppressWarnings("unused")
+    public interface Visitor<A, R> {
+
+        /**
+         * Visit a script.
+         *
+         * @param script script
+         * @param arg    argument
+         * @return visit result
+         */
+        default R visitScript(Executable script, A arg) {
+            return null;
+        }
+
+        /**
+         * Visit a statement.
+         *
+         * @param step step
+         * @param arg  argument
+         * @return visit result
+         */
+        default R visitStep(Executable step, A arg) {
+            return null;
+        }
+
+        /**
+         * Visit an option.
+         *
+         * @param option option
+         * @param arg    argument
+         * @return visit result
+         */
+        default R visitOption(Executable option, A arg) {
+            return null;
+        }
+
+        /**
+         * Visit an input.
+         *
+         * @param input input
+         * @param arg   argument
+         * @return visit result
+         */
+        default R visitInput(Executable input, A arg) {
+            return null;
+        }
     }
 
     /**
@@ -75,24 +149,17 @@ public final class Executable extends Block {
      */
     public static class Builder extends Block.Builder<Executable, Builder> {
 
-        private Kind kind;
+        private final Kind kind;
 
         /**
          * Create a new executable builder.
-         */
-        Builder() {
-            super(Block.Kind.EXECUTABLE, BuilderTypes.EXECUTABLE);
-        }
-
-        /**
-         * Set the executable block kind.
          *
-         * @param kind kind
-         * @return this builder
+         * @param location location
+         * @param position position
          */
-        public Builder executableKind(Kind kind) {
+        Builder(Path location, Position position, Kind kind) {
+            super(location, position, Block.Kind.EXECUTABLE);
             this.kind = kind;
-            return this;
         }
 
         @Override

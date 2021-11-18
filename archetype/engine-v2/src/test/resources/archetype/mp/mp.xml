@@ -21,7 +21,7 @@
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-script-2.0.xsd">
 
     <step label="Application Type">
-        <input>
+        <inputs>
             <enum name="base"
                   label="Select archetype">
 
@@ -46,6 +46,6 @@
                     <source src="bare/bare-mp.xml"/>
                 </option>
             </enum>
-        </input>
+        </inputs>
     </step>
 </archetype-script>

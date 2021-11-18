@@ -21,7 +21,7 @@
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-script-2.0.xsd">
 
 
-    <input>
+    <inputs>
         <enum name="build-system"
               label="Select a build system">
             <option value="maven" label="Apache Maven">
@@ -29,7 +29,7 @@
             </option>
             <option value="gradle" label="Gradle"/>
         </enum>
-    </input>
+    </inputs>
 
     <exec src="helidon-file.xml"/>
     <exec src="readme.xml"/>

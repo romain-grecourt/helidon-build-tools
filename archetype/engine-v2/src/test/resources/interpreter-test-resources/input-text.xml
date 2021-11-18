@@ -20,7 +20,7 @@
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-script-2.0.xsd">
 
-    <context>
+    <presets>
         <enum path="enum.provider">
             <value>enum value</value>
         </enum>
@@ -30,11 +30,11 @@
         </list>
         <boolean path="bool.provider">true</boolean>
         <text path="user_text_input_context">text input from context</text>
-    </context>
+    </presets>
 
     <step label="Test text input">
 
-        <input>
+        <inputs>
 
             <text name="user_text_input"
                   label="User text input"
@@ -44,7 +44,7 @@
                   label="Context text input"
                   placeholder="Default context text input"/>
 
-        </input>
+        </inputs>
 
     </step>
 </archetype-script>

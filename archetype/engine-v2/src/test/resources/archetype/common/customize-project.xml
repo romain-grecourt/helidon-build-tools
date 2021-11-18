@@ -21,7 +21,7 @@
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-script-2.0.xsd">
 
     <step optional="true" label="Customize Project">
-        <input>
+        <inputs>
             <text name="name"
                   label="Project name"
                   placeholder="myproject"/>
@@ -41,6 +41,6 @@
             <text name="package"
                   label="Java package name"
                   placeholder="com.example.myproject"/>
-        </input>
+        </inputs>
     </step>
 </archetype-script>

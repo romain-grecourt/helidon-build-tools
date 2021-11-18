@@ -37,7 +37,17 @@ public final class SimpleXMLParser {
     /**
      * Base type for all XML exceptions.
      */
-    public static class XMLException extends IllegalStateException {
+    public static class XMLException extends RuntimeException {
+
+        /**
+         * Create a new XML exception.
+         *
+         * @param msg   message
+         * @param cause cause
+         */
+        protected XMLException(String msg, Throwable cause) {
+            super(msg, cause);
+        }
 
         /**
          * Create a new XML exception.
@@ -46,6 +56,13 @@ public final class SimpleXMLParser {
          */
         protected XMLException(String msg) {
             super(msg);
+        }
+
+        /**
+         * Create a new XML exception.
+         */
+        protected XMLException() {
+            super();
         }
     }
 
@@ -72,10 +89,27 @@ public final class SimpleXMLParser {
         /**
          * Create a new XML reader exception.
          *
+         * @param msg   message
+         * @param cause cause
+         */
+        public XMLReaderException(String msg, Throwable cause) {
+            super(msg, cause);
+        }
+
+        /**
+         * Create a new XML reader exception.
+         *
          * @param msg message
          */
         public XMLReaderException(String msg) {
             super(msg);
+        }
+
+        /**
+         * Create a new XML reader exception.
+         */
+        public XMLReaderException() {
+            super();
         }
     }
 

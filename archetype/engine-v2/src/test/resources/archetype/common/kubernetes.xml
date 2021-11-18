@@ -21,7 +21,7 @@
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-script-2.0.xsd">
 
     <step optional="true" label="Kubernetes" if="${docker}">
-        <input>
+        <inputs>
             <boolean name="kubernetes"
                      label="Kubernetes Support"
                      question-label="Do you want support for Kubernetes">
@@ -61,6 +61,6 @@ kubectl delete -f app.yaml
                     </model>
                 </output>
             </boolean>
-        </input>
+        </inputs>
     </step>
 </archetype-script>

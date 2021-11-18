@@ -16,6 +16,7 @@
 
 package io.helidon.build.archetype.engine.v2.ast;
 
+import java.nio.file.Path;
 import java.util.Objects;
 
 /**
@@ -28,11 +29,6 @@ public final class Model extends Block {
     private Model(Builder builder) {
         super(builder);
         this.kind = Objects.requireNonNull(builder.kind, "kind is null");
-    }
-
-    @Override
-    public <A, R> R accept(Visitor<A, R> visitor, A arg) {
-        return visitor.visit(this, arg);
     }
 
     /**
@@ -70,24 +66,18 @@ public final class Model extends Block {
      */
     public static final class Builder extends Block.Builder<Model, Builder> {
 
-        private Kind kind;
+        private final Kind kind;
 
         /**
          * Create a new model block builder.
-         */
-        Builder() {
-            super(Block.Kind.UNKNOWN, BuilderTypes.MODEL);
-        }
-
-        /**
-         * Set the model block kind.
          *
-         * @param kind kind
-         * @return this builder
+         * @param location location
+         * @param position position
+         * @param kind     kind
          */
-        public Builder modelKind(Kind kind) {
+        Builder(Path location, Position position, Kind kind) {
+            super(location, position, Block.Kind.UNKNOWN);
             this.kind = kind;
-            return this;
         }
 
         @Override

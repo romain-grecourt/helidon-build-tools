@@ -21,18 +21,18 @@
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-script-2.0.xsd">
 
     <step optional="true" label="Docker">
-        <input>
+        <inputs>
             <boolean name="docker"
                      label="Docker support"
                      prompt="Do you want a Dockerfile">
 
-                <input>
+                <inputs>
                     <boolean name="native-image"
                              label="Do you want a native-image Dockerfile"/>
 
                     <boolean name="jlink"
                              label="Do you want a jlink Dockerfile"/>
-                </input>
+                </inputs>
                 <output>
                     <templates>
                         <directory>files</directory>
@@ -58,6 +58,6 @@ docker build -t {{artifactId}} .
                     </model>
                 </output>
             </boolean>
-        </input>
+        </inputs>
     </step>
 </archetype-script>

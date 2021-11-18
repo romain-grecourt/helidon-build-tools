@@ -22,7 +22,7 @@
 
     <step label="User boolean input">
 
-        <input>
+        <inputs>
 
             <boolean name="bool-input"
                      label="User boolean input label">
@@ -64,7 +64,7 @@
                 </output>
             </boolean>
 
-        </input>
+        </inputs>
 
     </step>
 </archetype-script>
