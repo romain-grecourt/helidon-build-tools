@@ -28,7 +28,7 @@ import static java.util.stream.Collectors.toUnmodifiableList;
 /**
  * Block statement.
  */
-public final class Block extends Statement {
+public class Block extends Statement {
 
     private static final AtomicInteger NEXT_ID = new AtomicInteger();
 
@@ -36,15 +36,75 @@ public final class Block extends Statement {
     private final Kind kind;
     private final List<Statement> statements;
 
-    private Block(Builder builder) {
+    /**
+     * Create a new block.
+     *
+     * @param builder builder
+     */
+    protected Block(Builder builder) {
         super(builder);
         this.kind = Objects.requireNonNull(builder.kind, "kind is null");
         this.statements = builder.statements.stream().map(Statement.Builder::build).collect(toUnmodifiableList());
         this.id = NEXT_ID.updateAndGet(i -> i == Integer.MAX_VALUE ? 1 : i + 1);
     }
 
+    /**
+     * Block visitor.
+     *
+     * @param <R> result type
+     * @param <A> argument type
+     */
+    public interface Visitor<R, A> {
+
+        /**
+         * Visit an input block.
+         *
+         * @param input input
+         * @param arg   argument visitor
+         * @return visit result
+         */
+        default R visitInput(Input input, A arg) {
+            return visitBlock(input, arg);
+        }
+
+        /**
+         * Visit an output block.
+         *
+         * @param input input
+         * @param arg   argument visitor
+         * @return visit result
+         */
+        default R visitOutput(Output input, A arg) {
+            return visitBlock(input, arg);
+        }
+
+        /**
+         * Visit a block.
+         *
+         * @param block block
+         * @param arg   argument visitor
+         * @return visit result
+         */
+        default R visitBlock(Block block, A arg) {
+            return null;
+        }
+    }
+
+    /**
+     * Visit this block.
+     *
+     * @param visitor block visitor
+     * @param arg     argument
+     * @param <R>     result type
+     * @param <A>     argument type
+     * @return visit result
+     */
+    public <R, A> R accept(Visitor<R, A> visitor, A arg) {
+        return visitor.visitBlock(this, arg);
+    }
+
     @Override
-    public <A> VisitResult accept(Visitor<A> visitor, A arg) {
+    public final <A> VisitResult accept(Node.Visitor<A> visitor, A arg) {
         VisitResult result = visitor.preVisitBlock(this, arg);
         if (result != VisitResult.CONTINUE) {
             return result;
@@ -54,7 +114,8 @@ public final class Block extends Statement {
         parents.push(this);
         while (!stack.isEmpty()) {
             Statement stmt = stack.peek();
-            int parentId = parents.peek().id;
+            Block parent = parents.peek();
+            int parentId = parent != null ? parent.id : 0;
             if (stmt.statementKind() != Statement.Kind.BLOCK) {
                 result = stmt.accept(visitor, arg);
             } else {
@@ -212,12 +273,19 @@ public final class Block extends Statement {
     /**
      * Block builder.
      */
-    public final static class Builder extends Statement.Builder<Block, Builder> {
+    public static class Builder extends Statement.Builder<Block, Builder> {
 
-        private final Kind kind;
-        private final List<Statement.Builder<? extends Statement, ?>> statements = new LinkedList<>();
+        protected final List<Statement.Builder<? extends Statement, ?>> statements = new LinkedList<>();
+        protected final Kind kind;
 
-        private Builder(Path location, Position position, Kind kind) {
+        /**
+         * Create a new builder.
+         *
+         * @param location location
+         * @param position position
+         * @param kind     kind
+         */
+        protected Builder(Path location, Position position, Kind kind) {
             super(location, position, Statement.Kind.BLOCK);
             this.kind = kind;
         }
@@ -229,7 +297,7 @@ public final class Block extends Statement {
         }
 
         @Override
-        public Block build() {
+        protected Block build0() {
             return new Block(this);
         }
     }

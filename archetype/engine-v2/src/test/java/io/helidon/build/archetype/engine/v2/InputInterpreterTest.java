@@ -20,7 +20,6 @@ import java.util.Arrays;
 import java.util.LinkedList;
 
 import io.helidon.build.archetype.engine.v2.ast.Script;
-import io.helidon.build.archetype.engine.v2.prompter.Prompter;
 
 import org.junit.jupiter.api.Test;
 

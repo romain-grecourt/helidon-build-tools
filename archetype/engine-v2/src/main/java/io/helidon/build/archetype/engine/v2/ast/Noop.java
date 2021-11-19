@@ -53,7 +53,7 @@ public final class Noop extends Statement {
         }
 
         @Override
-        public Noop build() {
+        protected Noop build0() {
             return new Noop(this);
         }
     }

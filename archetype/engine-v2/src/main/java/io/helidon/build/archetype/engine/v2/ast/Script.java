@@ -70,7 +70,7 @@ public final class Script extends Node {
         }
 
         @Override
-        public Script build() {
+        protected Script build0() {
             return new Script(this);
         }
     }

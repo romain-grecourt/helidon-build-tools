@@ -203,7 +203,7 @@ public final class Literal extends Expression implements Value {
         }
 
         @Override
-        public Literal build() {
+        protected Literal build0() {
             return new Literal(this);
         }
     }

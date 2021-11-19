@@ -30,10 +30,6 @@ import java.util.Objects;
  */
 public final class SimpleXMLParser {
 
-    // TODO class XMLException extends IllegalStateException
-    // TODO class XMLParserException extends XMLException
-    // TODO class XMLReaderException extends XMLException
-
     /**
      * Base type for all XML exceptions.
      */
@@ -260,6 +256,7 @@ public final class SimpleXMLParser {
     private final char[] buf = new char[1024];
     private char c;
     private int position;
+    private int lastPosition;
     private int limit = 0;
     private int lineNo = 1;
     private int charNo = 0;
@@ -514,7 +511,7 @@ public final class SimpleXMLParser {
                     lineNo++;
                     charNo = 1;
                 }
-                int lastPosition = position;
+                lastPosition = position;
                 switch (state) {
                     case START:
                         processStart();
@@ -595,6 +592,7 @@ public final class SimpleXMLParser {
             int read = isr.read(buf, offset, buf.length - offset);
             limit = offset + (read == -1 ? 0 : read);
             position = 0;
+            lastPosition = 0;
         }
         return String.valueOf(buf, position, expected.length()).contentEquals(expected);
     }

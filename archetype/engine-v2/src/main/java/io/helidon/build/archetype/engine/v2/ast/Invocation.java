@@ -25,10 +25,13 @@ import java.util.Objects;
 public final class Invocation extends Expression {
 
     private final Kind kind;
+    private final String src;
 
     private Invocation(Builder builder) {
         super(builder);
         this.kind = Objects.requireNonNull(builder.kind, "kind is null");
+        Value srcValue = attribute(Attributes.SRC, builder);
+        this.src = srcValue != null ? srcValue.asString() : null;
     }
 
     /**
@@ -37,7 +40,7 @@ public final class Invocation extends Expression {
      * @return src
      */
     public String src() {
-        return Attributes.SRC.get(this, ValueTypes.STRING);
+        return src;
     }
 
     /**
@@ -95,7 +98,7 @@ public final class Invocation extends Expression {
         }
 
         @Override
-        public Invocation build() {
+        protected Invocation build0() {
             return new Invocation(this);
         }
     }

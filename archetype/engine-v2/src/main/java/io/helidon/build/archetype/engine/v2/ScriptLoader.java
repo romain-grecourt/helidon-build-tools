@@ -25,11 +25,11 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
-import java.util.Objects;
 import java.util.WeakHashMap;
 
 import io.helidon.build.archetype.engine.v2.ast.Attributes;
 import io.helidon.build.archetype.engine.v2.ast.Condition;
+import io.helidon.build.archetype.engine.v2.ast.Input;
 import io.helidon.build.archetype.engine.v2.ast.Invocation;
 import io.helidon.build.archetype.engine.v2.ast.Node;
 import io.helidon.build.archetype.engine.v2.ast.Noop;
@@ -48,7 +48,6 @@ import io.helidon.build.common.xml.SimpleXMLParser.XMLReaderException;
 public class ScriptLoader {
 
     private static final WeakHashMap<FileSystem, Map<Path, WeakReference<Script>>> CACHE = new WeakHashMap<>();
-    private static final Path DEFAULT_PATH = Path.of("script.xml");
 
     /**
      * Get or load the script at the given path.
@@ -71,7 +70,7 @@ public class ScriptLoader {
     }
 
     static Script load0(InputStream is) {
-        return load0(is, DEFAULT_PATH);
+        return load0(is, null);
     }
 
     private static Script load0(InputStream is, Path path) {
@@ -96,13 +95,15 @@ public class ScriptLoader {
         final Position position;
         final String qName;
         final Map<String, String> attrs;
+        final boolean build;
 
-        Context(State state, Node.Builder<?, ?> builder, ReaderImpl reader) {
+        Context(State state, Node.Builder<?, ?> builder, ReaderImpl reader, boolean build) {
             this.state = state;
             this.builder = builder;
-            this.position = reader.position;
+            this.position = reader.position.copy();
             this.qName = reader.qName;
             this.attrs = reader.attrs;
+            this.build = build;
         }
     }
 
@@ -121,7 +122,7 @@ public class ScriptLoader {
         }
 
         Script read(InputStream is, Path path) throws IOException {
-            location = Objects.requireNonNull(path, "path is null");
+            location = path;
             stack = new LinkedList<>();
             parser = SimpleXMLParser.create(is, this);
             parser.parse();
@@ -144,7 +145,7 @@ public class ScriptLoader {
                             qName, location, position));
                 }
                 script = Script.builder(location, position);
-                stack.push(new Context(State.EXECUTABLE, script, this));
+                stack.push(new Context(State.EXECUTABLE, script, this, true));
             } else {
                 try {
                     processElement();
@@ -171,16 +172,22 @@ public class ScriptLoader {
 
         @Override
         public void endElement(String name) {
-            stack.pop();
+            Context ctx = stack.pop();
+            if (ctx.build) {
+                ctx.builder.build();
+            }
         }
 
         void processText(String value) {
             switch (ctx.state) {
+                case EXECUTABLE:
+                case INPUT:
+                    if ("help".equals(ctx.qName)) {
+                        ctx.builder.parseAttribute(Attributes.HELP, value);
+                    }
+                    break;
                 case BLOCK:
                     switch (ctx.qName) {
-                        case "help":
-                            ctx.builder.parseAttribute(Attributes.HELP, value);
-                            break;
                         case "include":
                             ctx.builder.attributeListAdd(Attributes.INCLUDES, value);
                             break;
@@ -254,12 +261,12 @@ public class ScriptLoader {
         void processInput() {
             State nextState;
             Block.Kind blockKind = blockKind();
-            Block.Builder builder = Block.builder(location, ctx.position, blockKind);
+            Input.Builder builder = Input.builder(location, position, blockKind);
             switch (blockKind) {
-                case BOOLEAN:
-                case TEXT:
                 case OPTION:
                     builder.parseAttribute(Attributes.VALUE, ValueTypes.STRING, attrs);
+                case BOOLEAN:
+                case TEXT:
                     nextState = State.EXECUTABLE;
                     break;
                 case LIST:
@@ -278,7 +285,6 @@ public class ScriptLoader {
             Block.Kind blockKind = blockKind();
             switch (blockKind) {
                 case SCRIPT:
-                case OPTION:
                 case STEP:
                     nextState = State.EXECUTABLE;
                     break;
@@ -302,11 +308,11 @@ public class ScriptLoader {
             } else {
                 ctx.builder.statement(stmt);
             }
-            stack.push(new Context(nextState, stmt, this));
+            stack.push(new Context(nextState, stmt, this, true));
         }
 
         void skip() {
-            stack.push(new Context(ctx.state, ctx.builder, this));
+            stack.push(new Context(ctx.state, ctx.builder, this, false));
         }
 
         Preset.Kind presetKind() {

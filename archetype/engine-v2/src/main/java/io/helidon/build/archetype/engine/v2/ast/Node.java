@@ -22,7 +22,6 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
@@ -44,6 +43,8 @@ public abstract class Node {
         this.location = requireNonNull(builder.location, "location is null");
         this.position = requireNonNull(builder.position, "position is null");
         this.kind = builder.kind;
+        // TODO once everything is modeled, store the values directly in the nodes
+        // and eventually remove the attributes
         builder.attributes.replaceAll((k, v) -> v.asReadOnly());
         this.attributes = Collections.unmodifiableMap(builder.attributes);
     }
@@ -85,6 +86,23 @@ public abstract class Node {
     }
 
     /**
+     * Get an attribute from the builder.
+     *
+     * @param attr    attribute
+     * @param builder builder
+     * @return Value
+     */
+    protected Value attribute(Attributes attr, Builder<?, ?> builder) {
+        Value value = builder.attributes.get(attr);
+        if (value == null) {
+            throw new IllegalStateException(String.format(
+                    "Unable to get attribute '%s', file=%s, position=%s",
+                    this, location, position));
+        }
+        return value;
+    }
+
+    /**
      * Visit this node.
      *
      * @param visitor Visitor
@@ -93,6 +111,117 @@ public abstract class Node {
      * @return result
      */
     public abstract <A> VisitResult accept(Visitor<A> visitor, A arg);
+
+    /**
+     * Visit result.
+     */
+    public enum VisitResult {
+
+        /**
+         * Continue.
+         */
+        CONTINUE,
+
+        /**
+         * Terminate.
+         */
+        TERMINATE,
+
+        /**
+         * Continue without visiting the children.
+         */
+        SKIP_SUBTREE,
+
+        /**
+         * Continue without visiting the siblings.
+         */
+        SKIP_SIBLINGS
+    }
+
+    /**
+     * Visitor.
+     *
+     * @param <T> argument
+     */
+    public interface Visitor<T> {
+
+        /**
+         * Visit a script.
+         *
+         * @param script script
+         * @param arg    argument
+         * @return visit result
+         */
+        default VisitResult visitScript(Script script, T arg) {
+            return VisitResult.CONTINUE;
+        }
+
+        /**
+         * Visit a condition.
+         *
+         * @param condition condition
+         * @param arg       argument
+         * @return visit result
+         */
+        default VisitResult visitCondition(Condition condition, T arg) {
+            return VisitResult.CONTINUE;
+        }
+
+        /**
+         * Visit an invocation.
+         *
+         * @param invocation invocation
+         * @param arg        argument
+         * @return visit result
+         */
+        default VisitResult visitInvocation(Invocation invocation, T arg) {
+            return VisitResult.CONTINUE;
+        }
+
+        /**
+         * Visit a preset.
+         *
+         * @param preset preset
+         * @param arg    argument
+         * @return visit result
+         */
+        default VisitResult visitPreset(Preset preset, T arg) {
+            return VisitResult.CONTINUE;
+        }
+
+        /**
+         * Visit a block before traversing the nested statements.
+         *
+         * @param block block
+         * @param arg   argument
+         * @return visit result
+         */
+        default VisitResult preVisitBlock(Block block, T arg) {
+            return VisitResult.CONTINUE;
+        }
+
+        /**
+         * Visit a block after traversing the nested statements.
+         *
+         * @param block block
+         * @param arg   argument
+         * @return visit result
+         */
+        default VisitResult postVisitBlock(Block block, T arg) {
+            return VisitResult.CONTINUE;
+        }
+
+        /**
+         * Visit a noop.
+         *
+         * @param noop noop
+         * @param arg  argument
+         * @return visit result
+         */
+        default VisitResult visitNoop(Noop noop, T arg) {
+            return VisitResult.CONTINUE;
+        }
+    }
 
     /**
      * Node kind.
@@ -126,9 +255,10 @@ public abstract class Node {
                 Arrays.stream(Attributes.values()).collect(toMap(a -> a.name().toLowerCase(), Function.identity()));
 
         private final Kind kind;
-        private final Map<Attributes, Value> attributes = new HashMap<>();
         private final Path location;
         private final Position position;
+        final Map<Attributes, Value> attributes = new HashMap<>();
+        private T instance;
 
         /**
          * Create a new node builder.
@@ -217,7 +347,7 @@ public abstract class Node {
         public <V> U parseAttribute(Attributes key, GenericType<V> type, String rawValue, V defaultValue) {
             Objects.requireNonNull(key, "key is null");
             if (rawValue != null) {
-                attributes.put(key, this.<V>newLiteral().parse(type, rawValue, defaultValue).build());
+                attributes.put(key, this.<V>newLiteral().parse(type, rawValue, defaultValue).build0());
             }
             return (U) this;
         }
@@ -265,6 +395,18 @@ public abstract class Node {
          *
          * @return new instance
          */
-        public abstract T build();
+        protected abstract T build0();
+
+        /**
+         * Get or create the new instance.
+         *
+         * @return new instance
+         */
+        public final T build() {
+            if (instance == null) {
+                instance = build0();
+            }
+            return instance;
+        }
     }
 }

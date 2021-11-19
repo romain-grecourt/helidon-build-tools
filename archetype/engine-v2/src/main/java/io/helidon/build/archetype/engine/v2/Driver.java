@@ -23,6 +23,23 @@ import java.util.List;
  */
 public interface Driver {
 
+    // TODO model Input + Option in the AST
+    // can't really model prompter as a pure visitor with return type param as the return type is different for each
+    // input type... this would make the prompter contract unclear..
+    // Or the prompter just uses the context, (context.resolve) in this case we make it clean with a visitor (yay)
+    // expose a `List<Option> options()` method on Input,
+    // it can use (statements.stream().filter(Option.class::isInstance).map(Option.class::cast).collect(toUnmodifiableList())
+    //
+    // instead making prompter specific with hard-wire return types will be more explicit
+    // the use of a pure visitor is not obvious either (Input being model is already better for tests...)
+    //  I.e Prompter is a pseudo visitor, and not based off an AST visitor (it consumes AST objects though)
+    //
+    // this will force the separation in the interpreter and give a separate interface for the prompter
+    // maybe do the same for output since we need to do a 2 pass job (3 visitors: interpreter, prompter, output generator)
+
+    // the Block.accept method needs to be abstract (polymorphism ...)
+    // so the current implementation for traversing needs to be re-usable with a protected scope (e.g. doAccept or accept0)
+
     /**
      * Step event.
      *

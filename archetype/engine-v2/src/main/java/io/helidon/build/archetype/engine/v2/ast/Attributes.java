@@ -131,20 +131,4 @@ public enum Attributes {
         }
         return value;
     }
-
-    /**
-     * Get an attribute.
-     *
-     * @param node node
-     * @return value
-     */
-    public <T> T get(Node node, GenericType<T> type) {
-        Value value = node.attributes().get(this);
-        if (value == null) {
-            throw new IllegalStateException(String.format(
-                    "Unable to get attribute '%s', file=%s, position=%s",
-                    this, node.location(), node.position()));
-        }
-        return value.as(type);
-    }
 }

@@ -29,7 +29,7 @@ public final class Condition extends Statement {
     private Condition(Builder builder) {
         super(builder);
         this.expression = builder.expression;
-        this.then = builder.then.build();
+        this.then = builder.then.build0();
     }
 
     /**
@@ -96,7 +96,7 @@ public final class Condition extends Statement {
         }
 
         @Override
-        public Condition build() {
+        protected Condition build0() {
             return new Condition(this);
         }
     }

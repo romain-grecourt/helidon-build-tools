@@ -1,6 +1,5 @@
 package io.helidon.build.archetype.engine.v2;
 
-import io.helidon.build.archetype.engine.v2.ast.Visitor;
 import io.helidon.build.archetype.engine.v2.prompter.Prompter;
 
 /**

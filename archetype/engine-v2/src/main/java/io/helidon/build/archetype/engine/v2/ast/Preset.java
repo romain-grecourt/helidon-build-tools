@@ -27,10 +27,14 @@ import java.util.Objects;
 public final class Preset extends Expression {
 
     private final Kind kind;
+    private final Value value;
+    private final String path;
 
     private Preset(Builder builder) {
         super(builder);
         this.kind = Objects.requireNonNull(builder.kind, "kind is null");
+        this.value = attribute(Attributes.VALUE, builder);
+        this.path = attribute(Attributes.PATH, builder).asString();
     }
 
     /**
@@ -39,7 +43,7 @@ public final class Preset extends Expression {
      * @return path
      */
     public String path() {
-        return Attributes.PATH.get(this, ValueTypes.STRING);
+        return path;
     }
 
     /**
@@ -48,7 +52,7 @@ public final class Preset extends Expression {
      * @return value
      */
     public Value value() {
-        return Attributes.VALUE.get(this);
+        return value;
     }
 
     @Override
@@ -131,7 +135,7 @@ public final class Preset extends Expression {
         }
 
         @Override
-        public Preset build() {
+        protected Preset build0() {
             return new Preset(this);
         }
     }

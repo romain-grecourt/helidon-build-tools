@@ -25,7 +25,13 @@ public final class Position {
     private final int charNo;
 
     private Position(int lineNo, int charNo) {
+        if (lineNo < 0) {
+            throw new IllegalArgumentException("Invalid line number: " + lineNo);
+        }
         this.lineNo = lineNo;
+        if (charNo < 0) {
+            throw new IllegalArgumentException("Invalid line character number: " + charNo);
+        }
         this.charNo = charNo;
     }
 
@@ -50,6 +56,14 @@ public final class Position {
     @Override
     public String toString() {
         return lineNo + ":" + charNo;
+    }
+
+    /**
+     * Make a copy.
+     * @return copy
+     */
+    public Position copy() {
+        return new Position(lineNo, charNo);
     }
 
     /**
