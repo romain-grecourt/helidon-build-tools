@@ -33,21 +33,21 @@ public final class Condition extends Statement {
     }
 
     /**
-     * Get the {@code then} statement.
-     *
-     * @return Statement
-     */
-    public Statement then() {
-        return then;
-    }
-
-    /**
      * Get the expression.
      *
      * @return expression
      */
     public String expression() {
         return expression;
+    }
+
+    @Override
+    public <A> VisitResult accept(Visitor<A> visitor, A arg) {
+        VisitResult result = visitor.visitCondition(this, arg);
+        if (result != VisitResult.CONTINUE) {
+            return result;
+        }
+        return then.accept(visitor, arg);
     }
 
     /**

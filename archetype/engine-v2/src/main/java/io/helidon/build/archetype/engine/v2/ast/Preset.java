@@ -48,7 +48,12 @@ public final class Preset extends Expression {
      * @return value
      */
     public Value value() {
-        return Attributes.PATH.get(this);
+        return Attributes.VALUE.get(this);
+    }
+
+    @Override
+    public <A> VisitResult accept(Visitor<A> visitor, A arg) {
+        return visitor.visitPreset(this, arg);
     }
 
     /**

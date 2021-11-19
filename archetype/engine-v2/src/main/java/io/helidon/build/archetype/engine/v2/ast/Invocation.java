@@ -49,6 +49,11 @@ public final class Invocation extends Expression {
         return kind;
     }
 
+    @Override
+    public <A> VisitResult accept(Visitor<A> visitor, A arg) {
+        return visitor.visitInvocation(this, arg);
+    }
+
     /**
      * Invocation kind.
      */

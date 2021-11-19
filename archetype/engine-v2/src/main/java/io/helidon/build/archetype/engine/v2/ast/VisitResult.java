@@ -16,35 +16,28 @@
 
 package io.helidon.build.archetype.engine.v2.ast;
 
-import io.helidon.build.common.GenericType;
-
-import java.util.List;
-
 /**
- * All supported value types.
+ * Visit result.
  */
-public final class ValueTypes {
+public enum VisitResult {
 
     /**
-     * String.
+     * Continue.
      */
-    public static final GenericType<String> STRING = GenericType.create(String.class);
+    CONTINUE,
 
     /**
-     * Boolean.
+     * Terminate.
      */
-    public static final GenericType<Boolean> BOOLEAN = GenericType.create(Boolean.class);
+    TERMINATE,
 
     /**
-     * Integer.
+     * Continue without visiting the children.
      */
-    public static final GenericType<Integer> INT = GenericType.create(Integer.class);
+    SKIP_SUBTREE,
 
     /**
-     * List of strings.
+     * Continue without visiting the siblings.
      */
-    public static final GenericType<List<String>> STRING_LIST = new GenericType<>() {};
-
-    private ValueTypes() {
-    }
+    SKIP_SIBLINGS
 }

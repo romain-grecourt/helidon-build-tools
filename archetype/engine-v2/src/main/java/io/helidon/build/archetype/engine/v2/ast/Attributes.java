@@ -29,7 +29,7 @@ public enum Attributes {
     /**
      * Id.
      */
-    ID(STRING),
+    ID(STRING_LIST),
 
     /**
      * Path.
@@ -65,6 +65,11 @@ public enum Attributes {
      * Order.
      */
     ORDER(STRING),
+
+    /**
+     * Engine.
+     */
+    ENGINE(STRING),
 
     /**
      * Replacement.

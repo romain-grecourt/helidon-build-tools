@@ -99,6 +99,11 @@ public final class Literal extends Expression implements Value {
         return (Literal) literal;
     }
 
+    @Override
+    public <A> VisitResult accept(Visitor<A> visitor, A arg) {
+        return VisitResult.CONTINUE;
+    }
+
     /**
      * Literal builder.
      *

@@ -38,6 +38,11 @@ public final class Noop extends Statement {
         return new Builder(location, position);
     }
 
+    @Override
+    public <A> VisitResult accept(Visitor<A> visitor, A arg) {
+        return visitor.visitNoop(this, arg);
+    }
+
     /**
      * No-op builder.
      */

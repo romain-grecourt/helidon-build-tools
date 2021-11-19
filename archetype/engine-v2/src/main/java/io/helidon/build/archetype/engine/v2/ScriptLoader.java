@@ -38,6 +38,7 @@ import io.helidon.build.archetype.engine.v2.ast.Preset;
 import io.helidon.build.archetype.engine.v2.ast.Script;
 import io.helidon.build.archetype.engine.v2.ast.Statement;
 import io.helidon.build.archetype.engine.v2.ast.Block;
+import io.helidon.build.archetype.engine.v2.ast.ValueTypes;
 import io.helidon.build.common.xml.SimpleXMLParser;
 import io.helidon.build.common.xml.SimpleXMLParser.XMLReaderException;
 
@@ -92,10 +93,16 @@ public class ScriptLoader {
 
         final State state;
         final Node.Builder<?, ?> builder;
+        final Position position;
+        final String qName;
+        final Map<String, String> attrs;
 
-        Context(State state, Node.Builder<?, ?> builder) {
+        Context(State state, Node.Builder<?, ?> builder, ReaderImpl reader) {
             this.state = state;
             this.builder = builder;
+            this.position = reader.position;
+            this.qName = reader.qName;
+            this.attrs = reader.attrs;
         }
     }
 
@@ -114,9 +121,9 @@ public class ScriptLoader {
         }
 
         Script read(InputStream is, Path path) throws IOException {
-            this.location = Objects.requireNonNull(path, "path is null");
-            this.stack = new LinkedList<>();
-            this.parser = SimpleXMLParser.create(is, this);
+            location = Objects.requireNonNull(path, "path is null");
+            stack = new LinkedList<>();
+            parser = SimpleXMLParser.create(is, this);
             parser.parse();
             if (script == null) {
                 throw new IllegalStateException("Unable to create script");
@@ -126,9 +133,9 @@ public class ScriptLoader {
 
         @Override
         public void startElement(String qName, Map<String, String> attrs) {
-            this.position = Position.of(parser.lineNumber(), parser.charNumber());
             this.qName = qName;
             this.attrs = attrs;
+            position = Position.of(parser.lineNumber(), parser.charNumber());
             ctx = stack.peek();
             if (ctx == null) {
                 if (!"archetype-script".equals(qName)) {
@@ -137,7 +144,7 @@ public class ScriptLoader {
                             qName, location, position));
                 }
                 script = Script.builder(location, position);
-                stack.push(new Context(State.EXECUTABLE, script));
+                stack.push(new Context(State.EXECUTABLE, script, this));
             } else {
                 try {
                     processElement();
@@ -170,7 +177,7 @@ public class ScriptLoader {
         void processText(String value) {
             switch (ctx.state) {
                 case BLOCK:
-                    switch(qName) {
+                    switch (ctx.qName) {
                         case "help":
                             ctx.builder.parseAttribute(Attributes.HELP, value);
                             break;
@@ -186,7 +193,7 @@ public class ScriptLoader {
                     }
                     break;
                 case PRESET:
-                    switch (qName) {
+                    switch (ctx.qName) {
                         case "text":
                         case "enum":
                         case "boolean":
@@ -247,10 +254,12 @@ public class ScriptLoader {
         void processInput() {
             State nextState;
             Block.Kind blockKind = blockKind();
+            Block.Builder builder = Block.builder(location, ctx.position, blockKind);
             switch (blockKind) {
                 case BOOLEAN:
                 case TEXT:
                 case OPTION:
+                    builder.parseAttribute(Attributes.VALUE, ValueTypes.STRING, attrs);
                     nextState = State.EXECUTABLE;
                     break;
                 case LIST:
@@ -261,7 +270,7 @@ public class ScriptLoader {
                     throw new XMLReaderException(String.format(
                             "Invalid input block: %s. { element=%s }", blockKind, qName));
             }
-            statement(nextState, Block.builder(location, position, blockKind));
+            statement(nextState, builder);
         }
 
         void processBlock() {
@@ -293,11 +302,11 @@ public class ScriptLoader {
             } else {
                 ctx.builder.statement(stmt);
             }
-            stack.push(new Context(nextState, stmt));
+            stack.push(new Context(nextState, stmt, this));
         }
 
         void skip() {
-            stack.push(stack.peek());
+            stack.push(new Context(ctx.state, ctx.builder, this));
         }
 
         Preset.Kind presetKind() {

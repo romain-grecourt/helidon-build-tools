@@ -54,8 +54,8 @@ public class Constant<T> implements Value {
      * @param value value
      * @return constant
      */
-    public static Constant create(String value) {
-        return new Constant(value, ValueTypes.STRING);
+    public static Constant<String> create(String value) {
+        return new Constant<>(value, ValueTypes.STRING);
     }
 
     /**
@@ -64,7 +64,7 @@ public class Constant<T> implements Value {
      * @param value value
      * @return constant
      */
-    public static <T> Constant create(T value, GenericType<T> type) {
-        return new Constant(value, type);
+    public static <T> Constant<T> create(T value, GenericType<T> type) {
+        return new Constant<>(value, type);
     }
 }
