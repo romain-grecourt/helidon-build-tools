@@ -24,9 +24,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Stream;
 
-import io.helidon.build.archetype.engine.v2.ast.Input;
 import io.helidon.build.archetype.engine.v2.ast.Value;
-import io.helidon.build.archetype.engine.v2.prompter.Prompter;
 import io.helidon.build.common.GenericType;
 
 import static java.util.Arrays.stream;
@@ -43,13 +41,6 @@ interface Context {
      * @return optional of context value
      */
     Optional<ContextValue> value();
-
-    /**
-     * Get the unresolved outputs
-     *
-     * @return unresolved outputs
-     */
-    UnresolvedOutputs outputs();
 
     /**
      * Push a new working directory
@@ -74,30 +65,30 @@ interface Context {
     Path cwd();
 
     /**
-     * Resolve a context value in the current context node.
+     * Add a new value in the context.
      *
-     * @param input    input to be resolved
-     * @param prompter prompted to resolve the value
-     * @return created child node containing the resolved value
+     * @param path  input path
+     * @param value value
+     * @return context node
      */
-    Context resolve(Input input, Prompter prompter);
+    Context put(String path, Value value);
 
     /**
      * Lookup a context node by input path.
      *
-     * @param inputPath input path
+     * @param path input path
      * @return found context node
      */
-    Context lookup(String inputPath);
+    Context lookup(String path);
 
     /**
-     * Lookup a context node by input path.
+     * Lookup a context node.
      *
-     * @param inputPath input path
+     * @param path input path
      * @param prefix    input path prefix
      * @return found context node
      */
-    Context lookup(String inputPath, String prefix);
+    Context lookup(String path, String prefix);
 
     /**
      * Create a new root context node.
@@ -106,7 +97,7 @@ interface Context {
      * @return created context node
      */
     static Context create(Path cwd) {
-        return new ContextNode(null, null, new UnresolvedOutputs()).pushd(cwd);
+        return new ContextNode(null, null).pushd(cwd);
     }
 
     /**
@@ -118,20 +109,13 @@ interface Context {
         private final String name;
         private final List<ContextNode> children;
         private final Deque<WorkDirRef> workDirRefs;
-        private final UnresolvedOutputs outputs;
         private ContextValue value;
 
-        private ContextNode(ContextNode parent, String name, UnresolvedOutputs outputs) {
+        private ContextNode(ContextNode parent, String name) {
             this.parent = parent;
             this.name = name;
-            this.outputs = outputs;
             this.children = new LinkedList<>();
             this.workDirRefs = new LinkedList<>();
-        }
-
-        @Override
-        public UnresolvedOutputs outputs() {
-            return outputs;
         }
 
         @Override
@@ -159,16 +143,16 @@ interface Context {
         }
 
         @Override
-        public Context resolve(Input input, Prompter prompter) {
-            String name = input.name();
-            ContextNode node = new ContextNode(this, name, outputs);
+        public Context put(String path, Value value) {
+            ContextNode node = new ContextNode(this, path);
+            node.value = new ContextValue(value, false, false);
             this.children.add(node);
             return node;
         }
 
         @Override
-        public Context lookup(String inputPath) {
-            String[] segments = inputPath.split("\\.");
+        public Context lookup(String path) {
+            String[] segments = path.split("\\.");
             if (segments[0].equals("ROOT")) {
                 segments = Arrays.copyOfRange(segments, 1, segments.length);
                 if (this.parent == null) {
@@ -187,8 +171,8 @@ interface Context {
         }
 
         @Override
-        public Context lookup(String inputPath, String prefix) {
-            String[] segments = inputPath.split("\\.");
+        public Context lookup(String path, String prefix) {
+            String[] segments = path.split("\\.");
             if (segments[0].equals("ROOT") || segments[0].equals("PARENT")) {
                 throw new InvalidInputPathException(segments, 1);
             }
@@ -271,11 +255,6 @@ interface Context {
         }
 
         @Override
-        public UnresolvedOutputs outputs() {
-            return delegate.outputs();
-        }
-
-        @Override
         public Optional<ContextValue> value() {
             return delegate.value();
         }
@@ -296,18 +275,18 @@ interface Context {
         }
 
         @Override
-        public Context resolve(Input input, Prompter prompter) {
-            return delegate.resolve(input, prompter);
+        public Context put(String path, Value value) {
+            return delegate.put(path, value);
         }
 
         @Override
-        public Context lookup(String inputPath) {
-            return delegate.lookup(inputPath);
+        public Context lookup(String path) {
+            return delegate.lookup(path);
         }
 
         @Override
-        public Context lookup(String inputPath, String prefix) {
-            return delegate.lookup(inputPath, prefix);
+        public Context lookup(String path, String prefix) {
+            return delegate.lookup(path, prefix);
         }
     }
 

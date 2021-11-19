@@ -17,7 +17,7 @@ public interface Value {
     GenericType<?> type();
 
     /**
-     * Get this instance as the given type.
+     * Get this value as the given type.
      *
      * @param type type
      * @param <T>  actual type

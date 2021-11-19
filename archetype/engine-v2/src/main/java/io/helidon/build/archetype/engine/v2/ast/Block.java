@@ -25,17 +25,12 @@ import java.util.stream.Collectors;
 /**
  * Block statement.
  */
-public class Block extends Statement {
+public final class Block extends Statement {
 
     private final Kind kind;
     private final List<Statement> statements;
 
-    /**
-     * Create a new block.
-     *
-     * @param builder builder
-     */
-    protected Block(Builder<?, ?> builder) {
+    private Block(Builder builder) {
         super(builder);
         this.kind = Objects.requireNonNull(builder.kind, "kind is null");
         this.statements = builder.statements.stream()
@@ -62,113 +57,24 @@ public class Block extends Statement {
     }
 
     /**
-     * Visit this block.
-     *
-     * @param visitor Visitor
-     * @param arg     argument
-     * @param <R>     generic type of the result
-     * @param <A>     generic type of the arguments
-     * @return result
-     */
-    public final <A, R> R accept(Visitor<A, R> visitor, A arg) {
-        switch (kind) {
-            case INPUTS:
-                return visitor.visitInputs(this, arg);
-            case PRESETS:
-                return visitor.visitPresets(this, arg);
-            case EXECUTABLE:
-                return visitor.visitExecutable((Executable) this, arg);
-            case OUTPUT:
-                return visitor.visitOutput((Output) this, arg);
-            case MODEL:
-                return visitor.visitModel((Model) this, arg);
-            case UNKNOWN:
-                return visitor.visitUnknown(this, arg);
-            default:
-                throw new IllegalStateException();
-        }
-    }
-
-    /**
-     * Block visitor.
-     *
-     * @param <A> argument
-     * @param <R> type of the returned value
-     */
-    @SuppressWarnings("unused")
-    public interface Visitor<A, R> {
-
-        /**
-         * Visit an inputs block.
-         *
-         * @param block block
-         * @param arg   argument
-         * @return visit result
-         */
-        default R visitInputs(Block block, A arg) {
-            return null;
-        }
-
-        /**
-         * Visit a presets block.
-         *
-         * @param block block
-         * @param arg   argument
-         * @return visit result
-         */
-        default R visitPresets(Block block, A arg) {
-            return null;
-        }
-
-        /**
-         * Visit an executable block.
-         *
-         * @param block block
-         * @param arg   argument
-         * @return visit result
-         */
-        default R visitExecutable(Executable block, A arg) {
-            return null;
-        }
-
-        /**
-         * Visit an executable block.
-         *
-         * @param block block
-         * @param arg   argument
-         * @return visit result
-         */
-        default R visitOutput(Output block, A arg) {
-            return null;
-        }
-
-        /**
-         * Visit a model block.
-         *
-         * @param block block
-         * @param arg   argument
-         * @return visit result
-         */
-        default R visitModel(Model block, A arg) {
-            return null;
-        }
-
-        /**
-         * Visit an unknown block.
-         *
-         * @param block block
-         * @param arg   argument
-         * @return visit result
-         */
-        default R visitUnknown(Block block, A arg) {
-            return null;
-        }
-    }
-
-    /**
-     * Block statements kind.
+     * Block kind.
      */
     public enum Kind {
+
+        /**
+         * Script.
+         */
+        SCRIPT,
+
+        /**
+         * Step.
+         */
+        STEP,
+
+        /**
+         * Option.
+         */
+        OPTION,
 
         /**
          * Inputs.
@@ -176,14 +82,29 @@ public class Block extends Statement {
         INPUTS,
 
         /**
+         * Text.
+         */
+        TEXT,
+
+        /**
+         * Boolean.
+         */
+        BOOLEAN,
+
+        /**
+         * Enum.
+         */
+        ENUM,
+
+        /**
+         * List.
+         */
+        LIST,
+
+        /**
          * Presets.
          */
         PRESETS,
-
-        /**
-         * Executable.
-         */
-        EXECUTABLE,
 
         /**
          * Output.
@@ -191,49 +112,75 @@ public class Block extends Statement {
         OUTPUT,
 
         /**
+         * Templates.
+         */
+        TEMPLATES,
+
+        /**
+         * Template.
+         */
+        TEMPLATE,
+
+        /**
+         * Files.
+         */
+        FILES,
+
+        /**
+         * File.
+         */
+        FILE,
+
+        /**
          * Model.
          */
         MODEL,
 
         /**
-         * Unknown.
+         * Map.
          */
-        UNKNOWN
+        MAP,
+
+        /**
+         * Transformation.
+         */
+        TRANSFORMATION
     }
 
     /**
-     * Statements builder.
+     * Create a new builder.
      *
-     * @param <T> sub-type
-     * @param <U> builder sub-type
+     * @param location location
+     * @param position position
+     * @param kind     kind
+     * @return builder
      */
-    @SuppressWarnings("unchecked")
-    public static class Builder<T extends Block, U extends Builder<T, U>> extends Statement.Builder<T, U> {
+    public static Builder builder(Path location, Position position, Kind kind) {
+        return new Builder(location, position, kind);
+    }
+
+    /**
+     * Block builder.
+     */
+    public final static class Builder extends Statement.Builder<Block, Builder> {
 
         private final Kind kind;
-        private final List<Statement.Builder<Statement, ?>> statements = new LinkedList<>();
+        private final List<Statement.Builder<? extends Statement, ?>> statements = new LinkedList<>();
 
-        /**
-         * Create a new block builder.
-         *
-         * @param location location
-         * @param position position
-         * @param kind     kind
-         */
-        Builder(Path location, Position position, Kind kind) {
+        private Builder(Path location, Position position, Kind kind) {
             super(location, position, Statement.Kind.BLOCK);
             this.kind = kind;
         }
 
         @Override
-        public U statement(Statement.Builder<? extends Statement, ?> builder) {
-            statements.add((Statement.Builder<Statement, ?>) builder);
-            return (U) this;
+        public Builder statement(Statement.Builder<? extends Statement, ?> builder) {
+            statements.add(builder);
+            return this;
         }
 
         @Override
-        public T build() {
-            return (T) new Block(this);
+        public Block build() {
+            return new Block(this);
         }
     }
 }

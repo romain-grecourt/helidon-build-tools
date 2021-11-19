@@ -17,27 +17,14 @@
 package io.helidon.build.archetype.engine.v2.ast;
 
 import java.nio.file.Path;
-import java.util.Objects;
 
 /**
- * Script.
+ * No-op statement.
  */
-public final class Script extends Node {
+public final class Noop extends Statement {
 
-    private final Block body;
-
-    private Script(Builder builder) {
+    private Noop(Builder builder) {
         super(builder);
-        this.body = Objects.requireNonNull(builder.body, "body is null").build();
-    }
-
-    /**
-     * Get the body.
-     *
-     * @return body
-     */
-    public Block body() {
-        return body;
     }
 
     /**
@@ -52,26 +39,17 @@ public final class Script extends Node {
     }
 
     /**
-     * Script builder.
+     * No-op builder.
      */
-    public static final class Builder extends Node.Builder<Script, Builder> {
-
-        private final Block.Builder body;
+    public static final class Builder extends Statement.Builder<Noop, Builder> {
 
         private Builder(Path location, Position position) {
-            super(location, position, Kind.SCRIPT);
-            this.body = Block.builder(location, position, Block.Kind.SCRIPT);
+            super(location, position, Kind.NOOP);
         }
 
         @Override
-        public Builder statement(Statement.Builder<? extends Statement, ?> builder) {
-            body.statement(builder);
-            return this;
-        }
-
-        @Override
-        public Script build() {
-            return new Script(this);
+        public Noop build() {
+            return new Noop(this);
         }
     }
 }

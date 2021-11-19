@@ -16,10 +16,42 @@
 
 package io.helidon.build.archetype.engine.v2.prompter;
 
+import java.util.List;
+
 /**
  * Prompter for user input.
  */
 public interface Prompter {
-    // TODO prompter as Executable.Visitor<Value, Context>
-    // Input.Visitor<Value, Context>
+
+    /**
+     * Prompt a text value.
+     *
+     * @param inputInfo information about the current request.
+     * @return user input (response from the user)
+     */
+    String promptText(String prompt, String label, String help);
+
+    /**
+     * Prompt for a selection.
+     *
+     * @param inputInfo information about the current requests.
+     * @return user input (the value of the chosen option)
+     */
+    String promptEnum(String prompt, String label, String help);
+
+    /**
+     * Prompt for a multiply selection.
+     *
+     * @param inputInfo information about the current requests.
+     * @return user input (the values of the chosen options)
+     */
+    List<String> promptList(String prompt, String label, String help);
+
+    /**
+     * Prompt for a yes no.
+     *
+     * @param inputInfo information about the current requests.
+     * @return user input (true if user chose yes, no - otherwise)
+     */
+    boolean promptBoolean(String prompt, String label, String help);
 }

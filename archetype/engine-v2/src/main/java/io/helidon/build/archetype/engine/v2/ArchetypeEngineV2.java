@@ -16,9 +16,7 @@
 
 package io.helidon.build.archetype.engine.v2;
 
-import io.helidon.build.archetype.engine.v2.ast.Output;
 import io.helidon.build.archetype.engine.v2.ast.Script;
-import io.helidon.build.archetype.engine.v2.prompter.Prompter;
 
 import java.io.File;
 import java.nio.file.Path;
@@ -30,14 +28,14 @@ import java.util.Map;
 public class ArchetypeEngineV2 {
 
     private final Path entryPoint;
-    private final Prompter prompter;
+    private final Driver driver;
     private final Map<String, String> env;
     private final boolean batch;
 
     // TODO batch goes away and it implemented with a prompter
-    public ArchetypeEngineV2(Path entryPoint, Prompter prompter, Map<String, String> env, boolean batch) {
+    public ArchetypeEngineV2(Path entryPoint, Driver driver, Map<String, String> env, boolean batch) {
         this.entryPoint = entryPoint;
-        this.prompter = prompter;
+        this.driver = driver;
         this.env = env;
         this.batch = batch;
     }
@@ -49,7 +47,7 @@ public class ArchetypeEngineV2 {
      */
     public void generate(File directory) {
         Context ctx = evalInput();
-        Output output = evalOutput(ctx);
+//        Output output = evalOutput(ctx);
 
         // TODO generate (get code from OutputGenerator)
     }
@@ -58,11 +56,11 @@ public class ArchetypeEngineV2 {
         // TODO populate context from env
         Context ctx = Context.create(entryPoint.getParent());
         Script script = ScriptLoader.load(entryPoint);
-        script.accept(new InputInterpreter(prompter, batch), ctx);
+//        script.accept(new InputInterpreter(prompter, batch), ctx);
         return ctx;
     }
 
-    private Output evalOutput(Context ctx) {
+//    private Output evalOutput(Context ctx) {
         // TODO just do this as another full path on the tree
         // i.e remove unresolvedOutput from the context
         // the 2nd pass will need to accumulate the global model, list of file and templates
@@ -73,6 +71,6 @@ public class ArchetypeEngineV2 {
 //        Output.Builder builder = Output.builder();
 //        ctx.outputs().accept(new OutputInterpreter(), builder);
 //        return builder.build();
-        return null;
-    }
+//        return null;
+//    }
 }

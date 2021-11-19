@@ -64,7 +64,7 @@ public enum Attributes {
     /**
      * Order.
      */
-    Order(STRING),
+    ORDER(STRING),
 
     /**
      * Replacement.

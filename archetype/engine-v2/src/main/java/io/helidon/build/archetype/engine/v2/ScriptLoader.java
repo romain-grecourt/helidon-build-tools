@@ -29,31 +29,17 @@ import java.util.Objects;
 import java.util.WeakHashMap;
 
 import io.helidon.build.archetype.engine.v2.ast.Attributes;
-import io.helidon.build.archetype.engine.v2.ast.Data;
-import io.helidon.build.archetype.engine.v2.ast.Executable;
-import io.helidon.build.archetype.engine.v2.ast.Input;
+import io.helidon.build.archetype.engine.v2.ast.Condition;
 import io.helidon.build.archetype.engine.v2.ast.Invocation;
 import io.helidon.build.archetype.engine.v2.ast.Node;
-import io.helidon.build.archetype.engine.v2.ast.Model;
-import io.helidon.build.archetype.engine.v2.ast.Output;
+import io.helidon.build.archetype.engine.v2.ast.Noop;
 import io.helidon.build.archetype.engine.v2.ast.Position;
+import io.helidon.build.archetype.engine.v2.ast.Preset;
 import io.helidon.build.archetype.engine.v2.ast.Script;
 import io.helidon.build.archetype.engine.v2.ast.Statement;
 import io.helidon.build.archetype.engine.v2.ast.Block;
-import io.helidon.build.archetype.engine.v2.ast.ValueTypes;
 import io.helidon.build.common.xml.SimpleXMLParser;
 import io.helidon.build.common.xml.SimpleXMLParser.XMLReaderException;
-
-import static io.helidon.build.archetype.engine.v2.ast.NodeFactory.newBlock;
-import static io.helidon.build.archetype.engine.v2.ast.NodeFactory.newData;
-import static io.helidon.build.archetype.engine.v2.ast.NodeFactory.newExecutable;
-import static io.helidon.build.archetype.engine.v2.ast.NodeFactory.newIf;
-import static io.helidon.build.archetype.engine.v2.ast.NodeFactory.newInput;
-import static io.helidon.build.archetype.engine.v2.ast.NodeFactory.newInvocation;
-import static io.helidon.build.archetype.engine.v2.ast.NodeFactory.newModel;
-import static io.helidon.build.archetype.engine.v2.ast.NodeFactory.newOutput;
-import static io.helidon.build.archetype.engine.v2.ast.NodeFactory.newPreset;
-import static io.helidon.build.archetype.engine.v2.ast.NodeFactory.newScript;
 
 /**
  * Script loader.
@@ -70,9 +56,8 @@ public class ScriptLoader {
      * @return script
      */
     public static Script load(Path path) {
-        //noinspection ConstantConditions
         return CACHE.computeIfAbsent(path.getFileSystem(), fs -> new HashMap<>())
-                    .compute(path, (p, r) -> r != null && r.get() == null ? new WeakReference<>(load0(p)) : r)
+                    .compute(path, (p, r) -> r == null || r.get() == null ? new WeakReference<>(load0(p)) : r)
                     .get();
     }
 
@@ -96,35 +81,19 @@ public class ScriptLoader {
         }
     }
 
-    // Remove usage of pair
-    // and instead the class Context
-    private enum STATE {
-        SCRIPT,
-        PRESETS,
+    private enum State {
         PRESET,
-        INPUTS,
         INPUT,
-        OPTION,
-        HELP,
-        INCLUDES,
-        EXCLUDES,
-        DIRECTORY,
-        INVOCATION,
-        OUTPUT,
-        TEMPLATES,
-        FILES,
-        TEMPLATE,
-        TRANSFORMATION,
-        REPLACE,
-        MODEL
+        EXECUTABLE,
+        BLOCK
     }
 
     private static final class Context {
 
-        final STATE state;
+        final State state;
         final Node.Builder<?, ?> builder;
 
-        Context(STATE state, Node.Builder<?, ?> builder) {
+        Context(State state, Node.Builder<?, ?> builder) {
             this.state = state;
             this.builder = builder;
         }
@@ -164,29 +133,22 @@ public class ScriptLoader {
             if (ctx == null) {
                 if (!"archetype-script".equals(qName)) {
                     throw new XMLReaderException(String.format(
-                            "Invalid root element '%s', file=%s, position=%s",
+                            "Invalid root element '%s'. {file=%s, position=%s}",
                             qName, location, position));
                 }
-                script = newScript(location, position);
-                stack.push(new Context(STATE.SCRIPT, script));
+                script = Script.builder(location, position);
+                stack.push(new Context(State.EXECUTABLE, script));
             } else {
-                boolean invalidElement;
-                Throwable cause = null;
                 try {
-                    invalidElement = !processElement();
-                } catch (IllegalArgumentException | XMLReaderException ex) {
-                    invalidElement = true;
-                    cause = ex;
+                    processElement();
+                } catch (IllegalArgumentException ex) {
+                    throw new XMLReaderException(String.format(
+                            "Invalid element '%s'. { file=%s, position=%s }",
+                            qName, location, position), ex);
                 } catch (Throwable ex) {
-                    invalidElement = false;
-                    cause = ex;
-                }
-                if (invalidElement) {
                     throw new XMLReaderException(String.format(
-                            "Invalid element '%s', file=%s, position=%s", qName, location, position), cause);
-                } else if (cause != null) {
-                    throw new XMLReaderException(String.format(
-                            "Unexpected error, file=%s, position=%s", location, position), cause);
+                            "An unexpected error occurred. { file=%s, position=%s }",
+                            location, position), ex);
                 }
             }
         }
@@ -205,159 +167,149 @@ public class ScriptLoader {
             stack.pop();
         }
 
-        boolean processElement() {
-            switch (ctx.state) {
-                case SCRIPT:
-                case INPUT:
-                    return executable();
-                case PRESETS:
-                    return statement(STATE.PRESET, newPreset(location, position, inputKind()));
-                case INPUTS:
-                    return statement(STATE.INPUT, newInput(location, position, inputKind()));
-                case OPTION:
-                    return option();
-                case OUTPUT:
-                    return statement(nextState(), newOutput(location, position, outputKind()));
-                case TRANSFORMATION:
-                    return statement(STATE.REPLACE, newData(location, position, Data.Kind.REPLACE));
-                case MODEL:
-                    return statement(ctx.state, newModel(location, position, modelKind()));
-                case TEMPLATE:
-                    return statement(ctx.state, newOutput(location, position, Output.Kind.MODEL));
-                case TEMPLATES:
-                case FILES:
-                    return files();
-                case INCLUDES:
-                case EXCLUDES:
-                case INVOCATION:
-                case PRESET:
-                    return skip();
-                default:
-                    throw new XMLReaderException();
-            }
-        }
-
         void processText(String value) {
             switch (ctx.state) {
-                case HELP:
-                    ctx.builder.parseAttribute(Attributes.HELP, ValueTypes.STRING, value);
+                case BLOCK:
+                    switch(qName) {
+                        case "help":
+                            ctx.builder.parseAttribute(Attributes.HELP, value);
+                            break;
+                        case "include":
+                            ctx.builder.attributeListAdd(Attributes.INCLUDES, value);
+                            break;
+                        case "exclude":
+                            ctx.builder.attributeListAdd(Attributes.EXCLUDES, value);
+                            break;
+                        case "directory":
+                            ctx.builder.parseAttribute(Attributes.DIRECTORY, value);
+                        default:
+                    }
                     break;
                 case PRESET:
                     switch (qName) {
-                        case "boolean":
-                            ctx.builder.parseAttribute(Attributes.VALUE, ValueTypes.BOOLEAN, value);
-                            break;
                         case "text":
                         case "enum":
-                            ctx.builder.parseAttribute(Attributes.VALUE, ValueTypes.STRING, value);
+                        case "boolean":
+                            ctx.builder.parseAttribute(Attributes.VALUE, presetKind().valueType(), value);
                             break;
                         case "value":
-                            ctx.builder.attributeListAdd(Attributes.VALUE, ValueTypes.STRING_LIST, value);
+                            ctx.builder.attributeListAdd(Attributes.VALUE, value);
                             break;
                         default:
                     }
                     break;
-                case INCLUDES:
-                    ctx.builder.attributeListAdd(Attributes.INCLUDES, ValueTypes.STRING_LIST, value);
-                    break;
-                case EXCLUDES:
-                    ctx.builder.attributeListAdd(Attributes.EXCLUDES, ValueTypes.STRING_LIST, value);
-                    break;
-                case DIRECTORY:
-                    ctx.builder.parseAttribute(Attributes.DIRECTORY, ValueTypes.STRING, value);
-                    break;
                 default:
             }
         }
 
-        boolean option() {
+        void processElement() {
             switch (qName) {
-                case "option":
-                    return statement(STATE.SCRIPT, newExecutable(location, position, Executable.Kind.OPTION));
-                case "help":
-                    return skip();
-                default:
-                    throw new XMLReaderException();
-            }
-        }
-
-        boolean files() {
-            switch (qName) {
-                case "model":
-                    if (ctx.state == STATE.TEMPLATES) {
-                        return statement(STATE.MODEL, newBlock(location, position, Block.Kind.MODEL));
-                    }
                 case "directory":
                 case "includes":
+                case "include":
                 case "excludes":
-                    return next();
-                default:
-                    throw new XMLReaderException();
-            }
-        }
-
-        boolean executable() {
-            switch (qName) {
-                case "option":
-                    if (ctx.state == STATE.INPUT) {
-                        return statement(STATE.OPTION, newExecutable(location, position, Executable.Kind.OPTION));
-                    }
-                    return false;
-                case "presets":
-                    return statement(STATE.PRESETS, newBlock(location, position, Block.Kind.PRESETS));
-                case "exec":
-                    return statement(STATE.INVOCATION, newInvocation(location, position, Invocation.Kind.EXEC));
-                case "source":
-                    return statement(STATE.INVOCATION, newInvocation(location, position, Invocation.Kind.SOURCE));
-                case "inputs":
-                    return statement(STATE.INPUTS, newBlock(location, position, Block.Kind.INPUTS));
-                case "step":
-                    return statement(STATE.SCRIPT, newExecutable(location, position, Executable.Kind.STEP));
-                case "output":
-                    return statement(STATE.OUTPUT, newBlock(location, position, Block.Kind.OUTPUT));
+                case "exclude":
                 case "help":
-                    return skip();
+                case "value":
+                    skip();
+                    return;
+                case "replace":
+                    statement(ctx.state, Noop.builder(location, position));
+                    return;
                 default:
-                    throw new XMLReaderException();
+            }
+            switch (ctx.state) {
+                case EXECUTABLE:
+                    switch (qName) {
+                        case "exec":
+                        case "source":
+                            statement(ctx.state, Invocation.builder(location, position, invocationKind()));
+                            break;
+                        default:
+                            processBlock();
+                    }
+                    break;
+                case BLOCK:
+                    processBlock();
+                    break;
+                case INPUT:
+                    processInput();
+                    break;
+                case PRESET:
+                    statement(State.PRESET, Preset.builder(location, position, presetKind()));
+                    break;
+                default:
+                    throw new XMLReaderException(String.format(
+                            "Invalid state: %s. { element=%s }", ctx.state, qName));
             }
         }
 
-        STATE nextState() {
-            return STATE.valueOf(qName.toUpperCase());
+        void processInput() {
+            State nextState;
+            Block.Kind blockKind = blockKind();
+            switch (blockKind) {
+                case BOOLEAN:
+                case TEXT:
+                case OPTION:
+                    nextState = State.EXECUTABLE;
+                    break;
+                case LIST:
+                case ENUM:
+                    nextState = State.INPUT;
+                    break;
+                default:
+                    throw new XMLReaderException(String.format(
+                            "Invalid input block: %s. { element=%s }", blockKind, qName));
+            }
+            statement(nextState, Block.builder(location, position, blockKind));
         }
 
-        Model.Kind modelKind() {
-            return Model.Kind.valueOf(qName.toUpperCase());
+        void processBlock() {
+            State nextState;
+            Block.Kind blockKind = blockKind();
+            switch (blockKind) {
+                case SCRIPT:
+                case OPTION:
+                case STEP:
+                    nextState = State.EXECUTABLE;
+                    break;
+                case INPUTS:
+                    nextState = State.INPUT;
+                    break;
+                case PRESETS:
+                    nextState = State.PRESET;
+                    break;
+                default:
+                    nextState = State.BLOCK;
+            }
+            statement(nextState, Block.builder(location, position, blockKind));
         }
 
-        Output.Kind outputKind() {
-            return Output.Kind.valueOf(qName.toUpperCase());
-        }
-
-        Input.Kind inputKind() {
-            return Input.Kind.valueOf(qName.toUpperCase());
-        }
-
-        boolean statement(STATE nextState, Statement.Builder<? extends Statement, ?> stmt) {
+        void statement(State nextState, Statement.Builder<? extends Statement, ?> stmt) {
             stmt.parseAttributes(attrs);
             String ifExpr = attrs.get("if");
             if (ifExpr != null) {
-                ctx.builder.statement(newIf(location, position).expression(ifExpr).then(stmt));
+                ctx.builder.statement(Condition.builder(location, position).expression(ifExpr).then(stmt));
             } else {
                 ctx.builder.statement(stmt);
             }
             stack.push(new Context(nextState, stmt));
-            return true;
         }
 
-        boolean next() {
-            stack.push(new Context(nextState(), ctx.builder));
-            return true;
-        }
-
-        boolean skip() {
+        void skip() {
             stack.push(stack.peek());
-            return true;
+        }
+
+        Preset.Kind presetKind() {
+            return Preset.Kind.valueOf(qName.toUpperCase());
+        }
+
+        Block.Kind blockKind() {
+            return Block.Kind.valueOf(qName.toUpperCase());
+        }
+
+        Invocation.Kind invocationKind() {
+            return Invocation.Kind.valueOf(qName.toUpperCase());
         }
     }
 }

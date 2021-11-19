@@ -19,14 +19,14 @@ package io.helidon.build.archetype.engine.v2.ast;
 import java.nio.file.Path;
 
 /**
- * If statement.
+ * Condition statement.
  */
-public final class IfStatement extends Statement {
+public final class Condition extends Statement {
 
     private final String expression;
     private final Statement then;
 
-    private IfStatement(Builder builder) {
+    private Condition(Builder builder) {
         super(builder);
         this.expression = builder.expression;
         this.then = builder.then.build();
@@ -51,21 +51,26 @@ public final class IfStatement extends Statement {
     }
 
     /**
-     * If statement builder.
+     * Create a new builder.
+     *
+     * @param location location
+     * @param position position
+     * @return builder
      */
-    public static final class Builder extends Statement.Builder<IfStatement, Builder> {
+    public static Builder builder(Path location, Position position) {
+        return new Builder(location, position);
+    }
+
+    /**
+     * Condition statement builder.
+     */
+    public static final class Builder extends Statement.Builder<Condition, Builder> {
 
         private String expression;
         private Statement.Builder<?, ?> then;
 
-        /**
-         * Create a new if statement builder.
-         *
-         * @param location location
-         * @param position position
-         */
-        Builder(Path location, Position position) {
-            super(location, position, Statement.Kind.IF);
+        private Builder(Path location, Position position) {
+            super(location, position, Statement.Kind.CONDITION);
         }
 
         /**
@@ -90,18 +95,9 @@ public final class IfStatement extends Statement {
             return this;
         }
 
-        /**
-         * Get the {@code then} statement.
-         *
-         * @return {@code then} statement
-         */
-        public Statement.Builder<?, ?> then() {
-            return then;
-        }
-
         @Override
-        public IfStatement build() {
-            return new IfStatement(this);
+        public Condition build() {
+            return new Condition(this);
         }
     }
 }

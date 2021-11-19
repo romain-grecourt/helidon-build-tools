@@ -28,7 +28,6 @@ import java.nio.charset.Charset;
 import com.github.mustachejava.DefaultMustacheFactory;
 import com.github.mustachejava.Mustache;
 import com.github.mustachejava.MustacheFactory;
-import io.helidon.build.archetype.engine.v2.ast.Model;
 
 /**
  * Implementation of the {@link TemplateEngine} for Mustache.
@@ -45,7 +44,7 @@ public class MustacheTemplateEngine implements TemplateEngine {
                        String templateName,
                        Charset charset,
                        OutputStream target,
-                       Model scope) {
+                       Object scope) {
 
         MustacheFactory factory = new DefaultMustacheFactory();
         Mustache mustache = factory.compile(new InputStreamReader(template), templateName);

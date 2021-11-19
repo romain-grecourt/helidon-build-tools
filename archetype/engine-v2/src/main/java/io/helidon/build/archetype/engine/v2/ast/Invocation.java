@@ -41,55 +41,12 @@ public final class Invocation extends Expression {
     }
 
     /**
-     * Visit this invocation.
+     * Get the invocation kind.
      *
-     * @param visitor Visitor
-     * @param arg     argument
-     * @param <R>     generic type of the result
-     * @param <A>     generic type of the arguments
-     * @return result
+     * @return kind
      */
-    public <A, R> R accept(Visitor<A, R> visitor, A arg) {
-        switch (kind) {
-            case EXEC:
-                return visitor.visitExec(this, arg);
-            case SOURCE:
-                return visitor.visitSource(this, arg);
-            default:
-                throw new IllegalStateException();
-        }
-    }
-
-    /**
-     * Invocation visitor.
-     *
-     * @param <A> argument
-     * @param <R> type of the returned value
-     */
-    @SuppressWarnings("unused")
-    public interface Visitor<A, R> {
-
-        /**
-         * Visit an exec invocation.
-         *
-         * @param invocation invocation
-         * @param arg        argument
-         * @return visit result
-         */
-        default R visitExec(Invocation invocation, A arg) {
-            return null;
-        }
-
-        /**
-         * Visit a source invocation.
-         *
-         * @param invocation invocation
-         * @param arg        argument
-         * @return visit result
-         */
-        default R visitSource(Invocation invocation, A arg) {
-            return null;
-        }
+    public Kind invocationKind() {
+        return kind;
     }
 
     /**
@@ -109,20 +66,25 @@ public final class Invocation extends Expression {
     }
 
     /**
+     * Create a new builder.
+     *
+     * @param location location
+     * @param position position
+     * @param kind     kind
+     * @return builder
+     */
+    public static Builder builder(Path location, Position position, Kind kind) {
+        return new Builder(location, position, kind);
+    }
+
+    /**
      * Invocation builder.
      */
     public static final class Builder extends Expression.Builder<Invocation, Builder> {
 
         private final Kind kind;
 
-        /**
-         * Create a new builder.
-         *
-         * @param location location
-         * @param position position
-         * @param kind     kind
-         */
-        Builder(Path location, Position position, Kind kind) {
+        private Builder(Path location, Position position, Kind kind) {
             super(location, position, Expression.Kind.INVOCATION);
             this.kind = kind;
         }

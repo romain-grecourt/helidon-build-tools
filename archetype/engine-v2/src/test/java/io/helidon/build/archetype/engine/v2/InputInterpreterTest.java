@@ -16,19 +16,12 @@
 
 package io.helidon.build.archetype.engine.v2;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.LinkedList;
 
-import io.helidon.build.archetype.engine.v2.ast.NodeFactory;
-import io.helidon.build.archetype.engine.v2.ast.Position;
 import io.helidon.build.archetype.engine.v2.ast.Script;
 import io.helidon.build.archetype.engine.v2.prompter.Prompter;
 
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -38,7 +31,7 @@ public class InputInterpreterTest {
 
     @Test
     public void simpleTest() {
-        Script script = NodeFactory.newScript(null, null)
+        Script script = Script.builder(null, null)
 //                      .path(scriptPath)
 //                      .body(s -> {
 //                          s.step(st -> {
@@ -66,11 +59,11 @@ public class InputInterpreterTest {
 
     private static Context eval(Script script, Object... userInput) {
         Context ctx = Context.create(script.location().getParent());
-        script.accept(new InputInterpreter(new TestPrompter(userInput), true), ctx);
+//        script.accept(new InputInterpreter(new TestPrompter(userInput), true), ctx);
         return ctx;
     }
 
-    private static final class TestPrompter implements Prompter {
+    private static final class TestPrompter {
 
         final LinkedList<?> userInput;
 

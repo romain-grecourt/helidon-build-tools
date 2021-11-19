@@ -36,7 +36,7 @@ public class CLIPrompterTest {
 
     @BeforeEach
     public void setup() {
-        prompter = new CLIPrompter();
+//        prompter = new CLIPrompter();
     }
 
     @AfterEach

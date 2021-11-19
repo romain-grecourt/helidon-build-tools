@@ -16,9 +16,6 @@
 
 package io.helidon.build.archetype.engine.v2;
 
-import io.helidon.build.archetype.engine.v2.ast.Model;
-
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
@@ -52,7 +49,7 @@ public interface TemplateEngine {
                 String templateName,
                 Charset charset,
                 OutputStream target,
-                Model scope);
+                Object scope);
 
     /**
      * Get all found template engines.

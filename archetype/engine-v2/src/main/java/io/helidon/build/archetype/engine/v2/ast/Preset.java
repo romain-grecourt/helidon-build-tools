@@ -16,6 +16,8 @@
 
 package io.helidon.build.archetype.engine.v2.ast;
 
+import io.helidon.build.common.GenericType;
+
 import java.nio.file.Path;
 import java.util.Objects;
 
@@ -24,7 +26,7 @@ import java.util.Objects;
  */
 public final class Preset extends Expression {
 
-    private final Input.Kind kind;
+    private final Kind kind;
 
     private Preset(Builder builder) {
         super(builder);
@@ -50,90 +52,65 @@ public final class Preset extends Expression {
     }
 
     /**
-     * Visit this preset.
-     *
-     * @param visitor Visitor
-     * @param arg     argument
-     * @param <R>     generic type of the result
-     * @param <A>     generic type of the arguments
-     * @return result
+     * Preset kind.
      */
-    public <A, R> R accept(Visitor<A, R> visitor, A arg) {
-        switch (kind) {
-            case BOOLEAN:
-                return visitor.visitBoolean(this, arg);
-            case TEXT:
-                return visitor.visitText(this, arg);
-            case ENUM:
-                return visitor.visitEnum(this, arg);
-            case LIST:
-                return visitor.visitList(this, arg);
-            default:
-                throw new IllegalStateException();
+    public enum Kind {
+
+        /**
+         * Text.
+         */
+        TEXT(ValueTypes.STRING),
+
+        /**
+         * Boolean.
+         */
+        BOOLEAN(ValueTypes.BOOLEAN),
+
+        /**
+         * Enum.
+         */
+        ENUM(ValueTypes.STRING),
+
+        /**
+         * List.
+         */
+        LIST(ValueTypes.STRING_LIST);
+
+        private final GenericType<?> type;
+
+        Kind(GenericType<?> type) {
+            this.type = type;
+        }
+
+        /**
+         * Get the value type.
+         *
+         * @return type
+         */
+        public GenericType<?> valueType() {
+            return type;
         }
     }
 
     /**
-     * Invocation visitor.
-     *
-     * @param <A> argument
-     * @param <R> type of the returned value
-     */
-    @SuppressWarnings("unused")
-    public interface Visitor<A, R> {
-
-        /**
-         * Visit a boolean preset.
-         *
-         * @param preset preset
-         * @param arg    argument
-         * @return visit result
-         */
-        default R visitBoolean(Preset preset, A arg) {
-            return null;
-        }
-
-        /**
-         * Visit a text preset.
-         *
-         * @param preset preset
-         * @param arg    argument
-         * @return visit result
-         */
-        default R visitText(Preset preset, A arg) {
-            return null;
-        }
-
-        /**
-         * Visit an enum preset.
-         *
-         * @param preset preset
-         * @param arg    argument
-         * @return visit result
-         */
-        default R visitEnum(Preset preset, A arg) {
-            return null;
-        }
-
-        /**
-         * Visit a list preset.
-         *
-         * @param preset preset
-         * @param arg    argument
-         * @return visit result
-         */
-        default R visitList(Preset preset, A arg) {
-            return null;
-        }
-    }
-
-    /**
-     * Get the input kind.
+     * Get the preset kind.
      *
      * @return kind
      */
-    public Input.Kind inputKind() {
+    public Kind presetKind() {
         return kind;
+    }
+
+    /**
+     * Create a new builder.
+     *
+     * @param location location
+     * @param position position
+     * @param kind     kind
+     * @return builder
+     */
+    public static Builder builder(Path location, Position position, Kind kind) {
+        return new Builder(location, position, kind);
     }
 
     /**
@@ -141,17 +118,10 @@ public final class Preset extends Expression {
      */
     public static final class Builder extends Expression.Builder<Preset, Builder> {
 
-        private final Input.Kind kind;
+        private final Kind kind;
 
-        /**
-         * Create a new builder.
-         *
-         * @param location location
-         * @param position position
-         * @param kind     kind
-         */
-        Builder(Path location, Position position, Input.Kind kind) {
-            super(location, position, Kind.PRESET);
+        private Builder(Path location, Position position, Kind kind) {
+            super(location, position, Expression.Kind.PRESET);
             this.kind = kind;
         }
 

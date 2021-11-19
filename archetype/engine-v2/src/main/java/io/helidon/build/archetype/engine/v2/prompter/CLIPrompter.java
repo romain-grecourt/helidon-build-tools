@@ -16,12 +16,38 @@
 
 package io.helidon.build.archetype.engine.v2.prompter;
 
+import io.helidon.build.archetype.engine.v2.Driver;
+
 import java.util.List;
 
 /**
  * Prompter that uses CLI for input/output.
  */
-public class CLIPrompter  implements Prompter{
+public class CLIPrompter implements Driver {
+    @Override
+    public void onStep(Info info) {
+
+    }
+
+    @Override
+    public String promptText(String prompt, Info info) {
+        return null;
+    }
+
+    @Override
+    public boolean promptBoolean(String prompt, Info info) {
+        return false;
+    }
+
+    @Override
+    public String promptEnum(String prompt, Info info, List<Option> options) {
+        return null;
+    }
+
+    @Override
+    public List<String> promptList(String prompt, Info info, List<Option> options) {
+        return null;
+    }
 //    @Override
 //    public String prompt(TextInput input) {
 //        return null;

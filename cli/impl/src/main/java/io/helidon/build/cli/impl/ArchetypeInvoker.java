@@ -292,9 +292,8 @@ abstract class ArchetypeInvoker {
             Path projectDir = projectDirSupplier().apply(initOptions().initProperties().get("name"));
 
             ArchetypeEngineV2 engine = new ArchetypeEngineV2(
-                    getArchetype(projectDir.toFile()),
-                    "flavor.xml",
-                    new CLIPrompter(),
+                    Path.of(""),
+                    null,
                     new HashMap<>(),
                     false);
 
@@ -327,7 +326,8 @@ abstract class ArchetypeInvoker {
                 os.write(is.readAllBytes());
                 os.close();
                 File archetype = new File(outputPath.toString());
-                return ArchetypeFactory.create(archetype);
+                return null;
+//                return ArchetypeFactory.create(archetype);
             } catch (IOException e) {
                 e.printStackTrace();
                 return null;

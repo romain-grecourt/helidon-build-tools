@@ -45,58 +45,6 @@ public abstract class Expression extends Statement {
     }
 
     /**
-     * Visit this expression.
-     *
-     * @param visitor Visitor
-     * @param arg     argument
-     * @param <R>     generic type of the result
-     * @param <A>     generic type of the arguments
-     * @return result
-     */
-    public final <A, R> R accept(Visitor<A, R> visitor, A arg) {
-        switch (kind) {
-            case INVOCATION:
-                return visitor.visitInvocation((Invocation) this, arg);
-            case PRESET:
-                return visitor.visitPreset((Preset) this, arg);
-            default:
-                throw new IllegalStateException();
-        }
-    }
-
-    /**
-     * Expression visitor.
-     *
-     * @param <A> argument
-     * @param <R> type of the returned value
-     */
-    @SuppressWarnings("unused")
-    public interface Visitor<A, R> {
-
-        /**
-         * Visit an invocation.
-         *
-         * @param invocation invocation
-         * @param arg        argument
-         * @return visit result
-         */
-        default R visitInvocation(Invocation invocation, A arg) {
-            return null;
-        }
-
-        /**
-         * Visit a preset.
-         *
-         * @param preset preset
-         * @param arg    argument
-         * @return visit result
-         */
-        default R visitPreset(Preset preset, A arg) {
-            return null;
-        }
-    }
-
-    /**
      * Expressions kind.
      */
     public enum Kind {
@@ -105,6 +53,11 @@ public abstract class Expression extends Statement {
          * Invocation.
          */
         INVOCATION,
+
+        /**
+         * Literal.
+         */
+        LITERAL,
 
         /**
          * Preset.

@@ -19,8 +19,6 @@ package io.helidon.build.archetype.engine.v2;
 //import io.helidon.build.archetype.engine.v2.interpreter.Flow;
 //import io.helidon.build.archetype.engine.v2.template.TemplateModel;
 
-import io.helidon.build.archetype.engine.v2.ast.Output;
-
 import java.io.File;
 
 import static io.helidon.build.archetype.engine.v2.MustacheHandler.renderMustacheTemplate;
@@ -30,8 +28,8 @@ import static io.helidon.build.archetype.engine.v2.MustacheHandler.renderMustach
  */
 public class OutputGenerator {
 
-    public OutputGenerator(Output build) {
-    }
+//    public OutputGenerator(Output build) {
+//    }
 
     public void generate(File directory) {
     }

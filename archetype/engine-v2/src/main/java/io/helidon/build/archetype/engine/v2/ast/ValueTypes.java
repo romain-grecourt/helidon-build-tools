@@ -1,7 +1,6 @@
 package io.helidon.build.archetype.engine.v2.ast;
 
 import io.helidon.build.common.GenericType;
-import io.helidon.build.common.Pair;
 
 import java.util.List;
 
@@ -29,11 +28,6 @@ public final class ValueTypes {
      * List of strings.
      */
     public static final GenericType<List<String>> STRING_LIST = new GenericType<>() {};
-
-    /**
-     * List of string pairs.
-     */
-    public static final GenericType<List<Pair<String, String>>> STRING_PAIR_LIST = new GenericType<>() {};
 
     private ValueTypes() {
     }

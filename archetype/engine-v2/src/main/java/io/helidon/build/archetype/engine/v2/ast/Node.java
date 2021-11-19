@@ -22,7 +22,6 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
@@ -61,7 +60,7 @@ public abstract class Node {
     private final Kind kind;
     private final Path location;
     private final Position position;
-    private final Map<Object, Value> attributes;
+    private final Map<Attributes, Value> attributes;
 
     protected Node(Builder<?, ?> builder) {
         this.location = requireNonNull(builder.location, "location is null");
@@ -103,7 +102,7 @@ public abstract class Node {
      *
      * @return attributes
      */
-    public Map<Object, Value> attributes() {
+    public Map<Attributes, Value> attributes() {
         return attributes;
     }
 
@@ -112,21 +111,10 @@ public abstract class Node {
      *
      * @param visitor Visitor
      * @param arg     argument
-     * @param <R>     generic type of the result
      * @param <A>     generic type of the arguments
      * @return result
      */
-    public final <A, R> R accept(Visitor<A, R> visitor, A arg) {
-        switch(kind) {
-            case STATEMENT:
-                return visitor.visitStatement((Statement) this, arg);
-            case SCRIPT:
-                return visitor.visitScript((Script) this, arg);
-            case LITERAL:
-                return visitor.visitLiteral((Literal) this, arg);
-            default:
-                throw new IllegalStateException();
-        }
+    public final <A> void accept(Visitor<A> visitor, A arg) {
     }
 
     /**
@@ -142,55 +130,7 @@ public abstract class Node {
         /**
          * Script.
          */
-        SCRIPT,
-
-        /**
-         * Literal.
-         */
-        LITERAL,
-    }
-
-    /**
-     * Visitor.
-     *
-     * @param <A> argument
-     * @param <R> type of the returned value
-     */
-    @SuppressWarnings("unused")
-    public interface Visitor<A, R> {
-
-        /**
-         * Visit a script.
-         *
-         * @param script script
-         * @param arg    argument
-         * @return visit result
-         */
-        default R visitScript(Script script, A arg) {
-            return null;
-        }
-
-        /**
-         * Visit a statement.
-         *
-         * @param statement statement
-         * @param arg       argument
-         * @return visit result
-         */
-        default R visitStatement(Statement statement, A arg) {
-            return null;
-        }
-
-        /**
-         * Visit a literal.
-         *
-         * @param literal literal
-         * @param arg     argument
-         * @return visit result
-         */
-        default R visitLiteral(Literal literal, A arg) {
-            return null;
-        }
+        SCRIPT
     }
 
     /**
@@ -206,10 +146,10 @@ public abstract class Node {
         private static final Position NULL_POSITION = Position.of(0, 0);
 
         private static final Map<String, Attributes> ATTRIBUTES_MAP =
-                Arrays.stream(Attributes.values()).collect(toMap(Attributes::name, Function.identity()));
+                Arrays.stream(Attributes.values()).collect(toMap(a -> a.name().toLowerCase(), Function.identity()));
 
         private final Kind kind;
-        private final Map<Object, Value> attributes = new HashMap<>();
+        private final Map<Attributes, Value> attributes = new HashMap<>();
         private final Path location;
         private final Position position;
 
@@ -247,7 +187,7 @@ public abstract class Node {
          * @param value value
          * @return this builder
          */
-        public U attribute(Object key, Value value) {
+        public U attribute(Attributes key, Value value) {
             Objects.requireNonNull(key, "key is null");
             if (value != null) {
                 attributes.put(key, value);
@@ -260,13 +200,11 @@ public abstract class Node {
          *
          * @param key   key
          * @param value value
-         * @param type  type
-         * @param <V>   value type
          * @return this builder
          */
         @SuppressWarnings("UnusedReturnValue")
-        public <V> U attributeListAdd(Object key, GenericType<List<V>> type, V value) {
-            attributes.compute(key, (k, v) -> Literal.listAdd(this::newLiteral, v, type, value));
+        public U attributeListAdd(Attributes key, String value) {
+            attributes.compute(key, (k, v) -> Literal.listAdd(this::newLiteral, v, value));
             return (U) this;
         }
 
@@ -299,7 +237,7 @@ public abstract class Node {
          * @param rawValue raw value
          * @return this builder
          */
-        public <V> U parseAttribute(Object key, GenericType<V> type, String rawValue, V defaultValue) {
+        public <V> U parseAttribute(Attributes key, GenericType<V> type, String rawValue, V defaultValue) {
             Objects.requireNonNull(key, "key is null");
             if (rawValue != null) {
                 attributes.put(key, this.<V>newLiteral().parse(type, rawValue, defaultValue).build());
@@ -308,13 +246,24 @@ public abstract class Node {
         }
 
         /**
-         * Add an attribute.
+         * Parse an attribute.
          *
          * @param key      key
          * @param rawValue raw value
          * @return this builder
          */
-        public <V> U parseAttribute(Object key, GenericType<V> type, String rawValue) {
+        public U parseAttribute(Attributes key, String rawValue) {
+            return parseAttribute(key, key.valueType(), rawValue, null);
+        }
+
+        /**
+         * Parse an attribute.
+         *
+         * @param key      key
+         * @param rawValue raw value
+         * @return this builder
+         */
+        public <V> U parseAttribute(Attributes key, GenericType<V> type, String rawValue) {
             return parseAttribute(key, type, rawValue, null);
         }
 

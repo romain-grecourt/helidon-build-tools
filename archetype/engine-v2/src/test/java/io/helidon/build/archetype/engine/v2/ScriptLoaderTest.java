@@ -17,23 +17,14 @@
 package io.helidon.build.archetype.engine.v2;
 
 import java.io.InputStream;
-import java.util.Iterator;
-import java.util.List;
-
-import io.helidon.build.archetype.engine.v2.ast.IfStatement;
-import io.helidon.build.archetype.engine.v2.ast.Model;
-import io.helidon.build.archetype.engine.v2.ast.Output;
 
 import io.helidon.build.archetype.engine.v2.ast.Script;
 import org.junit.jupiter.api.Test;
 
-import static java.util.stream.Collectors.toList;
-import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
-import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.core.IsNull.notNullValue;
 
 @SuppressWarnings("rawtypes")

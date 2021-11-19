@@ -30,7 +30,7 @@ import static java.util.Collections.unmodifiableList;
 /**
  * Literal value.
  */
-public final class Literal extends Node implements Value {
+public final class Literal extends Expression implements Value {
 
     private final Object value;
     private final GenericType<?> type;
@@ -78,22 +78,16 @@ public final class Literal extends Node implements Value {
      *
      * @param builder builder supplier
      * @param literal literal
-     * @param type    value type
      * @param value   value
-     * @param <T>     value type
      * @return literal
      * @throws IllegalArgumentException if the provided value is not a literal
      */
-    public static <T> Literal listAdd(Supplier<Builder<List<T>>> builder,
-                                      Value literal,
-                                      GenericType<List<T>> type,
-                                      T value) {
-
+    public static Literal listAdd(Supplier<Builder<List<String>>> builder, Value literal, String value) {
         if (literal == null) {
-            List<T> list = new ArrayList<>();
+            List<String> list = new ArrayList<>();
             list.add(value);
             return builder.get()
-                          .type(type)
+                          .type(ValueTypes.STRING_LIST)
                           .value(list)
                           .readonly(false)
                           .build();
@@ -101,11 +95,8 @@ public final class Literal extends Node implements Value {
         if (!(literal instanceof Literal)) {
             throw new IllegalArgumentException("Value is not a literal: " + literal);
         }
-        if (type.rawType().equals(List.class)) {
-            literal.as(type).add(value);
-            return (Literal) literal;
-        }
-        throw new IllegalArgumentException("Type is not a list: " + type);
+        literal.as(ValueTypes.STRING_LIST).add(value);
+        return (Literal) literal;
     }
 
     /**
@@ -113,7 +104,7 @@ public final class Literal extends Node implements Value {
      *
      * @param <T> value type
      */
-    public static final class Builder<T> extends Node.Builder<Literal, Builder<?>> {
+    public static final class Builder<T> extends Expression.Builder<Literal, Builder<?>> {
 
         private T value;
         private GenericType<T> type;
@@ -175,6 +166,7 @@ public final class Literal extends Node implements Value {
             if (rawValue == null && defaultValue == null) {
                 return null;
             }
+            Objects.requireNonNull(type, "type is null");
             if (rawValue != null) {
                 if (type.equals(ValueTypes.STRING)) {
                     value = (T) rawValue;
