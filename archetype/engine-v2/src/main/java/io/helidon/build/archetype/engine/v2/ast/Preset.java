@@ -16,10 +16,11 @@
 
 package io.helidon.build.archetype.engine.v2.ast;
 
-import io.helidon.build.common.GenericType;
-
 import java.nio.file.Path;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * Preset.
@@ -33,8 +34,25 @@ public final class Preset extends Expression {
     private Preset(Builder builder) {
         super(builder);
         this.kind = Objects.requireNonNull(builder.kind, "kind is null");
-        this.value = attribute(Attributes.VALUE, builder);
-        this.path = attribute(Attributes.PATH, builder).asString();
+        this.path = builder.attribute("path");
+        switch (kind) {
+            case BOOLEAN:
+                value = builder.parseValue(ValueTypes.BOOLEAN, builder.value);
+                break;
+            case TEXT:
+            case ENUM:
+                value = builder.parseValue(ValueTypes.STRING, builder.value);
+                break;
+            case LIST:
+                value = builder.newLiteral(ValueTypes.STRING_LIST)
+                               .value(Noop.Builder.filter(builder.statements, Noop.Kind.VALUE)
+                                                  .map(b -> b.value)
+                                                  .collect(Collectors.toUnmodifiableList()))
+                               .build();
+                break;
+            default:
+                throw new IllegalArgumentException("Unknown preset kind: " + kind);
+        }
     }
 
     /**
@@ -68,37 +86,22 @@ public final class Preset extends Expression {
         /**
          * Text.
          */
-        TEXT(ValueTypes.STRING),
+        TEXT,
 
         /**
          * Boolean.
          */
-        BOOLEAN(ValueTypes.BOOLEAN),
+        BOOLEAN,
 
         /**
          * Enum.
          */
-        ENUM(ValueTypes.STRING),
+        ENUM,
 
         /**
          * List.
          */
-        LIST(ValueTypes.STRING_LIST);
-
-        private final GenericType<?> type;
-
-        Kind(GenericType<?> type) {
-            this.type = type;
-        }
-
-        /**
-         * Get the value type.
-         *
-         * @return type
-         */
-        public GenericType<?> valueType() {
-            return type;
-        }
+        LIST
     }
 
     /**
@@ -127,11 +130,30 @@ public final class Preset extends Expression {
      */
     public static final class Builder extends Expression.Builder<Preset, Builder> {
 
+        private final List<Statement.Builder<? extends Statement, ?>> statements = new LinkedList<>();
         private final Kind kind;
+        private String value;
 
         private Builder(Path location, Position position, Kind kind) {
             super(location, position, Expression.Kind.PRESET);
             this.kind = kind;
+        }
+
+        /**
+         * Set the value.
+         *
+         * @param value value
+         * @return this builder
+         */
+        public Builder value(String value) {
+            this.value = value;
+            return this;
+        }
+
+        @Override
+        public Builder statement(Statement.Builder<? extends Statement, ?> builder) {
+            statements.add(builder);
+            return this;
         }
 
         @Override

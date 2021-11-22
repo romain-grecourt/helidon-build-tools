@@ -28,10 +28,11 @@ public abstract class Input extends Block {
 
     private Input(Input.Builder builder) {
         super(builder);
-        Value labelValue = builder.attributes.get(Attributes.LABEL);
-        Value helpValue = builder.attributes.get(Attributes.HELP);
-        this.label = labelValue != null ? labelValue.asString() : null;
-        this.help = helpValue != null ? helpValue.asString() : null;
+        label = builder.attributes.get("label");
+        help = Noop.Builder.filter(builder.statements, Noop.Kind.HELP)
+                                 .findFirst()
+                                 .map(b -> b.value)
+                                 .orElse(null);
     }
 
     /**
@@ -141,7 +142,7 @@ public abstract class Input extends Block {
 
         private NamedInput(Input.Builder builder) {
             super(builder);
-            this.name = attribute(Attributes.NAME, builder).asString();
+            this.name = builder.attribute("name");
         }
 
         /**
@@ -163,7 +164,7 @@ public abstract class Input extends Block {
 
         private Option(Input.Builder builder) {
             super(builder);
-            this.value = builder.attributes.get(Attributes.VALUE).asString();
+            this.value = builder.attribute("value");
         }
 
         @Override

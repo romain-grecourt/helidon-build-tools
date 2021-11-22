@@ -19,15 +19,10 @@ package io.helidon.build.archetype.engine.v2.ast;
 import io.helidon.build.common.GenericType;
 
 import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Objects;
-import java.util.function.Function;
 
 import static java.util.Objects.requireNonNull;
-import static java.util.stream.Collectors.toMap;
 
 /**
  * AST node.
@@ -37,16 +32,11 @@ public abstract class Node {
     private final Kind kind;
     private final Path location;
     private final Position position;
-    private final Map<Attributes, Value> attributes;
 
     protected Node(Builder<?, ?> builder) {
         this.location = requireNonNull(builder.location, "location is null");
         this.position = requireNonNull(builder.position, "position is null");
         this.kind = builder.kind;
-        // TODO once everything is modeled, store the values directly in the nodes
-        // and eventually remove the attributes
-        builder.attributes.replaceAll((k, v) -> v.asReadOnly());
-        this.attributes = Collections.unmodifiableMap(builder.attributes);
     }
 
     /**
@@ -74,32 +64,6 @@ public abstract class Node {
      */
     public Path location() {
         return location;
-    }
-
-    /**
-     * Get the attributes.
-     *
-     * @return attributes
-     */
-    public Map<Attributes, Value> attributes() {
-        return attributes;
-    }
-
-    /**
-     * Get an attribute from the builder.
-     *
-     * @param attr    attribute
-     * @param builder builder
-     * @return Value
-     */
-    protected Value attribute(Attributes attr, Builder<?, ?> builder) {
-        Value value = builder.attributes.get(attr);
-        if (value == null) {
-            throw new IllegalStateException(String.format(
-                    "Unable to get attribute '%s', file=%s, position=%s",
-                    this, location, position));
-        }
-        return value;
     }
 
     /**
@@ -250,14 +214,10 @@ public abstract class Node {
 
         private static final Path NULL_LOCATION = Path.of("script.xml");
         private static final Position NULL_POSITION = Position.of(0, 0);
-
-        private static final Map<String, Attributes> ATTRIBUTES_MAP =
-                Arrays.stream(Attributes.values()).collect(toMap(a -> a.name().toLowerCase(), Function.identity()));
-
         private final Kind kind;
         private final Path location;
         private final Position position;
-        final Map<Attributes, Value> attributes = new HashMap<>();
+        final Map<String, String> attributes = new HashMap<>();
         private T instance;
 
         /**
@@ -283,112 +243,113 @@ public abstract class Node {
             throw new UnsupportedOperationException("Unable to add statement to " + getClass().getName());
         }
 
-        private <V> Literal.Builder<V> newLiteral() {
-            return new Literal.Builder<>(location, position);
-        }
-
         /**
-         * Add an attribute.
+         * Set the value.
          *
-         * @param key   key
          * @param value value
          * @return this builder
          */
-        public U attribute(Attributes key, Value value) {
-            Objects.requireNonNull(key, "key is null");
-            if (value != null) {
-                attributes.put(key, value);
-            }
-            return (U) this;
+        public U value(String value) {
+            throw new UnsupportedOperationException("Unable to add value to " + getClass().getName());
         }
 
         /**
-         * Add a value to a list attribute.
+         * Add attributes.
          *
-         * @param key   key
-         * @param value value
+         * @param attributes attributes
          * @return this builder
          */
         @SuppressWarnings("UnusedReturnValue")
-        public U attributeListAdd(Attributes key, String value) {
-            attributes.compute(key, (k, v) -> Literal.listAdd(this::newLiteral, v, value));
+        public U attributes(Map<String, String> attributes) {
+            this.attributes.putAll(attributes);
             return (U) this;
         }
 
         /**
-         * Parse attributes.
+         * Create a new literal builder.
          *
-         * @param rawAttrs raw attributes
+         * @param type type
          * @return this builder
          */
-        @SuppressWarnings("UnusedReturnValue")
-        public U parseAttributes(Map<String, String> rawAttrs) {
-            if (rawAttrs != null) {
-                rawAttrs.forEach((k, v) -> {
-                    Attributes attr = ATTRIBUTES_MAP.get(k);
-                    if (attr != null) {
-                        GenericType<?> valueType = attr.valueType();
-                        if (valueType != null) {
-                            parseAttribute(attr, valueType, v);
-                        }
-                    }
-                });
-            }
-            return (U) this;
+        <V> Literal.Builder<V> newLiteral(GenericType<V> type) {
+            return new Literal.Builder<V>(location, position).type(type);
         }
 
         /**
-         * Add an attribute.
+         * Parse a literal.
          *
-         * @param key      key
-         * @param rawValue raw value
+         * @param type         type
+         * @param rawValue     raw value
+         * @param defaultValue default value
          * @return this builder
          */
-        public <V> U parseAttribute(Attributes key, GenericType<V> type, String rawValue, V defaultValue) {
-            Objects.requireNonNull(key, "key is null");
-            if (rawValue != null) {
-                attributes.put(key, this.<V>newLiteral().parse(type, rawValue, defaultValue).build0());
-            }
-            return (U) this;
+        <V> Literal parseLiteral(GenericType<V> type, String rawValue, V defaultValue) {
+            return newLiteral(type).parse(type, rawValue, defaultValue).build();
+        }
+
+
+        /**
+         * Parse an attribute.
+         *
+         * @param type         type
+         * @param key          attribute key
+         * @param defaultValue default value
+         * @return this builder
+         */
+        <V> Literal parseAttribute(GenericType<V> type, String key, V defaultValue) {
+            return parseLiteral(type, attributes.get(key), defaultValue);
         }
 
         /**
          * Parse an attribute.
          *
-         * @param key      key
-         * @param rawValue raw value
+         * @param type type
+         * @param key  attribute key
          * @return this builder
          */
-        @SuppressWarnings("UnusedReturnValue")
-        public U parseAttribute(Attributes key, String rawValue) {
-            return parseAttribute(key, key.valueType(), rawValue, null);
+        <V> Literal parseAttribute(GenericType<V> type, String key) {
+            Literal value = parseLiteral(type, attributes.get(key), null);
+            if (value == null) {
+                throw new IllegalStateException(String.format(
+                        "Unable to get attribute '%s', file=%s, position=%s",
+                        this, location, position));
+            }
+            return value;
         }
 
         /**
-         * Parse an attribute.
+         * Parse the value.
          *
-         * @param key      key
-         * @param type     type
-         * @param rawValue raw value
+         * @param type type
+         * @param key  attribute key
          * @return this builder
          */
-        @SuppressWarnings("UnusedReturnValue")
-        public <V> U parseAttribute(Attributes key, GenericType<V> type, String rawValue) {
-            return parseAttribute(key, type, rawValue, null);
+        <V> Literal parseValue(GenericType<V> type, String rawValue) {
+            Literal value = parseLiteral(type, rawValue, null);
+            if (value == null) {
+                throw new IllegalStateException(String.format(
+                        "Unable to get value '%s', file=%s, position=%s",
+                        this, location, position));
+            }
+            return value;
         }
 
         /**
-         * Parse an attribute.
+         * Get a required attribute.
          *
-         * @param key      key
-         * @param type     type
-         * @param rawAttrs raw attributes
-         * @return this builder
+         * @param key attribute key
+         * @return value
          */
-        @SuppressWarnings("UnusedReturnValue")
-        public <V> U parseAttribute(Attributes key, GenericType<V> type, Map<String, String> rawAttrs) {
-            return parseAttribute(key, type, rawAttrs.get(key.name().toLowerCase()));
+        String attribute(String key) {
+            String value = attributes.get(key);
+            if (value == null) {
+                throw new IllegalStateException(String.format(
+                        "Unable to get attribute '%s', file=%s, position=%s",
+                        this, location, position));
+            }
+            return value;
         }
+
 
         /**
          * Create the new instance.

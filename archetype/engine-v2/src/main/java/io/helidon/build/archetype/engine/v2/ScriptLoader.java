@@ -27,18 +27,17 @@ import java.util.LinkedList;
 import java.util.Map;
 import java.util.WeakHashMap;
 
-import io.helidon.build.archetype.engine.v2.ast.Attributes;
 import io.helidon.build.archetype.engine.v2.ast.Condition;
 import io.helidon.build.archetype.engine.v2.ast.Input;
 import io.helidon.build.archetype.engine.v2.ast.Invocation;
 import io.helidon.build.archetype.engine.v2.ast.Node;
 import io.helidon.build.archetype.engine.v2.ast.Noop;
+import io.helidon.build.archetype.engine.v2.ast.Output;
 import io.helidon.build.archetype.engine.v2.ast.Position;
 import io.helidon.build.archetype.engine.v2.ast.Preset;
 import io.helidon.build.archetype.engine.v2.ast.Script;
 import io.helidon.build.archetype.engine.v2.ast.Statement;
 import io.helidon.build.archetype.engine.v2.ast.Block;
-import io.helidon.build.archetype.engine.v2.ast.ValueTypes;
 import io.helidon.build.common.xml.SimpleXMLParser;
 import io.helidon.build.common.xml.SimpleXMLParser.XMLReaderException;
 
@@ -85,6 +84,7 @@ public class ScriptLoader {
         PRESET,
         INPUT,
         EXECUTABLE,
+        VALUE,
         BLOCK
     }
 
@@ -164,10 +164,9 @@ public class ScriptLoader {
         @Override
         public void elementText(String value) {
             ctx = stack.peek();
-            if (ctx == null) {
-                return;
+            if (ctx != null && ctx.state == State.VALUE) {
+                ctx.builder.value(value);
             }
-            processText(value);
         }
 
         @Override
@@ -178,59 +177,10 @@ public class ScriptLoader {
             }
         }
 
-        void processText(String value) {
-            switch (ctx.state) {
-                case EXECUTABLE:
-                case INPUT:
-                    if ("help".equals(ctx.qName)) {
-                        ctx.builder.parseAttribute(Attributes.HELP, value);
-                    }
-                    break;
-                case BLOCK:
-                    switch (ctx.qName) {
-                        case "include":
-                            ctx.builder.attributeListAdd(Attributes.INCLUDES, value);
-                            break;
-                        case "exclude":
-                            ctx.builder.attributeListAdd(Attributes.EXCLUDES, value);
-                            break;
-                        case "directory":
-                            ctx.builder.parseAttribute(Attributes.DIRECTORY, value);
-                        default:
-                    }
-                    break;
-                case PRESET:
-                    switch (ctx.qName) {
-                        case "text":
-                        case "enum":
-                        case "boolean":
-                            ctx.builder.parseAttribute(Attributes.VALUE, presetKind().valueType(), value);
-                            break;
-                        case "value":
-                            ctx.builder.attributeListAdd(Attributes.VALUE, value);
-                            break;
-                        default:
-                    }
-                    break;
-                default:
-            }
-        }
-
         void processElement() {
-            switch (qName) {
-                case "directory":
-                case "includes":
-                case "include":
-                case "excludes":
-                case "exclude":
-                case "help":
-                case "value":
-                    skip();
-                    return;
-                case "replace":
-                    statement(ctx.state, Noop.builder(location, position));
-                    return;
-                default:
+            if (Noop.Kind.NAMES.contains(qName)) {
+                statement(State.VALUE, Noop.builder(location, position, noopKind()));
+                return;
             }
             switch (ctx.state) {
                 case EXECUTABLE:
@@ -250,7 +200,7 @@ public class ScriptLoader {
                     processInput();
                     break;
                 case PRESET:
-                    statement(State.PRESET, Preset.builder(location, position, presetKind()));
+                    statement(State.VALUE, Preset.builder(location, position, presetKind()));
                     break;
                 default:
                     throw new XMLReaderException(String.format(
@@ -261,10 +211,8 @@ public class ScriptLoader {
         void processInput() {
             State nextState;
             Block.Kind blockKind = blockKind();
-            Input.Builder builder = Input.builder(location, position, blockKind);
             switch (blockKind) {
                 case OPTION:
-                    builder.parseAttribute(Attributes.VALUE, ValueTypes.STRING, attrs);
                 case BOOLEAN:
                 case TEXT:
                     nextState = State.EXECUTABLE;
@@ -277,31 +225,40 @@ public class ScriptLoader {
                     throw new XMLReaderException(String.format(
                             "Invalid input block: %s. { element=%s }", blockKind, qName));
             }
-            statement(nextState, builder);
+            statement(nextState, Input.builder(location, position, blockKind));
         }
 
         void processBlock() {
             State nextState;
             Block.Kind blockKind = blockKind();
+            Block.Builder builder;
+            if (Output.isOutputBlock(blockKind)) {
+                builder = Output.builder(location, position, blockKind);
+            } else {
+                builder = Block.builder(location, position, blockKind);
+            }
             switch (blockKind) {
                 case SCRIPT:
                 case STEP:
                     nextState = State.EXECUTABLE;
+                    builder = Block.builder(location, position, blockKind);
                     break;
                 case INPUTS:
                     nextState = State.INPUT;
+                    builder = Block.builder(location, position, blockKind);
                     break;
                 case PRESETS:
                     nextState = State.PRESET;
+                    builder = Block.builder(location, position, blockKind);
                     break;
                 default:
                     nextState = State.BLOCK;
             }
-            statement(nextState, Block.builder(location, position, blockKind));
+            statement(nextState, builder);
         }
 
         void statement(State nextState, Statement.Builder<? extends Statement, ?> stmt) {
-            stmt.parseAttributes(attrs);
+            stmt.attributes(attrs);
             String ifExpr = attrs.get("if");
             if (ifExpr != null) {
                 ctx.builder.statement(Condition.builder(location, position).expression(ifExpr).then(stmt));
@@ -309,10 +266,6 @@ public class ScriptLoader {
                 ctx.builder.statement(stmt);
             }
             stack.push(new Context(nextState, stmt, this, true));
-        }
-
-        void skip() {
-            stack.push(new Context(ctx.state, ctx.builder, this, false));
         }
 
         Preset.Kind presetKind() {
@@ -325,6 +278,10 @@ public class ScriptLoader {
 
         Invocation.Kind invocationKind() {
             return Invocation.Kind.valueOf(qName.toUpperCase());
+        }
+
+        Noop.Kind noopKind() {
+            return Noop.Kind.valueOf(qName.toUpperCase());
         }
     }
 }

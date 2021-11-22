@@ -17,6 +17,11 @@
 package io.helidon.build.archetype.engine.v2.ast;
 
 import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Stream;
+
+import static java.util.stream.Collectors.toUnmodifiableList;
 
 /**
  * No-op statement.
@@ -28,14 +33,59 @@ public final class Noop extends Statement {
     }
 
     /**
+     * Noop kind.
+     */
+    public enum Kind {
+
+        /**
+         * Replace.
+         */
+        REPLACE,
+
+        /**
+         * Directory.
+         */
+        DIRECTORY,
+
+        /**
+         * Include.
+         */
+        INCLUDE,
+
+        /**
+         * Exclude.
+         */
+        EXCLUDE,
+
+        /**
+         * Help.
+         */
+        HELP,
+
+        /**
+         * Value.
+         */
+        VALUE;
+
+        /**
+         * Noop kind names.
+         */
+        public static List<String> NAMES = Arrays.stream(Kind.values())
+                                                 .map(Kind::name)
+                                                 .map(String::toLowerCase)
+                                                 .collect(toUnmodifiableList());
+    }
+
+    /**
      * Create a new builder.
      *
      * @param location location
      * @param position position
+     * @param kind     kind
      * @return builder
      */
-    public static Builder builder(Path location, Position position) {
-        return new Builder(location, position);
+    public static Builder builder(Path location, Position position, Kind kind) {
+        return new Builder(location, position, kind);
     }
 
     @Override
@@ -48,8 +98,37 @@ public final class Noop extends Statement {
      */
     public static final class Builder extends Statement.Builder<Noop, Builder> {
 
-        private Builder(Path location, Position position) {
-            super(location, position, Kind.NOOP);
+        String value;
+        final Kind kind;
+
+        private Builder(Path location, Position position, Kind kind) {
+            super(location, position, Statement.Kind.NOOP);
+            this.kind = kind;
+        }
+
+        /**
+         * Filter the nested statements as a stream of noop of the given kind.
+         *
+         * @param kind kind
+         * @return stream of noop builder
+         */
+        static Stream<Builder> filter(List<Statement.Builder<? extends Statement, ?>> statements,
+                                                Noop.Kind kind) {
+            return statements.stream()
+                             .filter(Noop.Builder.class::isInstance)
+                             .map(Noop.Builder.class::cast)
+                             .filter(noop -> noop.kind == kind);
+        }
+
+        /**
+         * Set the value.
+         *
+         * @param value value
+         * @return this builder
+         */
+        public Builder value(String value) {
+            this.value = value;
+            return this;
         }
 
         @Override

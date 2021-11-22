@@ -30,8 +30,7 @@ public final class Invocation extends Expression {
     private Invocation(Builder builder) {
         super(builder);
         this.kind = Objects.requireNonNull(builder.kind, "kind is null");
-        Value srcValue = attribute(Attributes.SRC, builder);
-        this.src = srcValue != null ? srcValue.asString() : null;
+        this.src = builder.attributes.get("src");
     }
 
     /**

@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.toUnmodifiableList;
 
@@ -70,12 +71,12 @@ public class Block extends Statement {
         /**
          * Visit an output block.
          *
-         * @param input input
+         * @param output output
          * @param arg   argument visitor
          * @return visit result
          */
-        default R visitOutput(Output input, A arg) {
-            return visitBlock(input, arg);
+        default R visitOutput(Output output, A arg) {
+            return visitBlock(output, arg);
         }
 
         /**
@@ -255,7 +256,17 @@ public class Block extends Statement {
         /**
          * Transformation.
          */
-        TRANSFORMATION
+        TRANSFORMATION,
+
+        /**
+         * Includes.
+         */
+        INCLUDES,
+
+        /**
+         * Excludes.
+         */
+        EXCLUDES,
     }
 
     /**
@@ -288,6 +299,19 @@ public class Block extends Statement {
         protected Builder(Path location, Position position, Kind kind) {
             super(location, position, Statement.Kind.BLOCK);
             this.kind = kind;
+        }
+
+        /**
+         * Filter the nested statements as a stream of block of the given kind.
+         *
+         * @param kind kind
+         * @return stream of block builder
+         */
+        protected Stream<Block.Builder> blocks(Block.Kind kind) {
+            return statements.stream()
+                             .filter(Block.Builder.class::isInstance)
+                             .map(Block.Builder.class::cast)
+                             .filter(block -> block.kind == kind);
         }
 
         @Override

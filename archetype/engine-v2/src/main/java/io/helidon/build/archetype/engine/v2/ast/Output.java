@@ -16,13 +16,22 @@
 package io.helidon.build.archetype.engine.v2.ast;
 
 import java.nio.file.Path;
+import java.util.List;
+
+import static java.util.Collections.emptyList;
+import static java.util.stream.Collectors.toUnmodifiableList;
 
 /**
  * Output block.
  */
 public class Output extends Block {
 
-    private Output(Output.Builder builder) {
+    /**
+     * Create a new output.
+     *
+     * @param builder builder
+     */
+    Output(Output.Builder builder) {
         super(builder);
     }
 
@@ -37,11 +46,44 @@ public class Output extends Block {
         /**
          * Visit an output block.
          *
-         * @param block block
+         * @param output block
+         * @param arg    argument
+         * @return visit result
+         */
+        default R visitOutput(Output output, A arg) {
+            return null;
+        }
+
+        /**
+         * Visit a transformation block.
+         *
+         * @param transformation block
+         * @param arg            argument
+         * @return visit result
+         */
+        default R visitTransformation(Transformation transformation, A arg) {
+            return null;
+        }
+
+        /**
+         * Visit a files block.
+         *
+         * @param files block
          * @param arg   argument
          * @return visit result
          */
-        default R visitOutput(Output block, A arg) {
+        default R visitFiles(Files files, A arg) {
+            return null;
+        }
+
+        /**
+         * Visit a templates block.
+         *
+         * @param templates block
+         * @param arg       argument
+         * @return visit result
+         */
+        default R visitTemplates(Templates templates, A arg) {
             return null;
         }
     }
@@ -65,6 +107,182 @@ public class Output extends Block {
     }
 
     /**
+     * Path rule.
+     */
+    public static final class Transformation extends Output {
+
+        private final String id;
+        private final List<Replace> operations;
+
+        private Transformation(Output.Builder builder) {
+            super(builder);
+            this.id = builder.attribute("id");
+            this.operations = Noop.Builder.filter(builder.statements, Noop.Kind.REPLACE)
+                                          .map(b -> new Replace(
+                                                  b.attribute("replacement"),
+                                                  b.attribute("regex")))
+                                          .collect(toUnmodifiableList());
+        }
+
+        @Override
+        public <R, A> R accept(Output.Visitor<R, A> visitor, A arg) {
+            return visitor.visitTransformation(this, arg);
+        }
+
+        /**
+         * Get the id.
+         *
+         * @return id
+         */
+        public String id() {
+            return id;
+        }
+
+        /**
+         * Get the operations.
+         *
+         * @return operations
+         */
+        public List<Replace> operations() {
+            return operations;
+        }
+
+        /**
+         * Replace operation.
+         */
+        public static final class Replace {
+
+            private final String replacement;
+            private final String regex;
+
+            private Replace(String replacement, String regex) {
+                this.replacement = replacement;
+                this.regex = regex;
+            }
+
+            /**
+             * Get the replacement.
+             *
+             * @return replacement
+             */
+            public String replacement() {
+                return replacement;
+            }
+
+            /**
+             * Get the regex.
+             *
+             * @return regex
+             */
+            public String regex() {
+                return regex;
+            }
+        }
+    }
+
+    /**
+     * Files.
+     */
+    public static class Files extends Output {
+
+        private final List<String> transformations;
+        private final String directory;
+        private final List<String> includes;
+        private final List<String> excludes;
+
+        /**
+         * Create a new files block.
+         *
+         * @param builder builder
+         */
+        Files(Output.Builder builder) {
+            super(builder);
+            this.transformations = builder.parseAttribute(ValueTypes.STRING_LIST, "transformations", emptyList())
+                                          .asList();
+            this.directory = Noop.Builder.filter(builder.statements, Noop.Kind.DIRECTORY)
+                                         .map(b -> b.value)
+                                         .findFirst()
+                                         .orElseThrow(() -> new IllegalArgumentException("directory is required"));
+            this.includes = builder.blocks(Block.Kind.INCLUDES)
+                                   .flatMap(b -> Noop.Builder.filter(b.statements, Noop.Kind.INCLUDE))
+                                   .map(b -> b.value)
+                                   .collect(toUnmodifiableList());
+            this.excludes = builder.blocks(Block.Kind.EXCLUDES)
+                                   .flatMap(b -> Noop.Builder.filter(b.statements, Noop.Kind.EXCLUDE))
+                                   .map(b -> b.value)
+                                   .collect(toUnmodifiableList());
+        }
+
+        @Override
+        public <R, A> R accept(Output.Visitor<R, A> visitor, A arg) {
+            return visitor.visitFiles(this, arg);
+        }
+
+        /**
+         * Get the transformations.
+         *
+         * @return transformations
+         */
+        public List<String> transformations() {
+            return transformations;
+        }
+
+        /**
+         * Get the directory.
+         *
+         * @return directory
+         */
+        public String directory() {
+            return directory;
+        }
+
+        /**
+         * Get the includes.
+         *
+         * @return includes
+         */
+        public List<String> includes() {
+            return includes;
+        }
+
+        /**
+         * Get the excludes.
+         *
+         * @return excludes
+         */
+        public List<String> excludes() {
+            return excludes;
+        }
+    }
+
+    /**
+     * Templates.
+     */
+    public static final class Templates extends Files {
+
+        private final String engine;
+
+        private Templates(Output.Builder builder) {
+            super(builder);
+            this.engine = builder.attribute("engine");
+        }
+
+        @Override
+        public <R, A> R accept(Output.Visitor<R, A> visitor, A arg) {
+            return visitor.visitTemplates(this, arg);
+        }
+
+        /**
+         * Get the template engine.
+         *
+         * @return engine
+         */
+        public String engine() {
+            return engine;
+        }
+    }
+
+    /**
      * Create a new Output block builder.
      *
      * @param location location
@@ -77,6 +295,24 @@ public class Output extends Block {
     }
 
     /**
+     * Test if the block kind is an output block.
+     *
+     * @param kind kind
+     * @return {@code true} if output block, {@code false} otherwise
+     */
+    public static boolean isOutputBlock(Block.Kind kind) {
+        switch (kind) {
+            case OUTPUT:
+            case TRANSFORMATION:
+            case FILES:
+            case TEMPLATES:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /**
      * Output block builder.
      */
     public static class Builder extends Block.Builder {
@@ -86,9 +322,19 @@ public class Output extends Block {
         }
 
         @Override
-        protected Block build0(){
-            // TODO
-            return null;
+        protected Block build0() {
+            switch (kind) {
+                case OUTPUT:
+                    return new Output(this);
+                case TRANSFORMATION:
+                    return new Transformation(this);
+                case FILES:
+                    return new Files(this);
+                case TEMPLATES:
+                    return new Templates(this);
+                default:
+                    throw new IllegalArgumentException("Unknown output block kind: " + kind);
+            }
         }
     }
 }

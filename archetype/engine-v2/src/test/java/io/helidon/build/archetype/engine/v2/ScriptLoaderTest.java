@@ -18,12 +18,11 @@ package io.helidon.build.archetype.engine.v2;
 
 import java.io.InputStream;
 
-import io.helidon.build.archetype.engine.v2.ast.Attributes;
 import io.helidon.build.archetype.engine.v2.ast.Block;
 import io.helidon.build.archetype.engine.v2.ast.Input;
 import io.helidon.build.archetype.engine.v2.ast.Invocation;
 import io.helidon.build.archetype.engine.v2.ast.Node;
-import io.helidon.build.archetype.engine.v2.ast.Noop;
+import io.helidon.build.archetype.engine.v2.ast.Output;
 import io.helidon.build.archetype.engine.v2.ast.Preset;
 import io.helidon.build.archetype.engine.v2.ast.Script;
 
@@ -32,6 +31,7 @@ import org.junit.jupiter.api.Test;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.core.IsNull.notNullValue;
 
 public class ScriptLoaderTest {
@@ -194,57 +194,52 @@ public class ScriptLoaderTest {
     @Test
     public void testTopLevelOutput() {
         load("loader/top-level-output.xml").accept(new Node.Visitor<Void>() {
-            boolean output = false;
             int index = 0;
 
             @Override
-            public Node.VisitResult visitNoop(Noop noop, Void arg) {
-                assertThat(index, is(1));
-                assertThat(Attributes.REGEX.get(noop).asString(), is("regex1"));
-                assertThat(Attributes.REPLACEMENT.get(noop).asString(), is("token1"));
-                return Node.VisitResult.CONTINUE;
-            }
-
-            @Override
             public Node.VisitResult preVisitBlock(Block block, Void arg) {
-                Block.Kind blockKind = block.blockKind();
-                if (blockKind == Block.Kind.OUTPUT) {
-                    output = true;
-                    return Node.VisitResult.CONTINUE;
-                } else if (!output) {
-                    return Node.VisitResult.CONTINUE;
-                }
-                switch (++index) {
-                    case 1:
-                        assertThat(blockKind, is(Block.Kind.TRANSFORMATION));
-                        assertThat(Attributes.ID.get(block).asList(), contains("t1"));
-                        break;
-                    case 2:
-                        assertThat(blockKind, is(Block.Kind.TEMPLATES));
-                        assertThat(Attributes.TRANSFORMATIONS.get(block).asList(), contains("t1"));
-                        assertThat(Attributes.ENGINE.get(block).asString(), is("tpl-engine-1"));
-                        break;
-                    case 3:
-                        assertThat(blockKind, is(Block.Kind.FILES));
-                        assertThat(Attributes.TRANSFORMATIONS.get(block).asList(), contains("t2"));
-                        break;
-                    case 4:
-                        assertThat(blockKind, is(Block.Kind.MODEL));
-                        break;
-                }
+                block.accept(new Block.Visitor<Void, Void>() {
+                    @Override
+                    public Void visitOutput(Output output, Void arg) {
+                        output.accept(new Output.Visitor<Void, Void>() {
+                            @Override
+                            public Void visitTransformation(Output.Transformation transformation, Void arg) {
+                                assertThat(++index, is(1));
+                                assertThat(transformation.id(), is("t1"));
+                                return null;
+                            }
+
+                            @Override
+                            public Void visitTemplates(Output.Templates templates, Void arg) {
+                                assertThat(++index, is(2));
+                                assertThat(templates.transformations(), contains("t1"));
+                                assertThat(templates.engine(), is("tpl-engine-1"));
+                                assertThat(templates.directory(), is("dir1"));
+                                assertThat(templates.includes(), contains("**/*.tpl1"));
+                                assertThat(templates.excludes(), is(empty()));
+                                return null;
+                            }
+
+                            @Override
+                            public Void visitFiles(Output.Files files, Void arg) {
+                                assertThat(++index, is(3));
+                                assertThat(files.transformations(), contains("t2"));
+                                assertThat(files.directory(), is("dir2"));
+                                assertThat(files.excludes(), contains("**/*.txt"));
+                                assertThat(files.includes(), is(empty()));
+                                return null;
+                            }
+                        }, null);
+                        return null;
+                    }
+                }, null);
                 return Node.VisitResult.CONTINUE;
             }
 
             @Override
             public Node.VisitResult postVisitBlock(Block block, Void arg) {
-                switch (block.blockKind()) {
-                    case OUTPUT:
-                        output = false;
-                        break;
-                    case SCRIPT:
-                        assertThat(index, is(4));
-                        break;
-                    default:
+                if (block.blockKind() == Block.Kind.SCRIPT) {
+                    assertThat(index, is(3));
                 }
                 return Node.VisitResult.CONTINUE;
             }
