@@ -45,7 +45,7 @@ public final class Preset extends Expression {
                 break;
             case LIST:
                 value = builder.newLiteral(ValueTypes.STRING_LIST)
-                               .value(Noop.Builder.filter(builder.statements, Noop.Kind.VALUE)
+                               .value(Noop.filter(builder.statements, Noop.Kind.VALUE)
                                                   .map(b -> b.value)
                                                   .collect(Collectors.toUnmodifiableList()))
                                .build();

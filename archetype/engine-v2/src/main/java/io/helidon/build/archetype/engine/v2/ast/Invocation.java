@@ -17,6 +17,7 @@
 package io.helidon.build.archetype.engine.v2.ast;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Objects;
 
 /**

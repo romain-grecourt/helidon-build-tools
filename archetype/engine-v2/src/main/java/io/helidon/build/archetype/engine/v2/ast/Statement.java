@@ -26,9 +26,26 @@ public abstract class Statement extends Node {
 
     private final Kind kind;
 
+    /**
+     * Create a new statement.
+     *
+     * @param builder builder
+     */
     protected Statement(Builder<?, ?> builder) {
         super(builder);
         this.kind = Objects.requireNonNull(builder.kind, "kind is null");
+    }
+
+    /**
+     * Create a new statement.
+     *
+     * @param location location
+     * @param position position
+     * @param kind     kind
+     */
+    protected Statement(Path location, Position position, Kind kind) {
+        super(location, position, Node.Kind.STATEMENT);
+        this.kind = kind;
     }
 
     /**
@@ -74,7 +91,7 @@ public abstract class Statement extends Node {
      */
     public static abstract class Builder<T extends Statement, U extends Builder<T, U>> extends Node.Builder<T, U> {
 
-        private final Kind kind;
+        final Kind kind;
 
         /**
          * Create a new statement builder.

@@ -21,7 +21,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
-import io.helidon.build.archetype.engine.v2.descriptor.ArchetypeDescriptor;
+//import io.helidon.build.archetype.engine.v2.descriptor.ArchetypeDescriptor;
 
 /**
  * Class used to sort {@link TemplateModel} by order.
@@ -38,70 +38,70 @@ public class ModelSorter {
      * @param lists     Model lists
      * @param maps      Model maps
      */
-    public static void sortModelByOrder(MergingMap<String, ArchetypeDescriptor.ModelValue> values,
+    public static void sortModelByOrder(MergingMap<String, Object> values,
                                         MergingMap<String, TemplateList> lists,
                                         MergingMap<String, TemplateMap> maps) {
-        sortValuesOrder(values);
-        sortListsOrder(lists);
-        sortMapsOrder(maps);
+//        sortValuesOrder(values);
+//        sortListsOrder(lists);
+//        sortMapsOrder(maps);
     }
 
     private static void sortMapsOrder(MergingMap<String, TemplateMap> maps) {
-        List<Map.Entry<String, TemplateMap>> map = new ArrayList<>(maps.entrySet());
-        map.sort(Map.Entry.comparingByValue());
-        maps.clear();
-        for (Map.Entry<String, TemplateMap> entry : map) {
-            maps.put(entry.getKey(), entry.getValue());
-        }
-        for (String key : maps.keySet()) {
-            sortValuesOrder(maps.get(key).values());
-            sortListsOrder(maps.get(key).lists());
-            sortMapsOrder(maps.get(key).maps());
-        }
+//        List<Map.Entry<String, TemplateMap>> map = new ArrayList<>(maps.entrySet());
+//        map.sort(Map.Entry.comparingByValue());
+//        maps.clear();
+//        for (Map.Entry<String, TemplateMap> entry : map) {
+//            maps.put(entry.getKey(), entry.getValue());
+//        }
+//        for (String key : maps.keySet()) {
+//            sortValuesOrder(maps.get(key).values());
+//            sortListsOrder(maps.get(key).lists());
+//            sortMapsOrder(maps.get(key).maps());
+//        }
     }
 
     private static void sortListsOrder(MergingMap<String, TemplateList> lists) {
-        List<Map.Entry<String, TemplateList>> list = new ArrayList<>(lists.entrySet());
-        list.sort(Map.Entry.comparingByValue());
-        lists.clear();
-        for (Map.Entry<String, TemplateList> entry : list) {
-            lists.put(entry.getKey(), entry.getValue());
-        }
-        for (String key : lists.keySet()) {
-            sortValuesOrder(lists.get(key).values());
-            sortListsOrder(lists.get(key).lists());
-            sortMapsOrder(lists.get(key).maps());
-        }
+//        List<Map.Entry<String, TemplateList>> list = new ArrayList<>(lists.entrySet());
+//        list.sort(Map.Entry.comparingByValue());
+//        lists.clear();
+//        for (Map.Entry<String, TemplateList> entry : list) {
+//            lists.put(entry.getKey(), entry.getValue());
+//        }
+//        for (String key : lists.keySet()) {
+//            sortValuesOrder(lists.get(key).values());
+//            sortListsOrder(lists.get(key).lists());
+//            sortMapsOrder(lists.get(key).maps());
+//        }
     }
 
-    private static void sortValuesOrder(MergingMap<String, ArchetypeDescriptor.ModelValue> values) {
-        List<Map.Entry<String, ArchetypeDescriptor.ModelValue>> list = new ArrayList<>(values.entrySet());
-        list.sort(Map.Entry.comparingByValue());
-        values.clear();
-        for (Map.Entry<String, ArchetypeDescriptor.ModelValue> entry : list) {
-            values.put(entry.getKey(), entry.getValue());
-        }
+    private static void sortValuesOrder(MergingMap<String, Object> values) {
+//        List<Map.Entry<String, ArchetypeDescriptor.ModelValue>> list = new ArrayList<>(values.entrySet());
+//        list.sort(Map.Entry.comparingByValue());
+//        values.clear();
+//        for (Map.Entry<String, ArchetypeDescriptor.ModelValue> entry : list) {
+//            values.put(entry.getKey(), entry.getValue());
+//        }
     }
 
     private static void sortMapsOrder(List<TemplateMap> maps) {
-        maps.sort(Comparator.comparingInt(TemplateMap::order));
-        for (TemplateMap map : maps) {
-            sortValuesOrder(map.values());
-            sortListsOrder(map.lists());
-            sortMapsOrder(map.maps());
-        }
+//        maps.sort(Comparator.comparingInt(TemplateMap::order));
+//        for (TemplateMap map : maps) {
+//            sortValuesOrder(map.values());
+//            sortListsOrder(map.lists());
+//            sortMapsOrder(map.maps());
+//        }
     }
 
     private static void sortListsOrder(List<TemplateList> lists) {
-        lists.sort(Comparator.comparingInt(TemplateList::order));
-        for (TemplateList list : lists) {
-            sortValuesOrder(list.values());
-            sortListsOrder(list.lists());
-            sortMapsOrder(list.maps());
-        }
+//        lists.sort(Comparator.comparingInt(TemplateList::order));
+//        for (TemplateList list : lists) {
+//            sortValuesOrder(list.values());
+//            sortListsOrder(list.lists());
+//            sortMapsOrder(list.maps());
+//        }
     }
 
-    private static void sortValuesOrder(List<ArchetypeDescriptor.ModelValue> values) {
-        values.sort(Comparator.comparingInt(ArchetypeDescriptor.ModelValue::order));
+    private static void sortValuesOrder(List<Object> values) {
+//        values.sort(Comparator.comparingInt(ArchetypeDescriptor.ModelValue::order));
     }
 }

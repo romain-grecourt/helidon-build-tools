@@ -39,7 +39,6 @@ import io.helidon.build.archetype.engine.v1.FlowNodeControllers.FlowNodeControll
 import io.helidon.build.archetype.engine.v1.Maps;
 import io.helidon.build.archetype.engine.v2.ArchetypeEngineV2;
 import io.helidon.build.archetype.engine.v2.ArchetypeArchive;
-import io.helidon.build.archetype.engine.v2.prompter.CLIPrompter;
 import io.helidon.build.cli.impl.InitOptions.Flavor;
 import io.helidon.build.common.maven.MavenVersion;
 
@@ -294,8 +293,7 @@ abstract class ArchetypeInvoker {
             ArchetypeEngineV2 engine = new ArchetypeEngineV2(
                     Path.of(""),
                     null,
-                    new HashMap<>(),
-                    false);
+                    new HashMap<>());
 
             engine.generate(projectDir.toFile());
             deleteArchetype(projectDir.resolve("cli-data.zip"));

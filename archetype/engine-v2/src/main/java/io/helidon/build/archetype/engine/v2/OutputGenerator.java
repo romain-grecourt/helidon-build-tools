@@ -21,7 +21,7 @@ package io.helidon.build.archetype.engine.v2;
 
 import java.io.File;
 
-import static io.helidon.build.archetype.engine.v2.MustacheHandler.renderMustacheTemplate;
+import static io.helidon.build.archetype.engine.v2.template.MustacheHandler.renderMustacheTemplate;
 
 /**
  * Generate Output files from interpreter.

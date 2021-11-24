@@ -30,6 +30,7 @@ import java.util.WeakHashMap;
 import io.helidon.build.archetype.engine.v2.ast.Condition;
 import io.helidon.build.archetype.engine.v2.ast.Input;
 import io.helidon.build.archetype.engine.v2.ast.Invocation;
+import io.helidon.build.archetype.engine.v2.ast.Model;
 import io.helidon.build.archetype.engine.v2.ast.Node;
 import io.helidon.build.archetype.engine.v2.ast.Noop;
 import io.helidon.build.archetype.engine.v2.ast.Output;
@@ -38,6 +39,7 @@ import io.helidon.build.archetype.engine.v2.ast.Preset;
 import io.helidon.build.archetype.engine.v2.ast.Script;
 import io.helidon.build.archetype.engine.v2.ast.Statement;
 import io.helidon.build.archetype.engine.v2.ast.Block;
+import io.helidon.build.archetype.engine.v2.ast.Step;
 import io.helidon.build.common.xml.SimpleXMLParser;
 import io.helidon.build.common.xml.SimpleXMLParser.XMLReaderException;
 
@@ -229,30 +231,41 @@ public class ScriptLoader {
         }
 
         void processBlock() {
-            State nextState;
+            State nextState = State.BLOCK;
+            Block.Builder builder = null;
             Block.Kind blockKind = blockKind();
-            Block.Builder builder;
-            if (Output.isOutputBlock(blockKind)) {
-                builder = Output.builder(location, position, blockKind);
-            } else {
-                builder = Block.builder(location, position, blockKind);
-            }
             switch (blockKind) {
                 case SCRIPT:
+                    nextState = State.EXECUTABLE;
+                    break;
                 case STEP:
                     nextState = State.EXECUTABLE;
-                    builder = Block.builder(location, position, blockKind);
+                    builder = Step.builder(location, position, blockKind);
                     break;
                 case INPUTS:
                     nextState = State.INPUT;
-                    builder = Block.builder(location, position, blockKind);
                     break;
                 case PRESETS:
                     nextState = State.PRESET;
-                    builder = Block.builder(location, position, blockKind);
+                    break;
+                case OUTPUT:
+                case TRANSFORMATION:
+                case FILES:
+                case TEMPLATES:
+                case FILE:
+                case TEMPLATE:
+                    builder = Output.builder(location, position, blockKind);
+                    break;
+                case MODEL:
+                case MAP:
+                case VALUE:
+                case LIST:
+                    builder = Model.builder(location, position, blockKind);
                     break;
                 default:
-                    nextState = State.BLOCK;
+            }
+            if (builder == null) {
+                builder = Block.builder(location, position, blockKind);
             }
             statement(nextState, builder);
         }

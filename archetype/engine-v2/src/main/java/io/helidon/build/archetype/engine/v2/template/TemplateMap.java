@@ -16,14 +16,14 @@
 
 package io.helidon.build.archetype.engine.v2.template;
 
-import io.helidon.build.archetype.engine.v2.descriptor.ArchetypeDescriptor;
+//import io.helidon.build.archetype.engine.v2.descriptor.ArchetypeDescriptor;
 
 /**
  * Template map used in {@link TemplateModel}.
  */
 public class TemplateMap implements Comparable {
 
-    private final MergingMap<String, ArchetypeDescriptor.ModelValue>     templateValues  = new MergingMap<>();
+    private final MergingMap<String, Object>     templateValues  = new MergingMap<>();
     private final MergingMap<String, TemplateList>  templateLists   = new MergingMap<>();
     private final MergingMap<String, TemplateMap>   templateMaps    = new MergingMap<>();
     private final int order;
@@ -33,17 +33,18 @@ public class TemplateMap implements Comparable {
      *
      * @param map Map containing xml descriptor data
      */
-    public TemplateMap(ArchetypeDescriptor.ModelMap map) {
-        this.order = map.order();
-        for (ArchetypeDescriptor.ModelKeyedValue value : map.keyValues()) {
-            templateValues.put(value.key(), value);
-        }
-        for (ArchetypeDescriptor.ModelKeyedList list : map.keyLists()) {
-            templateLists.put(list.key(), new TemplateList(list));
-        }
-        for (ArchetypeDescriptor.ModelKeyedMap keyMap : map.keyMaps()) {
-            templateMaps.put(keyMap.key(), new TemplateMap(keyMap));
-        }
+    public TemplateMap(Object map) {
+//        this.order = map.order();
+        this.order = 100;
+//        for (ArchetypeDescriptor.ModelKeyedValue value : map.keyValues()) {
+//            templateValues.put(value.key(), value);
+//        }
+//        for (ArchetypeDescriptor.ModelKeyedList list : map.keyLists()) {
+//            templateLists.put(list.key(), new TemplateList(list));
+//        }
+//        for (ArchetypeDescriptor.ModelKeyedMap keyMap : map.keyMaps()) {
+//            templateMaps.put(keyMap.key(), new TemplateMap(keyMap));
+//        }
     }
 
     /**
@@ -56,11 +57,11 @@ public class TemplateMap implements Comparable {
     }
 
     /**
-     * Get the map of {@link ArchetypeDescriptor.ModelValue} merged by key for this {@link TemplateMap}.
+     * Get the map of {@link Object} merged by key for this {@link TemplateMap}.
      *
      * @return values
      */
-    public MergingMap<String, ArchetypeDescriptor.ModelValue> values() {
+    public MergingMap<String, Object> values() {
         return templateValues;
     }
 

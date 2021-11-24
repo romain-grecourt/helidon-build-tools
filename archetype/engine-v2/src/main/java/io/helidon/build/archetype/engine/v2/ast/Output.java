@@ -50,6 +50,7 @@ public class Output extends Block {
          * @param arg    argument
          * @return visit result
          */
+        @SuppressWarnings("unused")
         default R visitOutput(Output output, A arg) {
             return null;
         }
@@ -57,34 +58,67 @@ public class Output extends Block {
         /**
          * Visit a transformation block.
          *
-         * @param transformation block
+         * @param transformation transformation
          * @param arg            argument
          * @return visit result
          */
         default R visitTransformation(Transformation transformation, A arg) {
-            return null;
+            return visitOutput(transformation, arg);
         }
 
         /**
          * Visit a files block.
          *
-         * @param files block
+         * @param files files
          * @param arg   argument
          * @return visit result
          */
         default R visitFiles(Files files, A arg) {
-            return null;
+            return visitOutput(files, arg);
         }
 
         /**
          * Visit a templates block.
          *
-         * @param templates block
+         * @param templates templates
          * @param arg       argument
          * @return visit result
          */
         default R visitTemplates(Templates templates, A arg) {
-            return null;
+            return visitOutput(templates, arg);
+        }
+
+        /**
+         * Visit a file block.
+         *
+         * @param file file
+         * @param arg  argument
+         * @return visit result
+         */
+        default R visitFile(File file, A arg) {
+            return visitOutput(file, arg);
+        }
+
+        /**
+         * Visit a template block.
+         *
+         * @param template template
+         * @param arg      argument
+         * @return visit result
+         */
+        default R visitTemplate(Template template, A arg) {
+            return visitOutput(template, arg);
+        }
+
+        /**
+         * Visit a template block.
+         *
+         * @param model model
+         * @param arg   argument
+         * @return visit result
+         */
+        default R visitModel(Model model, A arg) {
+            return visitOutput(model, arg);
         }
     }
 
@@ -117,11 +151,11 @@ public class Output extends Block {
         private Transformation(Output.Builder builder) {
             super(builder);
             this.id = builder.attribute("id");
-            this.operations = Noop.Builder.filter(builder.statements, Noop.Kind.REPLACE)
-                                          .map(b -> new Replace(
-                                                  b.attribute("replacement"),
-                                                  b.attribute("regex")))
-                                          .collect(toUnmodifiableList());
+            this.operations = Noop.filter(builder.statements, Noop.Kind.REPLACE)
+                                  .map(b -> new Replace(
+                                          b.attribute("replacement"),
+                                          b.attribute("regex")))
+                                  .collect(toUnmodifiableList());
         }
 
         @Override
@@ -199,18 +233,18 @@ public class Output extends Block {
             super(builder);
             this.transformations = builder.parseAttribute(ValueTypes.STRING_LIST, "transformations", emptyList())
                                           .asList();
-            this.directory = Noop.Builder.filter(builder.statements, Noop.Kind.DIRECTORY)
-                                         .map(b -> b.value)
-                                         .findFirst()
-                                         .orElseThrow(() -> new IllegalArgumentException("directory is required"));
-            this.includes = builder.blocks(Block.Kind.INCLUDES)
-                                   .flatMap(b -> Noop.Builder.filter(b.statements, Noop.Kind.INCLUDE))
-                                   .map(b -> b.value)
-                                   .collect(toUnmodifiableList());
-            this.excludes = builder.blocks(Block.Kind.EXCLUDES)
-                                   .flatMap(b -> Noop.Builder.filter(b.statements, Noop.Kind.EXCLUDE))
-                                   .map(b -> b.value)
-                                   .collect(toUnmodifiableList());
+            this.directory = Noop.filter(builder.statements, Noop.Kind.DIRECTORY)
+                                 .map(b -> b.value)
+                                 .findFirst()
+                                 .orElseThrow(() -> new IllegalArgumentException("directory is required"));
+            this.includes = Block.filter(builder.statements, Block.Kind.INCLUDES)
+                                 .flatMap(b -> Noop.filter(b.statements, Noop.Kind.INCLUDE))
+                                 .map(b -> b.value)
+                                 .collect(toUnmodifiableList());
+            this.excludes = Block.filter(builder.statements, Block.Kind.EXCLUDES)
+                                 .flatMap(b -> Noop.filter(b.statements, Noop.Kind.EXCLUDE))
+                                 .map(b -> b.value)
+                                 .collect(toUnmodifiableList());
         }
 
         @Override
@@ -283,6 +317,81 @@ public class Output extends Block {
     }
 
     /**
+     * File.
+     */
+    public static class File extends Output {
+
+        private final String source;
+        private final String target;
+
+        /**
+         * Create a new file block.
+         *
+         * @param builder builder
+         */
+        File(Output.Builder builder) {
+            super(builder);
+            this.source = builder.attribute("source");
+            this.target = builder.attribute("target");
+        }
+
+        @Override
+        public <R, A> R accept(Output.Visitor<R, A> visitor, A arg) {
+            return visitor.visitFile(this, arg);
+        }
+
+        /**
+         * Get the source.
+         *
+         * @return source
+         */
+        public String source() {
+            return source;
+        }
+
+        /**
+         * Get the target.
+         *
+         * @return target
+         */
+        public String target() {
+            return target;
+        }
+    }
+
+    /**
+     * Template.
+     */
+    public static final class Template extends File {
+
+        private final String engine;
+
+        /**
+         * Create a new file block.
+         *
+         * @param builder builder
+         */
+        Template(Output.Builder builder) {
+            super(builder);
+            this.engine = builder.attribute("engine");
+        }
+
+        @Override
+        public <R, A> R accept(Output.Visitor<R, A> visitor, A arg) {
+            return visitor.visitTemplate(this, arg);
+        }
+
+        /**
+         * Get the engine.
+         *
+         * @return engine
+         */
+        public String engine() {
+            return engine;
+        }
+    }
+
+    /**
      * Create a new Output block builder.
      *
      * @param location location
@@ -295,29 +404,18 @@ public class Output extends Block {
     }
 
     /**
-     * Test if the block kind is an output block.
-     *
-     * @param kind kind
-     * @return {@code true} if output block, {@code false} otherwise
-     */
-    public static boolean isOutputBlock(Block.Kind kind) {
-        switch (kind) {
-            case OUTPUT:
-            case TRANSFORMATION:
-            case FILES:
-            case TEMPLATES:
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    /**
      * Output block builder.
      */
     public static class Builder extends Block.Builder {
 
-        private Builder(Path location, Position position, Kind kind) {
+        /**
+         * Create a new output builder.
+         *
+         * @param location location
+         * @param position position
+         * @param kind     kind
+         */
+        Builder(Path location, Position position, Kind kind) {
             super(location, position, kind);
         }
 
@@ -332,6 +430,10 @@ public class Output extends Block {
                     return new Files(this);
                 case TEMPLATES:
                     return new Templates(this);
+                case FILE:
+                    return new File(this);
+                case TEMPLATE:
+                    return new Template(this);
                 default:
                     throw new IllegalArgumentException("Unknown output block kind: " + kind);
             }

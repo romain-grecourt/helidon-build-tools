@@ -18,7 +18,7 @@ package io.helidon.build.archetype.engine.v2.spi;
 
 import java.util.List;
 
-import io.helidon.build.archetype.engine.v2.TemplateEngine;
+import io.helidon.build.archetype.engine.v2.template.TemplateEngine;
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;

@@ -20,7 +20,7 @@ import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import io.helidon.build.archetype.engine.v2.descriptor.ArchetypeDescriptor;
+//import io.helidon.build.archetype.engine.v2.descriptor.ArchetypeDescriptor;
 
 /**
  * Map with unique key. For the same key, Object are merge together
@@ -57,9 +57,9 @@ public class MergingMap<K, V> extends LinkedHashMap<K, V> {
             return second;
         }
 
-        if (first instanceof ArchetypeDescriptor.ModelValue) {
-            return mergeValues((ArchetypeDescriptor.ModelValue) first, (ArchetypeDescriptor.ModelValue) second);
-        }
+//        if (first instanceof Object) {
+//            return mergeValues((Object) first, (Object) second);
+//        }
 
         if (first instanceof TemplateList) {
             return mergeLists((TemplateList) first, (TemplateList) second);
@@ -79,47 +79,54 @@ public class MergingMap<K, V> extends LinkedHashMap<K, V> {
     }
 
     private V mergeLists(TemplateList first, TemplateList second) {
-        second.values().addAll(first.values());
-        second.lists().addAll(first.lists());
-        second.maps().addAll(first.maps());
-        return (V) second;
+//        second.values().addAll(first.values());
+//        second.lists().addAll(first.lists());
+//        second.maps().addAll(first.maps());
+//        return (V) second;
+        return (V) null;
     }
 
-    private V mergeValues(ArchetypeDescriptor.ModelValue first, ArchetypeDescriptor.ModelValue second) throws IOException {
-        String value = mergeValue(first, second);
-        String url = mergeURL(first, second);
-        String file = mergeFile(first, second);
-        String template = mergeTemplate(first, second);
-        int order = mergeOrder(first, second);
-        ArchetypeDescriptor.ModelValue valueType =  new ArchetypeDescriptor.ModelValue(url, file, template, order, first.ifProperties());
-        valueType.value(value);
-        return (V) valueType;
+    private V mergeValues(Object first, Object second) throws IOException {
+//        String value = mergeValue(first, second);
+//        String url = mergeURL(first, second);
+//        String file = mergeFile(first, second);
+//        String template = mergeTemplate(first, second);
+//        int order = mergeOrder(first, second);
+//        Object valueType =  new Object(url, file, template, order, first.ifProperties());
+//        valueType.value(value);
+//        return (V) valueType;
+        return (V) null;
     }
 
-    private int mergeOrder(ArchetypeDescriptor.ModelValue first, ArchetypeDescriptor.ModelValue second) {
-        return Math.min(first.order(), second.order());
+    private int mergeOrder(Object first, Object second) {
+//        return Math.min(first.order(), second.order());
+        return 1;
     }
 
-    private String mergeTemplate(ArchetypeDescriptor.ModelValue first, ArchetypeDescriptor.ModelValue second) {
-        if (first.template() == null || second.template() == null) {
-            return "mustache";
-        }
-        if (first.template().equals("mustache") || second.template().equals("mustache")) {
-            return "mustache";
-        }
-        return first.template();
+    private String mergeTemplate(Object first, Object second) {
+//        if (first.template() == null || second.template() == null) {
+//            return "mustache";
+//        }
+//        if (first.template().equals("mustache") || second.template().equals("mustache")) {
+//            return "mustache";
+//        }
+//        return first.template();
+        return null;
     }
 
-    private String mergeFile(ArchetypeDescriptor.ModelValue first, ArchetypeDescriptor.ModelValue second) throws IOException {
-        return first.file();
+    private String mergeFile(Object first, Object second) throws IOException {
+//        return first.file();
+        return null;
     }
 
-    private String mergeURL(ArchetypeDescriptor.ModelValue first, ArchetypeDescriptor.ModelValue second) {
-        return first.url() == null ? second.url() : first.url();
+    private String mergeURL(Object first, Object second) {
+//        return first.url() == null ? second.url() : first.url();
+        return null;
     }
 
-    private String mergeValue(ArchetypeDescriptor.ModelValue first, ArchetypeDescriptor.ModelValue second) {
-        return first.value() + second.value();
+    private String mergeValue(Object first, Object second) {
+//        return first.value() + second.value();
+        return null;
     }
 
 }

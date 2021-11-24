@@ -31,6 +31,14 @@ public final class Script extends Node {
         this.body = Objects.requireNonNull(builder.body, "body is null").build();
     }
 
+    /**
+     * Get the body.
+     * @return body
+     */
+    public Block body() {
+        return body;
+    }
+
     @Override
     public <A> VisitResult accept(Visitor<A> visitor, A arg) {
         VisitResult result = visitor.visitScript(this, arg);

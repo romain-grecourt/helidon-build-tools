@@ -35,7 +35,7 @@ import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 
-class ArchetypeEngineV2Test extends ArchetypeBaseTest {
+class ArchetypeEngineV2Test {
 
     @Test
     void generateSkipOptional() throws IOException {

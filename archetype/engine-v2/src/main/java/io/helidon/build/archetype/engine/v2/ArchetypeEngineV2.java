@@ -16,6 +16,7 @@
 
 package io.helidon.build.archetype.engine.v2;
 
+import io.helidon.build.archetype.engine.v2.ast.Input;
 import io.helidon.build.archetype.engine.v2.ast.Script;
 
 import java.io.File;
@@ -28,16 +29,13 @@ import java.util.Map;
 public class ArchetypeEngineV2 {
 
     private final Path entryPoint;
-    private final Driver driver;
+    private final Input.Visitor<Void, Context> prompter;
     private final Map<String, String> env;
-    private final boolean batch;
 
-    // TODO batch goes away and it implemented with a prompter
-    public ArchetypeEngineV2(Path entryPoint, Driver driver, Map<String, String> env, boolean batch) {
+    public ArchetypeEngineV2(Path entryPoint, Input.Visitor<Void, Context> prompter, Map<String, String> env) {
         this.entryPoint = entryPoint;
-        this.driver = driver;
+        this.prompter = prompter;
         this.env = env;
-        this.batch = batch;
     }
 
     /**
@@ -48,7 +46,6 @@ public class ArchetypeEngineV2 {
     public void generate(File directory) {
         Context ctx = evalInput();
 //        Output output = evalOutput(ctx);
-
         // TODO generate (get code from OutputGenerator)
     }
 

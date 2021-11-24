@@ -79,15 +79,6 @@ public interface Value {
     }
 
     /**
-     * Get this value as a read-only value.
-     *
-     * @return read-only value
-     */
-    default Value asReadOnly() {
-        return this;
-    }
-
-    /**
      * Exception raised for unexpected type usages.
      */
     final class ValueTypeException extends IllegalStateException {

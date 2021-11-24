@@ -21,6 +21,7 @@ import io.helidon.build.common.GenericType;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static java.util.Objects.requireNonNull;
 
@@ -29,14 +30,34 @@ import static java.util.Objects.requireNonNull;
  */
 public abstract class Node {
 
-    private final Kind kind;
-    private final Path location;
-    private final Position position;
+    private static final AtomicInteger NEXT_ID = new AtomicInteger();
 
+    private final Kind kind;
+    private final int id;
+    final Path location;
+    final Position position;
+
+    /**
+     * Create a new node.
+     *
+     * @param builder builder
+     */
     protected Node(Builder<?, ?> builder) {
-        this.location = requireNonNull(builder.location, "location is null");
-        this.position = requireNonNull(builder.position, "position is null");
-        this.kind = builder.kind;
+        this(builder.location, builder.position, builder.kind);
+    }
+
+    /**
+     * Create a new node.
+     *
+     * @param location location
+     * @param position position
+     * @param kind     kind
+     */
+    protected Node(Path location, Position position, Kind kind) {
+        this.location = requireNonNull(location, "location is null");
+        this.position = requireNonNull(position, "position is null");
+        this.kind = kind;
+        this.id = NEXT_ID.updateAndGet(i -> i == Integer.MAX_VALUE ? 1 : i + 1);
     }
 
     /**
@@ -64,6 +85,15 @@ public abstract class Node {
      */
     public Path location() {
         return location;
+    }
+
+    /**
+     * Get the node id.
+     *
+     * @return id
+     */
+    public int nodeId() {
+        return id;
     }
 
     /**
@@ -117,7 +147,7 @@ public abstract class Node {
          * @return visit result
          */
         default VisitResult visitScript(Script script, T arg) {
-            return VisitResult.CONTINUE;
+            return visitNode(script, arg);
         }
 
         /**
@@ -128,7 +158,7 @@ public abstract class Node {
          * @return visit result
          */
         default VisitResult visitCondition(Condition condition, T arg) {
-            return VisitResult.CONTINUE;
+            return visitNode(condition, arg);
         }
 
         /**
@@ -139,7 +169,7 @@ public abstract class Node {
          * @return visit result
          */
         default VisitResult visitInvocation(Invocation invocation, T arg) {
-            return VisitResult.CONTINUE;
+            return visitNode(invocation, arg);
         }
 
         /**
@@ -150,11 +180,11 @@ public abstract class Node {
          * @return visit result
          */
         default VisitResult visitPreset(Preset preset, T arg) {
-            return VisitResult.CONTINUE;
+            return visitNode(preset, arg);
         }
 
         /**
-         * Visit a block before traversing the nested statements.
+         * Visit a block.
          *
          * @param block block
          * @param arg   argument
@@ -183,6 +213,17 @@ public abstract class Node {
          * @return visit result
          */
         default VisitResult visitNoop(Noop noop, T arg) {
+            return visitNode(noop, arg);
+        }
+
+        /**
+         * Visit a node.
+         *
+         * @param node node
+         * @param arg  arg
+         * @return visit result
+         */
+        default VisitResult visitNode(Node node, T arg) {
             return VisitResult.CONTINUE;
         }
     }
@@ -215,10 +256,10 @@ public abstract class Node {
         private static final Path NULL_LOCATION = Path.of("script.xml");
         private static final Position NULL_POSITION = Position.of(0, 0);
         private final Kind kind;
-        private final Path location;
-        private final Position position;
-        final Map<String, String> attributes = new HashMap<>();
         private T instance;
+        final Map<String, String> attributes = new HashMap<>();
+        final Path location;
+        final Position position;
 
         /**
          * Create a new node builder.

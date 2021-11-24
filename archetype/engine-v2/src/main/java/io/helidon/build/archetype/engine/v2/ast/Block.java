@@ -19,9 +19,7 @@ package io.helidon.build.archetype.engine.v2.ast;
 import java.nio.file.Path;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.ListIterator;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.toUnmodifiableList;
@@ -31,9 +29,6 @@ import static java.util.stream.Collectors.toUnmodifiableList;
  */
 public class Block extends Statement {
 
-    private static final AtomicInteger NEXT_ID = new AtomicInteger();
-
-    private final int id;
     private final Kind kind;
     private final List<Statement> statements;
 
@@ -46,7 +41,38 @@ public class Block extends Statement {
         super(builder);
         this.kind = Objects.requireNonNull(builder.kind, "kind is null");
         this.statements = builder.statements.stream().map(Statement.Builder::build).collect(toUnmodifiableList());
-        this.id = NEXT_ID.updateAndGet(i -> i == Integer.MAX_VALUE ? 1 : i + 1);
+    }
+
+    /**
+     * Create a new block.
+     *
+     * @param location   location
+     * @param position   position
+     * @param kind       kind
+     * @param statements statements
+     */
+    protected Block(Path location, Position position, Kind kind, List<Statement> statements) {
+        super(location, position, Statement.Kind.BLOCK);
+        this.kind = Objects.requireNonNull(kind, "kind is null");
+        this.statements = Objects.requireNonNull(statements, "statements is null");
+    }
+
+    /**
+     * Get the nested statements.
+     *
+     * @return statements
+     */
+    public List<Statement> statements() {
+        return statements;
+    }
+
+    /**
+     * Wrap this block with a new kind.
+     * @param kind kind
+     * @return block
+     */
+    public Block wrap(Block.Kind kind) {
+        return new Block(location, position, kind, List.of(this));
     }
 
     /**
@@ -69,10 +95,21 @@ public class Block extends Statement {
         }
 
         /**
+         * Visit a step block.
+         *
+         * @param step step
+         * @param arg  argument visitor
+         * @return visit result
+         */
+        default R visitStep(Step step, A arg) {
+            return visitBlock(step, arg);
+        }
+
+        /**
          * Visit an output block.
          *
          * @param output output
-         * @param arg   argument visitor
+         * @param arg    argument visitor
          * @return visit result
          */
         default R visitOutput(Output output, A arg) {
@@ -86,6 +123,7 @@ public class Block extends Statement {
          * @param arg   argument visitor
          * @return visit result
          */
+        @SuppressWarnings("unused")
         default R visitBlock(Block block, A arg) {
             return null;
         }
@@ -106,57 +144,7 @@ public class Block extends Statement {
 
     @Override
     public final <A> VisitResult accept(Node.Visitor<A> visitor, A arg) {
-        VisitResult result = visitor.preVisitBlock(this, arg);
-        if (result != VisitResult.CONTINUE) {
-            return result;
-        }
-        LinkedList<Statement> stack = new LinkedList<>(statements);
-        LinkedList<Block> parents = new LinkedList<>();
-        parents.push(this);
-        while (!stack.isEmpty()) {
-            Statement stmt = stack.peek();
-            Block parent = parents.peek();
-            int parentId = parent != null ? parent.id : 0;
-            if (stmt.statementKind() != Statement.Kind.BLOCK) {
-                result = stmt.accept(visitor, arg);
-            } else {
-                Block block = (Block) stmt;
-                if (block.id == parentId) {
-                    result = visitor.postVisitBlock(block, arg);
-                    parentId = parents.pop().id;
-                } else {
-                    result = visitor.preVisitBlock(block, arg);
-                    if (result != VisitResult.TERMINATE) {
-                        int children = block.statements.size();
-                        if (result != VisitResult.SKIP_SUBTREE && children > 0) {
-                            ListIterator<Statement> it = block.statements.listIterator(children);
-                            while (it.hasPrevious()) {
-                                stack.push(it.previous());
-                            }
-                            parents.push(block);
-                            continue;
-                        } else if (children == 0) {
-                            result = visitor.postVisitBlock(block, arg);
-                        }
-                    }
-                }
-            }
-            stack.pop();
-            if (result == VisitResult.SKIP_SIBLINGS) {
-                while (!stack.isEmpty()) {
-                    Statement peek = stack.peek();
-                    if (peek.statementKind() != Statement.Kind.BLOCK) {
-                        continue;
-                    } else if (((Block) peek).id == parentId) {
-                        break;
-                    }
-                    stack.pop();
-                }
-            } else if (result == VisitResult.TERMINATE) {
-                return result;
-            }
-        }
-        return visitor.postVisitBlock(this, arg);
+        return visitor.preVisitBlock(this, arg);
     }
 
     /**
@@ -254,6 +242,11 @@ public class Block extends Statement {
         MAP,
 
         /**
+         * Value.
+         */
+        VALUE,
+
+        /**
          * Transformation.
          */
         TRANSFORMATION,
@@ -267,6 +260,25 @@ public class Block extends Statement {
          * Excludes.
          */
         EXCLUDES,
+
+        /**
+         * Change dir.
+         */
+        CD,
+    }
+
+
+    /**
+     * Filter the nested statements as a stream of block of the given kind.
+     *
+     * @param kind kind
+     * @return stream of block builder
+     */
+    static Stream<Block.Builder> filter(List<Statement.Builder<? extends Statement, ?>> statements, Block.Kind kind) {
+        return statements.stream()
+                         .filter(Block.Builder.class::isInstance)
+                         .map(Block.Builder.class::cast)
+                         .filter(block -> block.kind == kind);
     }
 
     /**
@@ -299,19 +311,6 @@ public class Block extends Statement {
         protected Builder(Path location, Position position, Kind kind) {
             super(location, position, Statement.Kind.BLOCK);
             this.kind = kind;
-        }
-
-        /**
-         * Filter the nested statements as a stream of block of the given kind.
-         *
-         * @param kind kind
-         * @return stream of block builder
-         */
-        protected Stream<Block.Builder> blocks(Block.Kind kind) {
-            return statements.stream()
-                             .filter(Block.Builder.class::isInstance)
-                             .map(Block.Builder.class::cast)
-                             .filter(block -> block.kind == kind);
         }
 
         @Override

@@ -76,6 +76,24 @@ public final class Noop extends Statement {
                                                  .collect(toUnmodifiableList());
     }
 
+    @Override
+    public <A> VisitResult accept(Visitor<A> visitor, A arg) {
+        return visitor.visitNoop(this, arg);
+    }
+
+    /**
+     * Filter the nested statements as a stream of noop of the given kind.
+     *
+     * @param kind kind
+     * @return stream of noop builder
+     */
+    static Stream<Builder> filter(List<Statement.Builder<? extends Statement, ?>> statements, Noop.Kind kind) {
+        return statements.stream()
+                         .filter(Noop.Builder.class::isInstance)
+                         .map(Noop.Builder.class::cast)
+                         .filter(noop -> noop.kind == kind);
+    }
+
     /**
      * Create a new builder.
      *
@@ -86,11 +104,6 @@ public final class Noop extends Statement {
      */
     public static Builder builder(Path location, Position position, Kind kind) {
         return new Builder(location, position, kind);
-    }
-
-    @Override
-    public <A> VisitResult accept(Visitor<A> visitor, A arg) {
-        return visitor.visitNoop(this, arg);
     }
 
     /**
@@ -104,20 +117,6 @@ public final class Noop extends Statement {
         private Builder(Path location, Position position, Kind kind) {
             super(location, position, Statement.Kind.NOOP);
             this.kind = kind;
-        }
-
-        /**
-         * Filter the nested statements as a stream of noop of the given kind.
-         *
-         * @param kind kind
-         * @return stream of noop builder
-         */
-        static Stream<Builder> filter(List<Statement.Builder<? extends Statement, ?>> statements,
-                                                Noop.Kind kind) {
-            return statements.stream()
-                             .filter(Noop.Builder.class::isInstance)
-                             .map(Noop.Builder.class::cast)
-                             .filter(noop -> noop.kind == kind);
         }
 
         /**

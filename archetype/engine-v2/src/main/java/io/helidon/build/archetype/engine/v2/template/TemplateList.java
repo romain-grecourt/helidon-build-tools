@@ -19,14 +19,14 @@ package io.helidon.build.archetype.engine.v2.template;
 import java.util.LinkedList;
 import java.util.List;
 
-import io.helidon.build.archetype.engine.v2.descriptor.ArchetypeDescriptor;
+//import io.helidon.build.archetype.engine.v2.descriptor.ArchetypeDescriptor;
 
 /**
  * Template list used in {@link TemplateModel}.
  */
 public class TemplateList implements Comparable {
 
-    private final List<ArchetypeDescriptor.ModelValue> templateValues = new LinkedList<>();
+    private final List<Object> templateValues = new LinkedList<>();
     private final List<TemplateList> templateLists = new LinkedList<>();
     private final List<TemplateMap> templateMaps = new LinkedList<>();
     private final int order;
@@ -36,15 +36,16 @@ public class TemplateList implements Comparable {
      *
      * @param list list containing xml descriptor data
      */
-    public TemplateList(ArchetypeDescriptor.ModelList list) {
-        this.order = list.order();
-        templateValues.addAll(list.values());
-        for (ArchetypeDescriptor.ModelMap map : list.maps()) {
-            templateMaps.add(new TemplateMap(map));
-        }
-        for (ArchetypeDescriptor.ModelList listType : list.lists()) {
-            templateLists.add(new TemplateList(listType));
-        }
+    public TemplateList(Object list) {
+//        this.order = list.order();
+        this.order = 100;
+//        templateValues.addAll(list.values());
+//        for (ArchetypeDescriptor.ModelMap map : list.maps()) {
+//            templateMaps.add(new TemplateMap(map));
+//        }
+//        for (Object listType : list.lists()) {
+//            templateLists.add(new TemplateList(listType));
+//        }
     }
 
     /**
@@ -57,11 +58,11 @@ public class TemplateList implements Comparable {
     }
 
     /**
-     * Get the map of {@link ArchetypeDescriptor.ModelValue} merged by key for this {@link TemplateList}.
+     * Get the map of {@link Object} merged by key for this {@link TemplateList}.
      *
      * @return values
      */
-    public List<ArchetypeDescriptor.ModelValue> values() {
+    public List<Object> values() {
         return templateValues;
     }
 

@@ -16,7 +16,12 @@
 package io.helidon.build.archetype.engine.v2.ast;
 
 import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
+import static java.util.Collections.emptyList;
 
 /**
  * Input block.
@@ -25,23 +30,34 @@ public abstract class Input extends Block {
 
     private final String label;
     private final String help;
+    private final String prompt;
 
     private Input(Input.Builder builder) {
         super(builder);
         label = builder.attributes.get("label");
-        help = Noop.Builder.filter(builder.statements, Noop.Kind.HELP)
-                                 .findFirst()
-                                 .map(b -> b.value)
-                                 .orElse(null);
+        prompt = builder.attributes.get("prompt");
+        help = Noop.filter(builder.statements, Noop.Kind.HELP)
+                   .findFirst()
+                   .map(b -> b.value)
+                   .orElse(null);
     }
 
     /**
      * Get the input label.
      *
-     * @return name
+     * @return label
      */
     public String label() {
         return label;
+    }
+
+    /**
+     * Get the input prompt.
+     *
+     * @return prompt
+     */
+    public String prompt() {
+        return prompt;
     }
 
     /**
@@ -60,17 +76,6 @@ public abstract class Input extends Block {
      * @param <A> argument type
      */
     public interface Visitor<R, A> {
-
-        /**
-         * Visit an input.
-         *
-         * @param input input
-         * @param arg   argument
-         * @return visit result
-         */
-        default R visitInput(Input input, A arg) {
-            return null;
-        }
 
         /**
          * Visit a boolean input.
@@ -114,6 +119,18 @@ public abstract class Input extends Block {
          */
         default R visitList(List input, A arg) {
             return visitInput(input, arg);
+        }
+
+        /**
+         * Visit an input.
+         *
+         * @param input input
+         * @param arg   argument
+         * @return visit result
+         */
+        @SuppressWarnings("unused")
+        default R visitInput(Input input, A arg) {
+            return null;
         }
     }
 
@@ -187,8 +204,20 @@ public abstract class Input extends Block {
      */
     public static final class Text extends NamedInput {
 
+        private final String defaultValue;
+
         private Text(Input.Builder builder) {
             super(builder);
+            this.defaultValue = builder.attributes.get("default");
+        }
+
+        /**
+         * Get the default value.
+         *
+         * @return default value
+         */
+        public Optional<String> defaultValue() {
+            return Optional.ofNullable(defaultValue);
         }
 
         @Override
@@ -202,8 +231,21 @@ public abstract class Input extends Block {
      */
     public static final class Boolean extends NamedInput {
 
+        private final boolean defaultValue;
+
         private Boolean(Input.Builder builder) {
             super(builder);
+            defaultValue = builder.parseLiteral(ValueTypes.BOOLEAN, builder.attributes.get("default"), false)
+                                  .asBoolean();
+        }
+
+        /**
+         * Get the default value.
+         *
+         * @return default value
+         */
+        public boolean defaultValue() {
+            return defaultValue;
         }
 
         @Override
@@ -217,7 +259,7 @@ public abstract class Input extends Block {
      */
     public static abstract class Options extends NamedInput {
 
-        private final java.util.List<Option> options;
+        protected final java.util.List<Option> options;
 
         private Options(Input.Builder builder) {
             super(builder);
@@ -243,8 +285,48 @@ public abstract class Input extends Block {
      */
     public static final class List extends Options {
 
+        private final java.util.List<String> defaultValue;
+
         private List(Input.Builder builder) {
             super(builder);
+            defaultValue = builder.parseLiteral(ValueTypes.STRING_LIST, builder.attributes.get("default"), emptyList())
+                                  .asList();
+        }
+
+        /**
+         * Get the default indexes.
+         *
+         * @return default indexes
+         */
+        public java.util.List<Integer> defaultIndexes() {
+            return IntStream.range(0, options.size())
+                            .boxed()
+                            .filter(i -> defaultValue.contains(options.get(0).value))
+                            .collect(Collectors.toList());
+        }
+
+        /**
+         * Parse a response text.
+         *
+         * @param response response text
+         * @return response values
+         */
+        public java.util.List<String> parseResponse(String response) {
+            return Arrays.stream(response.trim().split("\\s+"))
+                         .map(Integer::parseInt)
+                         .distinct()
+                         .map(i -> options.get(i - 1))
+                         .map(Input.Option::value)
+                         .collect(Collectors.toList());
+        }
+
+        /**
+         * Get the default value.
+         *
+         * @return default value
+         */
+        public java.util.List<String> defaultValue() {
+            return defaultValue;
         }
 
         @Override
@@ -258,8 +340,36 @@ public abstract class Input extends Block {
      */
     public static final class Enum extends Options {
 
+        private final String defaultValue;
+
         private Enum(Input.Builder builder) {
             super(builder);
+            this.defaultValue = builder.attributes.get("default");
+        }
+
+        /**
+         * Get the default index.
+         *
+         * @return default index
+         */
+        public int defaultIndex() {
+            if (defaultValue == null) {
+                return -1;
+            }
+            return IntStream.range(0, options.size())
+                            .boxed()
+                            .filter(i -> defaultValue.equals(options.get(0).value))
+                            .findFirst()
+                            .orElse(-1);
+        }
+
+        /**
+         * Get the default value.
+         *
+         * @return default value
+         */
+        public Optional<String> defaultValue() {
+            return Optional.ofNullable(defaultValue);
         }
 
         @Override

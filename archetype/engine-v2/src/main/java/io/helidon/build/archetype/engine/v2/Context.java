@@ -16,284 +16,142 @@
 package io.helidon.build.archetype.engine.v2;
 
 import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.Deque;
+import java.util.HashMap;
 import java.util.LinkedList;
-import java.util.List;
+import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
-import java.util.stream.Stream;
 
 import io.helidon.build.archetype.engine.v2.ast.Value;
 import io.helidon.build.common.GenericType;
 
-import static java.util.Arrays.stream;
-import static java.util.stream.Collectors.joining;
-
 /**
- * Context node.
+ * Context.
  */
-interface Context {
+public final class Context {
+
+    private final Map<String, ContextValue> values = new HashMap<>();
+    private final LinkedList<Path> directories = new LinkedList<>();
+    private final LinkedList<String> paths = new LinkedList<>();
+
+    private Context(Path cwd) {
+        directories.push(cwd);
+    }
 
     /**
-     * Get the context value.
+     * Push a new working directory.
      *
-     * @return optional of context value
+     * @param dir directory
      */
-    Optional<ContextValue> value();
+    public void pushDir(Path dir) {
+        directories.push(cwd().resolve(dir).toAbsolutePath());
+    }
 
     /**
-     * Push a new working directory
-     *
-     * @param dir relative directory resolved against the current working directory
-     * @return new context node
+     * Pop the current working directory.
      */
-    Context pushd(Path dir);
+    public void popDir() {
+        directories.pop();
+    }
 
     /**
-     * Pop the current working directory and restore the previous one.
-     *
-     * @return previous context node
-     */
-    Context popd();
-
-    /**
-     * Get the current working directory for this context node.
+     * Get the current working directory.
      *
      * @return path
      */
-    Path cwd();
+    public Path cwd() {
+        Path cwd = directories.peek();
+        if (cwd == null) {
+            throw new IllegalStateException("No current working directory");
+        }
+        return cwd;
+    }
 
     /**
-     * Add a new value in the context.
+     * Push a new value.
      *
-     * @param path  input path
+     * @param name  input name
      * @param value value
-     * @return context node
+     * @throws IllegalArgumentException if the key is invalid
      */
-    Context put(String path, Value value);
+    public void pushInput(String name, Value value) {
+        if (value == null) {
+            return;
+        }
+        if (name.indexOf('.') >= 0) {
+            throw new IllegalArgumentException("Invalid name: " + name);
+        }
+        String path;
+        if (paths.isEmpty()) {
+            path = name;
+        } else {
+            path = paths.peek() + "." + name;
+        }
+        values.put(path, new ContextValue(value, false, false));
+        paths.push(path);
+    }
 
     /**
-     * Lookup a context node by input path.
+     * Pop the current input.
+     */
+    public void popInput() {
+        paths.pop();
+    }
+
+    /**
+     * Lookup a context value
      *
      * @param path input path
      * @return found context node
      */
-    Context lookup(String path);
-
-    /**
-     * Lookup a context node.
-     *
-     * @param path input path
-     * @param prefix    input path prefix
-     * @return found context node
-     */
-    Context lookup(String path, String prefix);
-
-    /**
-     * Create a new root context node.
-     *
-     * @param cwd current working directory
-     * @return created context node
-     */
-    static Context create(Path cwd) {
-        return new ContextNode(null, null).pushd(cwd);
+    public ContextValue lookup(String path) {
+        String current = paths.peek();
+        if (current == null) {
+            return null;
+        }
+        String key;
+        if (path.startsWith("ROOT.")) {
+            key = path.substring(5);
+        } else {
+            int offset = 0;
+            int level = 0;
+            while (path.startsWith("PARENT.", offset)) {
+                offset += 7;
+                level++;
+            }
+            if (offset > 0) {
+                path = path.substring(offset);
+            } else {
+                level = 1;
+            }
+            int index;
+            for (index = current.length() - 1; index >= 0 && level > 0; index--) {
+                if (current.charAt(index) == '.') {
+                    level--;
+                }
+            }
+            if (index > 0) {
+                key = current.substring(0, index + 1) + "." + path;
+            } else {
+                key = path;
+            }
+        }
+        return values.get(key);
     }
 
     /**
-     * Context node.
+     * Create a new context.
+     *
+     * @param cwd initial working directory
+     * @return context
      */
-    final class ContextNode implements Context {
-
-        private final ContextNode parent;
-        private final String name;
-        private final List<ContextNode> children;
-        private final Deque<WorkDirRef> workDirRefs;
-        private ContextValue value;
-
-        private ContextNode(ContextNode parent, String name) {
-            this.parent = parent;
-            this.name = name;
-            this.children = new LinkedList<>();
-            this.workDirRefs = new LinkedList<>();
-        }
-
-        @Override
-        public Optional<ContextValue> value() {
-            return Optional.ofNullable(value);
-        }
-
-        @Override
-        public Context pushd(Path dir) {
-            Objects.requireNonNull(dir, "dir is null");
-            Path cwd = workDirRefs.isEmpty() ? dir : workDirRefs.peek().cwd().resolve(dir);
-            WorkDirRef ref = new WorkDirRef(this, cwd);
-            workDirRefs.push(ref);
-            return ref;
-        }
-
-        @Override
-        public Context popd() {
-            return workDirRefs.pop();
-        }
-
-        @Override
-        public Path cwd() {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public Context put(String path, Value value) {
-            ContextNode node = new ContextNode(this, path);
-            node.value = new ContextValue(value, false, false);
-            this.children.add(node);
-            return node;
-        }
-
-        @Override
-        public Context lookup(String path) {
-            String[] segments = path.split("\\.");
-            if (segments[0].equals("ROOT")) {
-                segments = Arrays.copyOfRange(segments, 1, segments.length);
-                if (this.parent == null) {
-                    return lookup(segments);
-                }
-                return lookup(concat(parent.inputPath().toArray(String[]::new), segments));
-            }
-            if (segments[0].equals("PARENT")) {
-                segments = Arrays.copyOfRange(segments, 1, segments.length);
-                if (parent == null) {
-                    throw new InvalidInputPathException(segments, 1);
-                }
-                return lookup(concat(segments, parent.name));
-            }
-            return lookup(segments);
-        }
-
-        @Override
-        public Context lookup(String path, String prefix) {
-            String[] segments = path.split("\\.");
-            if (segments[0].equals("ROOT") || segments[0].equals("PARENT")) {
-                throw new InvalidInputPathException(segments, 1);
-            }
-            if (prefix == null) {
-                return lookup(segments);
-            }
-            String[] prefixSegments = prefix.split("\\.");
-            int prefixIndex = 0;
-            int index = 0;
-            int limitPrefix = prefixSegments.length;
-            int limitPath = segments.length;
-            if (!prefixSegments[0].equals(segments[0])) {
-                return lookup(concat(prefixSegments, segments));
-            }
-            while (prefixIndex < limitPrefix && index < limitPath) {
-                if (!segments[index].equals(prefixSegments[prefixIndex]) && prefixIndex != 0) {
-                    throw new InvalidInputPathException(segments);
-                }
-                prefixIndex++;
-                index++;
-            }
-            return lookup(segments);
-        }
-
-        private List<String> inputPath() {
-            ContextNode node = this;
-            LinkedList<String> path = new LinkedList<>();
-            while (node.parent != null) {
-                path.addFirst(node.name);
-                node = node.parent;
-            }
-            return path;
-        }
-
-        private Context lookup(String[] segments) {
-            int index = 0;
-            int childIndex = 0;
-            boolean found = false;
-
-            ContextNode node = this;
-            if (!segments[index++].equals(node.name)) {
-                throw new InvalidInputPathException(segments, 1);
-            }
-
-            while (index < segments.length) {
-                while (childIndex < node.children.size()) {
-                    if (segments[index].equals(node.children.get(childIndex).name)) {
-                        node = node.children.get(childIndex);
-                        found = true;
-                        break;
-                    }
-                    childIndex++;
-                }
-                childIndex = 0;
-                if (!found || (node.children.isEmpty() && index < segments.length - 1)) {
-                    throw new InvalidInputPathException(segments, index + 1);
-                }
-                found = false;
-                index++;
-            }
-            return node;
-        }
-
-        private static String[] concat(String[] segments1, String... segments2) {
-            return Stream.concat(stream(segments1), stream(segments2)).toArray(String[]::new);
-        }
-    }
-
-    /**
-     * Working directory reference.
-     */
-    final class WorkDirRef implements Context {
-
-        private final Context delegate;
-        private final Path cwd;
-
-        private WorkDirRef(Context delegate, Path cwd) {
-            this.delegate = delegate;
-            this.cwd = cwd;
-        }
-
-        @Override
-        public Optional<ContextValue> value() {
-            return delegate.value();
-        }
-
-        @Override
-        public Context pushd(Path dir) {
-            return delegate.pushd(dir);
-        }
-
-        @Override
-        public Context popd() {
-            return delegate.popd();
-        }
-
-        @Override
-        public Path cwd() {
-            return cwd;
-        }
-
-        @Override
-        public Context put(String path, Value value) {
-            return delegate.put(path, value);
-        }
-
-        @Override
-        public Context lookup(String path) {
-            return delegate.lookup(path);
-        }
-
-        @Override
-        public Context lookup(String path, String prefix) {
-            return delegate.lookup(path, prefix);
-        }
+    public static Context create(Path cwd) {
+        return new Context(cwd);
     }
 
     /**
      * Context value.
      */
-    final class ContextValue implements Value {
+    public static final class ContextValue implements Value {
 
         private final boolean external;
         private final boolean readOnly;
@@ -306,20 +164,11 @@ interface Context {
         }
 
         /**
-         * Get the value.
-         *
-         * @return value
-         */
-        Value value() {
-            return value;
-        }
-
-        /**
          * Is the value external.
          *
          * @return {@code true} if external, {@code false} otherwise
          */
-        boolean external() {
+        public boolean external() {
             return external;
         }
 
@@ -328,7 +177,7 @@ interface Context {
          *
          * @return {@code true} if external, {@code false} otherwise
          */
-        boolean readOnly() {
+        public boolean readOnly() {
             return readOnly;
         }
 
@@ -340,20 +189,6 @@ interface Context {
         @Override
         public <T> T as(GenericType<T> type) {
             return value.as(type);
-        }
-    }
-
-    /**
-     * Invalid input path exception.
-     */
-    final class InvalidInputPathException extends RuntimeException {
-
-        private InvalidInputPathException(String[] segments) {
-            super(String.join(".", segments));
-        }
-
-        private InvalidInputPathException(String[] segments, int limit) {
-            super(stream(segments).limit(limit).collect(joining(".")));
         }
     }
 }

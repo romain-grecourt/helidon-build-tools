@@ -26,18 +26,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
-import io.helidon.build.archetype.engine.v2.MustacheHandler;
-import io.helidon.build.archetype.engine.v2.MustacheTemplateEngine;
-import io.helidon.build.archetype.engine.v2.TemplateEngine;
-import io.helidon.build.archetype.engine.v2.descriptor.ArchetypeDescriptor;
+//import io.helidon.build.archetype.engine.v2.descriptor.ArchetypeDescriptor;
 
 /**
  * Class used to render Preprocessed and external values.
  */
 public class MustacheResolver {
 
-    private static MergingMap<String, ArchetypeDescriptor.ModelValue> valuesMap;
+    private static MergingMap<String, Object> valuesMap;
     private static MergingMap<String, TemplateMap> mapsMap;
     private static final Set<String> FILES = new HashSet<>();
 
@@ -54,7 +50,7 @@ public class MustacheResolver {
      * @param maps              Model maps
      * @param templateFiles     Template file list
      */
-    public static void render(MergingMap<String, ArchetypeDescriptor.ModelValue> values,
+    public static void render(MergingMap<String, Object> values,
                               MergingMap<String, TemplateList> lists,
                               MergingMap<String, TemplateMap> maps,
                               Set<String> templateFiles) {
@@ -78,7 +74,7 @@ public class MustacheResolver {
      * @param templateFiles     Template files list to be rendered
      * @param scope             scope used by Mustache
      */
-    public static void renderTemplateFiles(MergingMap<String, ArchetypeDescriptor.ModelValue> values,
+    public static void renderTemplateFiles(MergingMap<String, Object> values,
                                            MergingMap<String, TemplateList> lists,
                                            MergingMap<String, TemplateMap> maps,
                                            Set<String> templateFiles,
@@ -96,7 +92,7 @@ public class MustacheResolver {
         }
     }
 
-    private static void injectIntoModel(MergingMap<String, ArchetypeDescriptor.ModelValue> values,
+    private static void injectIntoModel(MergingMap<String, Object> values,
                                         MergingMap<String, TemplateList> lists,
                                         MergingMap<String, TemplateMap> maps,
                                         OutputStream content,
@@ -107,139 +103,139 @@ public class MustacheResolver {
     }
 
     private static void findFileIntoMaps(MergingMap<String, TemplateMap> maps, OutputStream content, String file) {
-        for (String key : maps.keySet()) {
-            TemplateMap map = maps.get(key);
-            findFileIntoValues(map.values(), content, file);
-            findFileIntoLists(map.lists(), content, file);
-            findFileIntoMaps(map.maps(), content, file);
-        }
+//        for (String key : maps.keySet()) {
+//            TemplateMap map = maps.get(key);
+//            findFileIntoValues(map.values(), content, file);
+//            findFileIntoLists(map.lists(), content, file);
+//            findFileIntoMaps(map.maps(), content, file);
+//        }
     }
 
     private static void findFileIntoLists(MergingMap<String, TemplateList> lists, OutputStream content, String file) {
-        for (String key : lists.keySet()) {
-            TemplateList list = lists.get(key);
-            findFileIntoValues(list.values(), content, file);
-            findFileIntoLists(list.lists(), content, file);
-            findFileIntoMaps(list.maps(), content, file);
-        }
+//        for (String key : lists.keySet()) {
+//            TemplateList list = lists.get(key);
+//            findFileIntoValues(list.values(), content, file);
+//            findFileIntoLists(list.lists(), content, file);
+//            findFileIntoMaps(list.maps(), content, file);
+//        }
     }
 
-    private static void findFileIntoValues(MergingMap<String, ArchetypeDescriptor.ModelValue> values, OutputStream content, String file) {
-        for (String key : values.keySet()) {
-            ArchetypeDescriptor.ModelValue value = values.get(key);
-            if (value.file() != null
-                    && value.file().equals(file)
-                    && value.template() != null
-                    && value.template().equals(MustacheHandler.MUSTACHE)) {
-                value.value(content.toString());
-            }
-        }
+    private static void findFileIntoValues(MergingMap<String, Object> values, OutputStream content, String file) {
+//        for (String key : values.keySet()) {
+//            ArchetypeDescriptor.ModelValue value = values.get(key);
+//            if (value.file() != null
+//                    && value.file().equals(file)
+//                    && value.template() != null
+//                    && value.template().equals(MustacheHandler.MUSTACHE)) {
+//                value.value(content.toString());
+//            }
+//        }
     }
 
-    private static void findFileIntoValues(List<ArchetypeDescriptor.ModelValue> values, OutputStream content, String file) {
-        for (ArchetypeDescriptor.ModelValue value : values) {
-            if (value.file() != null
-                    && value.file().equals(file)
-                    && value.template() != null
-                    && value.template().equals(MustacheHandler.MUSTACHE)) {
-                value.value(content.toString());
-            }
-        }
+    private static void findFileIntoValues(List<Object> values, OutputStream content, String file) {
+//        for (ArchetypeDescriptor.ModelValue value : values) {
+//            if (value.file() != null
+//                    && value.file().equals(file)
+//                    && value.template() != null
+//                    && value.template().equals(MustacheHandler.MUSTACHE)) {
+//                value.value(content.toString());
+//            }
+//        }
     }
 
     private static void findFileIntoMaps(List<TemplateMap> maps, OutputStream content, String file) {
-        for (TemplateMap map : maps) {
-            findFileIntoValues(map.values(), content, file);
-            findFileIntoLists(map.lists(), content, file);
-            findFileIntoMaps(map.maps(), content, file);
-        }
+//        for (TemplateMap map : maps) {
+//            findFileIntoValues(map.values(), content, file);
+//            findFileIntoLists(map.lists(), content, file);
+//            findFileIntoMaps(map.maps(), content, file);
+//        }
     }
 
     private static void findFileIntoLists(List<TemplateList> lists, OutputStream content, String file) {
-        for (TemplateList list : lists) {
-            findFileIntoValues(list.values(), content, file);
-            findFileIntoLists(list.lists(), content, file);
-            findFileIntoMaps(list.maps(), content, file);
-        }
+//        for (TemplateList list : lists) {
+//            findFileIntoValues(list.values(), content, file);
+//            findFileIntoLists(list.lists(), content, file);
+//            findFileIntoMaps(list.maps(), content, file);
+//        }
     }
 
     private static void parseMaps(MergingMap<String, TemplateMap> maps) {
-        for (String key : maps.keySet()) {
-            parseValues(maps.get(key).values());
-            parseLists(maps.get(key).lists());
-            parseMaps(maps.get(key).maps());
-        }
+//        for (String key : maps.keySet()) {
+//            parseValues(maps.get(key).values());
+//            parseLists(maps.get(key).lists());
+//            parseMaps(maps.get(key).maps());
+//        }
     }
 
     private static void parseMaps(List<TemplateMap> maps) {
-        for (TemplateMap map : maps) {
-            parseValues(map.values());
-            parseLists(map.lists());
-            parseMaps(map.maps());
-        }
+//        for (TemplateMap map : maps) {
+//            parseValues(map.values());
+//            parseLists(map.lists());
+//            parseMaps(map.maps());
+//        }
     }
 
     private static void parseLists(MergingMap<String, TemplateList> lists) {
-        for (String key : lists.keySet()) {
-            parseValues(lists.get(key).values());
-            parseLists(lists.get(key).lists());
-            parseMaps(lists.get(key).maps());
-        }
+//        for (String key : lists.keySet()) {
+//            parseValues(lists.get(key).values());
+//            parseLists(lists.get(key).lists());
+//            parseMaps(lists.get(key).maps());
+//        }
     }
 
     private static void parseLists(List<TemplateList> lists) {
-        for (TemplateList list : lists) {
-            parseValues(list.values());
-            parseLists(list.lists());
-            parseMaps(list.maps());
-        }
+//        for (TemplateList list : lists) {
+//            parseValues(list.values());
+//            parseLists(list.lists());
+//            parseMaps(list.maps());
+//        }
     }
 
-    private static void parseValues(List<ArchetypeDescriptor.ModelValue> values) {
-        for (ArchetypeDescriptor.ModelValue templateValue : values) {
-            lookForKey(templateValue);
-        }
+    private static void parseValues(List<Object> values) {
+//        for (ArchetypeDescriptor.ModelValue templateValue : values) {
+//            lookForKey(templateValue);
+//        }
     }
 
-    private static void parseValues(MergingMap<String, ArchetypeDescriptor.ModelValue> values) {
-        for (String key : values.keySet()) {
-            lookForKey(values.get(key));
-        }
+    private static void parseValues(MergingMap<String, Object> values) {
+//        for (String key : values.keySet()) {
+//            lookForKey(values.get(key));
+//        }
     }
 
-    private static void lookForKey(ArchetypeDescriptor.ModelValue value) {
-        if (value.template() != null && value.template().equals(MustacheHandler.MUSTACHE)) {
-            if (value.value() != null && value.value().startsWith("{{") && value.value().endsWith("}}")) {
-                String keyWord = value.value().substring(2, value.value().length() - 2);
-                String resolved = inspectModel(keyWord);
-                if (resolved != null) {
-                    value.value(resolved);
-                }
-            }
-
-            if (value.file() != null) {
-                FILES.add(value.file());
-            }
-        }
+    private static void lookForKey(Object value) {
+//        if (value.template() != null && value.template().equals(MustacheHandler.MUSTACHE)) {
+//            if (value.value() != null && value.value().startsWith("{{") && value.value().endsWith("}}")) {
+//                String keyWord = value.value().substring(2, value.value().length() - 2);
+//                String resolved = inspectModel(keyWord);
+//                if (resolved != null) {
+//                    value.value(resolved);
+//                }
+//            }
+//
+//            if (value.file() != null) {
+//                FILES.add(value.file());
+//            }
+//        }
     }
 
     private static String inspectModel(String keyWord) {
-        String[] path = keyWord.split("\\.");
-        MergingMap<String, TemplateMap> maps = mapsMap;
-        MergingMap<String, ArchetypeDescriptor.ModelValue> values = valuesMap;
-        int pathIx = 0;
-
-        while (pathIx < path.length) {
-            if (values.containsKey(path[pathIx]) && pathIx == path.length - 1) {
-                return values.get(path[pathIx]).value();
-            }
-            if (maps.containsKey(path[pathIx])) {
-                values = maps.get(path[pathIx]).values();
-                maps = maps.get(path[pathIx]).maps();
-            }
-
-            pathIx++;
-        }
+//        String[] path = keyWord.split("\\.");
+//        MergingMap<String, TemplateMap> maps = mapsMap;
+//        MergingMap<String, ArchetypeDescriptor.ModelValue> values = valuesMap;
+//        int pathIx = 0;
+//
+//        while (pathIx < path.length) {
+//            if (values.containsKey(path[pathIx]) && pathIx == path.length - 1) {
+//                return values.get(path[pathIx]).value();
+//            }
+//            if (maps.containsKey(path[pathIx])) {
+//                values = maps.get(path[pathIx]).values();
+//                maps = maps.get(path[pathIx]).maps();
+//            }
+//
+//            pathIx++;
+//        }
 
         return null;
     }

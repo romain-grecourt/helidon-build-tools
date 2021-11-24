@@ -24,7 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
-import io.helidon.build.archetype.engine.v2.descriptor.ArchetypeDescriptor;
+//import io.helidon.build.archetype.engine.v2.descriptor.ArchetypeDescriptor;
 
 import com.github.mustachejava.Mustache;
 
@@ -44,7 +44,7 @@ public class ModelTransformer {
      * @param maps      Model maps
      * @return          scope
      */
-    public static Map<String, Object> transform(MergingMap<String, ArchetypeDescriptor.ModelValue> values,
+    public static Map<String, Object> transform(MergingMap<String, Object> values,
                                                 MergingMap<String, TemplateList> lists,
                                                 MergingMap<String, TemplateMap> maps) {
         Map<String, Object> scope = new NonNullMap<>();
@@ -54,58 +54,58 @@ public class ModelTransformer {
         return scope;
     }
 
-    private static Map<String, Object> valuesToMap(MergingMap<String, ArchetypeDescriptor.ModelValue> templateValues) {
+    private static Map<String, Object> valuesToMap(MergingMap<String, Object> templateValues) {
         Map<String, Object> resolved = new NonNullMap<>();
-        for (String key : templateValues.keySet()) {
-            ArchetypeDescriptor.ModelValue value = templateValues.get(key);
-            if (value.value() != null && value.file() != null && value.template() != null) {
-                resolved.put(key, value.value());
-                continue;
-            }
-            if (value.value() != null) {
-                resolved.put(key, value.value());
-                continue;
-            }
-            if (value.file() != null && value.template() == null) {
-                try (InputStream is = new FileInputStream(value.file())) {
-                    resolved.put(key, new String(is.readAllBytes()));
-                } catch (IOException ignored) {
-                }
-            }
-        }
+//        for (String key : templateValues.keySet()) {
+//            Object value = templateValues.get(key);
+//            if (value.value() != null && value.file() != null && value.template() != null) {
+//                resolved.put(key, value.value());
+//                continue;
+//            }
+//            if (value.value() != null) {
+//                resolved.put(key, value.value());
+//                continue;
+//            }
+//            if (value.file() != null && value.template() == null) {
+//                try (InputStream is = new FileInputStream(value.file())) {
+//                    resolved.put(key, new String(is.readAllBytes()));
+//                } catch (IOException ignored) {
+//                }
+//            }
+//        }
         return resolved;
     }
 
     private static Map<String, Object> mapsToMap(MergingMap<String, TemplateMap> templateMaps) {
         Map<String, Object> resolved = new NonNullMap<>();
-        for (String key : templateMaps.keySet()) {
-            Map<String, Object> m = new NonNullMap<>();
-            m.putAll(valuesToMap(templateMaps.get(key).values()));
-            m.putAll(listToMap(templateMaps.get(key).lists()));
-            m.putAll(mapsToMap(templateMaps.get(key).maps()));
-            resolved.put(key, m);
-        }
+//        for (String key : templateMaps.keySet()) {
+//            Map<String, Object> m = new NonNullMap<>();
+//            m.putAll(valuesToMap(templateMaps.get(key).values()));
+//            m.putAll(listToMap(templateMaps.get(key).lists()));
+//            m.putAll(mapsToMap(templateMaps.get(key).maps()));
+//            resolved.put(key, m);
+//        }
         return resolved;
     }
 
     private static Map<String, Object> listToMap(MergingMap<String, TemplateList> templateLists) {
         Map<String, Object> resolved = new NonNullMap<>();
-        for (String key : templateLists.keySet()) {
-            List<Object> list = mapsToList(templateLists.get(key).maps());
-            list.add(valuesToList(templateLists.get(key).values()));
-            list.add(listsToList(templateLists.get(key).lists()));
-            resolved.put(key, list);
-        }
+//        for (String key : templateLists.keySet()) {
+//            List<Object> list = mapsToList(templateLists.get(key).maps());
+//            list.add(valuesToList(templateLists.get(key).values()));
+//            list.add(listsToList(templateLists.get(key).lists()));
+//            resolved.put(key, list);
+//        }
         return resolved;
     }
 
     private static List<Object> listsToList(List<TemplateList> templateLists) {
         List<Object> resolved = new NonNullList<>();
-        for (TemplateList list : templateLists) {
-            resolved.add(valuesToList(list.values()));
-            resolved.add(listsToList(list.lists()));
-            resolved.add(mapsToList(list.maps()));
-        }
+//        for (TemplateList list : templateLists) {
+//            resolved.add(valuesToList(list.values()));
+//            resolved.add(listsToList(list.lists()));
+//            resolved.add(mapsToList(list.maps()));
+//        }
         return resolved;
     }
 
@@ -113,7 +113,7 @@ public class ModelTransformer {
         List<Object> resolved = new NonNullList<>();
         for (TemplateMap map : maps) {
             Map<String, Object> m = new NonNullMap<>();
-            m.putAll(valuesToMap(map.values()));
+//            m.putAll(valuesToMap(map.values()));
             m.putAll(listToMap(map.lists()));
             m.putAll(mapsToMap(map.maps()));
             resolved.add(m);
@@ -121,23 +121,23 @@ public class ModelTransformer {
         return resolved;
     }
 
-    private static List<String> valuesToList(List<ArchetypeDescriptor.ModelValue> values) {
+    private static List<String> valuesToList(List<Object> values) {
         List<String> resolved = new NonNullList<>();
-        for (ArchetypeDescriptor.ModelValue value : values) {
-            if (value.value() != null && value.file() != null && value.template() != null) {
-                resolved.add(value.value());
-                continue;
-            }
-            if (value.value() != null) {
-                resolved.add(value.value());
-            }
-            if (value.file() != null) {
-                try (InputStream is = new FileInputStream(value.file())) {
-                    resolved.add(new String(is.readAllBytes()));
-                } catch (IOException ignored) {
-                }
-            }
-        }
+//        for (Object value : values) {
+//            if (value.value() != null && value.file() != null && value.template() != null) {
+//                resolved.add(value.value());
+//                continue;
+//            }
+//            if (value.value() != null) {
+//                resolved.add(value.value());
+//            }
+//            if (value.file() != null) {
+//                try (InputStream is = new FileInputStream(value.file())) {
+//                    resolved.add(new String(is.readAllBytes()));
+//                } catch (IOException ignored) {
+//                }
+//            }
+//        }
         return resolved;
     }
 

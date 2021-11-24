@@ -41,13 +41,18 @@ public final class Condition extends Statement {
         return expression;
     }
 
+    /**
+     * Get the "then" statement.
+     *
+     * @return statement
+     */
+    public Statement then() {
+        return then;
+    }
+
     @Override
     public <A> VisitResult accept(Visitor<A> visitor, A arg) {
-        VisitResult result = visitor.visitCondition(this, arg);
-        if (result != VisitResult.CONTINUE) {
-            return result;
-        }
-        return then.accept(visitor, arg);
+        return visitor.visitCondition(this, arg);
     }
 
     /**

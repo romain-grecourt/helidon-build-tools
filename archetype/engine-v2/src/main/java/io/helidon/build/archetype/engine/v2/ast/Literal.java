@@ -19,13 +19,8 @@ package io.helidon.build.archetype.engine.v2.ast;
 import io.helidon.build.common.GenericType;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Objects;
-import java.util.function.Supplier;
-
-import static java.util.Collections.unmodifiableList;
 
 /**
  * Literal value.
@@ -56,47 +51,6 @@ public final class Literal extends Expression implements Value {
             throw new ValueTypeException(this.type, type);
         }
         return (U) value;
-    }
-
-    @Override
-    @SuppressWarnings("unchecked")
-    public Value asReadOnly() {
-        if (readonly) {
-            return this;
-        }
-        if (type.rawType().equals(List.class)) {
-            return new Builder<List<?>>(location(), position())
-                    .type((GenericType<List<?>>) type)
-                    .value(unmodifiableList((List<?>) value))
-                    .build();
-        }
-        return this;
-    }
-
-    /**
-     * Add a value to a list literal.
-     *
-     * @param builder builder supplier
-     * @param literal literal
-     * @param value   value
-     * @return literal
-     * @throws IllegalArgumentException if the provided value is not a literal
-     */
-    public static Literal listAdd(Supplier<Builder<List<String>>> builder, Value literal, String value) {
-        if (literal == null) {
-            List<String> list = new ArrayList<>();
-            list.add(value);
-            return builder.get()
-                          .type(ValueTypes.STRING_LIST)
-                          .value(list)
-                          .readonly(false)
-                          .build();
-        }
-        if (!(literal instanceof Literal)) {
-            throw new IllegalArgumentException("Value is not a literal: " + literal);
-        }
-        literal.as(ValueTypes.STRING_LIST).add(value);
-        return (Literal) literal;
     }
 
     @Override
@@ -178,7 +132,7 @@ public final class Literal extends Expression implements Value {
                 } else if (type.equals(ValueTypes.BOOLEAN)) {
                     value = (T) Boolean.valueOf(rawValue);
                 } else if (type.equals(ValueTypes.INT)) {
-                    value = (T) Boolean.valueOf(rawValue);
+                    value = (T) Integer.valueOf(rawValue);
                 } else if (type.equals(ValueTypes.STRING_LIST)) {
                     value = (T) Arrays.asList(rawValue.split(","));
                 } else {
@@ -188,17 +142,6 @@ public final class Literal extends Expression implements Value {
                 value = defaultValue;
             }
             this.type = type;
-            return this;
-        }
-
-        /**
-         * Set the readonly flag.
-         *
-         * @param readonly readonly
-         * @return this builder
-         */
-        public Builder<T> readonly(boolean readonly) {
-            this.readonly = readonly;
             return this;
         }
 
