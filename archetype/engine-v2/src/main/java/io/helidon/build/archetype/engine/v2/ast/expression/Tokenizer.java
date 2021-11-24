@@ -14,36 +14,39 @@
  * limitations under the License.
  */
 
-package io.helidon.build.archetype.engine.v2.expression;
+package io.helidon.build.archetype.engine.v2.ast.expression;
 
+import java.util.Iterator;
+import java.util.NoSuchElementException;
 import java.util.regex.Matcher;
 
 /**
  * Parse the string representation of the expression and extract tokens from it.
  */
-final class Tokenizer {
+final class Tokenizer implements Iterator<Token> {
 
-    private String line;
+    private final String line;
     private int cursor;
 
     /**
-     * Initialize fields of the instance.
+     * Create a new tokenizer.
      *
-     * @param line
+     * @param line line
      */
-    public void init(String line) {
+    Tokenizer(String line) {
         this.line = line;
-        cursor = 0;
+        this.cursor = 0;
     }
 
-    /**
-     * Extract next token from the string representation of the expression if possible or {@code null} otherwise.
-     *
-     * @return next {@code Token} or {@code null}.
-     */
-    public Token getNextToken() {
-        if (!hasMoreTokens()) {
-            return null;
+    @Override
+    public boolean hasNext() {
+        return cursor < line.length();
+    }
+
+    @Override
+    public Token next() {
+        if (!hasNext()) {
+            throw new NoSuchElementException();
         }
         String current = line.substring(cursor);
         for (Token.Type type : Token.Type.values()) {
@@ -51,24 +54,12 @@ final class Tokenizer {
             if (matcher.find()) {
                 String value = matcher.group();
                 cursor += value.length();
-
                 if (type == Token.Type.SKIP) {
-                    return getNextToken();
+                    return next();
                 }
-
                 return new Token(type, value);
             }
         }
-        throw new ExpressionParserException("Unexpected token - " + current);
+        throw new NoSuchElementException("Unexpected token - " + current);
     }
-
-    /**
-     * Test if the string representation of the expression has more Tokens.
-     *
-     * @return {@code true} if the line has more tokens, {@code false} otherwise.
-     */
-    public boolean hasMoreTokens() {
-        return cursor < line.length();
-    }
-
 }

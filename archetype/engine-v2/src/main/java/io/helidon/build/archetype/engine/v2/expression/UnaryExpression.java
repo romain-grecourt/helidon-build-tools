@@ -33,10 +33,10 @@ final class UnaryExpression implements AbstractSyntaxTree, ExpressionHandler<Boo
     UnaryExpression(Operator operator, AbstractSyntaxTree left) {
         this.operator = operator;
         if (left.isBinaryExpression() && !left.asBinaryExpression().isolated()) {
-            throw new ParserException("Incorrect operand type for the unary logical expression");
+            throw new ExpressionParserException("Incorrect operand type for the unary logical expression");
         }
         if (left.isLiteral() && !left.asLiteral().type().permittedForUnaryLogicalExpression()) {
-            throw new ParserException("Incorrect operand type for the unary logical expression");
+            throw new ExpressionParserException("Incorrect operand type for the unary logical expression");
         }
         this.left = left;
     }

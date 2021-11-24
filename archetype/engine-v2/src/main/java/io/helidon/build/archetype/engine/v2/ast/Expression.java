@@ -62,7 +62,12 @@ public abstract class Expression extends Statement {
         /**
          * Preset.
          */
-        PRESET
+        PRESET,
+
+        /**
+         * Logical.
+         */
+        LOGICAL
     }
 
     /**
@@ -82,7 +87,7 @@ public abstract class Expression extends Statement {
          * @param position position
          * @param kind     kind
          */
-        Builder(Path location, Position position, Kind kind) {
+        protected Builder(Path location, Position position, Kind kind) {
             super(location, position, Statement.Kind.EXPRESSION);
             this.kind = kind;
         }

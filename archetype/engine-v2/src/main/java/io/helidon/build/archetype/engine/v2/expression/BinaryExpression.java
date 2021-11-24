@@ -42,7 +42,7 @@ final class BinaryExpression implements AbstractSyntaxTree, ExpressionHandler<Bo
         this.right = right;
         Token.Type operatorTokenType = Token.Type.getByValue(operator.operator());
         if (Objects.equals(operatorTokenType, Token.Type.UNARY_LOGICAL_OPERATOR)) {
-            throw new ParserException("Unary logical operator cannot be used in binary logical expression");
+            throw new ExpressionParserException("Unary logical operator cannot be used in binary logical expression");
         }
         this.operator = operator;
 

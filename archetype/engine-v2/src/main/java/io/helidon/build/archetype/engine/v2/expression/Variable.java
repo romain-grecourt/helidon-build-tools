@@ -38,7 +38,7 @@ final class Variable implements AbstractSyntaxTree {
         if (matcher.find()) {
             this.name = matcher.group("varName");
         } else {
-            throw new ParserException("incorrect name of the variable " + name);
+            throw new ExpressionParserException("incorrect name of the variable " + name);
         }
     }
 

@@ -41,6 +41,6 @@ abstract class ASTFactory {
             return new Variable(token.value());
         }
 
-        throw new ParserException("Unknown AbstractSyntaxTree type");
+        throw new ExpressionParserException("Unknown AbstractSyntaxTree type");
     }
 }

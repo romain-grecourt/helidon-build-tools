@@ -98,7 +98,7 @@ enum Operator {
         Boolean evaluate(Literal<?>... literals) {
             checkLiteralsCount(1, literals);
             if (!literals[0].type().permittedForUnaryLogicalExpression()) {
-                throw new ParserException(String.format(
+                throw new ExpressionParserException(String.format(
                         "Operation '%s' cannot be performed on literals. "
                                 + "The literal %s must have the type %s.",
                         "!",
@@ -118,7 +118,7 @@ enum Operator {
      */
     void checkLiteralTypeEquality(Literal<?> left, Literal.Type type) {
         if (!left.type().equals(type)) {
-            throw new ParserException(String.format(
+            throw new ExpressionParserException(String.format(
                     "Operation '%s' cannot be performed on literals. "
                             + "The literal %s must have the type %s.",
                     operator,
@@ -136,7 +136,7 @@ enum Operator {
      */
     void checkLiteralTypesEquality(Literal<?> left, Literal<?> right) {
         if (!left.type().equals(right.type())) {
-            throw new ParserException(String.format(
+            throw new ExpressionParserException(String.format(
                     "Operation '%s' cannot be performed on literals. "
                             + "The left literal %s and the right literal %s must be of the same type.",
                     operator,

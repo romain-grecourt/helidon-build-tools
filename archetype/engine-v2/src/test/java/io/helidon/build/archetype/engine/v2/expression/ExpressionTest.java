@@ -111,7 +111,7 @@ class ExpressionTest {
         assertThat(expression.tree().asBinaryExpression().operator(), is(Operator.NOT_EQUAL));
 
         //incorrect variable name
-        Exception e = assertThrows(ParserException.class, () -> {
+        Exception e = assertThrows(ExpressionParserException.class, () -> {
             String stringValue = "${varia!ble}";
             Expression expr = Expression.builder().expression(stringValue).build();
             expr.evaluate();
@@ -198,7 +198,7 @@ class ExpressionTest {
         evaluateAndTestLogicalExpression(value, true);
 
         //not equal types of the operands
-        Exception e = assertThrows(ParserException.class, () -> {
+        Exception e = assertThrows(ExpressionParserException.class, () -> {
             String stringValue = "true == 'def'";
             Expression expr = Expression.builder().expression(stringValue).build();
             expr.evaluate();
@@ -207,7 +207,7 @@ class ExpressionTest {
                 "Operation '==' cannot be performed on literals. The left literal "));
 
         //incorrect type of the operands
-        e = assertThrows(ParserException.class, () -> {
+        e = assertThrows(ExpressionParserException.class, () -> {
             String stringValue = "'true' || 'def'";
             Expression expr = Expression.builder().expression(stringValue).build();
             expr.evaluate();
@@ -215,7 +215,7 @@ class ExpressionTest {
         assertThat(e.getMessage(), containsString(
                 "Operation '||' cannot be performed on literals. The literal "));
 
-        e = assertThrows(ParserException.class, () -> {
+        e = assertThrows(ExpressionParserException.class, () -> {
             String stringValue = "['', 'adc', 'def'] contains ['', 'adc', 'def']";
             Expression expr = Expression.builder().expression(stringValue).build();
             expr.evaluate();
@@ -251,7 +251,7 @@ class ExpressionTest {
         assertThat(expression.tree().asBinaryExpression().operator(), is(Operator.CONTAINS));
         assertThat(expression.tree().asBinaryExpression().right().asLiteral().value(), is("'basic-auth'"));
 
-        Exception e = assertThrows(ParserException.class, () -> {
+        Exception e = assertThrows(ExpressionParserException.class, () -> {
             String expr = "['', 'adc', 'def'] contains != 'basic-auth'";
             Expression.builder().expression(expr).build();
         });
@@ -274,7 +274,7 @@ class ExpressionTest {
                         .left().asBinaryExpression().operator(),
                 is(Operator.CONTAINS));
 
-        e = assertThrows(ParserException.class, () -> {
+        e = assertThrows(ExpressionParserException.class, () -> {
             String expr = "!['', 'adc', 'def'] contains 'basic-auth'";
             Expression.builder().expression(expr).build();
         });
@@ -430,7 +430,7 @@ class ExpressionTest {
 
 
         //incorrect operand type
-        Exception e = assertThrows(ParserException.class, () -> {
+        Exception e = assertThrows(ExpressionParserException.class, () -> {
             String expr = "!'string type'";
             Expression.builder().expression(expr).build();
         });
@@ -540,28 +540,28 @@ class ExpressionTest {
         assertThat(right.right().asLiteral().value(), is(true));
 
         //incorrect parenthesis
-        Exception e = assertThrows(ParserException.class, () -> {
+        Exception e = assertThrows(ExpressionParserException.class, () -> {
             String expr = "\"foo\"==((\"bar\"|| 'foo1')&&true))";
             Expression.builder().expression(expr).build();
         });
         assertThat(e.getMessage(), containsString("Unmatched parenthesis found"));
 
         //incorrect parenthesis
-        e = assertThrows(ParserException.class, () -> {
+        e = assertThrows(ExpressionParserException.class, () -> {
             String expr = "\"foo\")==((\"bar\"|| 'foo1')&&true))";
             Expression.builder().expression(expr).build();
         });
         assertThat(e.getMessage(), containsString("Unmatched parenthesis found"));
 
         //incorrect parenthesis
-        e = assertThrows(ParserException.class, () -> {
+        e = assertThrows(ExpressionParserException.class, () -> {
             String expr = "\"foo\"(==((\"bar\"|| 'foo1')&&true))";
             Expression.builder().expression(expr).build();
         });
         assertThat(e.getMessage(), containsString("Unknown AbstractSyntaxTree type"));
 
         //incorrect parenthesis
-        e = assertThrows(ParserException.class, () -> {
+        e = assertThrows(ExpressionParserException.class, () -> {
             String expr = ")\"foo\"(==((\"bar\"|| 'foo1')&&true))";
             Expression.builder().expression(expr).build();
         });
@@ -602,21 +602,21 @@ class ExpressionTest {
         assertThat(expression.tree().asLiteral().value(), is("\"value\""));
 
         //string literal with incorrect parenthesis
-        Exception e = assertThrows(ParserException.class, () -> {
+        Exception e = assertThrows(ExpressionParserException.class, () -> {
             String expr = "((((\"value\"))";
             Expression.builder().expression(expr).build();
         });
         assertThat(e.getMessage(), containsString("Unmatched parenthesis found"));
 
         //string literal with incorrect parenthesis
-        e = assertThrows(ParserException.class, () -> {
+        e = assertThrows(ExpressionParserException.class, () -> {
             String expr = ")\"value\"(";
             Expression.builder().expression(expr).build();
         });
         assertThat(e.getMessage(), containsString("Unknown AbstractSyntaxTree type"));
 
         //string literal with incorrect parenthesis
-        e = assertThrows(ParserException.class, () -> {
+        e = assertThrows(ExpressionParserException.class, () -> {
             String expr = "(\"value\"()";
             Expression.builder().expression(expr).build();
         });
@@ -659,14 +659,14 @@ class ExpressionTest {
         assertThat((ArrayList<String>) expression.tree().asLiteral().value(), contains("''", "'adc'", "'def'"));
 
         //array with many elements and incorrect parenthesis
-        e = assertThrows(ParserException.class, () -> {
+        e = assertThrows(ExpressionParserException.class, () -> {
             String expr = "((['', 'adc', 'def'])))";
             Expression.builder().expression(expr).build();
         });
         assertThat(e.getMessage(), containsString("Unmatched parenthesis found"));
 
         //array with many elements and incorrect parenthesis
-        e = assertThrows(ParserException.class, () -> {
+        e = assertThrows(ExpressionParserException.class, () -> {
             String expr = "(((['', 'adc', 'def']))";
             Expression.builder().expression(expr).build();
         });
@@ -789,7 +789,7 @@ class ExpressionTest {
 
     @Test
     public void testIncorrectOperator() {
-        final Exception e = assertThrows(ParserException.class, () -> {
+        final Exception e = assertThrows(ExpressionParserException.class, () -> {
             String value = "\"foo\" !== \"bar\"";
             Expression.builder().expression(value).build();
         });

@@ -1,20 +1,21 @@
-package io.helidon.build.archetype.engine.v2.ast;
+package io.helidon.build.archetype.engine.v2.ast.expression;
+
+import io.helidon.build.archetype.engine.v2.ast.Expression;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
  * Logical operator.
  */
-enum LogicalOperator {
+public enum LogicalOperator {
 
     /**
      * Equality operator.
      */
     EQUAL(8, "==") {
         @Override
-        Boolean evaluate(Expression... operands) {
+        public Boolean evaluate(Expression... operands) {
             checkOperands(2, operands);
             return true;
 //            checkLiteralTypesEquality(literals[0], literals[1]);
@@ -27,7 +28,7 @@ enum LogicalOperator {
      */
     NOT_EQUAL(8, "!=") {
         @Override
-        Boolean evaluate(Expression... operands) {
+        public Boolean evaluate(Expression... operands) {
             checkOperands(2, operands);
             return true;
 //            checkLiteralTypesEquality(literals[0], literals[1]);
@@ -39,7 +40,7 @@ enum LogicalOperator {
      */
     AND(4, "&&") {
         @Override
-        Boolean evaluate(Expression... operands) {
+        public Boolean evaluate(Expression... operands) {
             checkOperands(2, operands);
             return true;
 //            checkLiteralTypesEquality(literals[0], literals[1]);
@@ -55,7 +56,7 @@ enum LogicalOperator {
      */
     OR(3, "||") {
         @Override
-        Boolean evaluate(Expression... operands) {
+        public Boolean evaluate(Expression... operands) {
             checkOperands(2, operands);
             return true;
 //            checkLiteralTypesEquality(literals[0], literals[1]);
@@ -72,7 +73,7 @@ enum LogicalOperator {
     CONTAINS(9, "contains") {
         @Override
         @SuppressWarnings("unchecked")
-        Boolean evaluate(Expression... operands) {
+        public Boolean evaluate(Expression... operands) {
             checkOperands(2, operands);
             return true;
 //            checkLiteralTypeEquality(literals[0], io.helidon.build.archetype.engine.v2.expression.Literal.Type.ARRAY);
@@ -85,7 +86,7 @@ enum LogicalOperator {
      */
     NOT(13, "!") {
         @Override
-        Boolean evaluate(Expression... operands) {
+        public Boolean evaluate(Expression... operands) {
             checkOperands(1, operands);
             return true;
 //            if (!operands[0].type().permittedForUnaryLogicalExpression()) {
@@ -204,5 +205,5 @@ enum LogicalOperator {
      * @param operands operands
      * @return Boolean
      */
-    abstract Boolean evaluate(Expression... operands);
+    public abstract Boolean evaluate(Expression... operands);
 }

@@ -163,7 +163,7 @@ public final class Expression {
 
             if (token.type().binaryOperator()) {
                 if (lastToken.type().binaryOperator()) {
-                    throw new ParserException("Unexpected token - " + token.value());
+                    throw new ExpressionParserException("Unexpected token - " + token.value());
                 }
                 lastToken = token;
                 continue;
@@ -232,7 +232,7 @@ public final class Expression {
 
     private void checkOpenParentheses() {
         if (countOpenParentheses != 0) {
-            throw new ParserException("Unmatched parenthesis found");
+            throw new ExpressionParserException("Unmatched parenthesis found");
         }
     }
 

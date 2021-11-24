@@ -28,7 +28,7 @@ interface ExpressionHandler<T> {
      *
      * @return Literal.
      */
-    Literal<T> evaluate() throws ParserException;
+    Literal<T> evaluate() throws ExpressionParserException;
 
     /**
      * Try to convert {@code AbstractSyntaxTree} to the {@code Literal} if possible or throw an {@code IllegalArgumentException}.

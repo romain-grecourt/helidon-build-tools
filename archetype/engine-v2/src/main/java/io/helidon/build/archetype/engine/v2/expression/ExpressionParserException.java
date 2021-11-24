@@ -16,31 +16,26 @@
 
 package io.helidon.build.archetype.engine.v2.expression;
 
-import java.util.List;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-
 /**
- * String array.
+ * Parser exception.
  */
-final class StringArrayLiteral extends Literal<List<String>> {
-
-    private static final Pattern ELEMENT_PATTERN = Pattern.compile("(?<element>'[^']*')((\\s*,\\s*)|(\\s*]))");
+final class ExpressionParserException extends RuntimeException {
 
     /**
-     * Create a new literal that represents a string array.
+     * Create a new exception.
      *
-     * @param content the raw literal value.
+     * @param message error message
      */
-    StringArrayLiteral(String content) {
-        super(ELEMENT_PATTERN.matcher(content)
-                             .results()
-                             .map(r -> r.group())
-                             .collect(Collectors.toList()));
+    ExpressionParserException(String message) {
+        super(message);
     }
 
-    @Override
-    Type type() {
-        return Type.ARRAY;
+    /**
+     * Create a new exception.
+     *
+     * @param message error message
+     */
+    ExpressionParserException(String message, Throwable cause) {
+        super(message, cause);
     }
 }

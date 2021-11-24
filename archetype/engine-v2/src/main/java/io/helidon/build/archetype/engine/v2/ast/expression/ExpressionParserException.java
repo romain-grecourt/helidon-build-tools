@@ -14,18 +14,19 @@
  * limitations under the License.
  */
 
-package io.helidon.build.archetype.engine.v2.expression;
+package io.helidon.build.archetype.engine.v2.ast.expression;
 
 /**
  * Parser exception.
  */
-final class ParserException extends RuntimeException {
+final class ExpressionParserException extends RuntimeException {
+
     /**
      * Create a new exception.
      *
      * @param message error message
      */
-    ParserException(String message) {
+    ExpressionParserException(String message) {
         super(message);
     }
 
@@ -34,7 +35,7 @@ final class ParserException extends RuntimeException {
      *
      * @param message error message
      */
-    ParserException(String message, Throwable cause) {
+    ExpressionParserException(String message, Throwable cause) {
         super(message, cause);
     }
 }

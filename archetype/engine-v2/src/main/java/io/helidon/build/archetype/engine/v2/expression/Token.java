@@ -20,8 +20,7 @@ import java.util.Arrays;
 import java.util.regex.Pattern;
 
 /**
- * Part of an income string representation of the expression that can be transformed in the part of the {@code
- * AbstractSyntaxTree}.
+ * Parsed token used to create the expression tree.
  */
 final class Token {
 
