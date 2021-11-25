@@ -17,13 +17,12 @@
 package io.helidon.build.archetype.engine.v2.ast;
 
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Objects;
 
 /**
  * Invocation.
  */
-public final class Invocation extends Expression {
+public final class Invocation extends Statement {
 
     private final Kind kind;
     private final String src;
@@ -53,7 +52,7 @@ public final class Invocation extends Expression {
     }
 
     @Override
-    public <A> VisitResult accept(Visitor<A> visitor, A arg) {
+    public <A> VisitResult accept(Node.Visitor<A> visitor, A arg) {
         return visitor.visitInvocation(this, arg);
     }
 
@@ -88,12 +87,12 @@ public final class Invocation extends Expression {
     /**
      * Invocation builder.
      */
-    public static final class Builder extends Expression.Builder<Invocation, Builder> {
+    public static final class Builder extends Statement.Builder<Invocation, Builder> {
 
         private final Kind kind;
 
         private Builder(Path location, Position position, Kind kind) {
-            super(location, position, Expression.Kind.INVOCATION);
+            super(location, position, Statement.Kind.INVOCATION);
             this.kind = kind;
         }
 

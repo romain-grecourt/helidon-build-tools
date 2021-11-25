@@ -32,7 +32,6 @@ module io.helidon.build.archetype.engine.v2 {
     exports io.helidon.build.archetype.engine.v2;
     exports io.helidon.build.archetype.engine.v2.ast;
     exports io.helidon.build.archetype.engine.v2.template;
-    exports io.helidon.build.archetype.engine.v2.ast.expression;
 
     uses TemplateEngine;
     provides TemplateEngine with MustacheTemplateEngine;

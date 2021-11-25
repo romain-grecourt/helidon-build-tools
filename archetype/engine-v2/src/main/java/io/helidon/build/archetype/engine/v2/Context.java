@@ -16,13 +16,12 @@
 package io.helidon.build.archetype.engine.v2;
 
 import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.Map;
-import java.util.Objects;
 
 import io.helidon.build.archetype.engine.v2.ast.Value;
-import io.helidon.build.common.GenericType;
 
 /**
  * Context.
@@ -30,8 +29,8 @@ import io.helidon.build.common.GenericType;
 public final class Context {
 
     private final Map<String, ContextValue> values = new HashMap<>();
-    private final LinkedList<Path> directories = new LinkedList<>();
-    private final LinkedList<String> paths = new LinkedList<>();
+    private final Deque<Path> directories = new ArrayDeque<>();
+    private final Deque<String> inputs = new ArrayDeque<>();
 
     private Context(Path cwd) {
         directories.push(cwd);
@@ -42,14 +41,14 @@ public final class Context {
      *
      * @param dir directory
      */
-    public void pushDir(Path dir) {
+    public void pushd(Path dir) {
         directories.push(cwd().resolve(dir).toAbsolutePath());
     }
 
     /**
      * Pop the current working directory.
      */
-    public void popDir() {
+    public void popd() {
         directories.pop();
     }
 
@@ -73,7 +72,7 @@ public final class Context {
      * @param value value
      * @throws IllegalArgumentException if the key is invalid
      */
-    public void pushInput(String name, Value value) {
+    public void push(String name, Value value) {
         if (value == null) {
             return;
         }
@@ -81,33 +80,33 @@ public final class Context {
             throw new IllegalArgumentException("Invalid name: " + name);
         }
         String path;
-        if (paths.isEmpty()) {
+        if (inputs.isEmpty()) {
             path = name;
         } else {
-            path = paths.peek() + "." + name;
+            path = inputs.peek() + "." + name;
         }
         values.put(path, new ContextValue(value, false, false));
-        paths.push(path);
+        inputs.push(path);
     }
 
     /**
      * Pop the current input.
      */
-    public void popInput() {
-        paths.pop();
+    public void pop() {
+        inputs.pop();
     }
 
     /**
      * Lookup a context value
      *
      * @param path input path
-     * @return found context node
+     * @return value, {@code null} if not found
      */
     public ContextValue lookup(String path) {
-        String current = paths.peek();
-        if (current == null) {
+        if (inputs.isEmpty() || inputs.peek() == null) {
             return null;
         }
+        String current = inputs.peek();
         String key;
         if (path.startsWith("ROOT.")) {
             key = path.substring(5);
@@ -151,14 +150,13 @@ public final class Context {
     /**
      * Context value.
      */
-    public static final class ContextValue implements Value {
+    public static final class ContextValue extends Value {
 
         private final boolean external;
         private final boolean readOnly;
-        private final Value value;
 
         private ContextValue(Value value, boolean external, boolean readOnly) {
-            this.value = Objects.requireNonNull(value, "value is null");
+            super(value.unwrap(), value.type());
             this.external = external;
             this.readOnly = readOnly;
         }
@@ -179,16 +177,6 @@ public final class Context {
          */
         public boolean readOnly() {
             return readOnly;
-        }
-
-        @Override
-        public GenericType<?> type() {
-            return value.type();
-        }
-
-        @Override
-        public <T> T as(GenericType<T> type) {
-            return value.as(type);
         }
     }
 }

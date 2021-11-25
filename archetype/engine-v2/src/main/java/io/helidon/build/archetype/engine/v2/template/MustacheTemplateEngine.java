@@ -24,10 +24,21 @@ import java.io.OutputStreamWriter;
 import java.io.UncheckedIOException;
 import java.io.Writer;
 import java.nio.charset.Charset;
+import java.util.List;
 
 import com.github.mustachejava.DefaultMustacheFactory;
+import com.github.mustachejava.Iteration;
 import com.github.mustachejava.Mustache;
 import com.github.mustachejava.MustacheFactory;
+import com.github.mustachejava.reflect.SimpleObjectHandler;
+import com.github.mustachejava.util.GuardException;
+import com.github.mustachejava.util.Wrapper;
+import io.helidon.build.archetype.engine.v2.Context;
+import io.helidon.build.archetype.engine.v2.Walker;
+import io.helidon.build.archetype.engine.v2.ast.Block;
+import io.helidon.build.archetype.engine.v2.ast.Model;
+import io.helidon.build.archetype.engine.v2.ast.Node;
+import io.helidon.build.archetype.engine.v2.ast.Output;
 
 /**
  * Implementation of the {@link TemplateEngine} for Mustache.
@@ -52,6 +63,74 @@ public class MustacheTemplateEngine implements TemplateEngine {
             mustache.execute(writer, scope).flush();
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
+        }
+    }
+
+    private static final class ModelVisitor implements Model.Visitor<Object, Context> {
+
+        final String name;
+
+        ModelVisitor(String name) {
+            this.name = name;
+        }
+    }
+
+    private static class WrapperImpl implements Wrapper,
+                                                Node.Visitor<Context>,
+                                                Block.Visitor<Object, Context>,
+                                                Output.Visitor<Object, Context> {
+
+        final ModelVisitor modelVisitor;
+        final Context context;
+        Object result;
+
+        WrapperImpl(String name, Context context) {
+            // this is a dot notation
+            this.modelVisitor = new ModelVisitor(name);
+            this.context = context;
+        }
+
+        @Override
+        public Object call(List<Object> scopes) throws GuardException {
+            for (Object scope : scopes) {
+                if (scope instanceof Model) {
+                    new Walker<>(this).walk((Model) scope, context);
+                    if (result != null) {
+                        return result;
+                    }
+                }
+            }
+            return null;
+        }
+
+        @Override
+        public Node.VisitResult preVisitBlock(Block block, Context arg) {
+            result = block.accept((Block.Visitor<Object, Context>) this, arg);
+            if (result != null) {
+                return Node.VisitResult.TERMINATE;
+            }
+            return Node.VisitResult.CONTINUE;
+        }
+
+        @Override
+        public Object visitOutput(Output output, Context context) {
+            return output.accept((Output.Visitor<Object, Context>) this, context);
+        }
+    }
+
+    private static class ObjectHandlerImpl extends SimpleObjectHandler {
+
+        @Override
+        public Wrapper find(String name, List<Object> scopes) {
+            // <value key="">
+            // <map>
+            return new WrapperImpl(name, null);
+        }
+
+        @Override
+        public Writer iterate(Iteration iteration, Writer writer, Object object, List<Object> scopes) {
+            // list
+            return null;
         }
     }
 }

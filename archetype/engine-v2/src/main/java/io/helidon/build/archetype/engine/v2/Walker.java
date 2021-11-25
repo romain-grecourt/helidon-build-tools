@@ -24,7 +24,8 @@ import io.helidon.build.archetype.engine.v2.ast.Preset;
 import io.helidon.build.archetype.engine.v2.ast.Script;
 import io.helidon.build.archetype.engine.v2.ast.Statement;
 
-import java.util.LinkedList;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 import java.util.ListIterator;
 
@@ -33,10 +34,10 @@ import java.util.ListIterator;
  *
  * @param <A> visitor argument type
  */
-class Walker<A> {
+public final class Walker<A> {
 
-    private final LinkedList<Statement> stack = new LinkedList<>();
-    private final LinkedList<Node> parents = new LinkedList<>();
+    private final Deque<Statement> stack = new ArrayDeque<>();
+    private final Deque<Node> parents = new ArrayDeque<>();
     private final Node.Visitor<A> visitor;
     private boolean traversing;
 
@@ -45,7 +46,7 @@ class Walker<A> {
      *
      * @param visitor visitor
      */
-    Walker(Node.Visitor<A> visitor) {
+    public Walker(Node.Visitor<A> visitor) {
         this.visitor = new DelegateVisitor(visitor);
     }
 
@@ -55,7 +56,7 @@ class Walker<A> {
      * @param root root block to visit
      * @param arg  visitor argument
      */
-    void walk(Block root, A arg) {
+    public void walk(Block root, A arg) {
         Node.VisitResult result = root.accept(visitor, arg);
         if (result != Node.VisitResult.CONTINUE) {
             return;

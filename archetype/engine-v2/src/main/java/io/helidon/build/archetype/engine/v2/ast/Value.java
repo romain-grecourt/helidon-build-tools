@@ -19,35 +19,51 @@ package io.helidon.build.archetype.engine.v2.ast;
 import io.helidon.build.common.GenericType;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Value.
  */
-public interface Value {
+public class Value {
+
+    private final Object value;
+    private final GenericType<?> type;
+
+    /**
+     * Create a new value.
+     *
+     * @param value value
+     * @param type  value type
+     */
+    protected Value(Object value, GenericType<?> type) {
+        this.value = value;
+        this.type = type;
+    }
+
+    /**
+     * Unwrap the value.
+     *
+     * @return value
+     */
+    public Object unwrap() {
+        return value;
+    }
 
     /**
      * Get the value type.
      *
      * @return type
      */
-    GenericType<?> type();
-
-    /**
-     * Get this value as the given type.
-     *
-     * @param type type
-     * @param <T>  actual type
-     * @return instance as the given type
-     * @throws ValueTypeException if this instance type does not match the given type
-     */
-    <T> T as(GenericType<T> type);
+    public GenericType<?> type() {
+        return type;
+    }
 
     /**
      * Get this value as a {@code string}.
      *
      * @return string
      */
-    default String asString() {
+    public String asString() {
         return as(ValueTypes.STRING);
     }
 
@@ -56,7 +72,7 @@ public interface Value {
      *
      * @return boolean
      */
-    default Boolean asBoolean() {
+    public Boolean asBoolean() {
         return as(ValueTypes.BOOLEAN);
     }
 
@@ -65,7 +81,7 @@ public interface Value {
      *
      * @return int
      */
-    default Integer asInt() {
+    public Integer asInt() {
         return as(ValueTypes.INT);
     }
 
@@ -74,14 +90,76 @@ public interface Value {
      *
      * @return list
      */
-    default List<String> asList() {
+    public List<String> asList() {
         return as(ValueTypes.STRING_LIST);
+    }
+
+    /**
+     * Get this value as the given type.
+     *
+     * @param type type
+     * @param <U>  actual type
+     * @return instance as the given type
+     * @throws ValueTypeException if this instance type does not match the given type
+     */
+    @SuppressWarnings("unchecked")
+    public <U> U as(GenericType<U> type) {
+        Objects.requireNonNull(type, "type is null");
+        if (!this.type.equals(type)) {
+            throw new ValueTypeException(this.type, type);
+        }
+        return (U) value;
+    }
+
+    @Override
+    public String toString() {
+        return "Value{ " + value + " }";
+    }
+
+    /**
+     * Create a new value.
+     *
+     * @param value value
+     * @return Value
+     */
+    public static Value create(String value) {
+        return new Value(value, ValueTypes.STRING);
+    }
+
+    /**
+     * Create a new value.
+     *
+     * @param value value
+     * @return Value
+     */
+    public static Value create(List<String> value) {
+        return new Value(value, ValueTypes.STRING_LIST);
+    }
+
+    /**
+     * Create a new value.
+     *
+     * @param value value
+     * @return Value
+     */
+    public static Value create(boolean value) {
+        return new Value(value, ValueTypes.BOOLEAN);
+    }
+
+    /**
+     * Create a new value.
+     *
+     * @param value value
+     * @return Value
+     */
+    public static <T> Value create(T value, GenericType<T> type) {
+        return new Value(value, type);
     }
 
     /**
      * Exception raised for unexpected type usages.
      */
-    final class ValueTypeException extends IllegalStateException {
+    public static final class ValueTypeException extends IllegalStateException {
 
         /**
          * Create a new value type exception

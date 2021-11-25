@@ -16,6 +16,7 @@
 package io.helidon.build.archetype.engine.v2.ast;
 
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 
 import static java.util.Collections.emptyList;
@@ -44,18 +45,6 @@ public class Output extends Block {
     public interface Visitor<R, A> {
 
         /**
-         * Visit an output block.
-         *
-         * @param output block
-         * @param arg    argument
-         * @return visit result
-         */
-        @SuppressWarnings("unused")
-        default R visitOutput(Output output, A arg) {
-            return null;
-        }
-
-        /**
          * Visit a transformation block.
          *
          * @param transformation transformation
@@ -63,7 +52,7 @@ public class Output extends Block {
          * @return visit result
          */
         default R visitTransformation(Transformation transformation, A arg) {
-            return visitOutput(transformation, arg);
+            return null;
         }
 
         /**
@@ -74,7 +63,7 @@ public class Output extends Block {
          * @return visit result
          */
         default R visitFiles(Files files, A arg) {
-            return visitOutput(files, arg);
+            return null;
         }
 
         /**
@@ -85,7 +74,7 @@ public class Output extends Block {
          * @return visit result
          */
         default R visitTemplates(Templates templates, A arg) {
-            return visitOutput(templates, arg);
+            return null;
         }
 
         /**
@@ -96,7 +85,7 @@ public class Output extends Block {
          * @return visit result
          */
         default R visitFile(File file, A arg) {
-            return visitOutput(file, arg);
+            return null;
         }
 
         /**
@@ -107,7 +96,7 @@ public class Output extends Block {
          * @return visit result
          */
         default R visitTemplate(Template template, A arg) {
-            return visitOutput(template, arg);
+            return null;
         }
 
         /**
@@ -118,7 +107,7 @@ public class Output extends Block {
          * @return visit result
          */
         default R visitModel(Model model, A arg) {
-            return visitOutput(model, arg);
+            return null;
         }
     }
 
@@ -132,7 +121,7 @@ public class Output extends Block {
      * @return visit result
      */
     public <R, A> R accept(Visitor<R, A> visitor, A arg) {
-        return visitor.visitOutput(this, arg);
+        return null;
     }
 
     @Override
@@ -231,8 +220,8 @@ public class Output extends Block {
          */
         Files(Output.Builder builder) {
             super(builder);
-            this.transformations = builder.parseAttribute(ValueTypes.STRING_LIST, "transformations", emptyList())
-                                          .asList();
+            String attr = builder.attributes.get("transformations");
+            this.transformations = attr != null ? Arrays.asList(attr.split(",")) : emptyList();
             this.directory = Noop.filter(builder.statements, Noop.Kind.DIRECTORY)
                                  .map(b -> b.value)
                                  .findFirst()

@@ -17,7 +17,7 @@ package io.helidon.build.archetype.engine.v2;
 
 import java.nio.file.Path;
 
-import io.helidon.build.archetype.engine.v2.ast.Constant;
+import io.helidon.build.archetype.engine.v2.ast.Value;
 
 import org.junit.jupiter.api.Test;
 
@@ -34,7 +34,7 @@ public class ContextTest {
     @Test
     public void testLookup() {
         Context context = Context.create(Path.of(""));
-        context.pushInput("foo", Constant.create("foo-value"));
+        context.push("foo", Value.create("foo-value"));
 
         Context.ContextValue value;
 
@@ -62,8 +62,8 @@ public class ContextTest {
     @Test
     public void testRelativeLookup() {
         Context context = Context.create(Path.of(""));
-        context.pushInput("foo", Constant.create("foo-value"));
-        context.pushInput("bar", Constant.create("bar-value"));
+        context.push("foo", Value.create("foo-value"));
+        context.push("bar", Value.create("bar-value"));
 
         Context.ContextValue value;
 
@@ -101,9 +101,9 @@ public class ContextTest {
     @Test
     public void testPopInput() {
         Context context = Context.create(Path.of(""));
-        context.pushInput("foo", Constant.create("foo-value"));
-        context.pushInput("bar", Constant.create("bar-value"));
-        context.popInput();
+        context.push("foo", Value.create("foo-value"));
+        context.push("bar", Value.create("bar-value"));
+        context.pop();
 
         Context.ContextValue value;
 

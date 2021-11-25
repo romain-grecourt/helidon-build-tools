@@ -23,7 +23,7 @@ import java.nio.file.Path;
  */
 public final class Condition extends Statement {
 
-    private final String expression;
+    private final Expression expression;
     private final Statement then;
 
     private Condition(Builder builder) {
@@ -37,7 +37,7 @@ public final class Condition extends Statement {
      *
      * @return expression
      */
-    public String expression() {
+    public Expression expression() {
         return expression;
     }
 
@@ -71,7 +71,7 @@ public final class Condition extends Statement {
      */
     public static final class Builder extends Statement.Builder<Condition, Builder> {
 
-        private String expression;
+        private Expression expression;
         private Statement.Builder<?, ?> then;
 
         private Builder(Path location, Position position) {
@@ -85,7 +85,7 @@ public final class Condition extends Statement {
          * @return this builder
          */
         public Builder expression(String expression) {
-            this.expression = expression;
+            this.expression = Expression.create(expression);
             return this;
         }
 

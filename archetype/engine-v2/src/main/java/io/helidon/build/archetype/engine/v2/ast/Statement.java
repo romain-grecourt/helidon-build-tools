@@ -68,9 +68,14 @@ public abstract class Statement extends Node {
         CONDITION,
 
         /**
-         * Expression.
+         * Invocation.
          */
-        EXPRESSION,
+        INVOCATION,
+
+        /**
+         * Preset.
+         */
+        PRESET,
 
         /**
          * Block.

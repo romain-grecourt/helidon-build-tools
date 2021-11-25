@@ -235,8 +235,7 @@ public abstract class Input extends Block {
 
         private Boolean(Input.Builder builder) {
             super(builder);
-            defaultValue = builder.parseLiteral(ValueTypes.BOOLEAN, builder.attributes.get("default"), false)
-                                  .asBoolean();
+            defaultValue = java.lang.Boolean.parseBoolean(builder.attributes.get("default"));
         }
 
         /**
@@ -289,8 +288,12 @@ public abstract class Input extends Block {
 
         private List(Input.Builder builder) {
             super(builder);
-            defaultValue = builder.parseLiteral(ValueTypes.STRING_LIST, builder.attributes.get("default"), emptyList())
-                                  .asList();
+            String rawDefault = builder.attributes.get("default");
+            if (rawDefault != null) {
+                defaultValue = Arrays.asList(rawDefault.split(","));
+            } else {
+                defaultValue = emptyList();
+            }
         }
 
         /**

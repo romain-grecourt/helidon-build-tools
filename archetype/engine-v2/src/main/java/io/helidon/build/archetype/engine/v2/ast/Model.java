@@ -125,7 +125,8 @@ public class Model extends Output {
 
         private MergeableModel(Model.Builder builder) {
             super(builder);
-            this.order = builder.parseAttribute(ValueTypes.INT, "order", 100).asInt();
+            String rawOrder = builder.attributes.get("order");
+            this.order = rawOrder != null ? Integer.parseInt(rawOrder) : 100;
             this.key = builder.attributes.get("key");
         }
 

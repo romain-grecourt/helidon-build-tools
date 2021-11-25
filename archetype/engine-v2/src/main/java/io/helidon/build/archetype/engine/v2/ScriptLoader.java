@@ -22,8 +22,9 @@ import java.lang.ref.WeakReference;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.Map;
 import java.util.WeakHashMap;
 
@@ -116,7 +117,7 @@ public class ScriptLoader {
         SimpleXMLParser parser;
         String qName;
         Map<String, String> attrs;
-        LinkedList<Context> stack;
+        Deque<Context> stack;
         Context ctx;
         Script.Builder script;
 
@@ -125,7 +126,7 @@ public class ScriptLoader {
 
         Script read(InputStream is, Path path) throws IOException {
             location = path;
-            stack = new LinkedList<>();
+            stack = new ArrayDeque<>();
             parser = SimpleXMLParser.create(is, this);
             parser.parse();
             if (script == null) {

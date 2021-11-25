@@ -16,8 +16,6 @@
 
 package io.helidon.build.archetype.engine.v2.ast;
 
-import io.helidon.build.common.GenericType;
-
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
@@ -304,75 +302,6 @@ public abstract class Node {
         public U attributes(Map<String, String> attributes) {
             this.attributes.putAll(attributes);
             return (U) this;
-        }
-
-        /**
-         * Create a new literal builder.
-         *
-         * @param type type
-         * @return this builder
-         */
-        <V> Literal.Builder<V> newLiteral(GenericType<V> type) {
-            return new Literal.Builder<V>(location, position).type(type);
-        }
-
-        /**
-         * Parse a literal.
-         *
-         * @param type         type
-         * @param rawValue     raw value
-         * @param defaultValue default value
-         * @return this builder
-         */
-        <V> Literal parseLiteral(GenericType<V> type, String rawValue, V defaultValue) {
-            return newLiteral(type).parse(type, rawValue, defaultValue).build();
-        }
-
-
-        /**
-         * Parse an attribute.
-         *
-         * @param type         type
-         * @param key          attribute key
-         * @param defaultValue default value
-         * @return this builder
-         */
-        <V> Literal parseAttribute(GenericType<V> type, String key, V defaultValue) {
-            return parseLiteral(type, attributes.get(key), defaultValue);
-        }
-
-        /**
-         * Parse an attribute.
-         *
-         * @param type type
-         * @param key  attribute key
-         * @return this builder
-         */
-        <V> Literal parseAttribute(GenericType<V> type, String key) {
-            Literal value = parseLiteral(type, attributes.get(key), null);
-            if (value == null) {
-                throw new IllegalStateException(String.format(
-                        "Unable to get attribute '%s', file=%s, position=%s",
-                        this, location, position));
-            }
-            return value;
-        }
-
-        /**
-         * Parse the value.
-         *
-         * @param type type
-         * @param key  attribute key
-         * @return this builder
-         */
-        <V> Literal parseValue(GenericType<V> type, String rawValue) {
-            Literal value = parseLiteral(type, rawValue, null);
-            if (value == null) {
-                throw new IllegalStateException(String.format(
-                        "Unable to get value '%s', file=%s, position=%s",
-                        this, location, position));
-            }
-            return value;
         }
 
         /**

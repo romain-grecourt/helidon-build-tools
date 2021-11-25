@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
 /**
  * Preset.
  */
-public final class Preset extends Expression {
+public final class Preset extends Statement {
 
     private final Kind kind;
     private final Value value;
@@ -37,18 +37,16 @@ public final class Preset extends Expression {
         this.path = builder.attribute("path");
         switch (kind) {
             case BOOLEAN:
-                value = builder.parseValue(ValueTypes.BOOLEAN, builder.value);
+                value = Value.create(Boolean.parseBoolean(builder.value));
                 break;
             case TEXT:
             case ENUM:
-                value = builder.parseValue(ValueTypes.STRING, builder.value);
+                value = Value.create(builder.value);
                 break;
             case LIST:
-                value = builder.newLiteral(ValueTypes.STRING_LIST)
-                               .value(Noop.filter(builder.statements, Noop.Kind.VALUE)
-                                                  .map(b -> b.value)
-                                                  .collect(Collectors.toUnmodifiableList()))
-                               .build();
+                value = Value.create(Noop.filter(builder.statements, Noop.Kind.VALUE)
+                                            .map(b -> b.value)
+                                            .collect(Collectors.toUnmodifiableList()));
                 break;
             default:
                 throw new IllegalArgumentException("Unknown preset kind: " + kind);
@@ -74,7 +72,7 @@ public final class Preset extends Expression {
     }
 
     @Override
-    public <A> VisitResult accept(Visitor<A> visitor, A arg) {
+    public <A> VisitResult accept(Node.Visitor<A> visitor, A arg) {
         return visitor.visitPreset(this, arg);
     }
 
@@ -128,14 +126,14 @@ public final class Preset extends Expression {
     /**
      * Preset builder.
      */
-    public static final class Builder extends Expression.Builder<Preset, Builder> {
+    public static final class Builder extends Statement.Builder<Preset, Builder> {
 
         private final List<Statement.Builder<? extends Statement, ?>> statements = new LinkedList<>();
         private final Kind kind;
         private String value;
 
         private Builder(Path location, Position position, Kind kind) {
-            super(location, position, Expression.Kind.PRESET);
+            super(location, position, Statement.Kind.PRESET);
             this.kind = kind;
         }
 

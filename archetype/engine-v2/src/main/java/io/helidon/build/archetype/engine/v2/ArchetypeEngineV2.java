@@ -35,6 +35,7 @@ public class ArchetypeEngineV2 {
     public ArchetypeEngineV2(Path entryPoint, Input.Visitor<Void, Context> prompter, Map<String, String> env) {
         this.entryPoint = entryPoint;
         this.prompter = prompter;
+        // TODO init context with entry point and env
         this.env = env;
     }
 

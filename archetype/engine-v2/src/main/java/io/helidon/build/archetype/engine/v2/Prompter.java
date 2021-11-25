@@ -16,9 +16,8 @@
 
 package io.helidon.build.archetype.engine.v2;
 
-import io.helidon.build.archetype.engine.v2.ast.Constant;
+import io.helidon.build.archetype.engine.v2.ast.Value;
 import io.helidon.build.archetype.engine.v2.ast.Input;
-import io.helidon.build.archetype.engine.v2.ast.ValueTypes;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -54,9 +53,9 @@ public class Prompter implements Input.Visitor<Void, Context> {
             String defaultText = input.defaultValue().map(BoldBlue::apply).orElse(null);
             String response = prompt("Enter text", defaultText);
             if (response == null || response.trim().length() == 0) {
-                context.pushInput(input.name(), input.defaultValue().map(Constant::create).orElse(null));
+                context.push(input.name(), input.defaultValue().map(Value::create).orElse(null));
             } else {
-                context.pushInput(input.name(), Constant.create(response));
+                context.push(input.name(), Value.create(response));
             }
             return null;
         } catch (IOException e) {
@@ -80,13 +79,13 @@ public class Prompter implements Input.Visitor<Void, Context> {
                 lastLabel = input.label();
                 if ((response == null || response.trim().length() == 0)) {
                     if (defaultIndex >= 0) {
-                        context.pushInput(input.name(), Constant.create(input.options().get(defaultIndex).value()));
+                        context.push(input.name(), Value.create(input.options().get(defaultIndex).value()));
                         return null;
                     }
                 } else {
                     int index = Integer.parseInt(response.trim());
                     if (index > 0 && index <= input.options().size()) {
-                        context.pushInput(input.name(), Constant.create(input.options().get(index - 1).value()));
+                        context.push(input.name(), Value.create(input.options().get(index - 1).value()));
                         return null;
                     }
                 }
@@ -117,11 +116,11 @@ public class Prompter implements Input.Visitor<Void, Context> {
                 lastLabel = input.label();
                 if (response == null || response.trim().length() == 0) {
                     if (!defaultIndexes.isEmpty()) {
-                        context.pushInput(input.name(), Constant.create(input.defaultValue(), ValueTypes.STRING_LIST));
+                        context.push(input.name(), Value.create(input.defaultValue()));
                         return null;
                     }
                 } else {
-                    context.pushInput(input.name(), Constant.create(input.parseResponse(response), ValueTypes.STRING_LIST));
+                    context.push(input.name(), Value.create(input.parseResponse(response)));
                     return null;
                 }
             } catch (NumberFormatException | IndexOutOfBoundsException e) {
@@ -138,11 +137,11 @@ public class Prompter implements Input.Visitor<Void, Context> {
             try {
                 printLabel(input);
                 boolean defaultValue = input.defaultValue();
-                String defaultValueText = BoldBlue.apply(String.format("%s", defaultValue ? "yes" : "no"));
+                String defaultText = BoldBlue.apply(String.format("%s", defaultValue ? "yes" : "no"));
                 String question = String.format("%s (yes/no)", Bold.apply(input.prompt()));
-                String response = prompt(question, defaultValueText);
+                String response = prompt(question, defaultText);
                 if (response == null || response.trim().length() == 0) {
-                    context.pushInput(input.name(), Constant.create(defaultValue, ValueTypes.BOOLEAN));
+                    context.push(input.name(), Value.create(defaultValue));
                     return null;
                 }
                 boolean value;
@@ -158,7 +157,7 @@ public class Prompter implements Input.Visitor<Void, Context> {
                     default:
                         continue;
                 }
-                context.pushInput(input.name(), Constant.create(value, ValueTypes.BOOLEAN));
+                context.push(input.name(), Value.create(value));
                 return null;
             } catch (IOException e) {
                 throw new RuntimeException(e);

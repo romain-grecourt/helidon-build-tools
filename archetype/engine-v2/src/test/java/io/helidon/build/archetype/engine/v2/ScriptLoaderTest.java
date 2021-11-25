@@ -499,7 +499,7 @@ public class ScriptLoaderTest {
 
             @Override
             public Node.VisitResult visitCondition(Condition condition, Void arg) {
-                if (condition.expression().equals("true")) {
+                if (condition.expression().eval()) {
                     return Node.VisitResult.CONTINUE;
                 }
                 return Node.VisitResult.SKIP_SUBTREE;
