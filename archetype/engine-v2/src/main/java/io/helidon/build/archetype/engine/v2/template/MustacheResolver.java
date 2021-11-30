@@ -16,6 +16,9 @@
 
 package io.helidon.build.archetype.engine.v2.template;
 
+import io.helidon.build.archetype.engine.v2.MustacheSupport;
+import io.helidon.build.archetype.engine.v2.spi.TemplateSupport;
+
 import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -80,7 +83,7 @@ public class MustacheResolver {
                                            Set<String> templateFiles,
                                            Map<String, Object> scope) {
 
-        TemplateEngine engine = new MustacheTemplateEngine();
+        TemplateSupport engine = new MustacheSupport(null);
         for (String file : templateFiles) {
             ByteArrayOutputStream content = new ByteArrayOutputStream();
             try (InputStream fileStream = new FileInputStream(file)) {

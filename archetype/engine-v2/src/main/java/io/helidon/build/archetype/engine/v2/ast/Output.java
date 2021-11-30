@@ -383,13 +383,13 @@ public class Output extends Block {
     /**
      * Create a new Output block builder.
      *
-     * @param location location
-     * @param position position
-     * @param kind     block kind
+     * @param scriptPath script path
+     * @param position   position
+     * @param kind       block kind
      * @return builder
      */
-    public static Builder builder(Path location, Position position, Kind kind) {
-        return new Builder(location, position, kind);
+    public static Builder builder(Path scriptPath, Position position, Kind kind) {
+        return new Builder(scriptPath, position, kind);
     }
 
     /**
@@ -400,16 +400,16 @@ public class Output extends Block {
         /**
          * Create a new output builder.
          *
-         * @param location location
-         * @param position position
-         * @param kind     kind
+         * @param scriptPath script path
+         * @param position   position
+         * @param kind       kind
          */
-        Builder(Path location, Position position, Kind kind) {
-            super(location, position, kind);
+        Builder(Path scriptPath, Position position, Kind kind) {
+            super(scriptPath, position, kind);
         }
 
         @Override
-        protected Block build0() {
+        protected Block doBuild() {
             switch (kind) {
                 case OUTPUT:
                     return new Output(this);

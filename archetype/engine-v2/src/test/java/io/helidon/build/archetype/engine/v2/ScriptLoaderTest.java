@@ -53,7 +53,7 @@ public class ScriptLoaderTest {
     @Test
     public void testInputs() {
         Script script = load("loader/inputs.xml");
-        new Walker<>(new Node.Visitor<Void>() {
+        Walker.walk(new Node.Visitor<Void>() {
             int index = 0;
 
             @Override
@@ -128,13 +128,13 @@ public class ScriptLoaderTest {
                 }
                 return Node.VisitResult.CONTINUE;
             }
-        }).walk(script.body(), null);
+        }, script.body(), null);
     }
 
     @Test
     public void testNestedInputs() {
         Script script = load("loader/nested-inputs.xml");
-        new Walker<>(new Node.Visitor<Void>() {
+        Walker.walk(new Node.Visitor<Void>() {
             int index = 0;
 
             @Override
@@ -163,13 +163,13 @@ public class ScriptLoaderTest {
                 }
                 return Node.VisitResult.CONTINUE;
             }
-        }).walk(script.body(), null);
+        }, script.body(), null);
     }
 
     @Test
     public void testInvocations() {
         Script script = load("loader/invocations.xml");
-        new Walker<>(new Node.Visitor<Void>() {
+        Walker.walk(new Node.Visitor<Void>() {
             int index = 0;
 
             @Override
@@ -195,13 +195,13 @@ public class ScriptLoaderTest {
                 }
                 return Node.VisitResult.CONTINUE;
             }
-        }).walk(script.body(), null);
+        }, script.body(), null);
     }
 
     @Test
     public void testPresets() {
         Script script = load("loader/presets.xml");
-        new Walker<>(new Node.Visitor<Void>() {
+        Walker.walk(new Node.Visitor<Void>() {
             int index = 0;
 
             @Override
@@ -238,13 +238,13 @@ public class ScriptLoaderTest {
                 }
                 return Node.VisitResult.CONTINUE;
             }
-        }).walk(script.body(), null);
+        }, script.body(), null);
     }
 
     @Test
     public void testOutput() {
         Script script = load("loader/output.xml");
-        new Walker<>(new Node.Visitor<Void>() {
+        Walker.walk(new Node.Visitor<Void>() {
             int index = 0;
 
             @Override
@@ -403,13 +403,13 @@ public class ScriptLoaderTest {
                 }
                 return Node.VisitResult.CONTINUE;
             }
-        }).walk(script.body(), null);
+        }, script.body(), null);
     }
 
     @Test
     public void testScopedModel() {
         Script script = load("loader/scoped-model.xml");
-        new Walker<>(new Node.Visitor<Void>() {
+        Walker.walk(new Node.Visitor<Void>() {
             int index = 0;
 
             @Override
@@ -424,7 +424,7 @@ public class ScriptLoaderTest {
                                 assertThat(template.engine(), is("tpl-engine-1"));
                                 assertThat(template.source(), is("file1.tpl"));
                                 assertThat(template.target(), is("file1.txt"));
-                                new Walker<>(new Node.Visitor<Void>() {
+                                Walker.walk(new Node.Visitor<Void>() {
                                     @Override
                                     public Node.VisitResult preVisitBlock(Block block, Void arg) {
                                         block.accept(new Block.Visitor<Void, Void>() {
@@ -450,7 +450,7 @@ public class ScriptLoaderTest {
                                         }, null);
                                         return Node.VisitResult.CONTINUE;
                                     }
-                                }).walk(template, null);
+                                }, template, null);
                                 return null;
                             }
 
@@ -488,13 +488,13 @@ public class ScriptLoaderTest {
                 }
                 return Node.VisitResult.CONTINUE;
             }
-        }).walk(script.body(), null);
+        }, script.body(), null);
     }
 
     @Test
     public void testConditional() {
         Script script = load("loader/conditional.xml");
-        new Walker<>(new Node.Visitor<Void>() {
+        Walker.walk(new Node.Visitor<Void>() {
             int index = 0;
 
             @Override
@@ -555,6 +555,6 @@ public class ScriptLoaderTest {
                 }
                 return Node.VisitResult.CONTINUE;
             }
-        }).walk(script.body(), null);
+        }, script.body(), null);
     }
 }

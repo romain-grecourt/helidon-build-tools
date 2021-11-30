@@ -33,6 +33,7 @@ public final class Script extends Node {
 
     /**
      * Get the body.
+     *
      * @return body
      */
     public Block body() {
@@ -51,12 +52,12 @@ public final class Script extends Node {
     /**
      * Create a new builder.
      *
-     * @param location location
-     * @param position position
+     * @param scriptPath script path
+     * @param position   position
      * @return builder
      */
-    public static Builder builder(Path location, Position position) {
-        return new Builder(location, position);
+    public static Builder builder(Path scriptPath, Position position) {
+        return new Builder(scriptPath, position);
     }
 
     /**
@@ -66,9 +67,9 @@ public final class Script extends Node {
 
         private final Block.Builder body;
 
-        private Builder(Path location, Position position) {
-            super(location, position, Kind.SCRIPT);
-            this.body = Block.builder(location, position, Block.Kind.SCRIPT);
+        private Builder(Path scriptPath, Position position) {
+            super(scriptPath, position, Kind.SCRIPT);
+            this.body = Block.builder(scriptPath, position, Block.Kind.SCRIPT);
         }
 
         @Override
@@ -78,7 +79,7 @@ public final class Script extends Node {
         }
 
         @Override
-        protected Script build0() {
+        protected Script doBuild() {
             return new Script(this);
         }
     }

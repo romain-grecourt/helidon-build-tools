@@ -21,7 +21,7 @@ import java.nio.file.Path;
 /**
  * Step.
  */
-public class Step extends Block{
+public class Step extends Block {
 
     private final String label;
     private final String help;
@@ -30,9 +30,9 @@ public class Step extends Block{
         super(builder);
         label = builder.attributes.get("label");
         help = Noop.filter(builder.statements, Noop.Kind.HELP)
-                           .findFirst()
-                           .map(b -> b.value)
-                           .orElse(null);
+                   .findFirst()
+                   .map(b -> b.value)
+                   .orElse(null);
     }
 
     /**
@@ -61,13 +61,13 @@ public class Step extends Block{
     /**
      * Create a new Step block builder.
      *
-     * @param location location
-     * @param position position
-     * @param kind     block kind
+     * @param scriptPath script path
+     * @param position   position
+     * @param kind       block kind
      * @return builder
      */
-    public static Builder builder(Path location, Position position, Kind kind) {
-        return new Builder(location, position, kind);
+    public static Builder builder(Path scriptPath, Position position, Kind kind) {
+        return new Builder(scriptPath, position, kind);
     }
 
     /**
@@ -76,16 +76,18 @@ public class Step extends Block{
     public static final class Builder extends Block.Builder {
 
         private String help;
-        private Builder(Path location, Position position, Kind kind) {
-            super(location, position, kind);
+
+        private Builder(Path scriptPath, Position position, Kind kind) {
+            super(scriptPath, position, kind);
         }
 
         @Override
-        protected Block build0() {
+        protected Block doBuild() {
+            // TODO duplicate with constructor
             help = Noop.filter(statements, Noop.Kind.HELP)
-                .findFirst()
-                .map(b -> b.value)
-                .orElse(null);
+                       .findFirst()
+                       .map(b -> b.value)
+                       .orElse(null);
             return new Step(this);
         }
     }

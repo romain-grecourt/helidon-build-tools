@@ -32,7 +32,7 @@ public abstract class Node {
 
     private final Kind kind;
     private final int id;
-    final Path location;
+    final Path scriptPath;
     final Position position;
 
     /**
@@ -41,18 +41,18 @@ public abstract class Node {
      * @param builder builder
      */
     protected Node(Builder<?, ?> builder) {
-        this(builder.location, builder.position, builder.kind);
+        this(builder.scriptPath, builder.position, builder.kind);
     }
 
     /**
      * Create a new node.
      *
-     * @param location location
-     * @param position position
-     * @param kind     kind
+     * @param scriptPath scriptPath
+     * @param position   position
+     * @param kind       kind
      */
-    protected Node(Path location, Position position, Kind kind) {
-        this.location = requireNonNull(location, "location is null");
+    protected Node(Path scriptPath, Position position, Kind kind) {
+        this.scriptPath = requireNonNull(scriptPath, "source is null");
         this.position = requireNonNull(position, "position is null");
         this.kind = kind;
         this.id = NEXT_ID.updateAndGet(i -> i == Integer.MAX_VALUE ? 1 : i + 1);
@@ -63,6 +63,7 @@ public abstract class Node {
      *
      * @return kind
      */
+    // TODO remove kind
     public Kind kind() {
         return kind;
     }
@@ -77,12 +78,12 @@ public abstract class Node {
     }
 
     /**
-     * Get the source location.
+     * Get the script path.
      *
-     * @return location
+     * @return script path
      */
-    public Path location() {
-        return location;
+    public Path scriptPath() {
+        return scriptPath;
     }
 
     /**
@@ -229,6 +230,7 @@ public abstract class Node {
     /**
      * Node kind.
      */
+    // TODO remove kind
     public enum Kind {
 
         /**
@@ -251,25 +253,25 @@ public abstract class Node {
     @SuppressWarnings("unchecked")
     public static abstract class Builder<T, U extends Builder<T, U>> {
 
-        private static final Path NULL_LOCATION = Path.of("script.xml");
-        private static final Position NULL_POSITION = Position.of(0, 0);
+        private static final Path NULL_SCRIPT_PATH = Path.of("script.xml");
+        private static final Position NULL_SOURCE = Position.of(0, 0);
         private final Kind kind;
         private T instance;
         final Map<String, String> attributes = new HashMap<>();
-        final Path location;
+        final Path scriptPath;
         final Position position;
 
         /**
          * Create a new node builder.
          *
-         * @param location location
-         * @param position position
-         * @param kind     kind
+         * @param scriptPath scriptPath
+         * @param position   position
+         * @param kind       kind
          */
-        protected Builder(Path location, Position position, Kind kind) {
+        protected Builder(Path scriptPath, Position position, Kind kind) {
             this.kind = requireNonNull(kind, "kind is null");
-            this.location = location == null ? NULL_LOCATION : location;
-            this.position = position == null ? NULL_POSITION : position;
+            this.scriptPath = scriptPath == null ? NULL_SCRIPT_PATH : scriptPath;
+            this.position = position == null ? NULL_SOURCE : position;
         }
 
         /**
@@ -315,7 +317,7 @@ public abstract class Node {
             if (value == null) {
                 throw new IllegalStateException(String.format(
                         "Unable to get attribute '%s', file=%s, position=%s",
-                        this, location, position));
+                        this, scriptPath, position));
             }
             return value;
         }
@@ -326,7 +328,7 @@ public abstract class Node {
          *
          * @return new instance
          */
-        protected abstract T build0();
+        protected abstract T doBuild();
 
         /**
          * Get or create the new instance.
@@ -335,7 +337,7 @@ public abstract class Node {
          */
         public final T build() {
             if (instance == null) {
-                instance = build0();
+                instance = doBuild();
             }
             return instance;
         }

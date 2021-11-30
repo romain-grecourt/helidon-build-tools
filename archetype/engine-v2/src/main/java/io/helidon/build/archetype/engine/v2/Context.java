@@ -85,7 +85,7 @@ public final class Context {
         } else {
             path = inputs.peek() + "." + name;
         }
-        values.put(path, new ContextValue(value, false, false));
+        values.put(path, new ContextValue(value, false));
         inputs.push(path);
     }
 
@@ -144,6 +144,7 @@ public final class Context {
      * @return context
      */
     public static Context create(Path cwd) {
+        // Map<String, String> initValues
         return new Context(cwd);
     }
 
@@ -152,31 +153,20 @@ public final class Context {
      */
     public static final class ContextValue extends Value {
 
-        private final boolean external;
-        private final boolean readOnly;
+        private final boolean internal;
 
-        private ContextValue(Value value, boolean external, boolean readOnly) {
+        private ContextValue(Value value, boolean internal) {
             super(value.unwrap(), value.type());
-            this.external = external;
-            this.readOnly = readOnly;
+            this.internal = internal;
         }
 
         /**
-         * Is the value external.
+         * Is the value internal.
          *
          * @return {@code true} if external, {@code false} otherwise
          */
-        public boolean external() {
-            return external;
-        }
-
-        /**
-         * Is the value read-only.
-         *
-         * @return {@code true} if external, {@code false} otherwise
-         */
-        public boolean readOnly() {
-            return readOnly;
+        public boolean internal() {
+            return internal;
         }
     }
 }

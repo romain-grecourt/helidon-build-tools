@@ -97,13 +97,13 @@ public final class Noop extends Statement {
     /**
      * Create a new builder.
      *
-     * @param location location
-     * @param position position
-     * @param kind     kind
+     * @param scriptPath script path
+     * @param position   position
+     * @param kind       kind
      * @return builder
      */
-    public static Builder builder(Path location, Position position, Kind kind) {
-        return new Builder(location, position, kind);
+    public static Builder builder(Path scriptPath, Position position, Kind kind) {
+        return new Builder(scriptPath, position, kind);
     }
 
     /**
@@ -114,8 +114,8 @@ public final class Noop extends Statement {
         String value;
         final Kind kind;
 
-        private Builder(Path location, Position position, Kind kind) {
-            super(location, position, Statement.Kind.NOOP);
+        private Builder(Path scriptPath, Position position, Kind kind) {
+            super(scriptPath, position, Statement.Kind.NOOP);
             this.kind = kind;
         }
 
@@ -131,7 +131,7 @@ public final class Noop extends Statement {
         }
 
         @Override
-        protected Noop build0() {
+        protected Noop doBuild() {
             return new Noop(this);
         }
     }

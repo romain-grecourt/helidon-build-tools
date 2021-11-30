@@ -118,6 +118,7 @@ public final class ArchetypeArchive implements Closeable {
 
         /**
          * Build the instance.
+         *
          * @return archetype archive
          */
         public ArchetypeArchive build() {

@@ -36,18 +36,6 @@ public class Model extends Output {
     public interface Visitor<R, A> {
 
         /**
-         * Visit a model block.
-         *
-         * @param model model
-         * @param arg   argument
-         * @return visit result
-         */
-        @SuppressWarnings("unused")
-        default R visitModel(Model model, A arg) {
-            return null;
-        }
-
-        /**
          * Visit a list model.
          *
          * @param list list
@@ -55,7 +43,7 @@ public class Model extends Output {
          * @return visit result
          */
         default R visitList(List list, A arg) {
-            return visitModel(list, arg);
+            return null;
         }
 
         /**
@@ -66,7 +54,7 @@ public class Model extends Output {
          * @return visit result
          */
         default R visitMap(Map map, A arg) {
-            return visitModel(map, arg);
+            return null;
         }
 
         /**
@@ -77,7 +65,7 @@ public class Model extends Output {
          * @return visit result
          */
         default R visitValue(Value value, A arg) {
-            return visitModel(value, arg);
+            return null;
         }
     }
 
@@ -91,7 +79,7 @@ public class Model extends Output {
      * @return visit result
      */
     public <R, A> R accept(Visitor<R, A> visitor, A arg) {
-        return visitor.visitModel(this, arg);
+        return null;
     }
 
     @Override
@@ -103,7 +91,6 @@ public class Model extends Output {
      * List model.
      */
     public static final class List extends MergeableModel {
-
 
         private List(Model.Builder builder) {
             super(builder);
@@ -194,13 +181,13 @@ public class Model extends Output {
     /**
      * Create a new model block builder.
      *
-     * @param location location
-     * @param position position
-     * @param kind     block kind
+     * @param scriptPath script path
+     * @param position   position
+     * @param kind       block kind
      * @return builder
      */
-    public static Builder builder(Path location, Position position, Kind kind) {
-        return new Builder(location, position, kind);
+    public static Builder builder(Path scriptPath, Position position, Kind kind) {
+        return new Builder(scriptPath, position, kind);
     }
 
     /**
@@ -210,8 +197,8 @@ public class Model extends Output {
 
         private String value;
 
-        private Builder(Path location, Position position, Kind kind) {
-            super(location, position, kind);
+        private Builder(Path scriptPath, Position position, Kind kind) {
+            super(scriptPath, position, kind);
         }
 
         @Override
@@ -221,10 +208,10 @@ public class Model extends Output {
         }
 
         @Override
-        protected Block build0() {
+        protected Block doBuild() {
             statements.replaceAll(b -> {
                 if (b.kind == Statement.Kind.NOOP) {
-                    return new Builder(b.location, b.position, Kind.VALUE)
+                    return new Builder(b.scriptPath, b.position, Kind.VALUE)
                             .value(((Noop.Builder) b).value)
                             .attributes(b.attributes);
                 }

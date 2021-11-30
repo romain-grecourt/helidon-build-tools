@@ -18,7 +18,6 @@ package io.helidon.build.archetype.engine.v2;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
-import java.lang.ref.WeakReference;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -49,7 +48,7 @@ import io.helidon.build.common.xml.SimpleXMLParser.XMLReaderException;
  */
 public class ScriptLoader {
 
-    private static final WeakHashMap<FileSystem, Map<Path, WeakReference<Script>>> CACHE = new WeakHashMap<>();
+    private static final WeakHashMap<FileSystem, Map<Path, Script>> CACHE = new WeakHashMap<>();
 
     /**
      * Get or load the script at the given path.
@@ -59,8 +58,7 @@ public class ScriptLoader {
      */
     public static Script load(Path path) {
         return CACHE.computeIfAbsent(path.getFileSystem(), fs -> new HashMap<>())
-                    .compute(path, (p, r) -> r == null || r.get() == null ? new WeakReference<>(load0(p)) : r)
-                    .get();
+                    .compute(path, (p, r) -> load0(p));
     }
 
     static Script load0(Path path) {

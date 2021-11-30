@@ -39,12 +39,12 @@ public abstract class Statement extends Node {
     /**
      * Create a new statement.
      *
-     * @param location location
-     * @param position position
-     * @param kind     kind
+     * @param scriptPath script path
+     * @param position   position
+     * @param kind       kind
      */
-    protected Statement(Path location, Position position, Kind kind) {
-        super(location, position, Node.Kind.STATEMENT);
+    protected Statement(Path scriptPath, Position position, Kind kind) {
+        super(scriptPath, position, Node.Kind.STATEMENT);
         this.kind = kind;
     }
 
@@ -53,6 +53,7 @@ public abstract class Statement extends Node {
      *
      * @return kind
      */
+    // TODO remove kind
     public Kind statementKind() {
         return kind;
     }
@@ -60,6 +61,7 @@ public abstract class Statement extends Node {
     /**
      * Statements kind.
      */
+    // TODO remove kind
     public enum Kind {
 
         /**
@@ -101,12 +103,12 @@ public abstract class Statement extends Node {
         /**
          * Create a new statement builder.
          *
-         * @param location location
-         * @param position position
-         * @param kind     kind
+         * @param scriptPath script path
+         * @param position   position
+         * @param kind       kind
          */
-        protected Builder(Path location, Position position, Kind kind) {
-            super(location, position, Node.Kind.STATEMENT);
+        protected Builder(Path scriptPath, Position position, Kind kind) {
+            super(scriptPath, position, Node.Kind.STATEMENT);
             this.kind = kind;
         }
     }

@@ -24,23 +24,23 @@
         <inputs>
             <text name="name"
                   label="Project name"
-                  placeholder="myproject"/>
+                  default="myproject"/>
 
             <text name="groupId"
                   label="Project groupId"
-                  placeholder="com.example"/>
+                  default="com.example"/>
 
             <text name="artifactId"
                   label="Project artifactId"
-                  placeholder="myproject"/>
+                  default="myproject"/>
 
             <text name="version"
                   label="Project version"
-                  placeholder="1.0-SNAPSHOT"/>
+                  default="1.0-SNAPSHOT"/>
 
             <text name="package"
                   label="Java package name"
-                  placeholder="com.example.myproject"/>
+                  default="com.example.myproject"/>
         </inputs>
     </step>
 </archetype-script>

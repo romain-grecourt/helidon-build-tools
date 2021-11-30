@@ -16,26 +16,25 @@
 
 package io.helidon.build.archetype.engine.v2.spi;
 
-import java.util.List;
+import io.helidon.build.archetype.engine.v2.ast.Block;
 
-import io.helidon.build.archetype.engine.v2.template.TemplateEngine;
-import org.junit.jupiter.api.Test;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.Charset;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.notNullValue;
+/**
+ * Template support.
+ */
+public interface TemplateSupport {
 
-class TemplateEngineTest {
-
-    @Test
-    public void testAllEngines() {
-        List<TemplateEngine> templateEngines = TemplateEngine.allEngines();
-
-        assertThat(templateEngines, notNullValue());
-    }
-
-    @Test
-    public void testGetEngineByName() {
-        assertThat(TemplateEngine.getEngineByName("name"), notNullValue());
-        assertThat(TemplateEngine.getEngineByName(null), notNullValue());
-    }
+    /**
+     * Render a template.
+     *
+     * @param template     template to render
+     * @param templateName name of the template
+     * @param charset      charset for the written characters
+     * @param target       path to target file to create
+     * @param scope        the scope for the template
+     */
+    void render(InputStream template, String templateName, Charset charset, OutputStream target, Block scope);
 }

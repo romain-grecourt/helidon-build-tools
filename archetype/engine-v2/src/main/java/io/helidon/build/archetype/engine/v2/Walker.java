@@ -42,21 +42,22 @@ public final class Walker<A> {
     private boolean traversing;
 
     /**
-     * Create a new walker.
+     * Traverse the given block node with the specified visitor and argument.
      *
      * @param visitor visitor
+     * @param root    node to traverse
+     * @param arg     visitor argument
+     * @param <A>     argument type
      */
-    public Walker(Node.Visitor<A> visitor) {
+    public static <A> void walk(Node.Visitor<A> visitor, Block root, A arg) {
+        new Walker<>(visitor).walk(root, arg);
+    }
+
+    private Walker(Node.Visitor<A> visitor) {
         this.visitor = new DelegateVisitor(visitor);
     }
 
-    /**
-     * Walk.
-     *
-     * @param root root block to visit
-     * @param arg  visitor argument
-     */
-    public void walk(Block root, A arg) {
+    private void walk(Block root, A arg) {
         Node.VisitResult result = root.accept(visitor, arg);
         if (result != Node.VisitResult.CONTINUE) {
             return;
@@ -125,7 +126,7 @@ public final class Walker<A> {
             if (result == Node.VisitResult.SKIP_SUBTREE || result == Node.VisitResult.TERMINATE) {
                 return result;
             }
-            Script script = ScriptLoader.load(invocation.location().resolve(invocation.src()));
+            Script script = ScriptLoader.load(invocation.scriptPath().resolve(invocation.src()));
             if (invocation.invocationKind() == Invocation.Kind.EXEC) {
                 stack.push(script.body().wrap(Block.Kind.CD));
             } else {

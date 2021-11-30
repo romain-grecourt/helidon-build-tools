@@ -31,13 +31,6 @@ import java.util.Map;
 import java.util.Set;
 
 //import io.helidon.build.archetype.engine.v2.descriptor.ArchetypeDescriptor;
-import io.helidon.build.archetype.engine.v2.template.MergingMap;
-import io.helidon.build.archetype.engine.v2.template.ModelSorter;
-import io.helidon.build.archetype.engine.v2.template.ModelTransformer;
-import io.helidon.build.archetype.engine.v2.template.MustacheResolver;
-import io.helidon.build.archetype.engine.v2.template.TemplateList;
-import io.helidon.build.archetype.engine.v2.template.TemplateMap;
-import io.helidon.build.archetype.engine.v2.template.TemplateModel;
 
 import com.github.mustachejava.DefaultMustacheFactory;
 import com.github.mustachejava.Mustache;

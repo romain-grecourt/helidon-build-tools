@@ -46,13 +46,13 @@ public class Block extends Statement {
     /**
      * Create a new block.
      *
-     * @param location   location
+     * @param scriptPath script path
      * @param position   position
      * @param kind       kind
      * @param statements statements
      */
-    protected Block(Path location, Position position, Kind kind, List<Statement> statements) {
-        super(location, position, Statement.Kind.BLOCK);
+    protected Block(Path scriptPath, Position position, Kind kind, List<Statement> statements) {
+        super(scriptPath, position, Statement.Kind.BLOCK);
         this.kind = Objects.requireNonNull(kind, "kind is null");
         this.statements = Objects.requireNonNull(statements, "statements is null");
     }
@@ -68,11 +68,12 @@ public class Block extends Statement {
 
     /**
      * Wrap this block with a new kind.
+     *
      * @param kind kind
      * @return block
      */
     public Block wrap(Block.Kind kind) {
-        return new Block(location, position, kind, List.of(this));
+        return new Block(scriptPath, position, kind, List.of(this));
     }
 
     /**
@@ -284,13 +285,13 @@ public class Block extends Statement {
     /**
      * Create a new builder.
      *
-     * @param location location
-     * @param position position
-     * @param kind     kind
+     * @param scriptPath script path
+     * @param position   position
+     * @param kind       kind
      * @return builder
      */
-    public static Builder builder(Path location, Position position, Kind kind) {
-        return new Builder(location, position, kind);
+    public static Builder builder(Path scriptPath, Position position, Kind kind) {
+        return new Builder(scriptPath, position, kind);
     }
 
     /**
@@ -304,12 +305,12 @@ public class Block extends Statement {
         /**
          * Create a new builder.
          *
-         * @param location location
-         * @param position position
-         * @param kind     kind
+         * @param scriptPath script path
+         * @param position   position
+         * @param kind       kind
          */
-        protected Builder(Path location, Position position, Kind kind) {
-            super(location, position, Statement.Kind.BLOCK);
+        protected Builder(Path scriptPath, Position position, Kind kind) {
+            super(scriptPath, position, Statement.Kind.BLOCK);
             this.kind = kind;
         }
 
@@ -320,7 +321,7 @@ public class Block extends Statement {
         }
 
         @Override
-        protected Block build0() {
+        protected Block doBuild() {
             return new Block(this);
         }
     }

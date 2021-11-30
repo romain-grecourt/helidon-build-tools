@@ -29,7 +29,7 @@ public final class Condition extends Statement {
     private Condition(Builder builder) {
         super(builder);
         this.expression = builder.expression;
-        this.then = builder.then.build0();
+        this.then = builder.then.doBuild();
     }
 
     /**
@@ -58,12 +58,12 @@ public final class Condition extends Statement {
     /**
      * Create a new builder.
      *
-     * @param location location
-     * @param position position
+     * @param scriptPath script path
+     * @param position   position
      * @return builder
      */
-    public static Builder builder(Path location, Position position) {
-        return new Builder(location, position);
+    public static Builder builder(Path scriptPath, Position position) {
+        return new Builder(scriptPath, position);
     }
 
     /**
@@ -74,8 +74,8 @@ public final class Condition extends Statement {
         private Expression expression;
         private Statement.Builder<?, ?> then;
 
-        private Builder(Path location, Position position) {
-            super(location, position, Statement.Kind.CONDITION);
+        private Builder(Path scriptPath, Position position) {
+            super(scriptPath, position, Statement.Kind.CONDITION);
         }
 
         /**
@@ -101,7 +101,7 @@ public final class Condition extends Statement {
         }
 
         @Override
-        protected Condition build0() {
+        protected Condition doBuild() {
             return new Condition(this);
         }
     }

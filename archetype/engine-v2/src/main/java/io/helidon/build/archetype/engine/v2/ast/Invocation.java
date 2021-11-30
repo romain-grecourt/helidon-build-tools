@@ -75,13 +75,13 @@ public final class Invocation extends Statement {
     /**
      * Create a new builder.
      *
-     * @param location location
-     * @param position position
-     * @param kind     kind
+     * @param scriptPath script path
+     * @param position   position
+     * @param kind       kind
      * @return builder
      */
-    public static Builder builder(Path location, Position position, Kind kind) {
-        return new Builder(location, position, kind);
+    public static Builder builder(Path scriptPath, Position position, Kind kind) {
+        return new Builder(scriptPath, position, kind);
     }
 
     /**
@@ -91,13 +91,13 @@ public final class Invocation extends Statement {
 
         private final Kind kind;
 
-        private Builder(Path location, Position position, Kind kind) {
-            super(location, position, Statement.Kind.INVOCATION);
+        private Builder(Path scriptPath, Position position, Kind kind) {
+            super(scriptPath, position, Statement.Kind.INVOCATION);
             this.kind = kind;
         }
 
         @Override
-        protected Invocation build0() {
+        protected Invocation doBuild() {
             return new Invocation(this);
         }
     }

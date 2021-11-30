@@ -25,12 +25,8 @@
         <list path="test.array1">
             <value>hello</value>
         </list>
-        <enum path="test.enum1">
-            <value>bob</value> <!-- error, this is not one of the enum values -->
-        </enum>
-        <enum path="test.array1">
-            <value>bob</value> <!-- error, this is declared as an array -->
-        </enum>
+        <enum path="test.enum1">bob</enum> <!-- error, this is not one of the enum values -->
+        <enum path="test.array1">bob</enum> <!-- error, this is declared as an array -->
         <text path="test.text1">foo</text>
     </presets>
     <step label="A Step Title">

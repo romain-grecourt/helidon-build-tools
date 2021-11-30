@@ -20,15 +20,17 @@ import java.io.File;
 import java.io.IOException;
 import java.util.List;
 
+import io.helidon.build.archetype.engine.v2.MustacheProvider;
+import io.helidon.build.archetype.engine.v2.MustacheSupport;
+import io.helidon.build.archetype.engine.v2.spi.TemplateSupportProvider;
 import org.junit.jupiter.api.Test;
 
-import static io.helidon.build.archetype.engine.v2.template.TemplateEngine.getEngineByName;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 
-class MustacheTemplateEngineTest {
+class MustacheSupportTest {
 
     @Test
     void testRender() throws IOException {
@@ -49,22 +51,22 @@ class MustacheTemplateEngineTest {
     }
 
     @Test
-    void testAllEngines() {
-        List<TemplateEngine> engines = TemplateEngine.allEngines();
-        assertThat(engines.stream()
-                          .filter(MustacheTemplateEngine.class::isInstance)
+    void testAllProviders() {
+        List<TemplateSupportProvider> providers = TemplateSupportProvider.all();
+        assertThat(providers.stream()
+                          .filter(MustacheSupport.class::isInstance)
                           .findAny()
                           .orElse(null),
                 notNullValue());
     }
 
     @Test
-    void testGetEngineByName() {
-        assertThat(getEngineByName("mustache").orElse(null), instanceOf(MustacheTemplateEngine.class));
+    void testProviderByName() {
+        assertThat(TemplateSupportProvider.providerByName("mustache").orElse(null), instanceOf(MustacheSupport.class));
     }
 
     @Test
     void testName() {
-        assertThat(new MustacheTemplateEngine().name(), is("mustache"));
+        assertThat(new MustacheProvider().name(), is("mustache"));
     }
 }

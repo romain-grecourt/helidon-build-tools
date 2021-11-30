@@ -43,7 +43,8 @@ public final class ValueTypes {
     /**
      * List of strings.
      */
-    public static final GenericType<List<String>> STRING_LIST = new GenericType<>() {};
+    public static final GenericType<List<String>> STRING_LIST = new GenericType<>() {
+    };
 
     private ValueTypes() {
     }

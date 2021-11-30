@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-import io.helidon.build.archetype.engine.v2.template.TemplateEngine;
-import io.helidon.build.archetype.engine.v2.template.MustacheTemplateEngine;
+import io.helidon.build.archetype.engine.v2.MustacheProvider;
+import io.helidon.build.archetype.engine.v2.spi.TemplateSupportProvider;
 
 /**
  * Helidon archetype engine.
@@ -32,7 +32,8 @@ module io.helidon.build.archetype.engine.v2 {
     exports io.helidon.build.archetype.engine.v2;
     exports io.helidon.build.archetype.engine.v2.ast;
     exports io.helidon.build.archetype.engine.v2.template;
+    exports io.helidon.build.archetype.engine.v2.spi;
 
-    uses TemplateEngine;
-    provides TemplateEngine with MustacheTemplateEngine;
+    uses TemplateSupportProvider;
+    provides TemplateSupportProvider with MustacheProvider;
 }

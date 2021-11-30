@@ -60,6 +60,7 @@ public final class Position {
 
     /**
      * Make a copy.
+     *
      * @return copy
      */
     public Position copy() {

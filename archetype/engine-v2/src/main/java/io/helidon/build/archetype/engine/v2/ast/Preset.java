@@ -45,8 +45,8 @@ public final class Preset extends Statement {
                 break;
             case LIST:
                 value = Value.create(Noop.filter(builder.statements, Noop.Kind.VALUE)
-                                            .map(b -> b.value)
-                                            .collect(Collectors.toUnmodifiableList()));
+                                         .map(b -> b.value)
+                                         .collect(Collectors.toUnmodifiableList()));
                 break;
             default:
                 throw new IllegalArgumentException("Unknown preset kind: " + kind);
@@ -114,13 +114,13 @@ public final class Preset extends Statement {
     /**
      * Create a new builder.
      *
-     * @param location location
-     * @param position position
-     * @param kind     kind
+     * @param scriptPath script path
+     * @param position   position
+     * @param kind       kind
      * @return builder
      */
-    public static Builder builder(Path location, Position position, Kind kind) {
-        return new Builder(location, position, kind);
+    public static Builder builder(Path scriptPath, Position position, Kind kind) {
+        return new Builder(scriptPath, position, kind);
     }
 
     /**
@@ -132,8 +132,8 @@ public final class Preset extends Statement {
         private final Kind kind;
         private String value;
 
-        private Builder(Path location, Position position, Kind kind) {
-            super(location, position, Statement.Kind.PRESET);
+        private Builder(Path scriptPath, Position position, Kind kind) {
+            super(scriptPath, position, Statement.Kind.PRESET);
             this.kind = kind;
         }
 
@@ -155,7 +155,7 @@ public final class Preset extends Statement {
         }
 
         @Override
-        protected Preset build0() {
+        protected Preset doBuild() {
             return new Preset(this);
         }
     }
