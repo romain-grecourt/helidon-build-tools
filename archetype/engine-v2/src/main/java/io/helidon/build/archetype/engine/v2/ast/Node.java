@@ -59,16 +59,6 @@ public abstract class Node {
     }
 
     /**
-     * Get the node kind.
-     *
-     * @return kind
-     */
-    // TODO remove kind
-    public Kind kind() {
-        return kind;
-    }
-
-    /**
      * Get the source position.
      *
      * @return position

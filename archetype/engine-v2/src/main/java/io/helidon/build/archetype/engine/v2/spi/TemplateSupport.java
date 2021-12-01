@@ -16,8 +16,6 @@
 
 package io.helidon.build.archetype.engine.v2.spi;
 
-import io.helidon.build.archetype.engine.v2.ast.Block;
-
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
@@ -36,5 +34,5 @@ public interface TemplateSupport {
      * @param target       path to target file to create
      * @param scope        the scope for the template
      */
-    void render(InputStream template, String templateName, Charset charset, OutputStream target, Block scope);
+    void render(InputStream template, String templateName, Charset charset, OutputStream target);
 }

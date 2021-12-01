@@ -16,16 +16,15 @@
 
 package io.helidon.build.archetype.engine.v2;
 
-import java.io.ByteArrayInputStream;
-import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
 import io.helidon.build.archetype.engine.v2.ast.Block;
 import io.helidon.build.archetype.engine.v2.ast.Input;
 import io.helidon.build.archetype.engine.v2.ast.Value;
 import io.helidon.build.archetype.engine.v2.ast.ValueTypes;
+
+import java.io.ByteArrayInputStream;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
@@ -40,12 +39,10 @@ import static org.hamcrest.Matchers.nullValue;
  */
 public class PrompterTest {
 
-    private static final Path CWD = Path.of("");
-
     @Test
     public void testBooleanWithEmptyResponse() {
         Block input = booleanInput("boolean-input1", true);
-        Context context = Context.create(CWD);
+        Context context = Context.create();
         input.accept(new Block.Visitor<Void, Context>() {
             @Override
             public Void visitInput(Input input, Context context) {
@@ -62,7 +59,7 @@ public class PrompterTest {
     @Test
     public void testBooleanWithEmptyResponse2() {
         Block input = booleanInput("boolean-input2", false);
-        Context context = Context.create(CWD);
+        Context context = Context.create();
         input.accept(new Block.Visitor<Void, Context>() {
             @Override
             public Void visitInput(Input input, Context context) {
@@ -80,7 +77,7 @@ public class PrompterTest {
     @Test
     public void testInputBoolean() {
         Block input = booleanInput("boolean-input3", true);
-        Context context = Context.create(CWD);
+        Context context = Context.create();
         input.accept(new Block.Visitor<Void, Context>() {
             @Override
             public Void visitInput(Input input, Context context) {
@@ -101,7 +98,7 @@ public class PrompterTest {
                 List.of(option("option1", "value1"),
                         option("option2", "value2")),
                 List.of("value1"));
-        Context context = Context.create(CWD);
+        Context context = Context.create();
         input.accept(new Block.Visitor<Void, Context>() {
             @Override
             public Void visitInput(Input input, Context context) {
@@ -122,7 +119,7 @@ public class PrompterTest {
                 List.of(option("option1", "value1"),
                         option("option2", "value2")),
                 List.of("value1", "value2"));
-        Context context = Context.create(CWD);
+        Context context = Context.create();
         input.accept(new Block.Visitor<Void, Context>() {
             @Override
             public Void visitInput(Input input, Context context) {
@@ -144,7 +141,7 @@ public class PrompterTest {
                         option("option2", "value2"),
                         option("option3", "value3")),
                 List.of());
-        Context context = Context.create(CWD);
+        Context context = Context.create();
         input.accept(new Block.Visitor<Void, Context>() {
             @Override
             public Void visitInput(Input input, Context context) {
@@ -166,7 +163,7 @@ public class PrompterTest {
                         option("option2", "value2"),
                         option("option3", "value3")),
                 List.of());
-        Context context = Context.create(CWD);
+        Context context = Context.create();
         input.accept(new Block.Visitor<Void, Context>() {
             @Override
             public Void visitInput(Input input, Context context) {
@@ -187,7 +184,7 @@ public class PrompterTest {
                 List.of(option("option1", "value1"),
                         option("option2", "value2")),
                 "value1");
-        Context context = Context.create(CWD);
+        Context context = Context.create();
         input.accept(new Block.Visitor<Void, Context>() {
             @Override
             public Void visitInput(Input input, Context context) {
@@ -209,7 +206,7 @@ public class PrompterTest {
                         option("option2", "value2"),
                         option("option3", "value3")),
                 "value3");
-        Context context = Context.create(Path.of(""));
+        Context context = Context.create();
         input.accept(new Block.Visitor<Void, Context>() {
             @Override
             public Void visitInput(Input input, Context context) {
@@ -227,7 +224,7 @@ public class PrompterTest {
     @Test
     public void testInputTextWithEmptyResponseNoDefault() {
         Block input = textInput("text-input1", null);
-        Context context = Context.create(CWD);
+        Context context = Context.create();
         input.accept(new Block.Visitor<Void, Context>() {
             @Override
             public Void visitInput(Input input, Context context) {
@@ -243,7 +240,7 @@ public class PrompterTest {
     @Test
     public void testInputTextWithEmptyResult() {
         Block input = textInput("text-input2", "value1");
-        Context context = Context.create(CWD);
+        Context context = Context.create();
         input.accept(new Block.Visitor<Void, Context>() {
             @Override
             public Void visitInput(Input input, Context context) {
@@ -261,7 +258,7 @@ public class PrompterTest {
     @Test
     public void testInputText() {
         Block input = textInput("text-input3", "value1");
-        Context context = Context.create(CWD);
+        Context context = Context.create();
         input.accept(new Block.Visitor<Void, Context>() {
             @Override
             public Void visitInput(Input input, Context context) {

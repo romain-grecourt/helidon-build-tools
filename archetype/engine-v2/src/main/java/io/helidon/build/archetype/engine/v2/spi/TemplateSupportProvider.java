@@ -17,6 +17,7 @@
 package io.helidon.build.archetype.engine.v2.spi;
 
 import io.helidon.build.archetype.engine.v2.Context;
+import io.helidon.build.archetype.engine.v2.ast.Block;
 
 import java.util.List;
 import java.util.Optional;
@@ -38,10 +39,11 @@ public interface TemplateSupportProvider {
     /**
      * Instantiate the template support.
      *
-     * @param ctx context
+     * @param block   block
+     * @param context context
      * @return template support
      */
-    TemplateSupport create(Context ctx);
+    TemplateSupport create(Block block, Context context);
 
     /**
      * Get all providers.

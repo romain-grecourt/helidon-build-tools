@@ -137,6 +137,10 @@ public final class Context {
         return values.get(key);
     }
 
+    static Context create() {
+        return create(Path.of(""));
+    }
+
     /**
      * Create a new context.
      *
@@ -144,7 +148,6 @@ public final class Context {
      * @return context
      */
     public static Context create(Path cwd) {
-        // Map<String, String> initValues
         return new Context(cwd);
     }
 
