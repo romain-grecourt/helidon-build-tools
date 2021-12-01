@@ -36,10 +36,7 @@ public abstract class Input extends Block {
         super(builder);
         label = builder.attributes.get("label");
         prompt = builder.attributes.get("prompt");
-        help = Noop.filter(builder.statements, Noop.Kind.HELP)
-                   .findFirst()
-                   .map(b -> b.value)
-                   .orElse(null);
+        help = builder.help;
     }
 
     /**
@@ -389,12 +386,22 @@ public abstract class Input extends Block {
      */
     public static class Builder extends Block.Builder {
 
+        String help;
+
         private Builder(Path scriptPath, Position position, Kind kind) {
             super(scriptPath, position, kind);
         }
 
+        private boolean doRemove(Noop.Builder b) {
+            if (b.kind == Noop.Kind.HELP) {
+                help = b.value;
+            }
+            return true;
+        }
+
         @Override
         protected Block doBuild() {
+            remove(statements, Noop.Builder.class, this::doRemove);
             switch (kind) {
                 case BOOLEAN:
                     return new Input.Boolean(this);

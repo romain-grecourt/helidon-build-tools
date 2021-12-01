@@ -20,7 +20,6 @@ import java.nio.file.Path;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
-import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.toUnmodifiableList;
 
@@ -40,7 +39,10 @@ public class Block extends Statement {
     protected Block(Builder builder) {
         super(builder);
         this.kind = Objects.requireNonNull(builder.kind, "kind is null");
-        this.statements = builder.statements.stream().map(Statement.Builder::build).collect(toUnmodifiableList());
+        this.statements = builder.statements.stream()
+                                            .filter(b -> !(b instanceof Noop.Builder))
+                                            .map(Statement.Builder::build)
+                                            .collect(toUnmodifiableList());
     }
 
     /**
@@ -52,7 +54,7 @@ public class Block extends Statement {
      * @param statements statements
      */
     protected Block(Path scriptPath, Position position, Kind kind, List<Statement> statements) {
-        super(scriptPath, position, Statement.Kind.BLOCK);
+        super(scriptPath, position);
         this.kind = Objects.requireNonNull(kind, "kind is null");
         this.statements = Objects.requireNonNull(statements, "statements is null");
     }
@@ -260,20 +262,6 @@ public class Block extends Statement {
         CD,
     }
 
-
-    /**
-     * Filter the nested statements as a stream of block of the given kind.
-     *
-     * @param kind kind
-     * @return stream of block builder
-     */
-    static Stream<Block.Builder> filter(List<Statement.Builder<? extends Statement, ?>> statements, Block.Kind kind) {
-        return statements.stream()
-                         .filter(Block.Builder.class::isInstance)
-                         .map(Block.Builder.class::cast)
-                         .filter(block -> block.kind == kind);
-    }
-
     /**
      * Create a new builder.
      *
@@ -302,7 +290,7 @@ public class Block extends Statement {
          * @param kind       kind
          */
         protected Builder(Path scriptPath, Position position, Kind kind) {
-            super(scriptPath, position, Statement.Kind.BLOCK);
+            super(scriptPath, position);
             this.kind = kind;
         }
 

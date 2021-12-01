@@ -200,7 +200,7 @@ public class Model extends Output {
         @Override
         protected Block doBuild() {
             statements.replaceAll(b -> {
-                if (b.kind == Statement.Kind.NOOP) {
+                if (b instanceof Noop.Builder) {
                     return new Builder(b.scriptPath, b.position, Kind.VALUE)
                             .value(((Noop.Builder) b).value)
                             .attributes(b.attributes);

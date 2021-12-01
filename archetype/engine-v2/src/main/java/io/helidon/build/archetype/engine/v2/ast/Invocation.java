@@ -92,7 +92,7 @@ public final class Invocation extends Statement {
         private final Kind kind;
 
         private Builder(Path scriptPath, Position position, Kind kind) {
-            super(scriptPath, position, Statement.Kind.INVOCATION);
+            super(scriptPath, position);
             this.kind = kind;
         }
 

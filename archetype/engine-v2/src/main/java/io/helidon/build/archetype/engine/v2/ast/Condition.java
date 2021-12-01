@@ -75,7 +75,7 @@ public final class Condition extends Statement {
         private Statement.Builder<?, ?> then;
 
         private Builder(Path scriptPath, Position position) {
-            super(scriptPath, position, Statement.Kind.CONDITION);
+            super(scriptPath, position);
         }
 
         /**

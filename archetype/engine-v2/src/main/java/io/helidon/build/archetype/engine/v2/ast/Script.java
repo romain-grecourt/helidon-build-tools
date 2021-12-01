@@ -68,7 +68,7 @@ public final class Script extends Node {
         private final Block.Builder body;
 
         private Builder(Path scriptPath, Position position) {
-            super(scriptPath, position, Kind.SCRIPT);
+            super(scriptPath, position);
             this.body = Block.builder(scriptPath, position, Block.Kind.SCRIPT);
         }
 

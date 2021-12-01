@@ -29,10 +29,7 @@ public class Step extends Block {
     private Step(Builder builder) {
         super(builder);
         label = builder.attributes.get("label");
-        help = Noop.filter(builder.statements, Noop.Kind.HELP)
-                   .findFirst()
-                   .map(b -> b.value)
-                   .orElse(null);
+        help = builder.help;
     }
 
     /**
@@ -81,13 +78,16 @@ public class Step extends Block {
             super(scriptPath, position, kind);
         }
 
+        private boolean doRemove(Noop.Builder b) {
+            if (b.kind == Noop.Kind.HELP) {
+                help = b.value;
+            }
+            return true;
+        }
+
         @Override
         protected Block doBuild() {
-            // TODO duplicate with constructor
-            help = Noop.filter(statements, Noop.Kind.HELP)
-                       .findFirst()
-                       .map(b -> b.value)
-                       .orElse(null);
+            remove(statements, Noop.Builder.class, this::doRemove);
             return new Step(this);
         }
     }

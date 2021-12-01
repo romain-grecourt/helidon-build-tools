@@ -30,7 +30,6 @@ public abstract class Node {
 
     private static final AtomicInteger NEXT_ID = new AtomicInteger();
 
-    private final Kind kind;
     private final int id;
     final Path scriptPath;
     final Position position;
@@ -41,7 +40,7 @@ public abstract class Node {
      * @param builder builder
      */
     protected Node(Builder<?, ?> builder) {
-        this(builder.scriptPath, builder.position, builder.kind);
+        this(builder.scriptPath, builder.position);
     }
 
     /**
@@ -49,12 +48,10 @@ public abstract class Node {
      *
      * @param scriptPath scriptPath
      * @param position   position
-     * @param kind       kind
      */
-    protected Node(Path scriptPath, Position position, Kind kind) {
+    protected Node(Path scriptPath, Position position) {
         this.scriptPath = requireNonNull(scriptPath, "source is null");
         this.position = requireNonNull(position, "position is null");
-        this.kind = kind;
         this.id = NEXT_ID.updateAndGet(i -> i == Integer.MAX_VALUE ? 1 : i + 1);
     }
 
@@ -195,17 +192,6 @@ public abstract class Node {
         }
 
         /**
-         * Visit a noop.
-         *
-         * @param noop noop
-         * @param arg  argument
-         * @return visit result
-         */
-        default VisitResult visitNoop(Noop noop, T arg) {
-            return visitNode(noop, arg);
-        }
-
-        /**
          * Visit a node.
          *
          * @param node node
@@ -215,23 +201,6 @@ public abstract class Node {
         default VisitResult visitNode(Node node, T arg) {
             return VisitResult.CONTINUE;
         }
-    }
-
-    /**
-     * Node kind.
-     */
-    // TODO remove kind
-    public enum Kind {
-
-        /**
-         * Statement.
-         */
-        STATEMENT,
-
-        /**
-         * Script.
-         */
-        SCRIPT
     }
 
     /**
@@ -245,21 +214,19 @@ public abstract class Node {
 
         private static final Path NULL_SCRIPT_PATH = Path.of("script.xml");
         private static final Position NULL_SOURCE = Position.of(0, 0);
-        private final Kind kind;
-        private T instance;
+
         final Map<String, String> attributes = new HashMap<>();
         final Path scriptPath;
         final Position position;
+        private T instance;
 
         /**
          * Create a new node builder.
          *
          * @param scriptPath scriptPath
          * @param position   position
-         * @param kind       kind
          */
-        protected Builder(Path scriptPath, Position position, Kind kind) {
-            this.kind = requireNonNull(kind, "kind is null");
+        protected Builder(Path scriptPath, Position position) {
             this.scriptPath = scriptPath == null ? NULL_SCRIPT_PATH : scriptPath;
             this.position = position == null ? NULL_SOURCE : position;
         }

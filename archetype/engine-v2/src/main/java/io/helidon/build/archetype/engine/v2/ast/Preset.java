@@ -17,10 +17,10 @@
 package io.helidon.build.archetype.engine.v2.ast;
 
 import java.nio.file.Path;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 /**
  * Preset.
@@ -44,9 +44,7 @@ public final class Preset extends Statement {
                 value = Value.create(builder.value);
                 break;
             case LIST:
-                value = Value.create(Noop.filter(builder.statements, Noop.Kind.VALUE)
-                                         .map(b -> b.value)
-                                         .collect(Collectors.toUnmodifiableList()));
+                value = Value.create(Collections.unmodifiableList(builder.values));
                 break;
             default:
                 throw new IllegalArgumentException("Unknown preset kind: " + kind);
@@ -129,11 +127,12 @@ public final class Preset extends Statement {
     public static final class Builder extends Statement.Builder<Preset, Builder> {
 
         private final List<Statement.Builder<? extends Statement, ?>> statements = new LinkedList<>();
+        private final List<String> values = new LinkedList<>();
         private final Kind kind;
         private String value;
 
         private Builder(Path scriptPath, Position position, Kind kind) {
-            super(scriptPath, position, Statement.Kind.PRESET);
+            super(scriptPath, position);
             this.kind = kind;
         }
 
@@ -154,8 +153,16 @@ public final class Preset extends Statement {
             return this;
         }
 
+        private boolean doRemove(Noop.Builder b) {
+            if (b.kind == Noop.Kind.VALUE) {
+                values.add(b.value);
+            }
+            return true;
+        }
+
         @Override
         protected Preset doBuild() {
+            remove(statements, Noop.Builder.class, this::doRemove);
             return new Preset(this);
         }
     }

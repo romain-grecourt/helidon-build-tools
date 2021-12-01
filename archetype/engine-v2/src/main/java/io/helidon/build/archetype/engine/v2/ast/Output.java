@@ -17,10 +17,11 @@ package io.helidon.build.archetype.engine.v2.ast;
 
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Objects;
 
 import static java.util.Collections.emptyList;
-import static java.util.stream.Collectors.toUnmodifiableList;
 
 /**
  * Output block.
@@ -124,11 +125,7 @@ public class Output extends Block {
         private Transformation(Output.Builder builder) {
             super(builder);
             this.id = builder.attribute("id");
-            this.operations = Noop.filter(builder.statements, Noop.Kind.REPLACE)
-                                  .map(b -> new Replace(
-                                          b.attribute("replacement"),
-                                          b.attribute("regex")))
-                                  .collect(toUnmodifiableList());
+            this.operations = builder.operations;
         }
 
         @Override
@@ -206,18 +203,9 @@ public class Output extends Block {
             super(builder);
             String attr = builder.attributes.get("transformations");
             this.transformations = attr != null ? Arrays.asList(attr.split(",")) : emptyList();
-            this.directory = Noop.filter(builder.statements, Noop.Kind.DIRECTORY)
-                                 .map(b -> b.value)
-                                 .findFirst()
-                                 .orElseThrow(() -> new IllegalArgumentException("directory is required"));
-            this.includes = Block.filter(builder.statements, Block.Kind.INCLUDES)
-                                 .flatMap(b -> Noop.filter(b.statements, Noop.Kind.INCLUDE))
-                                 .map(b -> b.value)
-                                 .collect(toUnmodifiableList());
-            this.excludes = Block.filter(builder.statements, Block.Kind.EXCLUDES)
-                                 .flatMap(b -> Noop.filter(b.statements, Noop.Kind.EXCLUDE))
-                                 .map(b -> b.value)
-                                 .collect(toUnmodifiableList());
+            this.directory = Objects.requireNonNull(builder.directory, "directory is null");
+            this.includes = builder.includes;
+            this.excludes = builder.excludes;
         }
 
         @Override
@@ -381,6 +369,11 @@ public class Output extends Block {
      */
     public static class Builder extends Block.Builder {
 
+        private String directory;
+        private final List<String> includes = new LinkedList<>();
+        private final List<String> excludes = new LinkedList<>();
+        private final List<Transformation.Replace> operations = new LinkedList<>();
+
         /**
          * Create a new output builder.
          *
@@ -392,8 +385,42 @@ public class Output extends Block {
             super(scriptPath, position, kind);
         }
 
+        private boolean doRemove(Noop.Builder b) {
+            switch (b.kind) {
+                case REPLACE:
+                    operations.add(new Transformation.Replace(
+                            b.attribute("replacement"),
+                            b.attribute("regex")));
+                    return true;
+                case DIRECTORY:
+                    directory = b.value;
+                    return true;
+                case EXCLUDE:
+                    excludes.add(b.value);
+                    return true;
+                case INCLUDE:
+                    includes.add(b.value);
+                    return true;
+                default:
+                    return true;
+            }
+        }
+
+        private boolean doRemove(Block.Builder b) {
+            switch(b.kind) {
+                case EXCLUDES:
+                case INCLUDES:
+                    remove(b.statements, Noop.Builder.class, this::doRemove);
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         @Override
         protected Block doBuild() {
+            remove(statements, Noop.Builder.class, this::doRemove);
+            remove(statements, Block.Builder.class, this::doRemove);
             switch (kind) {
                 case OUTPUT:
                     return new Output(this);

@@ -71,7 +71,7 @@ public final class Walker<A> {
             if (nodeId != parentId) {
                 result = stmt.accept(visitor, arg);
             } else {
-                if (stmt.statementKind() == Statement.Kind.BLOCK) {
+                if (stmt instanceof Block) {
                     result = visitor.postVisitBlock((Block) stmt, arg);
                 }
                 parentId = parents.pop().nodeId();
@@ -81,7 +81,7 @@ public final class Walker<A> {
                 if (result == Node.VisitResult.SKIP_SIBLINGS) {
                     while (!stack.isEmpty()) {
                         Statement peek = stack.peek();
-                        if (peek.statementKind() != Statement.Kind.BLOCK) {
+                        if (!(peek instanceof Block)) {
                             continue;
                         } else if (peek.nodeId() == parentId) {
                             break;
@@ -164,11 +164,6 @@ public final class Walker<A> {
         @Override
         public Node.VisitResult postVisitBlock(Block block, A arg) {
             return delegate.postVisitBlock(block, arg);
-        }
-
-        @Override
-        public Node.VisitResult visitNoop(Noop noop, A arg) {
-            return delegate.visitNoop(noop, arg);
         }
 
         @Override

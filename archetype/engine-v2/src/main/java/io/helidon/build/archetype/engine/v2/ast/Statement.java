@@ -17,14 +17,14 @@
 package io.helidon.build.archetype.engine.v2.ast;
 
 import java.nio.file.Path;
-import java.util.Objects;
+import java.util.Iterator;
+import java.util.List;
+import java.util.function.Function;
 
 /**
  * Statement.
  */
 public abstract class Statement extends Node {
-
-    private final Kind kind;
 
     /**
      * Create a new statement.
@@ -33,7 +33,6 @@ public abstract class Statement extends Node {
      */
     protected Statement(Builder<?, ?> builder) {
         super(builder);
-        this.kind = Objects.requireNonNull(builder.kind, "kind is null");
     }
 
     /**
@@ -41,53 +40,32 @@ public abstract class Statement extends Node {
      *
      * @param scriptPath script path
      * @param position   position
-     * @param kind       kind
      */
-    protected Statement(Path scriptPath, Position position, Kind kind) {
-        super(scriptPath, position, Node.Kind.STATEMENT);
-        this.kind = kind;
+    protected Statement(Path scriptPath, Position position) {
+        super(scriptPath, position);
     }
 
     /**
-     * Get the statement kind.
+     * Remove builders from the list of statement builders.
      *
-     * @return kind
+     * @param statements list of statement builders
+     * @param type       class used to match the builders to remove
+     * @param function   function invoked to control removal
      */
-    // TODO remove kind
-    public Kind statementKind() {
-        return kind;
-    }
+    static <T> void remove(List<Builder<? extends Statement, ?>> statements,
+                           Class<T> type,
+                           Function<T, Boolean> function) {
 
-    /**
-     * Statements kind.
-     */
-    // TODO remove kind
-    public enum Kind {
-
-        /**
-         * Condition.
-         */
-        CONDITION,
-
-        /**
-         * Invocation.
-         */
-        INVOCATION,
-
-        /**
-         * Preset.
-         */
-        PRESET,
-
-        /**
-         * Block.
-         */
-        BLOCK,
-
-        /**
-         * No-op.
-         */
-        NOOP,
+        Iterator<Builder<?, ?>> it = statements.iterator();
+        while (it.hasNext()) {
+            Statement.Builder<?, ?> b = it.next();
+            if (type.isInstance(b)) {
+                T tb = type.cast(b);
+                if (function.apply(tb)) {
+                    it.remove();
+                }
+            }
+        }
     }
 
     /**
@@ -98,18 +76,14 @@ public abstract class Statement extends Node {
      */
     public static abstract class Builder<T extends Statement, U extends Builder<T, U>> extends Node.Builder<T, U> {
 
-        final Kind kind;
-
         /**
          * Create a new statement builder.
          *
          * @param scriptPath script path
          * @param position   position
-         * @param kind       kind
          */
-        protected Builder(Path scriptPath, Position position, Kind kind) {
-            super(scriptPath, position, Node.Kind.STATEMENT);
-            this.kind = kind;
+        protected Builder(Path scriptPath, Position position) {
+            super(scriptPath, position);
         }
     }
 }

@@ -19,18 +19,15 @@ package io.helidon.build.archetype.engine.v2.ast;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.toUnmodifiableList;
 
 /**
- * No-op statement.
+ * No-op statement builder used at "builder-time" only.
+ * This is a hack used to let the XML reader follow the document hierarchy.
+ * I.e. It is used to represent nested XML elements that are stored as field rather than tree nodes.
  */
-public final class Noop extends Statement {
-
-    private Noop(Builder builder) {
-        super(builder);
-    }
+public final class Noop {
 
     /**
      * Noop kind.
@@ -76,24 +73,6 @@ public final class Noop extends Statement {
                                                  .collect(toUnmodifiableList());
     }
 
-    @Override
-    public <A> VisitResult accept(Visitor<A> visitor, A arg) {
-        return visitor.visitNoop(this, arg);
-    }
-
-    /**
-     * Filter the nested statements as a stream of noop of the given kind.
-     *
-     * @param kind kind
-     * @return stream of noop builder
-     */
-    static Stream<Builder> filter(List<Statement.Builder<? extends Statement, ?>> statements, Noop.Kind kind) {
-        return statements.stream()
-                         .filter(Noop.Builder.class::isInstance)
-                         .map(Noop.Builder.class::cast)
-                         .filter(noop -> noop.kind == kind);
-    }
-
     /**
      * Create a new builder.
      *
@@ -109,13 +88,13 @@ public final class Noop extends Statement {
     /**
      * No-op builder.
      */
-    public static final class Builder extends Statement.Builder<Noop, Builder> {
+    public static final class Builder extends Statement.Builder<Statement, Builder> {
 
         String value;
         final Kind kind;
 
         private Builder(Path scriptPath, Position position, Kind kind) {
-            super(scriptPath, position, Statement.Kind.NOOP);
+            super(scriptPath, position);
             this.kind = kind;
         }
 
@@ -131,8 +110,8 @@ public final class Noop extends Statement {
         }
 
         @Override
-        protected Noop doBuild() {
-            return new Noop(this);
+        protected Statement doBuild() {
+            return null;
         }
     }
 }
