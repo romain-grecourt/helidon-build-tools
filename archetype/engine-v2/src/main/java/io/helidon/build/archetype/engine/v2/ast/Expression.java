@@ -19,6 +19,7 @@ package io.helidon.build.archetype.engine.v2.ast;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -27,7 +28,6 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Spliterator;
 import java.util.Stack;
-import java.util.WeakHashMap;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -43,7 +43,7 @@ import static java.util.stream.Collectors.toMap;
  */
 public final class Expression {
 
-    private static final Map<String, Expression> CACHE = new WeakHashMap<>();
+    private static final Map<String, Expression> CACHE = new HashMap<>();
     private static final Map<String, Operator> OPS = Arrays.stream(Operator.values())
                                                            .collect(toMap(op -> op.symbol, Function.identity()));
 

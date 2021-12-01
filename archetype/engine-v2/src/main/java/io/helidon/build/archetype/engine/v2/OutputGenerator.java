@@ -16,18 +16,21 @@
 
 package io.helidon.build.archetype.engine.v2;
 
-//import io.helidon.build.archetype.engine.v2.interpreter.Flow;
-//import io.helidon.build.archetype.engine.v2.template.TemplateModel;
+import io.helidon.build.archetype.engine.v2.ast.Output;
 
 import java.io.File;
+import java.nio.file.Path;
 
 /**
- * Generate Output files from interpreter.
+ * Output generator.
  */
-public class OutputGenerator {
+public class OutputGenerator implements Output.Visitor {
 
-//    public OutputGenerator(Output build) {
-//    }
+    private final Path directory;
+
+    OutputGenerator(Path directory) {
+        this.directory = directory;
+    }
 
     public void generate(File directory) {
     }

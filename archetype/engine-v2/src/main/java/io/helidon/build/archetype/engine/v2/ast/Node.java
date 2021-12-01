@@ -85,12 +85,20 @@ public abstract class Node {
     /**
      * Visit this node.
      *
-     * @param visitor Visitor
-     * @param arg     argument
-     * @param <A>     generic type of the arguments
+     * @param visitor visitor
      * @return result
      */
-    public abstract <A> VisitResult accept(Visitor<A> visitor, A arg);
+    public abstract VisitResult accept(Visitor visitor);
+
+    /**
+     * Post-visit this node.
+     *
+     * @param visitor visitor
+     * @return result
+     */
+    public VisitResult acceptAfter(Visitor visitor) {
+        return VisitResult.CONTINUE;
+    }
 
     /**
      * Visit result.
@@ -120,63 +128,56 @@ public abstract class Node {
 
     /**
      * Visitor.
-     *
-     * @param <T> argument
      */
-    public interface Visitor<T> {
+    public interface Visitor {
 
         /**
          * Visit a script.
          *
          * @param script script
-         * @param arg    argument
          * @return visit result
          */
-        default VisitResult visitScript(Script script, T arg) {
-            return visitNode(script, arg);
+        default VisitResult visitScript(Script script) {
+            return visitNode(script);
         }
 
         /**
          * Visit a condition.
          *
          * @param condition condition
-         * @param arg       argument
          * @return visit result
          */
-        default VisitResult visitCondition(Condition condition, T arg) {
-            return visitNode(condition, arg);
+        default VisitResult visitCondition(Condition condition) {
+            return visitNode(condition);
         }
 
         /**
          * Visit an invocation.
          *
          * @param invocation invocation
-         * @param arg        argument
          * @return visit result
          */
-        default VisitResult visitInvocation(Invocation invocation, T arg) {
-            return visitNode(invocation, arg);
+        default VisitResult visitInvocation(Invocation invocation) {
+            return visitNode(invocation);
         }
 
         /**
          * Visit a preset.
          *
          * @param preset preset
-         * @param arg    argument
          * @return visit result
          */
-        default VisitResult visitPreset(Preset preset, T arg) {
-            return visitNode(preset, arg);
+        default VisitResult visitPreset(Preset preset) {
+            return visitNode(preset);
         }
 
         /**
          * Visit a block.
          *
          * @param block block
-         * @param arg   argument
          * @return visit result
          */
-        default VisitResult preVisitBlock(Block block, T arg) {
+        default VisitResult visitBlock(Block block) {
             return VisitResult.CONTINUE;
         }
 
@@ -184,10 +185,9 @@ public abstract class Node {
          * Visit a block after traversing the nested statements.
          *
          * @param block block
-         * @param arg   argument
          * @return visit result
          */
-        default VisitResult postVisitBlock(Block block, T arg) {
+        default VisitResult postVisitBlock(Block block) {
             return VisitResult.CONTINUE;
         }
 
@@ -195,10 +195,9 @@ public abstract class Node {
          * Visit a node.
          *
          * @param node node
-         * @param arg  arg
          * @return visit result
          */
-        default VisitResult visitNode(Node node, T arg) {
+        default VisitResult visitNode(Node node) {
             return VisitResult.CONTINUE;
         }
     }

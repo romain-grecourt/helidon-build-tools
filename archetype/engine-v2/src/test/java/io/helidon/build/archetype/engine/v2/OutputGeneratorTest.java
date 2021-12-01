@@ -16,8 +16,6 @@
 
 package io.helidon.build.archetype.engine.v2;
 
-//import io.helidon.build.archetype.engine.v2.interpreter.Flow;
-
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -34,7 +32,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 public class OutputGeneratorTest {
 
     private static Path tempDir;
-    private ArchetypeArchive archetype;
+//    private ArchetypeArchive archetype;
 
     @BeforeAll
     static void bootstrap() throws IOException {
@@ -76,12 +74,12 @@ public class OutputGeneratorTest {
         }
     }
 
-    private ArchetypeArchive getArchetype() {
-        ClassLoader classLoader = getClass().getClassLoader();
-        File file = new File(classLoader.getResource("outputGenerator-test-resources").getFile());
-//        archetype = ArchetypeFactory.create(file);
-//        return archetype;
-        return null;
-    }
+//    private ArchetypeArchive getArchetype() {
+//        ClassLoader classLoader = getClass().getClassLoader();
+//        File file = new File(classLoader.getResource("outputGenerator-test-resources").getFile());
+////        archetype = ArchetypeFactory.create(file);
+////        return archetype;
+//        return null;
+//    }
 
 }

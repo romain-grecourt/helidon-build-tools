@@ -24,6 +24,7 @@ import io.helidon.build.archetype.engine.v2.ast.Input;
 import io.helidon.build.archetype.engine.v2.ast.Invocation;
 import io.helidon.build.archetype.engine.v2.ast.Model;
 import io.helidon.build.archetype.engine.v2.ast.Node;
+import io.helidon.build.archetype.engine.v2.ast.Node.VisitResult;
 import io.helidon.build.archetype.engine.v2.ast.Output;
 import io.helidon.build.archetype.engine.v2.ast.Preset;
 
@@ -53,38 +54,40 @@ public class ScriptLoaderTest {
     @Test
     public void testInputs() {
         Script script = load("loader/inputs.xml");
-        Walker.walk(new Node.Visitor<Void>() {
+        Walker.walk(new Node.Visitor() {
             int index = 0;
 
             @Override
-            public Node.VisitResult preVisitBlock(Block block, Void arg) {
-                block.accept(new Block.Visitor<>() {
+            public VisitResult visitBlock(Block block) {
+                return block.accept(new Block.Visitor() {
                     @Override
-                    public void visitInput(Input input, Void arg) {
-                        input.accept(new Input.Visitor<>() {
+                    public VisitResult visitInput(Input input) {
+                        return input.accept(new Input.Visitor() {
 
                             @Override
-                            public void visitText(Input.Text input, Void arg) {
+                            public VisitResult visitText(Input.Text input) {
                                 assertThat(++index, is(1));
                                 assertThat(input.name(), is("input1"));
                                 assertThat(input.label(), is("Text input"));
                                 assertThat(input.help(), is("Help 1"));
                                 assertThat(input.defaultValue().orElse(null), is("default#1"));
                                 assertThat(input.prompt(), is("Enter 1"));
+                                return VisitResult.CONTINUE;
                             }
 
                             @Override
-                            public void visitBoolean(Input.Boolean input, Void arg) {
+                            public VisitResult visitBoolean(Input.Boolean input) {
                                 assertThat(++index, is(2));
                                 assertThat(input.name(), is("input2"));
                                 assertThat(input.label(), is("Boolean input"));
                                 assertThat(input.help(), is("Help 2"));
                                 assertThat(input.defaultValue(), is(true));
                                 assertThat(input.prompt(), is("Enter 2"));
+                                return VisitResult.CONTINUE;
                             }
 
                             @Override
-                            public void visitEnum(Input.Enum input, Void arg) {
+                            public VisitResult visitEnum(Input.Enum input) {
                                 assertThat(++index, is(3));
                                 assertThat(input.name(), is("input3"));
                                 assertThat(input.label(), is("Enum input"));
@@ -96,10 +99,11 @@ public class ScriptLoaderTest {
                                 assertThat(input.options().get(1).label(), is("Option 3.2"));
                                 assertThat(input.defaultValue().orElse(null), is("option3.1"));
                                 assertThat(input.prompt(), is("Enter 3"));
+                                return VisitResult.CONTINUE;
                             }
 
                             @Override
-                            public void visitList(Input.List input, Void arg) {
+                            public VisitResult visitList(Input.List input) {
                                 assertThat(++index, is(4));
                                 assertThat(input.name(), is("input4"));
                                 assertThat(input.label(), is("List input"));
@@ -110,65 +114,65 @@ public class ScriptLoaderTest {
                                 assertThat(input.options().get(1).label(), is("Item 4.2"));
                                 assertThat(input.defaultValue(), contains("item4.1", "item4.2"));
                                 assertThat(input.prompt(), is("Enter 4"));
+                                return VisitResult.CONTINUE;
                             }
-                        }, arg);
+                        });
                     }
-                }, arg);
-                return Node.VisitResult.CONTINUE;
+                });
             }
 
             @Override
-            public Node.VisitResult postVisitBlock(Block block, Void arg) {
+            public VisitResult postVisitBlock(Block block) {
                 if (block.blockKind() == Block.Kind.SCRIPT) {
                     assertThat(index, is(4));
                 }
-                return Node.VisitResult.CONTINUE;
+                return VisitResult.CONTINUE;
             }
-        }, script.body(), null);
+        }, script.body());
     }
 
     @Test
     public void testNestedInputs() {
         Script script = load("loader/nested-inputs.xml");
-        Walker.walk(new Node.Visitor<Void>() {
+        Walker.walk(new Node.Visitor() {
             int index = 0;
 
             @Override
-            public Node.VisitResult preVisitBlock(Block block, Void arg) {
-                block.accept(new Block.Visitor<>() {
+            public VisitResult visitBlock(Block block) {
+                return block.accept(new Block.Visitor() {
                     @Override
-                    public void visitInput(Input input, Void arg) {
-                        input.accept(new Input.Visitor<>() {
+                    public VisitResult visitInput(Input input) {
+                        return input.accept(new Input.Visitor() {
                             @Override
-                            public void visitBoolean(Input.Boolean input, Void arg) {
+                            public VisitResult visitBoolean(Input.Boolean input) {
                                 assertThat(++index <= 5, is(true));
                                 assertThat(input.name(), is("input" + index));
                                 assertThat(input.label(), is("label" + index));
+                                return VisitResult.CONTINUE;
                             }
-                        }, arg);
+                        });
                     }
-                }, arg);
-                return Node.VisitResult.CONTINUE;
+                });
             }
 
             @Override
-            public Node.VisitResult postVisitBlock(Block block, Void arg) {
+            public VisitResult postVisitBlock(Block block) {
                 if (block.blockKind() == Block.Kind.SCRIPT) {
                     assertThat(index, is(5));
                 }
-                return Node.VisitResult.CONTINUE;
+                return VisitResult.CONTINUE;
             }
-        }, script.body(), null);
+        }, script.body());
     }
 
     @Test
     public void testInvocations() {
         Script script = load("loader/invocations.xml");
-        Walker.walk(new Node.Visitor<Void>() {
+        Walker.walk(new Node.Visitor() {
             int index = 0;
 
             @Override
-            public Node.VisitResult visitInvocation(Invocation invocation, Void arg) {
+            public VisitResult visitInvocation(Invocation invocation) {
                 switch (++index) {
                     case 1:
                         assertThat(invocation.invocationKind(), is(Invocation.Kind.SOURCE));
@@ -180,27 +184,27 @@ public class ScriptLoaderTest {
                         break;
                 }
                 // stop here to avoid io exceptions on the fake files
-                return Node.VisitResult.SKIP_SUBTREE;
+                return VisitResult.SKIP_SUBTREE;
             }
 
             @Override
-            public Node.VisitResult postVisitBlock(Block block, Void arg) {
+            public VisitResult postVisitBlock(Block block) {
                 if (block.blockKind() == Block.Kind.SCRIPT) {
                     assertThat(index, is(2));
                 }
-                return Node.VisitResult.CONTINUE;
+                return VisitResult.CONTINUE;
             }
-        }, script.body(), null);
+        }, script.body());
     }
 
     @Test
     public void testPresets() {
         Script script = load("loader/presets.xml");
-        Walker.walk(new Node.Visitor<Void>() {
+        Walker.walk(new Node.Visitor() {
             int index = 0;
 
             @Override
-            public Node.VisitResult visitPreset(Preset preset, Void arg) {
+            public VisitResult visitPreset(Preset preset) {
                 switch (++index) {
                     case 1:
                         assertThat(preset.path(), is("preset1"));
@@ -223,311 +227,295 @@ public class ScriptLoaderTest {
                         assertThat(preset.value().asList(), contains("list1"));
                         break;
                 }
-                return Node.VisitResult.CONTINUE;
+                return VisitResult.CONTINUE;
             }
 
             @Override
-            public Node.VisitResult postVisitBlock(Block block, Void arg) {
+            public VisitResult postVisitBlock(Block block) {
                 if (block.blockKind() == Block.Kind.SCRIPT) {
                     assertThat(index, is(4));
                 }
-                return Node.VisitResult.CONTINUE;
+                return VisitResult.CONTINUE;
             }
-        }, script.body(), null);
+        }, script.body());
     }
 
     @Test
     public void testOutput() {
         Script script = load("loader/output.xml");
-        Walker.walk(new Node.Visitor<Void>() {
+        Walker.walk(new Node.Visitor() {
             int index = 0;
 
             @Override
-            public Node.VisitResult preVisitBlock(Block block, Void arg) {
-                block.accept(new Block.Visitor<Void>() {
+            public VisitResult visitBlock(Block block) {
+                return block.accept(new Block.Visitor() {
                     @Override
-                    public void visitOutput(Output output, Void arg) {
-                        output.accept(new Output.Visitor<Void>() {
+                    public VisitResult visitOutput(Output output) {
+                        return output.accept(new Output.Visitor() {
                             @Override
-                            public void visitTransformation(Output.Transformation transformation, Void arg) {
+                            public VisitResult visitTransformation(Output.Transformation transformation) {
                                 assertThat(++index, is(1));
                                 assertThat(transformation.id(), is("t1"));
                                 assertThat(transformation.operations().size(), is(1));
                                 assertThat(transformation.operations().get(0).replacement(), is("token1"));
                                 assertThat(transformation.operations().get(0).regex(), is("regex1"));
+                                return VisitResult.CONTINUE;
                             }
 
                             @Override
-                            public void visitTemplates(Output.Templates templates, Void arg) {
+                            public VisitResult visitTemplates(Output.Templates templates) {
                                 assertThat(++index, is(2));
                                 assertThat(templates.transformations(), contains("t1"));
                                 assertThat(templates.engine(), is("tpl-engine-1"));
                                 assertThat(templates.directory(), is("dir1"));
                                 assertThat(templates.includes(), contains("**/*.tpl1"));
                                 assertThat(templates.excludes(), is(empty()));
+                                return VisitResult.CONTINUE;
                             }
 
                             @Override
-                            public void visitFiles(Output.Files files, Void arg) {
+                            public VisitResult visitFiles(Output.Files files) {
                                 assertThat(++index, is(3));
                                 assertThat(files.transformations(), contains("t2"));
                                 assertThat(files.directory(), is("dir2"));
                                 assertThat(files.excludes(), contains("**/*.txt"));
                                 assertThat(files.includes(), is(empty()));
+                                return VisitResult.CONTINUE;
                             }
 
                             @Override
-                            public void visitTemplate(Output.Template template, Void arg) {
+                            public VisitResult visitTemplate(Output.Template template) {
                                 assertThat(++index, is(4));
                                 assertThat(template.engine(), is("tpl-engine-2"));
                                 assertThat(template.source(), is("file1.tpl"));
                                 assertThat(template.target(), is("file1.txt"));
+                                return VisitResult.CONTINUE;
                             }
 
                             @Override
-                            public void visitFile(Output.File file, Void arg) {
+                            public VisitResult visitFile(Output.File file) {
                                 assertThat(++index, is(5));
                                 assertThat(file.source(), is("file1.txt"));
                                 assertThat(file.target(), is("file2.txt"));
+                                return VisitResult.CONTINUE;
+                            }
+                        });
+                    }
+
+                    @Override
+                    public VisitResult visitModel(Model model) {
+                        return model.accept(new Model.Visitor() {
+                            @Override
+                            public VisitResult visitMap(Model.Map map) {
+                                switch (++index) {
+                                    case (6):
+                                        assertThat(map.key(), is("key1"));
+                                        break;
+                                    case (17):
+                                        assertThat(map.key(), is(nullValue()));
+                                        break;
+                                    default:
+                                        Assertions.fail("Unexpected index: " + index);
+                                }
+                                return VisitResult.CONTINUE;
                             }
 
                             @Override
-                            public void visitModel(Model model, Void arg) {
-                                if (model.blockKind() == Block.Kind.MODEL) {
-                                    assertThat(++index, is(6));
+                            public VisitResult visitList(Model.List list) {
+                                switch (++index) {
+                                    case (8):
+                                        assertThat(list.key(), is("key1.2"));
+                                        break;
+                                    case (12):
+                                        assertThat(list.key(), is("key3"));
+                                        break;
+                                    case (14):
+                                        assertThat(list.key(), is(nullValue()));
+                                        break;
+                                    default:
+                                        Assertions.fail("Unexpected index: " + index);
                                 }
-                                model.accept(new Model.Visitor<Void>() {
-                                    @Override
-                                    public void visitMap(Model.Map map, Void arg) {
-                                        switch (++index) {
-                                            case (7):
-                                                assertThat(map.key(), is("key1"));
-                                                break;
-                                            case (18):
-                                                assertThat(map.key(), is(nullValue()));
-                                                break;
-                                            default:
-                                                Assertions.fail("Unexpected index: " + index);
-
-                                        }
-                                    }
-
-                                    @Override
-                                    public void visitList(Model.List list, Void arg) {
-                                        switch (++index) {
-                                            case (9):
-                                                assertThat(list.key(), is("key1.2"));
-                                                break;
-                                            case (13):
-                                                assertThat(list.key(), is("key3"));
-                                                break;
-                                            case (15):
-                                                assertThat(list.key(), is(nullValue()));
-                                                break;
-                                            default:
-                                                Assertions.fail("Unexpected index: " + index);
-                                        }
-                                    }
-
-                                    @Override
-                                    public void visitValue(Model.Value value, Void arg) {
-                                        switch (++index) {
-                                            case (8):
-                                                assertThat(value.key(), is("key1.1"));
-                                                assertThat(value.value(), is("value1.1"));
-                                                break;
-                                            case (10):
-                                                assertThat(value.key(), is(nullValue()));
-                                                assertThat(value.value(), is("value1.2a"));
-                                                break;
-                                            case (11):
-                                                assertThat(value.key(), is(nullValue()));
-                                                assertThat(value.value(), is("value1.2b"));
-                                                break;
-                                            case (12):
-                                                assertThat(value.key(), is("key2"));
-                                                assertThat(value.order(), is(50));
-                                                assertThat(value.value(), is("value2"));
-                                                break;
-                                            case (14):
-                                                assertThat(value.key(), is(nullValue()));
-                                                assertThat(value.value(), is("value3.1"));
-                                                break;
-                                            case (16):
-                                                assertThat(value.key(), is(nullValue()));
-                                                assertThat(value.value(), is("value3.2-a"));
-                                                break;
-                                            case (17):
-                                                assertThat(value.key(), is(nullValue()));
-                                                assertThat(value.value(), is("value3.2-b"));
-                                                break;
-                                            case (19):
-                                                assertThat(value.key(), is("key3.3-a"));
-                                                assertThat(value.value(), is("value3.3-a"));
-                                                break;
-                                            case (20):
-                                                assertThat(value.key(), is("key3.3-b"));
-                                                assertThat(value.value(), is("value3.3-b"));
-                                                break;
-                                            default:
-                                                Assertions.fail("Unexpected index: " + index);
-                                        }
-                                    }
-                                }, null);
+                                return VisitResult.CONTINUE;
                             }
-                        }, null);
+
+                            @Override
+                            public VisitResult visitValue(Model.Value value) {
+                                switch (++index) {
+                                    case (7):
+                                        assertThat(value.key(), is("key1.1"));
+                                        assertThat(value.value(), is("value1.1"));
+                                        break;
+                                    case (9):
+                                        assertThat(value.key(), is(nullValue()));
+                                        assertThat(value.value(), is("value1.2a"));
+                                        break;
+                                    case (10):
+                                        assertThat(value.key(), is(nullValue()));
+                                        assertThat(value.value(), is("value1.2b"));
+                                        break;
+                                    case (11):
+                                        assertThat(value.key(), is("key2"));
+                                        assertThat(value.order(), is(50));
+                                        assertThat(value.value(), is("value2"));
+                                        break;
+                                    case (13):
+                                        assertThat(value.key(), is(nullValue()));
+                                        assertThat(value.value(), is("value3.1"));
+                                        break;
+                                    case (15):
+                                        assertThat(value.key(), is(nullValue()));
+                                        assertThat(value.value(), is("value3.2-a"));
+                                        break;
+                                    case (16):
+                                        assertThat(value.key(), is(nullValue()));
+                                        assertThat(value.value(), is("value3.2-b"));
+                                        break;
+                                    case (18):
+                                        assertThat(value.key(), is("key3.3-a"));
+                                        assertThat(value.value(), is("value3.3-a"));
+                                        break;
+                                    case (19):
+                                        assertThat(value.key(), is("key3.3-b"));
+                                        assertThat(value.value(), is("value3.3-b"));
+                                        break;
+                                    default:
+                                        Assertions.fail("Unexpected index: " + index);
+                                }
+                                return VisitResult.CONTINUE;
+                            }
+                        });
                     }
-                }, null);
-                return Node.VisitResult.CONTINUE;
+                });
             }
 
             @Override
-            public Node.VisitResult postVisitBlock(Block block, Void arg) {
+            public VisitResult postVisitBlock(Block block) {
                 if (block.blockKind() == Block.Kind.SCRIPT) {
-                    assertThat(index, is(20));
+                    assertThat(index, is(19));
                 }
-                return Node.VisitResult.CONTINUE;
+                return VisitResult.CONTINUE;
             }
-        }, script.body(), null);
+        }, script.body());
     }
 
     @Test
     public void testScopedModel() {
         Script script = load("loader/scoped-model.xml");
-        Walker.walk(new Node.Visitor<Void>() {
+        Walker.walk(new Node.Visitor() {
             int index = 0;
 
             @Override
-            public Node.VisitResult preVisitBlock(Block block, Void arg) {
-                block.accept(new Block.Visitor<Void>() {
+            public VisitResult visitBlock(Block block) {
+                return block.accept(new Block.Visitor() {
                     @Override
-                    public void visitOutput(Output output, Void arg) {
-                        output.accept(new Output.Visitor<Void>() {
+                    public VisitResult visitOutput(Output output) {
+                        return output.accept(new Output.Visitor() {
                             @Override
-                            public void visitTemplate(Output.Template template, Void arg) {
+                            public VisitResult visitTemplate(Output.Template template) {
                                 assertThat(++index, is(1));
                                 assertThat(template.engine(), is("tpl-engine-1"));
                                 assertThat(template.source(), is("file1.tpl"));
                                 assertThat(template.target(), is("file1.txt"));
-                                Walker.walk(new Node.Visitor<Void>() {
-                                    @Override
-                                    public Node.VisitResult preVisitBlock(Block block, Void arg) {
-                                        block.accept(new Block.Visitor<Void>() {
-                                            @Override
-                                            public void visitOutput(Output output, Void arg) {
-                                                output.accept(new Output.Visitor<Void>() {
-                                                    @Override
-                                                    public void visitModel(Model model, Void arg) {
-                                                        model.accept(new Model.Visitor<Void>() {
-                                                            @Override
-                                                            public void visitValue(Model.Value value, Void arg) {
-                                                                assertThat(++index, is(2));
-                                                                assertThat(value.key(), is("key1"));
-                                                                assertThat(value.value(), is("value1"));
-                                                            }
-                                                        }, null);
-                                                    }
-                                                }, null);
-                                            }
-                                        }, null);
-                                        return Node.VisitResult.CONTINUE;
-                                    }
-                                }, template, null);
+                                return VisitResult.CONTINUE;
                             }
+                        });
+                    }
 
+                    @Override
+                    public VisitResult visitModel(Model model) {
+                        return model.accept(new Model.Visitor() {
                             @Override
-                            public void visitModel(Model model, Void arg) {
-                                if (model.blockKind() == Block.Kind.MODEL) {
-                                    assertThat(++index, is(3));
-                                }
-                                model.accept(new Model.Visitor<Void>() {
-                                    @Override
-                                    public void visitValue(Model.Value value, Void arg) {
-                                        assertThat(++index, is(4));
+                            public VisitResult visitValue(Model.Value value) {
+                                switch (++index) {
+                                    case 2:
+                                        assertThat(value.key(), is("key1"));
+                                        assertThat(value.value(), is("value1"));
+                                        break;
+                                    case 3:
                                         assertThat(value.key(), is("key2"));
                                         assertThat(value.value(), is("value2"));
-                                    }
-                                }, null);
+                                        break;
+                                    default:
+                                        Assertions.fail("Unexpected index: " + index);
+                                }
+                                return VisitResult.CONTINUE;
                             }
-                        }, null);
+                        });
                     }
-                }, null);
-                if (block.blockKind() == Block.Kind.TEMPLATE) {
-                    // skip traversing to "scope" the model
-                    return Node.VisitResult.SKIP_SUBTREE;
-                }
-                return Node.VisitResult.CONTINUE;
+                });
             }
 
             @Override
-            public Node.VisitResult postVisitBlock(Block block, Void arg) {
+            public VisitResult postVisitBlock(Block block) {
                 if (block.blockKind() == Block.Kind.SCRIPT) {
-                    assertThat(index, is(4));
+                    assertThat(index, is(3));
                 }
-                return Node.VisitResult.CONTINUE;
+                return VisitResult.CONTINUE;
             }
-        }, script.body(), null);
+        }, script.body());
     }
 
     @Test
     public void testConditional() {
         Script script = load("loader/conditional.xml");
-        Walker.walk(new Node.Visitor<Void>() {
+        Walker.walk(new Node.Visitor() {
             int index = 0;
 
             @Override
-            public Node.VisitResult visitCondition(Condition condition, Void arg) {
+            public VisitResult visitCondition(Condition condition) {
                 if (condition.expression().eval()) {
-                    return Node.VisitResult.CONTINUE;
+                    return VisitResult.CONTINUE;
                 }
-                return Node.VisitResult.SKIP_SUBTREE;
+                return VisitResult.SKIP_SUBTREE;
             }
 
             @Override
-            public Node.VisitResult preVisitBlock(Block block, Void arg) {
-                block.accept(new Block.Visitor<Void>() {
+            public VisitResult visitBlock(Block block) {
+                return block.accept(new Block.Visitor() {
 
                     @Override
-                    public void visitStep(Step step, Void arg) {
+                    public VisitResult visitStep(Step step) {
                         assertThat(++index, is(1));
                         assertThat(step.label(), is("Step 1"));
                         assertThat(step.help(), is("Help about step 1"));
+                        return VisitResult.CONTINUE;
                     }
 
                     @Override
-                    public void visitInput(Input input, Void arg) {
-                        input.accept(new Input.Visitor<Void>() {
+                    public VisitResult visitInput(Input input) {
+                        return input.accept(new Input.Visitor() {
                             @Override
-                            public void visitBoolean(Input.Boolean input, Void arg) {
+                            public VisitResult visitBoolean(Input.Boolean input) {
                                 assertThat(++index, is(2));
                                 assertThat(input.name(), is("input1"));
                                 assertThat(input.label(), is("Input 1"));
+                                return VisitResult.CONTINUE;
                             }
-                        }, null);
+                        });
                     }
 
                     @Override
-                    public void visitOutput(Output output, Void arg) {
-                        output.accept(new Output.Visitor<Void>() {
+                    public VisitResult visitOutput(Output output) {
+                        return output.accept(new Output.Visitor() {
                             @Override
-                            public void visitFile(Output.File file, Void arg) {
+                            public VisitResult visitFile(Output.File file) {
                                 assertThat(++index, is(3));
                                 assertThat(file.source(), is("file1.txt"));
                                 assertThat(file.target(), is("file2.txt"));
+                                return VisitResult.CONTINUE;
                             }
-                        }, null);
+                        });
                     }
-                }, null);
-                return Node.VisitResult.CONTINUE;
+                });
             }
 
             @Override
-            public Node.VisitResult postVisitBlock(Block block, Void arg) {
+            public VisitResult postVisitBlock(Block block) {
                 if (block.blockKind() == Block.Kind.SCRIPT) {
                     assertThat(index, is(3));
                 }
-                return Node.VisitResult.CONTINUE;
+                return VisitResult.CONTINUE;
             }
-        }, script.body(), null);
+        }, script.body());
     }
 }

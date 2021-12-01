@@ -51,8 +51,13 @@ public class Step extends Block {
     }
 
     @Override
-    public <A> void accept(Visitor<A> visitor, A arg) {
-        visitor.visitStep(this, arg);
+    public VisitResult accept(Visitor visitor) {
+        return visitor.visitStep(this);
+    }
+
+    @Override
+    public VisitResult acceptAfter(Visitor visitor) {
+        return visitor.postVisitStep(this);
     }
 
     /**

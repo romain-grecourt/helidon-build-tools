@@ -32,13 +32,10 @@ import com.github.mustachejava.Binding;
 import com.github.mustachejava.Code;
 import com.github.mustachejava.DefaultMustacheFactory;
 import com.github.mustachejava.Mustache;
-import com.github.mustachejava.MustacheException;
 import com.github.mustachejava.TemplateContext;
 import com.github.mustachejava.reflect.SimpleObjectHandler;
 import com.github.mustachejava.util.Wrapper;
 import io.helidon.build.archetype.engine.v2.ast.Block;
-import io.helidon.build.archetype.engine.v2.ast.Model;
-import io.helidon.build.archetype.engine.v2.ast.Model.MergeableModel;
 import io.helidon.build.archetype.engine.v2.spi.TemplateSupport;
 
 /**

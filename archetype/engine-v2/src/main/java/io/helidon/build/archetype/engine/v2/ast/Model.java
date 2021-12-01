@@ -21,7 +21,7 @@ import java.util.Objects;
 /**
  * Model block.
  */
-public class Model extends Output {
+public abstract class Model extends Block {
 
     private Model(Model.Builder builder) {
         super(builder);
@@ -29,36 +29,79 @@ public class Model extends Output {
 
     /**
      * Model visitor.
-     *
-     * @param <A> argument type
      */
-    public interface Visitor<A> {
+    public interface Visitor {
 
         /**
          * Visit a list model.
          *
          * @param list list
-         * @param arg  argument
+         * @return result
          */
-        default void visitList(List list, A arg) {
+        default VisitResult visitList(List list) {
+            return visitAny(list);
+        }
+
+        /**
+         * Visit a list after traversing the nested statements.
+         *
+         * @param list list
+         * @return result
+         */
+        default VisitResult postVisitList(List list) {
+            return postVisitAny(list);
         }
 
         /**
          * Visit a map model.
          *
          * @param map map
-         * @param arg argument
+         * @return result
          */
-        default void visitMap(Map map, A arg) {
+        default VisitResult visitMap(Map map) {
+            return visitAny(map);
+        }
+
+        /**
+         * Visit a map after traversing the nested statements.
+         *
+         * @param map map
+         * @return result
+         */
+        default VisitResult postVisitMap(Map map) {
+            return postVisitAny(map);
         }
 
         /**
          * Visit a value.
          *
          * @param value value
-         * @param arg   argument
+         * @return result
          */
-        default void visitValue(Value value, A arg) {
+        default VisitResult visitValue(Value value) {
+            return visitAny(value);
+        }
+
+        /**
+         * Visit any model.
+         *
+         * @param model model
+         * @return result
+         */
+        @SuppressWarnings("unused")
+        default VisitResult visitAny(Model model) {
+            return VisitResult.CONTINUE;
+        }
+
+        /**
+         * Visit any model after traversing the nested statements.
+         *
+         * @param model model
+         * @return result
+         */
+        @SuppressWarnings("unused")
+        default VisitResult postVisitAny(Model model) {
+            return VisitResult.CONTINUE;
         }
     }
 
@@ -66,15 +109,26 @@ public class Model extends Output {
      * Visit this model.
      *
      * @param visitor visitor
-     * @param arg     argument
-     * @param <A>     argument type
+     * @return result
      */
-    public <A> void accept(Visitor<A> visitor, A arg) {
+    public abstract VisitResult accept(Visitor visitor);
+
+    /**
+     * Visit this model after traversing the nested statements.
+     *
+     * @param visitor visitor
+     * @return result
+     */
+    public abstract VisitResult acceptAfter(Visitor visitor);
+
+    @Override
+    public VisitResult accept(Block.Visitor visitor) {
+        return visitor.visitModel(this);
     }
 
     @Override
-    public <A> void accept(Output.Visitor<A> visitor, A arg) {
-        visitor.visitModel(this, arg);
+    public VisitResult acceptAfter(Block.Visitor visitor) {
+        return visitor.postVisitModel(this);
     }
 
     /**
@@ -87,8 +141,13 @@ public class Model extends Output {
         }
 
         @Override
-        public <A> void accept(Model.Visitor<A> visitor, A arg) {
-            visitor.visitList(this, arg);
+        public VisitResult accept(Model.Visitor visitor) {
+            return visitor.visitList(this);
+        }
+
+        @Override
+        public VisitResult acceptAfter(Model.Visitor visitor) {
+            return visitor.postVisitList(this);
         }
     }
 
@@ -136,8 +195,13 @@ public class Model extends Output {
         }
 
         @Override
-        public <A> void accept(Model.Visitor<A> visitor, A arg) {
-            visitor.visitMap(this, arg);
+        public VisitResult accept(Model.Visitor visitor) {
+            return visitor.visitMap(this);
+        }
+
+        @Override
+        public VisitResult acceptAfter(Model.Visitor visitor) {
+            return visitor.postVisitMap(this);
         }
     }
 
@@ -163,8 +227,13 @@ public class Model extends Output {
         }
 
         @Override
-        public <A> void accept(Model.Visitor<A> visitor, A arg) {
-            visitor.visitValue(this, arg);
+        public VisitResult accept(Model.Visitor visitor) {
+            return visitor.visitValue(this);
+        }
+
+        @Override
+        public VisitResult acceptAfter(Model.Visitor visitor) {
+            return VisitResult.CONTINUE;
         }
     }
 
@@ -183,7 +252,7 @@ public class Model extends Output {
     /**
      * Model block builder.
      */
-    public static class Builder extends Output.Builder {
+    public static class Builder extends Block.Builder {
 
         private String value;
 
@@ -208,8 +277,6 @@ public class Model extends Output {
                 return b;
             });
             switch (kind) {
-                case MODEL:
-                    return new Model(this);
                 case MAP:
                     return new Map(this);
                 case LIST:
@@ -217,7 +284,7 @@ public class Model extends Output {
                 case VALUE:
                     return new Value(this);
                 default:
-                    throw new IllegalArgumentException("Unknown model block kind: " + kind);
+                    throw new IllegalArgumentException("Unknown model block: " + kind);
             }
         }
     }

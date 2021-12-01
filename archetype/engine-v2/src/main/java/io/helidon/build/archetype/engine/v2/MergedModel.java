@@ -15,14 +15,13 @@
  */
 package io.helidon.build.archetype.engine.v2;
 
-import io.helidon.build.archetype.engine.v2.ast.Block;
-import io.helidon.build.archetype.engine.v2.ast.Model;
-import io.helidon.build.archetype.engine.v2.ast.Node;
-import io.helidon.build.archetype.engine.v2.ast.Output;
-
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
+
+import io.helidon.build.archetype.engine.v2.ast.Block;
+import io.helidon.build.archetype.engine.v2.ast.Model;
+import io.helidon.build.archetype.engine.v2.ast.Node.VisitResult;
 
 /**
  * Merged model.
@@ -84,7 +83,7 @@ abstract class MergedModel {
      */
     static MergedModel resolve(Block block, Context context) {
         Resolver resolver = new Resolver();
-        Walker.walk(resolver, block, context);
+        Controller.run(resolver, context, block);
         return resolver.head;
     }
 
@@ -160,44 +159,39 @@ abstract class MergedModel {
         }
     }
 
-    private static class Resolver extends Controller implements Output.Visitor<Void>, Model.Visitor<Void> {
+    private static class Resolver implements Model.Visitor {
 
         MergedModel head = new Map(null, null, 0);
 
         @Override
-        public void visitList(Model.List list, Void arg) {
+        public VisitResult visitList(Model.List list) {
             head = head.add(new List(head, list.key(), list.order()));
+            return VisitResult.CONTINUE;
         }
 
         @Override
-        public void visitMap(Model.Map map, Void arg) {
+        public VisitResult visitMap(Model.Map map) {
             head = head.add(new Map(head, map.key(), map.order()));
+            return VisitResult.CONTINUE;
         }
 
         @Override
-        public void visitValue(Model.Value value, Void arg) {
-            head = head.add(new Value(head, value.key(), value.order(), value.value()));
+        public VisitResult visitValue(Model.Value value) {
+            // value is a leaf-node, thus we are not updating the head
+            head.add(new Value(head, value.key(), value.order(), value.value()));
+            return VisitResult.CONTINUE;
         }
 
         @Override
-        public void visitModel(Model model, Void arg) {
-            model.accept((Model.Visitor<Void>) this, arg);
+        public VisitResult postVisitList(Model.List list) {
+            head.sort();
+            return postVisitAny(list);
         }
 
         @Override
-        public void visitOutput(Output output, Void arg) {
-            output.accept((Output.Visitor<Void>) this, arg);
-        }
-
-        @Override
-        public Node.VisitResult postVisitBlock(Block block, Context arg) {
-            if (block instanceof Model && block.blockKind() != Block.Kind.MODEL) {
-                if (block instanceof Model.List) {
-                    head.sort();
-                }
-                head = head.parent;
-            }
-            return Node.VisitResult.CONTINUE;
+        public VisitResult postVisitAny(Model model) {
+            head = head.parent;
+            return VisitResult.CONTINUE;
         }
     }
 }

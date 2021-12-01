@@ -26,7 +26,7 @@ import static java.util.Collections.emptyList;
 /**
  * Output block.
  */
-public class Output extends Block {
+public abstract class Output extends Block {
 
     /**
      * Create a new output.
@@ -40,62 +40,89 @@ public class Output extends Block {
     /**
      * Output visitor.
      *
-     * @param <A> argument type
      */
-    public interface Visitor<A> {
+    public interface Visitor {
 
         /**
          * Visit a transformation block.
          *
          * @param transformation transformation
-         * @param arg            argument
+         * @return result
          */
-        default void visitTransformation(Transformation transformation, A arg) {
+        default VisitResult visitTransformation(Transformation transformation) {
+            return visitAny(transformation);
         }
 
         /**
          * Visit a files block.
          *
          * @param files files
-         * @param arg   argument
+         * @return result
          */
-        default void visitFiles(Files files, A arg) {
+        default VisitResult visitFiles(Files files) {
+            return visitAny(files);
         }
 
         /**
          * Visit a templates block.
          *
          * @param templates templates
-         * @param arg       argument
+         * @return result
          */
-        default void visitTemplates(Templates templates, A arg) {
+        default VisitResult visitTemplates(Templates templates) {
+            return visitAny(templates);
         }
 
         /**
          * Visit a file block.
          *
          * @param file file
-         * @param arg  argument
+         * @return result
          */
-        default void visitFile(File file, A arg) {
+        default VisitResult visitFile(File file) {
+            return visitAny(file);
         }
 
         /**
          * Visit a template block.
          *
          * @param template template
-         * @param arg      argument
+         * @return result
          */
-        default void visitTemplate(Template template, A arg) {
+        default VisitResult visitTemplate(Template template) {
+            return visitAny(template);
         }
 
         /**
-         * Visit a template block.
+         * Visit a template block after traversing the nested statements.
          *
-         * @param model model
-         * @param arg   argument
+         * @param template template
+         * @return result
          */
-        default void visitModel(Model model, A arg) {
+        default VisitResult postVisitTemplate(Template template) {
+            return postVisitAny(template);
+        }
+
+        /**
+         * Visit any output.
+         *
+         * @param output output
+         * @return result
+         */
+        @SuppressWarnings("unused")
+        default VisitResult visitAny(Output output) {
+            return VisitResult.CONTINUE;
+        }
+
+        /**
+         * Visit any output after traversing the nested statements.
+         *
+         * @param output output
+         * @return result
+         */
+        @SuppressWarnings("unused")
+        default VisitResult postVisitAny(Output output) {
+            return VisitResult.CONTINUE;
         }
     }
 
@@ -103,15 +130,26 @@ public class Output extends Block {
      * Visit this output.
      *
      * @param visitor visitor
-     * @param arg     argument
-     * @param <A>     argument type
+     * @return result
      */
-    public <A> void accept(Visitor<A> visitor, A arg) {
+    public abstract VisitResult accept(Visitor visitor);
+
+    /**
+     * Visit this output after traversing the nested statements.
+     *
+     * @param visitor visitor
+     * @return result
+     */
+    public abstract VisitResult acceptAfter(Visitor visitor);
+
+    @Override
+    public VisitResult accept(Block.Visitor visitor) {
+        return visitor.visitOutput(this);
     }
 
     @Override
-    public <A> void accept(Block.Visitor<A> visitor, A arg) {
-        visitor.visitOutput(this, arg);
+    public VisitResult acceptAfter(Block.Visitor visitor) {
+        return visitor.postVisitOutput(this);
     }
 
     /**
@@ -129,8 +167,13 @@ public class Output extends Block {
         }
 
         @Override
-        public <A> void accept(Output.Visitor<A> visitor, A arg) {
-            visitor.visitTransformation(this, arg);
+        public VisitResult accept(Output.Visitor visitor) {
+            return visitor.visitTransformation(this);
+        }
+
+        @Override
+        public VisitResult acceptAfter(Output.Visitor visitor) {
+            return VisitResult.CONTINUE;
         }
 
         /**
@@ -209,8 +252,13 @@ public class Output extends Block {
         }
 
         @Override
-        public <A> void accept(Output.Visitor<A> visitor, A arg) {
-            visitor.visitFiles(this, arg);
+        public VisitResult accept(Output.Visitor visitor) {
+            return visitor.visitFiles(this);
+        }
+
+        @Override
+        public VisitResult acceptAfter(Output.Visitor visitor) {
+            return VisitResult.CONTINUE;
         }
 
         /**
@@ -263,8 +311,8 @@ public class Output extends Block {
         }
 
         @Override
-        public <A> void accept(Output.Visitor<A> visitor, A arg) {
-            visitor.visitTemplates(this, arg);
+        public VisitResult accept(Output.Visitor visitor) {
+            return visitor.visitTemplates(this);
         }
 
         /**
@@ -297,8 +345,13 @@ public class Output extends Block {
         }
 
         @Override
-        public <A> void accept(Output.Visitor<A> visitor, A arg) {
-            visitor.visitFile(this, arg);
+        public VisitResult accept(Output.Visitor visitor) {
+            return visitor.visitFile(this);
+        }
+
+        @Override
+        public VisitResult acceptAfter(Output.Visitor visitor) {
+            return VisitResult.CONTINUE;
         }
 
         /**
@@ -338,8 +391,13 @@ public class Output extends Block {
         }
 
         @Override
-        public <A> void accept(Output.Visitor<A> visitor, A arg) {
-            visitor.visitTemplate(this, arg);
+        public VisitResult accept(Output.Visitor visitor) {
+            return visitor.visitTemplate(this);
+        }
+
+        @Override
+        public VisitResult acceptAfter(Output.Visitor visitor) {
+            return visitor.postVisitTemplate(this);
         }
 
         /**
@@ -407,7 +465,7 @@ public class Output extends Block {
         }
 
         private boolean doRemove(Block.Builder b) {
-            switch(b.kind) {
+            switch (b.kind) {
                 case EXCLUDES:
                 case INCLUDES:
                     remove(b.statements, Noop.Builder.class, this::doRemove);
@@ -422,8 +480,6 @@ public class Output extends Block {
             remove(statements, Noop.Builder.class, this::doRemove);
             remove(statements, Block.Builder.class, this::doRemove);
             switch (kind) {
-                case OUTPUT:
-                    return new Output(this);
                 case TRANSFORMATION:
                     return new Transformation(this);
                 case FILES:
@@ -435,7 +491,7 @@ public class Output extends Block {
                 case TEMPLATE:
                     return new Template(this);
                 default:
-                    throw new IllegalArgumentException("Unknown output block kind: " + kind);
+                    throw new IllegalArgumentException("Unknown output block: " + kind);
             }
         }
     }

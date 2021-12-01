@@ -137,8 +137,13 @@ public final class Context {
         return values.get(key);
     }
 
+    /**
+     * Create a new context.
+     *
+     * @return context
+     */
     static Context create() {
-        return create(Path.of(""));
+        return new Context(Path.of(""));
     }
 
     /**
@@ -148,6 +153,17 @@ public final class Context {
      * @return context
      */
     public static Context create(Path cwd) {
+        return new Context(cwd);
+    }
+
+    /**
+     * Create a new context.
+     *
+     * @param cwd initial working directory
+     * @param env initial environment
+     * @return context
+     */
+    public static Context create(Path cwd, Map<String, String> env) {
         return new Context(cwd);
     }
 

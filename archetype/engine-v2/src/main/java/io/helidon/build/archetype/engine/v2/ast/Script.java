@@ -41,12 +41,12 @@ public final class Script extends Node {
     }
 
     @Override
-    public <A> VisitResult accept(Visitor<A> visitor, A arg) {
-        VisitResult result = visitor.visitScript(this, arg);
+    public VisitResult accept(Visitor visitor) {
+        VisitResult result = visitor.visitScript(this);
         if (result != VisitResult.CONTINUE) {
             return result;
         }
-        return body.accept(visitor, arg);
+        return body.accept(visitor);
     }
 
     /**

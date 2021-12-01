@@ -19,24 +19,31 @@ package io.helidon.build.archetype.engine.v2;
 import io.helidon.build.archetype.engine.v2.ast.Input;
 import io.helidon.build.archetype.engine.v2.ast.Script;
 
-import java.io.File;
+import java.nio.file.FileSystem;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
- * Archetype engine (version 2).
+ * Archetype engine (v2).
  */
 public class ArchetypeEngineV2 {
 
-    private final Path entryPoint;
-    private final Input.Visitor<Context> prompter;
-    private final Map<String, String> env;
+    private final Path cwd;
+    private final Input.Visitor inputResolver;
+    private final Context context;
 
-    public ArchetypeEngineV2(Path entryPoint, Input.Visitor<Context> prompter, Map<String, String> env) {
-        this.entryPoint = entryPoint;
-        this.prompter = prompter;
-        // TODO init context with entry point and env
-        this.env = env;
+    /**
+     * Create a new archetype engine.
+     *
+     * @param fs       archetype file system
+     * @param resolver input resolver factory
+     * @param env      initial context environment
+     */
+    public ArchetypeEngineV2(FileSystem fs, Function<Context, Input.Visitor> resolver, Map<String, String> env) {
+        cwd = fs.getPath("/");
+        context = Context.create(cwd, env);
+        inputResolver = resolver.apply(context);
     }
 
     /**
@@ -44,31 +51,9 @@ public class ArchetypeEngineV2 {
      *
      * @param directory output directory
      */
-    public void generate(File directory) {
-        Context ctx = evalInput();
-//        Output output = evalOutput(ctx);
-        // TODO generate (get code from OutputGenerator)
+    public void generate(Path directory) {
+        Script entrypoint = ScriptLoader.load(cwd.resolve("flavor.xml"));
+        Controller.run(inputResolver, context, entrypoint.body());
+        Controller.run(new OutputGenerator(directory), context, entrypoint.body());
     }
-
-    private Context evalInput() {
-        // TODO populate context from env
-        Context ctx = Context.create(entryPoint.getParent());
-        Script script = ScriptLoader.load(entryPoint);
-//        script.accept(new InputInterpreter(prompter, batch), ctx);
-        return ctx;
-    }
-
-//    private Output evalOutput(Context ctx) {
-        // TODO just do this as another full path on the tree
-        // i.e remove unresolvedOutput from the context
-        // the 2nd pass will need to accumulate the global model, list of file and templates
-        // and do the rendering at the end
-
-        // TODO sub-class output builder since the fields are private and have no accessor
-        // we need to mutate the underlying data to merge while visiting
-//        Output.Builder builder = Output.builder();
-//        ctx.outputs().accept(new OutputInterpreter(), builder);
-//        return builder.build();
-//        return null;
-//    }
 }

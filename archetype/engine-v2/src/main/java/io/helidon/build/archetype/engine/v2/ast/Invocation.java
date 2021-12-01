@@ -52,8 +52,8 @@ public final class Invocation extends Statement {
     }
 
     @Override
-    public <A> VisitResult accept(Node.Visitor<A> visitor, A arg) {
-        return visitor.visitInvocation(this, arg);
+    public VisitResult accept(Node.Visitor visitor) {
+        return visitor.visitInvocation(this);
     }
 
     /**

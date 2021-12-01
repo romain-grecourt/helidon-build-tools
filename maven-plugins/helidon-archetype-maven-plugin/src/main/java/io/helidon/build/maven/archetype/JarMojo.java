@@ -159,14 +159,20 @@ public class JarMojo extends AbstractMojo {
     public void execute() throws MojoExecutionException, MojoFailureException {
         Path archetypeDir = outputDirectory.toPath().resolve("archetype");
         Path baseDir = project.getBasedir().toPath();
+
+        // TODO remove
         Path archetypeDescriptor = archetypeDir.resolve(ArchetypeEngine.DESCRIPTOR_RESOURCE_NAME);
+        // TODO remove
         Path archetypeResourcesList = archetypeDir.resolve(ArchetypeEngine.RESOURCES_LIST);
 
         Map<String, List<String>> resources = scanResources();
+
+        // TODO removed (converted to process v2 xml)
         processDescriptor(resources, baseDir, archetypeDescriptor);
         if (mavenArchetypeCompatible) {
             processMavenCompat(archetypeDir, archetypeDescriptor);
         }
+        // TODO removed, instead we include everything
         processArchetypeResources(resources, archetypeDir, baseDir, archetypeResourcesList);
 
         File jarFile = generateArchetypeJar(archetypeDir);

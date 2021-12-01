@@ -17,10 +17,11 @@
 package io.helidon.build.cli.impl;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.UncheckedIOException;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -38,7 +39,8 @@ import io.helidon.build.archetype.engine.v1.FlowNodeControllers;
 import io.helidon.build.archetype.engine.v1.FlowNodeControllers.FlowNodeController;
 import io.helidon.build.archetype.engine.v1.Maps;
 import io.helidon.build.archetype.engine.v2.ArchetypeEngineV2;
-import io.helidon.build.archetype.engine.v2.ArchetypeArchive;
+import io.helidon.build.archetype.engine.v2.Context;
+import io.helidon.build.archetype.engine.v2.Prompter;
 import io.helidon.build.cli.impl.InitOptions.Flavor;
 import io.helidon.build.common.maven.MavenVersion;
 
@@ -183,7 +185,7 @@ abstract class ArchetypeInvoker {
 
         /**
          * Set the project directory supplier.
-         *
+         * <p>
          * The project directory supplier takes a project name and returns
          * a Path to the project directory.
          *
@@ -288,15 +290,9 @@ abstract class ArchetypeInvoker {
 
         @Override
         Path invoke() {
+            ArchetypeEngineV2 engine = new ArchetypeEngineV2(archetype(), this::prompter, Map.of());
             Path projectDir = projectDirSupplier().apply(initOptions().initProperties().get("name"));
-
-            ArchetypeEngineV2 engine = new ArchetypeEngineV2(
-                    Path.of(""),
-                    null,
-                    new HashMap<>());
-
-            engine.generate(projectDir.toFile());
-            deleteArchetype(projectDir.resolve("cli-data.zip"));
+            engine.generate(projectDir);
             return projectDir;
         }
 
@@ -305,43 +301,24 @@ abstract class ArchetypeInvoker {
             return EngineVersion.V2;
         }
 
-        /**
-         * Get the archetype file.
-         * This is a temporary method which need to be removed. Instead, a mechanism
-         * for passing archetype to cli has to be found.
-         *
-         * @param directory directory
-         * @return  archetype
-         */
-        private ArchetypeArchive getArchetype(File directory) {
-            try (
-                    InputStream is = getClass().getResourceAsStream("/cli-data.zip")
-            ) {
-                Path outputPath = Path.of(directory.getAbsolutePath()).resolve("cli-data.zip");
-                outputPath.toFile().getParentFile().mkdirs();
-                Files.createFile(outputPath);
-                OutputStream os = new FileOutputStream(outputPath.toString());
-                os.write(is.readAllBytes());
-                os.close();
-                File archetype = new File(outputPath.toString());
-                return null;
-//                return ArchetypeFactory.create(archetype);
-            } catch (IOException e) {
-                e.printStackTrace();
-                return null;
-            }
+        private Prompter prompter(Context ctx) {
+            return new Prompter(ctx, System.in);
         }
 
-        /**
-         * Delete archetype after being used.
-         * This method has to be removed.
-         *
-         * @param archetype archetype file path
-         */
-        private void deleteArchetype(Path archetype) {
+        private FileSystem archetype() {
+            // TODO This is a temporary method which need to be removed
+            //  Instead, a mechanism for passing archetype to cli has to be found.
             try {
-                Files.delete(archetype);
-            } catch (IOException ignored) {
+                Path tempDirectory = Files.createTempDirectory("archetype");
+                Path data = tempDirectory.resolve("cli-data.zip");
+                InputStream is = getClass().getResourceAsStream("/cli-data.zip");
+                if (is == null) {
+                    throw new IllegalArgumentException("cli-data.zip not found in class-path");
+                }
+                Files.copy(is, data);
+                return FileSystems.newFileSystem(data, null);
+            } catch (IOException ex) {
+                throw new UncheckedIOException(ex);
             }
         }
     }

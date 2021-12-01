@@ -247,7 +247,6 @@ public class ScriptLoader {
                 case PRESETS:
                     nextState = State.PRESET;
                     break;
-                case OUTPUT:
                 case TRANSFORMATION:
                 case FILES:
                 case TEMPLATES:
@@ -255,7 +254,6 @@ public class ScriptLoader {
                 case TEMPLATE:
                     builder = Output.builder(location, position, blockKind);
                     break;
-                case MODEL:
                 case MAP:
                 case VALUE:
                 case LIST:

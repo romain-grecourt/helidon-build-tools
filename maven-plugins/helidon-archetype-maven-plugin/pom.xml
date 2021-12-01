@@ -50,6 +50,7 @@
             <classifier>schema-2.0</classifier>
             <type>xml</type>
             <version>${project.version}</version>
+            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
