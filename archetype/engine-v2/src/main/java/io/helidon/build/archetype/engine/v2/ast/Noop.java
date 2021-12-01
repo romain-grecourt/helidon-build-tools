@@ -24,8 +24,9 @@ import static java.util.stream.Collectors.toUnmodifiableList;
 
 /**
  * No-op statement builder used at "builder-time" only.
- * This is a hack used to let the XML reader follow the document hierarchy.
- * I.e. It is used to represent nested XML elements that are stored as field rather than tree nodes.
+ * <p>
+ * This is a hack that helps in making the XML reader strictly follow the document hierarchy. It is used to map
+ * the values of some nested XML elements as fields rather than child nodes.
  */
 public final class Noop {
 
