@@ -79,20 +79,18 @@ public class Block extends Statement {
     /**
      * Block visitor.
      *
-     * @param <R> result type
      * @param <A> argument type
      */
-    public interface Visitor<R, A> {
+    public interface Visitor<A> {
 
         /**
          * Visit an input block.
          *
          * @param input input
          * @param arg   argument visitor
-         * @return visit result
          */
-        default R visitInput(Input input, A arg) {
-            return visitBlock(input, arg);
+        default void visitInput(Input input, A arg) {
+            visitBlock(input, arg);
         }
 
         /**
@@ -100,10 +98,9 @@ public class Block extends Statement {
          *
          * @param step step
          * @param arg  argument visitor
-         * @return visit result
          */
-        default R visitStep(Step step, A arg) {
-            return visitBlock(step, arg);
+        default void visitStep(Step step, A arg) {
+            visitBlock(step, arg);
         }
 
         /**
@@ -111,10 +108,9 @@ public class Block extends Statement {
          *
          * @param output output
          * @param arg    argument visitor
-         * @return visit result
          */
-        default R visitOutput(Output output, A arg) {
-            return visitBlock(output, arg);
+        default void visitOutput(Output output, A arg) {
+            visitBlock(output, arg);
         }
 
         /**
@@ -122,11 +118,9 @@ public class Block extends Statement {
          *
          * @param block block
          * @param arg   argument visitor
-         * @return visit result
          */
         @SuppressWarnings("unused")
-        default R visitBlock(Block block, A arg) {
-            return null;
+        default void visitBlock(Block block, A arg) {
         }
     }
 
@@ -135,12 +129,10 @@ public class Block extends Statement {
      *
      * @param visitor block visitor
      * @param arg     argument
-     * @param <R>     result type
      * @param <A>     argument type
-     * @return visit result
      */
-    public <R, A> R accept(Visitor<R, A> visitor, A arg) {
-        return visitor.visitBlock(this, arg);
+    public <A> void accept(Visitor<A> visitor, A arg) {
+        visitor.visitBlock(this, arg);
     }
 
     @Override

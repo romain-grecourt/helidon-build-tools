@@ -39,20 +39,17 @@ public class Output extends Block {
     /**
      * Output visitor.
      *
-     * @param <R> result type
      * @param <A> argument type
      */
-    public interface Visitor<R, A> {
+    public interface Visitor<A> {
 
         /**
          * Visit a transformation block.
          *
          * @param transformation transformation
          * @param arg            argument
-         * @return visit result
          */
-        default R visitTransformation(Transformation transformation, A arg) {
-            return null;
+        default void visitTransformation(Transformation transformation, A arg) {
         }
 
         /**
@@ -60,10 +57,8 @@ public class Output extends Block {
          *
          * @param files files
          * @param arg   argument
-         * @return visit result
          */
-        default R visitFiles(Files files, A arg) {
-            return null;
+        default void visitFiles(Files files, A arg) {
         }
 
         /**
@@ -71,10 +66,8 @@ public class Output extends Block {
          *
          * @param templates templates
          * @param arg       argument
-         * @return visit result
          */
-        default R visitTemplates(Templates templates, A arg) {
-            return null;
+        default void visitTemplates(Templates templates, A arg) {
         }
 
         /**
@@ -82,10 +75,8 @@ public class Output extends Block {
          *
          * @param file file
          * @param arg  argument
-         * @return visit result
          */
-        default R visitFile(File file, A arg) {
-            return null;
+        default void visitFile(File file, A arg) {
         }
 
         /**
@@ -93,10 +84,8 @@ public class Output extends Block {
          *
          * @param template template
          * @param arg      argument
-         * @return visit result
          */
-        default R visitTemplate(Template template, A arg) {
-            return null;
+        default void visitTemplate(Template template, A arg) {
         }
 
         /**
@@ -104,10 +93,8 @@ public class Output extends Block {
          *
          * @param model model
          * @param arg   argument
-         * @return visit result
          */
-        default R visitModel(Model model, A arg) {
-            return null;
+        default void visitModel(Model model, A arg) {
         }
     }
 
@@ -116,17 +103,14 @@ public class Output extends Block {
      *
      * @param visitor visitor
      * @param arg     argument
-     * @param <R>     result type
      * @param <A>     argument type
-     * @return visit result
      */
-    public <R, A> R accept(Visitor<R, A> visitor, A arg) {
-        return null;
+    public <A> void accept(Visitor<A> visitor, A arg) {
     }
 
     @Override
-    public <R, A> R accept(Block.Visitor<R, A> visitor, A arg) {
-        return visitor.visitOutput(this, arg);
+    public <A> void accept(Block.Visitor<A> visitor, A arg) {
+        visitor.visitOutput(this, arg);
     }
 
     /**
@@ -148,8 +132,8 @@ public class Output extends Block {
         }
 
         @Override
-        public <R, A> R accept(Output.Visitor<R, A> visitor, A arg) {
-            return visitor.visitTransformation(this, arg);
+        public <A> void accept(Output.Visitor<A> visitor, A arg) {
+            visitor.visitTransformation(this, arg);
         }
 
         /**
@@ -237,8 +221,8 @@ public class Output extends Block {
         }
 
         @Override
-        public <R, A> R accept(Output.Visitor<R, A> visitor, A arg) {
-            return visitor.visitFiles(this, arg);
+        public <A> void accept(Output.Visitor<A> visitor, A arg) {
+            visitor.visitFiles(this, arg);
         }
 
         /**
@@ -291,8 +275,8 @@ public class Output extends Block {
         }
 
         @Override
-        public <R, A> R accept(Output.Visitor<R, A> visitor, A arg) {
-            return visitor.visitTemplates(this, arg);
+        public <A> void accept(Output.Visitor<A> visitor, A arg) {
+            visitor.visitTemplates(this, arg);
         }
 
         /**
@@ -325,8 +309,8 @@ public class Output extends Block {
         }
 
         @Override
-        public <R, A> R accept(Output.Visitor<R, A> visitor, A arg) {
-            return visitor.visitFile(this, arg);
+        public <A> void accept(Output.Visitor<A> visitor, A arg) {
+            visitor.visitFile(this, arg);
         }
 
         /**
@@ -366,8 +350,8 @@ public class Output extends Block {
         }
 
         @Override
-        public <R, A> R accept(Output.Visitor<R, A> visitor, A arg) {
-            return visitor.visitTemplate(this, arg);
+        public <A> void accept(Output.Visitor<A> visitor, A arg) {
+            visitor.visitTemplate(this, arg);
         }
 
         /**

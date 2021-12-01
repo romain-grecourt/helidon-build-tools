@@ -43,11 +43,10 @@ public class PrompterTest {
     public void testBooleanWithEmptyResponse() {
         Block input = booleanInput("boolean-input1", true);
         Context context = Context.create();
-        input.accept(new Block.Visitor<Void, Context>() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public Void visitInput(Input input, Context context) {
+            public void visitInput(Input input, Context context) {
                 input.accept(prompter(""), context);
-                return null;
             }
         }, context);
         Value value = context.lookup("boolean-input1");
@@ -60,11 +59,10 @@ public class PrompterTest {
     public void testBooleanWithEmptyResponse2() {
         Block input = booleanInput("boolean-input2", false);
         Context context = Context.create();
-        input.accept(new Block.Visitor<Void, Context>() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public Void visitInput(Input input, Context context) {
+            public void visitInput(Input input, Context context) {
                 input.accept(prompter(""), context);
-                return null;
             }
         }, context);
 
@@ -78,11 +76,10 @@ public class PrompterTest {
     public void testInputBoolean() {
         Block input = booleanInput("boolean-input3", true);
         Context context = Context.create();
-        input.accept(new Block.Visitor<Void, Context>() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public Void visitInput(Input input, Context context) {
+            public void visitInput(Input input, Context context) {
                 input.accept(prompter("NO"), context);
-                return null;
             }
         }, context);
 
@@ -99,11 +96,10 @@ public class PrompterTest {
                         option("option2", "value2")),
                 List.of("value1"));
         Context context = Context.create();
-        input.accept(new Block.Visitor<Void, Context>() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public Void visitInput(Input input, Context context) {
+            public void visitInput(Input input, Context context) {
                 input.accept(prompter(""), context);
-                return null;
             }
         }, context);
 
@@ -120,11 +116,10 @@ public class PrompterTest {
                         option("option2", "value2")),
                 List.of("value1", "value2"));
         Context context = Context.create();
-        input.accept(new Block.Visitor<Void, Context>() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public Void visitInput(Input input, Context context) {
+            public void visitInput(Input input, Context context) {
                 input.accept(prompter(""), context);
-                return null;
             }
         }, context);
 
@@ -142,11 +137,10 @@ public class PrompterTest {
                         option("option3", "value3")),
                 List.of());
         Context context = Context.create();
-        input.accept(new Block.Visitor<Void, Context>() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public Void visitInput(Input input, Context context) {
+            public void visitInput(Input input, Context context) {
                 input.accept(prompter("1 3"), context);
-                return null;
             }
         }, context);
 
@@ -164,11 +158,10 @@ public class PrompterTest {
                         option("option3", "value3")),
                 List.of());
         Context context = Context.create();
-        input.accept(new Block.Visitor<Void, Context>() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public Void visitInput(Input input, Context context) {
+            public void visitInput(Input input, Context context) {
                 input.accept(prompter("1 3 3 1"), context);
-                return null;
             }
         }, context);
 
@@ -185,11 +178,10 @@ public class PrompterTest {
                         option("option2", "value2")),
                 "value1");
         Context context = Context.create();
-        input.accept(new Block.Visitor<Void, Context>() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public Void visitInput(Input input, Context context) {
+            public void visitInput(Input input, Context context) {
                 input.accept(prompter(""), context);
-                return null;
             }
         }, context);
 
@@ -207,11 +199,10 @@ public class PrompterTest {
                         option("option3", "value3")),
                 "value3");
         Context context = Context.create();
-        input.accept(new Block.Visitor<Void, Context>() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public Void visitInput(Input input, Context context) {
+            public void visitInput(Input input, Context context) {
                 input.accept(prompter("2"), context);
-                return null;
             }
         }, context);
 
@@ -225,11 +216,10 @@ public class PrompterTest {
     public void testInputTextWithEmptyResponseNoDefault() {
         Block input = textInput("text-input1", null);
         Context context = Context.create();
-        input.accept(new Block.Visitor<Void, Context>() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public Void visitInput(Input input, Context context) {
+            public void visitInput(Input input, Context context) {
                 input.accept(prompter(""), context);
-                return null;
             }
         }, context);
 
@@ -241,11 +231,10 @@ public class PrompterTest {
     public void testInputTextWithEmptyResult() {
         Block input = textInput("text-input2", "value1");
         Context context = Context.create();
-        input.accept(new Block.Visitor<Void, Context>() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public Void visitInput(Input input, Context context) {
+            public void visitInput(Input input, Context context) {
                 input.accept(prompter(""), context);
-                return null;
             }
         }, context);
 
@@ -259,11 +248,10 @@ public class PrompterTest {
     public void testInputText() {
         Block input = textInput("text-input3", "value1");
         Context context = Context.create();
-        input.accept(new Block.Visitor<Void, Context>() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public Void visitInput(Input input, Context context) {
+            public void visitInput(Input input, Context context) {
                 input.accept(prompter("not-value1"), context);
-                return null;
             }
         }, context);
 

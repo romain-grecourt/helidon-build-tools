@@ -72,20 +72,18 @@ public abstract class Input extends Block {
     /**
      * Input visitor.
      *
-     * @param <R> result type
      * @param <A> argument type
      */
-    public interface Visitor<R, A> {
+    public interface Visitor<A> {
 
         /**
          * Visit a boolean input.
          *
          * @param input input
          * @param arg   argument
-         * @return visit result
          */
-        default R visitBoolean(Boolean input, A arg) {
-            return visitInput(input, arg);
+        default void visitBoolean(Boolean input, A arg) {
+            visitInput(input, arg);
         }
 
         /**
@@ -93,10 +91,9 @@ public abstract class Input extends Block {
          *
          * @param input input
          * @param arg   argument
-         * @return visit result
          */
-        default R visitText(Text input, A arg) {
-            return visitInput(input, arg);
+        default void visitText(Text input, A arg) {
+            visitInput(input, arg);
         }
 
         /**
@@ -104,10 +101,9 @@ public abstract class Input extends Block {
          *
          * @param input input
          * @param arg   argument
-         * @return visit result
          */
-        default R visitEnum(Enum input, A arg) {
-            return visitInput(input, arg);
+        default void visitEnum(Enum input, A arg) {
+            visitInput(input, arg);
         }
 
         /**
@@ -115,10 +111,9 @@ public abstract class Input extends Block {
          *
          * @param input input
          * @param arg   argument
-         * @return visit result
          */
-        default R visitList(List input, A arg) {
-            return visitInput(input, arg);
+        default void visitList(List input, A arg) {
+            visitInput(input, arg);
         }
 
         /**
@@ -126,11 +121,9 @@ public abstract class Input extends Block {
          *
          * @param input input
          * @param arg   argument
-         * @return visit result
          */
         @SuppressWarnings("unused")
-        default R visitInput(Input input, A arg) {
-            return null;
+        default void visitInput(Input input, A arg) {
         }
     }
 
@@ -139,15 +132,13 @@ public abstract class Input extends Block {
      *
      * @param visitor visitor
      * @param arg     argument
-     * @param <R>     result type
      * @param <A>     argument type
-     * @return visit result
      */
-    public abstract <R, A> R accept(Visitor<R, A> visitor, A arg);
+    public abstract <A> void accept(Visitor<A> visitor, A arg);
 
     @Override
-    public <R, A> R accept(Block.Visitor<R, A> visitor, A arg) {
-        return visitor.visitInput(this, arg);
+    public <A> void accept(Block.Visitor<A> visitor, A arg) {
+        visitor.visitInput(this, arg);
     }
 
     /**
@@ -185,8 +176,8 @@ public abstract class Input extends Block {
         }
 
         @Override
-        public <R, A> R accept(Input.Visitor<R, A> visitor, A arg) {
-            return visitor.visitInput(this, arg);
+        public <A> void accept(Input.Visitor<A> visitor, A arg) {
+            visitor.visitInput(this, arg);
         }
 
         /**
@@ -221,8 +212,8 @@ public abstract class Input extends Block {
         }
 
         @Override
-        public <R, A> R accept(Input.Visitor<R, A> visitor, A arg) {
-            return visitor.visitText(this, arg);
+        public <A> void accept(Input.Visitor<A> visitor, A arg) {
+            visitor.visitText(this, arg);
         }
     }
 
@@ -248,8 +239,8 @@ public abstract class Input extends Block {
         }
 
         @Override
-        public <R, A> R accept(Input.Visitor<R, A> visitor, A arg) {
-            return visitor.visitBoolean(this, arg);
+        public <A> void accept(Input.Visitor<A> visitor, A arg) {
+            visitor.visitBoolean(this, arg);
         }
     }
 
@@ -333,8 +324,8 @@ public abstract class Input extends Block {
         }
 
         @Override
-        public <R, A> R accept(Input.Visitor<R, A> visitor, A arg) {
-            return visitor.visitList(this, arg);
+        public <A> void accept(Input.Visitor<A> visitor, A arg) {
+            visitor.visitList(this, arg);
         }
     }
 
@@ -376,8 +367,8 @@ public abstract class Input extends Block {
         }
 
         @Override
-        public <R, A> R accept(Input.Visitor<R, A> visitor, A arg) {
-            return visitor.visitEnum(this, arg);
+        public <A> void accept(Input.Visitor<A> visitor, A arg) {
+            visitor.visitEnum(this, arg);
         }
     }
 

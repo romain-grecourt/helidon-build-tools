@@ -32,7 +32,7 @@ import static io.helidon.build.common.ansi.AnsiTextStyles.BoldBlue;
 /**
  * Prompter that uses CLI for input/output.
  */
-public class Prompter implements Input.Visitor<Void, Context> {
+public class Prompter implements Input.Visitor<Context> {
 
     private final InputStream in;
     private String lastLabel;
@@ -47,7 +47,7 @@ public class Prompter implements Input.Visitor<Void, Context> {
     }
 
     @Override
-    public Void visitText(Input.Text input, Context context) {
+    public void visitText(Input.Text input, Context context) {
         try {
             printLabel(input);
             String defaultText = input.defaultValue().map(BoldBlue::apply).orElse(null);
@@ -57,14 +57,13 @@ public class Prompter implements Input.Visitor<Void, Context> {
             } else {
                 context.push(input.name(), Value.create(response));
             }
-            return null;
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
 
     @Override
-    public Void visitEnum(Input.Enum input, Context context) {
+    public void visitEnum(Input.Enum input, Context context) {
         while (true) {
             try {
                 printLabel(input);
@@ -80,13 +79,13 @@ public class Prompter implements Input.Visitor<Void, Context> {
                 if ((response == null || response.trim().length() == 0)) {
                     if (defaultIndex >= 0) {
                         context.push(input.name(), Value.create(input.options().get(defaultIndex).value()));
-                        return null;
+                        break;
                     }
                 } else {
                     int index = Integer.parseInt(response.trim());
                     if (index > 0 && index <= input.options().size()) {
                         context.push(input.name(), Value.create(input.options().get(index - 1).value()));
-                        return null;
+                        break;
                     }
                 }
             } catch (NumberFormatException e) {
@@ -98,7 +97,7 @@ public class Prompter implements Input.Visitor<Void, Context> {
     }
 
     @Override
-    public Void visitList(Input.List input, Context context) {
+    public void visitList(Input.List input, Context context) {
         while (true) {
             try {
                 String question = "Enter selection (one or more numbers separated by the spaces)";
@@ -117,11 +116,11 @@ public class Prompter implements Input.Visitor<Void, Context> {
                 if (response == null || response.trim().length() == 0) {
                     if (!defaultIndexes.isEmpty()) {
                         context.push(input.name(), Value.create(input.defaultValue()));
-                        return null;
+                        break;
                     }
                 } else {
                     context.push(input.name(), Value.create(input.parseResponse(response)));
-                    return null;
+                    break;
                 }
             } catch (NumberFormatException | IndexOutOfBoundsException e) {
                 // TODO print error message
@@ -132,7 +131,7 @@ public class Prompter implements Input.Visitor<Void, Context> {
     }
 
     @Override
-    public Void visitBoolean(Input.Boolean input, Context context) {
+    public void visitBoolean(Input.Boolean input, Context context) {
         while (true) {
             try {
                 printLabel(input);
@@ -142,7 +141,7 @@ public class Prompter implements Input.Visitor<Void, Context> {
                 String response = prompt(question, defaultText);
                 if (response == null || response.trim().length() == 0) {
                     context.push(input.name(), Value.create(defaultValue));
-                    return null;
+                    break;
                 }
                 boolean value;
                 switch (response.trim().toLowerCase()) {
@@ -158,7 +157,7 @@ public class Prompter implements Input.Visitor<Void, Context> {
                         continue;
                 }
                 context.push(input.name(), Value.create(value));
-                return null;
+                break;
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }

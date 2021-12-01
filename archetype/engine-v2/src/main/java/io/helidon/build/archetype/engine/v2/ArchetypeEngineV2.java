@@ -29,10 +29,10 @@ import java.util.Map;
 public class ArchetypeEngineV2 {
 
     private final Path entryPoint;
-    private final Input.Visitor<Void, Context> prompter;
+    private final Input.Visitor<Context> prompter;
     private final Map<String, String> env;
 
-    public ArchetypeEngineV2(Path entryPoint, Input.Visitor<Void, Context> prompter, Map<String, String> env) {
+    public ArchetypeEngineV2(Path entryPoint, Input.Visitor<Context> prompter, Map<String, String> env) {
         this.entryPoint = entryPoint;
         this.prompter = prompter;
         // TODO init context with entry point and env

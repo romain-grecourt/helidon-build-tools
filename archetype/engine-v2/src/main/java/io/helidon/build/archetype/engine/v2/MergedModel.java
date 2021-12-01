@@ -160,36 +160,33 @@ abstract class MergedModel {
         }
     }
 
-    private static class Resolver extends Controller implements Output.Visitor<Void, Void>, Model.Visitor<Void, Void> {
+    private static class Resolver extends Controller implements Output.Visitor<Void>, Model.Visitor<Void> {
 
         MergedModel head = new Map(null, null, 0);
 
         @Override
-        public Void visitList(Model.List list, Void arg) {
+        public void visitList(Model.List list, Void arg) {
             head = head.add(new List(head, list.key(), list.order()));
-            return null;
         }
 
         @Override
-        public Void visitMap(Model.Map map, Void arg) {
+        public void visitMap(Model.Map map, Void arg) {
             head = head.add(new Map(head, map.key(), map.order()));
-            return null;
         }
 
         @Override
-        public Void visitValue(Model.Value value, Void arg) {
+        public void visitValue(Model.Value value, Void arg) {
             head = head.add(new Value(head, value.key(), value.order(), value.value()));
-            return null;
         }
 
         @Override
-        public Void visitModel(Model model, Void arg) {
-            return model.accept((Model.Visitor<Void, Void>) this, arg);
+        public void visitModel(Model model, Void arg) {
+            model.accept((Model.Visitor<Void>) this, arg);
         }
 
         @Override
-        public Void visitOutput(Output output, Void arg) {
-            return output.accept((Output.Visitor<Void, Void>) this, arg);
+        public void visitOutput(Output output, Void arg) {
+            output.accept((Output.Visitor<Void>) this, arg);
         }
 
         @Override

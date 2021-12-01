@@ -4,7 +4,7 @@ import io.helidon.build.archetype.engine.v2.ast.Block;
 import io.helidon.build.archetype.engine.v2.ast.Condition;
 import io.helidon.build.archetype.engine.v2.ast.Node;
 
-public class Controller implements Node.Visitor<Context>, Block.Visitor<Void, Void> {
+public class Controller implements Node.Visitor<Context>, Block.Visitor<Void> {
 
     // TODO polish the mustache model visitor
 
@@ -18,7 +18,7 @@ public class Controller implements Node.Visitor<Context>, Block.Visitor<Void, Vo
 
     @Override
     public Node.VisitResult preVisitBlock(Block block, Context ctx) {
-        block.accept((Block.Visitor<Void, Void>) this, null);
+        block.accept((Block.Visitor<Void>) this, null);
         return Node.VisitResult.CONTINUE;
     }
 }

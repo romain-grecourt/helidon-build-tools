@@ -54,8 +54,8 @@ public class Step extends Block {
     }
 
     @Override
-    public <R, A> R accept(Visitor<R, A> visitor, A arg) {
-        return visitor.visitStep(this, arg);
+    public <A> void accept(Visitor<A> visitor, A arg) {
+        visitor.visitStep(this, arg);
     }
 
     /**

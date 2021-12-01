@@ -30,20 +30,17 @@ public class Model extends Output {
     /**
      * Model visitor.
      *
-     * @param <R> result type
      * @param <A> argument type
      */
-    public interface Visitor<R, A> {
+    public interface Visitor<A> {
 
         /**
          * Visit a list model.
          *
          * @param list list
          * @param arg  argument
-         * @return visit result
          */
-        default R visitList(List list, A arg) {
-            return null;
+        default void visitList(List list, A arg) {
         }
 
         /**
@@ -51,10 +48,8 @@ public class Model extends Output {
          *
          * @param map map
          * @param arg argument
-         * @return visit result
          */
-        default R visitMap(Map map, A arg) {
-            return null;
+        default void visitMap(Map map, A arg) {
         }
 
         /**
@@ -62,10 +57,8 @@ public class Model extends Output {
          *
          * @param value value
          * @param arg   argument
-         * @return visit result
          */
-        default R visitValue(Value value, A arg) {
-            return null;
+        default void visitValue(Value value, A arg) {
         }
     }
 
@@ -74,17 +67,14 @@ public class Model extends Output {
      *
      * @param visitor visitor
      * @param arg     argument
-     * @param <R>     result type
      * @param <A>     argument type
-     * @return visit result
      */
-    public <R, A> R accept(Visitor<R, A> visitor, A arg) {
-        return null;
+    public <A> void accept(Visitor<A> visitor, A arg) {
     }
 
     @Override
-    public <R, A> R accept(Output.Visitor<R, A> visitor, A arg) {
-        return visitor.visitModel(this, arg);
+    public <A> void accept(Output.Visitor<A> visitor, A arg) {
+        visitor.visitModel(this, arg);
     }
 
     /**
@@ -97,8 +87,8 @@ public class Model extends Output {
         }
 
         @Override
-        public <R, A> R accept(Model.Visitor<R, A> visitor, A arg) {
-            return visitor.visitList(this, arg);
+        public <A> void accept(Model.Visitor<A> visitor, A arg) {
+            visitor.visitList(this, arg);
         }
     }
 
@@ -146,8 +136,8 @@ public class Model extends Output {
         }
 
         @Override
-        public <R, A> R accept(Model.Visitor<R, A> visitor, A arg) {
-            return visitor.visitMap(this, arg);
+        public <A> void accept(Model.Visitor<A> visitor, A arg) {
+            visitor.visitMap(this, arg);
         }
     }
 
@@ -173,8 +163,8 @@ public class Model extends Output {
         }
 
         @Override
-        public <R, A> R accept(Model.Visitor<R, A> visitor, A arg) {
-            return visitor.visitValue(this, arg);
+        public <A> void accept(Model.Visitor<A> visitor, A arg) {
+            visitor.visitValue(this, arg);
         }
     }
 
