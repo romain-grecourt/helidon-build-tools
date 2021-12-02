@@ -16,6 +16,7 @@
 
 package io.helidon.build.archetype.engine.v2;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -24,9 +25,15 @@ import java.io.OutputStreamWriter;
 import java.io.UncheckedIOException;
 import java.io.Writer;
 import java.nio.charset.Charset;
+import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.List;
+import java.util.ListIterator;
 import java.util.Map;
+
+import io.helidon.build.archetype.engine.v2.ast.Block;
+import io.helidon.build.archetype.engine.v2.ast.Output.Template;
+import io.helidon.build.archetype.engine.v2.spi.TemplateSupport;
 
 import com.github.mustachejava.Binding;
 import com.github.mustachejava.Code;
@@ -35,8 +42,6 @@ import com.github.mustachejava.Mustache;
 import com.github.mustachejava.TemplateContext;
 import com.github.mustachejava.reflect.SimpleObjectHandler;
 import com.github.mustachejava.util.Wrapper;
-import io.helidon.build.archetype.engine.v2.ast.Block;
-import io.helidon.build.archetype.engine.v2.spi.TemplateSupport;
 
 /**
  * Implementation of the {@link TemplateSupport} for Mustache.
@@ -46,6 +51,7 @@ public class MustacheSupport implements TemplateSupport {
     private final MergedModel scope;
     private final DefaultMustacheFactory factory;
     private final Map<String, Mustache> cache;
+    private final Context context;
 
     /**
      * Create a new instance.
@@ -54,6 +60,7 @@ public class MustacheSupport implements TemplateSupport {
      * @param context context
      */
     MustacheSupport(Block block, Context context) {
+        this.context = context;
         factory = new DefaultMustacheFactory();
         factory.setObjectHandler(new ModelHandler());
         scope = MergedModel.resolve(block, context);
@@ -61,10 +68,16 @@ public class MustacheSupport implements TemplateSupport {
     }
 
     @Override
-    public void render(InputStream template, String name, Charset charset, OutputStream os) {
+    public void render(InputStream template, String name, Charset charset, OutputStream os, Block extraScope) {
         Mustache mustache = cache.computeIfAbsent(name, n -> factory.compile(new InputStreamReader(template), name));
         try (Writer writer = new OutputStreamWriter(os, charset)) {
-            Writer result = mustache.execute(writer, scope);
+            List<Object> scopes;
+            if (extraScope != null) {
+                scopes = List.of(scope, MergedModel.resolve(extraScope, context));
+            } else {
+                scopes = List.of(scope);
+            }
+            Writer result = mustache.execute(writer, scopes);
             if (result != null) {
                 result.flush();
             }
@@ -83,17 +96,17 @@ public class MustacheSupport implements TemplateSupport {
         @Override
         public Wrapper find(String name, List<Object> ignore) {
             return scopes -> {
-                Object result = null;
-                if (!scopes.isEmpty()) {
-                    Object scope = scopes.get(scopes.size() - 1);
+                ListIterator<Object> it = scopes.listIterator(scopes.size());
+                while(it.hasPrevious()) {
+                    Object scope = it.previous();
                     if (scope instanceof MergedModel) {
-                        result = ((MergedModel) scope).get(name);
+                        Object result = ((MergedModel) scope).get(name);
+                        if (result != null) {
+                            return result;
+                        }
                     }
                 }
-                if (result == null) {
-                    throw new RuntimeException(String.format("Unresolved model value: '%s'", name));
-                }
-                return result;
+                throw new RuntimeException(String.format("Unresolved model value: '%s'", name));
             };
         }
 

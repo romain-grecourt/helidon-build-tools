@@ -47,7 +47,7 @@ public final class Invocation extends Statement {
      *
      * @return kind
      */
-    public Kind invocationKind() {
+    public Kind kind() {
         return kind;
     }
 

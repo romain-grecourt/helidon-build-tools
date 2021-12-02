@@ -19,10 +19,12 @@ package io.helidon.build.archetype.engine.v2.spi;
 import io.helidon.build.archetype.engine.v2.Context;
 import io.helidon.build.archetype.engine.v2.ast.Block;
 
-import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.ServiceLoader;
-import java.util.stream.Collectors;
+import java.util.function.Function;
+
+import static java.util.stream.Collectors.toUnmodifiableMap;
 
 /**
  * Template support provider.
@@ -46,24 +48,27 @@ public interface TemplateSupportProvider {
     TemplateSupport create(Block block, Context context);
 
     /**
-     * Get all providers.
-     *
-     * @return list of providers
-     */
-    static List<TemplateSupportProvider> all() {
-        return ServiceLoader.load(TemplateSupportProvider.class)
-                            .stream()
-                            .map(ServiceLoader.Provider::get)
-                            .collect(Collectors.toList());
-    }
-
-    /**
      * Find a provider by its name.
      *
      * @param name name of provider
      * @return Optional
      */
-    static Optional<TemplateSupportProvider> providerByName(String name) {
-        return all().stream().filter(provider -> provider.name().equals(name)).findFirst();
+    static TemplateSupportProvider providerByName(String name) {
+        TemplateSupportProvider provider = Cache.ENTRIES.get(name);
+        if (provider == null) {
+            throw new IllegalArgumentException("Unresolved template support provider: " + name);
+        }
+        return provider;
+    }
+
+    /**
+     * Provider cache.
+     */
+    class Cache {
+        static final Map<String, TemplateSupportProvider> ENTRIES =
+                ServiceLoader.load(TemplateSupportProvider.class)
+                             .stream()
+                             .map(ServiceLoader.Provider::get)
+                             .collect(toUnmodifiableMap(TemplateSupportProvider::name, Function.identity()));
     }
 }

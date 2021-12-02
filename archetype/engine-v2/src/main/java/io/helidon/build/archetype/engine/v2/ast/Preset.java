@@ -105,7 +105,7 @@ public final class Preset extends Statement {
      *
      * @return kind
      */
-    public Kind presetKind() {
+    public Kind kind() {
         return kind;
     }
 

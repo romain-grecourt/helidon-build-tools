@@ -37,26 +37,5 @@
         </files>
         <template engine="tpl-engine-2" source="file1.tpl" target="file1.txt"/>
         <file source="file1.txt" target="file2.txt"/>
-        <model>
-            <map key="key1">
-                <value key="key1.1">value1.1</value>
-                <list key="key1.2">
-                    <value>value1.2a</value>
-                    <value>value1.2b</value>
-                </list>
-            </map>
-            <value key="key2" order="50">value2</value>
-            <list key="key3">
-                <value>value3.1</value>
-                <list>
-                    <value>value3.2-a</value>
-                    <value>value3.2-b</value>
-                </list>
-                <map>
-                    <value key="key3.3-a">value3.3-a</value>
-                    <value key="key3.3-b">value3.3-b</value>
-                </map>
-            </list>
-        </model>
     </output>
 </archetype-script>

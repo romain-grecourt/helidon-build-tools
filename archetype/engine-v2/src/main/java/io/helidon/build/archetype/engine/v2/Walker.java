@@ -126,7 +126,7 @@ public final class Walker<A> {
                 return result;
             }
             Script script = ScriptLoader.load(invocation.scriptPath().resolve(invocation.src()));
-            if (invocation.invocationKind() == Invocation.Kind.EXEC) {
+            if (invocation.kind() == Invocation.Kind.EXEC) {
                 stack.push(script.body().wrap(Block.Kind.CD));
             } else {
                 stack.push(script.body());

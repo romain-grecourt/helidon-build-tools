@@ -23,4 +23,11 @@ import io.helidon.build.archetype.engine.v2.ast.Input;
  */
 public abstract class InputResolver implements Input.Visitor<Context> {
 
+    // TODO provide logic to deal with defaults
+    // This will be used by the cli interactive prompter and the batch mode
+
+    // TODO provide logic to control option traversal
+    // i.e. only traverse selected options for enum and list
+
+    // TODO unit test
 }

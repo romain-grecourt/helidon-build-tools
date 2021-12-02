@@ -24,10 +24,8 @@ import io.helidon.build.archetype.engine.v2.spi.TemplateSupportProvider;
 module io.helidon.build.archetype.engine.v2 {
     requires io.helidon.build.common;
     requires io.helidon.build.common.ansi;
-    requires com.github.mustachejava;
     requires io.helidon.build.common.xml;
-    requires java.logging;
-    requires jdk.zipfs;
+    requires com.github.mustachejava;
 
     exports io.helidon.build.archetype.engine.v2;
     exports io.helidon.build.archetype.engine.v2.ast;

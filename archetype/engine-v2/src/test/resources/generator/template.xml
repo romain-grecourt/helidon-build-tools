@@ -18,12 +18,12 @@
 -->
 <archetype-script xmlns="https://helidon.io/archetype/2.0"
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                  xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-script-2.0.xsd">
-
-    <step label="Test source script">
-
-        <source src="inner/source_script.xml"/>
-
-    </step>
-
+                  xsi:schemaLocation="https://helidon.io/archetype/2.0 file:/archetype.xsd">
+    <output>
+        <template engine="mustache" source="template1.mustache" target="template1.txt">
+            <model>
+                <value key="foo">bar</value>
+            </model>
+        </template>
+    </output>
 </archetype-script>

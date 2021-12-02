@@ -42,39 +42,39 @@ public class MustacheSupportTest {
 
     @Test
     void testSimpleValue() {
-        Block model = model(value("foo", "bar"));
-        assertThat(render("{{foo}}", model), is("bar"));
+        Block scope = model(value("foo", "bar"));
+        assertThat(render("{{foo}}", scope), is("bar"));
     }
 
     @Test
     void testDottedKeyValue() {
-        Block model = model(value("foo.bar", "foobar"));
-        assertThat(render("{{foo.bar}}", model), is("foobar"));
+        Block scope = model(value("foo.bar", "foobar"));
+        assertThat(render("{{foo.bar}}", scope), is("foobar"));
     }
 
     @Test
     void testSimpleList() {
-        Block model = model(list("data", value("bar1"), value("bar2")));
-        assertThat(render("{{#data}}{{.}},{{/data}}", model), is("bar1,bar2,"));
+        Block scope = model(list("data", value("bar1"), value("bar2")));
+        assertThat(render("{{#data}}{{.}},{{/data}}", scope), is("bar1,bar2,"));
     }
 
     @Test
     void testSimpleMap() {
-        Block model = model(map("data", value("shape", "circle"), value("color", "red")));
-        assertThat(render("{{#data}}{{shape}}:{{color}}{{/data}}", model), is("circle:red"));
+        Block scope = model(map("data", value("shape", "circle"), value("color", "red")));
+        assertThat(render("{{#data}}{{shape}}:{{color}}{{/data}}", scope), is("circle:red"));
     }
 
     @Test
     void testListOfMap() {
-        Block model = model(list("data",
+        Block scope = model(list("data",
                 map(value("name", "bar"), value("id", "1")),
                 map(value("name", "foo"), value("id", "2"))));
-        assertThat(render("{{#data}}{{name}}={{id}},{{/data}}", model), is("bar=1,foo=2,"));
+        assertThat(render("{{#data}}{{name}}={{id}},{{/data}}", scope), is("bar=1,foo=2,"));
     }
 
     @Test
     void testListOfListOfMap() {
-        Block model = model(list("data",
+        Block scope = model(list("data",
                 list(
                         map(value("name", "bar"), value("id", "1")),
                         map(value("name", "foo"), value("id", "2"))),
@@ -82,13 +82,13 @@ public class MustacheSupportTest {
                         map(value("name", "bob"), value("id", "3")),
                         map(value("name", "alice"), value("id", "4")))));
 
-        String rendered = render("{{#data}}{{#.}}{{name}}={{id}},{{/.}}{{/data}}", model);
+        String rendered = render("{{#data}}{{#.}}{{name}}={{id}},{{/.}}{{/data}}", scope);
         assertThat(rendered, is("bar=1,foo=2,bob=3,alice=4,"));
     }
 
     @Test
     void testListOfListOfListOfMap() {
-        Block model = model(list("data",
+        Block scope = model(list("data",
                 list(
                         list(
                                 map(value("name", "bar"), value("id", "1")),
@@ -104,119 +104,137 @@ public class MustacheSupportTest {
                                 map(value("name", "john"), value("id", "7")),
                                 map(value("name", "jack"), value("id", "8"))))));
 
-        String rendered = render("{{#data}}{{#.}}{{#.}}{{name}}={{id}},{{/.}}{{/.}}{{/data}}", model);
+        String rendered = render("{{#data}}{{#.}}{{#.}}{{name}}={{id}},{{/.}}{{/.}}{{/data}}", scope);
         assertThat(rendered, is("bar=1,foo=2,bob=3,alice=4,roger=5,joe=6,john=7,jack=8,"));
     }
 
     @Test
     void testMapOfList() {
-        Block model = model(map("data",
+        Block scope = model(map("data",
                 list("shapes", value("circle"), value("rectangle")),
                 list("colors", value("red"), value("blue"))));
-        String rendered = render("{{#data}}{{#shapes}}{{.}},{{/shapes}};{{#colors}}{{.}},{{/colors}}{{/data}}", model);
+        String rendered = render("{{#data}}{{#shapes}}{{.}},{{/shapes}};{{#colors}}{{.}},{{/colors}}{{/data}}", scope);
         assertThat(rendered, is("circle,rectangle,;red,blue,"));
     }
 
     @Test
     void testMapOfMap() {
-        Block model = model(map("data",
+        Block scope = model(map("data",
                 map("shapes", value("circle", "red"), value("rectangle", "blue")),
                 map("colors", value("red", "circle"), value("blue", "rectangle"))));
-        String rendered = render("{{#data}}{{#shapes}}{{circle}},{{rectangle}}{{/shapes}};{{#colors}}{{red}},{{blue}}{{/colors}}{{/data}}", model);
+        String rendered = render("{{#data}}{{#shapes}}{{circle}},{{rectangle}}{{/shapes}};{{#colors}}{{red}},{{blue}}{{/colors}}{{/data}}", scope);
         assertThat(rendered, is("red,blue;circle,rectangle"));
     }
 
     @Test
     void testIterateOnValue() {
-        Block model = model(value("data", "bar"));
-        String rendered = render("{{#data}}{{.}}{{/data}}", model);
+        Block scope = model(value("data", "bar"));
+        String rendered = render("{{#data}}{{.}}{{/data}}", scope);
         assertThat(rendered, is("bar"));
     }
 
     @Test
     void testUnknownValue() {
-        Block model = model();
-        MustacheException ex = assertThrows(MustacheException.class, () -> render("{{bar}}", model));
+        Block scope = model();
+        MustacheException ex = assertThrows(MustacheException.class, () -> render("{{bar}}", scope));
         assertThat(ex.getMessage(), startsWith("Failed to get value for bar"));
     }
 
     @Test
     void testUnknownIterable() {
-        Block model = model();
-        MustacheException ex = assertThrows(MustacheException.class, () -> render("{{#bar}}{{.}}{{/bar}}", model));
+        Block scope = model();
+        MustacheException ex = assertThrows(MustacheException.class, () -> render("{{#bar}}{{.}}{{/bar}}", scope));
         assertThat(ex.getMessage(), startsWith("Unresolved model value: 'bar'"));
     }
 
     @Test
     void testListOrder() {
-        Block model = model(list("data", value("bar1", 0), value("bar2", 100)));
-        assertThat(render("{{#data}}{{.}},{{/data}}", model), is("bar2,bar1,"));
+        Block scope = model(list("data", value("bar1", 0), value("bar2", 100)));
+        assertThat(render("{{#data}}{{.}},{{/data}}", scope), is("bar2,bar1,"));
     }
 
     @Test
     void testMapValueOverrideByOrder() {
-        Block model = model(map("data", value("shape", "circle", 0), value("shape", "rectangle", 100)));
-        assertThat(render("{{#data}}{{shape}}{{/data}}", model), is("rectangle"));
+        Block scope = model(map("data", value("shape", "circle", 0), value("shape", "rectangle", 100)));
+        assertThat(render("{{#data}}{{shape}}{{/data}}", scope), is("rectangle"));
     }
 
     @Test
     void testMapValueOverride() {
-        Block model = model(map("data", value("color", "red", 100), value("color", "blue", 100)));
-        assertThat(render("{{#data}}{{color}}{{/data}}", model), is("red"));
+        Block scope = model(map("data", value("color", "red", 100), value("color", "blue", 100)));
+        assertThat(render("{{#data}}{{color}}{{/data}}", scope), is("red"));
     }
 
     @Test
     void testMapOfListMerge() {
-        Block model = model(map("data",
+        Block scope = model(map("data",
                 list("shapes", value("circle", 0), value("rectangle", 1)),
                 list("shapes", value("triangle", 2))));
-        assertThat(render("{{#data}}{{#shapes}}{{.}},{{/shapes}}{{/data}}", model), is("triangle,rectangle,circle,"));
+        assertThat(render("{{#data}}{{#shapes}}{{.}},{{/shapes}}{{/data}}", scope), is("triangle,rectangle,circle,"));
     }
 
     @Test
     void testListOfMapMerge() {
-        Block model = model(
+        Block scope = model(
                 list("data", map(value("shape", "circle"),value("color", "red"))),
                 list("data", map(value("shape", "rectangle"), value("color", "blue"))));
-        assertThat(render("{{#data}}{{shape}}:{{color}},{{/data}}", model), is("circle:red,rectangle:blue,"));
+        assertThat(render("{{#data}}{{shape}}:{{color}},{{/data}}", scope), is("circle:red,rectangle:blue,"));
     }
 
     @Test
     void testListMerge() {
-        Block model = model(
+        Block scope = model(
                 list("data", value("bar1"), value("bar2")),
                 list("data", value("foo1"), value("foo2")));
-        assertThat(render("{{#data}}{{.}},{{/data}}", model), is("bar1,bar2,foo1,foo2,"));
+        assertThat(render("{{#data}}{{.}},{{/data}}", scope), is("bar1,bar2,foo1,foo2,"));
     }
 
     @Test
     void testMapValueWithoutKey() {
-        Block model = model(map("data", value("circle")));
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> render("", model));
+        Block scope = model(map("data", value("circle")));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> render("", scope));
         assertThat(ex.getMessage(), is("Cannot add a model with no key to a map"));
     }
 
     @Test
     void testMapAsString() {
-        Block model = model(map("data"));
-        MustacheException ex = assertThrows(MustacheException.class, () -> render("{{data}}", model));
+        Block scope = model(map("data"));
+        MustacheException ex = assertThrows(MustacheException.class, () -> render("{{data}}", scope));
         assertThat(ex.getCause(), is(not(nullValue())));
         assertThat(ex.getCause(), is(instanceOf(UnsupportedOperationException.class)));
     }
 
     @Test
     void testListAsString() {
-        Block model = model(list("data"));
-        MustacheException ex = assertThrows(MustacheException.class, () -> render("{{data}}", model));
+        Block scope = model(list("data"));
+        MustacheException ex = assertThrows(MustacheException.class, () -> render("{{data}}", scope));
         assertThat(ex.getCause(), is(not(nullValue())));
         assertThat(ex.getCause(), is(instanceOf(UnsupportedOperationException.class)));
     }
 
-    private static String render(String template, Block model) {
+    @Test
+    void testExtraScope() {
+        Block scope = model(value("color", "red"));
+        Block extraScope = model(value("shape", "circle"));
+        assertThat(render("{{shape}}", scope, extraScope), is("circle"));
+    }
+
+    @Test
+    void testExtraScopeOverride() {
+        Block scope = model(value("color", "red"));
+        Block extraScope = model(value("color", "blue"));
+        assertThat(render("{{color}}", scope, extraScope), is("blue"));
+    }
+
+    private static String render(String template, Block scope) {
+        return render(template, scope, null);
+    }
+
+    private static String render(String template, Block scope, Block extraScope) {
         InputStream is = new ByteArrayInputStream(template.getBytes(UTF_8));
         ByteArrayOutputStream os = new ByteArrayOutputStream();
-        MustacheSupport support = new MustacheSupport(model, Context.create());
-        support.render(is, "test", UTF_8, os);
+        MustacheSupport support = new MustacheSupport(scope, Context.create());
+        support.render(is, "test", UTF_8, os, extraScope);
         return os.toString(UTF_8);
     }
 

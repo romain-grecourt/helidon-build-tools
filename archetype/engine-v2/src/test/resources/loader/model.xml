@@ -19,31 +19,27 @@
 <archetype-script xmlns="https://helidon.io/archetype/2.0"
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 file:/archetype.xsd">
-
     <output>
         <model>
-            <list key="dependencies">
-                <map if="${media-support.json.provider} == jackson" order="50">
-                    <value key="groupId">io.helidon.media</value>
-                    <value key="artifactId">helidon-media-jackson</value>
-                </map>
-            </list>
-            <map key="build">
-                <list key="plugins">
-                    <map>
-                        <list key="plugin">
-                            <map order="500">
-                                <value key="groupId">io.helidon.build-tools</value>
-                                <value key="artifactId">helidon-maven-plugin</value>
-                                <map key="executions">
-                                    <value key="id" template="mustache">{{id}}</value>
-                                </map>
-                            </map>
-                        </list>
-                    </map>
+            <map key="key1">
+                <value key="key1.1">value1.1</value>
+                <list key="key1.2">
+                    <value>value1.2a</value>
+                    <value>value1.2b</value>
                 </list>
             </map>
+            <value key="key2" order="50">value2</value>
+            <list key="key3">
+                <value>value3.1</value>
+                <list>
+                    <value>value3.2-a</value>
+                    <value>value3.2-b</value>
+                </list>
+                <map>
+                    <value key="key3.3-a">value3.3-a</value>
+                    <value key="key3.3-b">value3.3-b</value>
+                </map>
+            </list>
         </model>
     </output>
-
 </archetype-script>

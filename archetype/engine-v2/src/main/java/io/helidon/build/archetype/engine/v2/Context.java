@@ -66,6 +66,16 @@ public final class Context {
     }
 
     /**
+     * Put a value in the context.
+     *
+     * @param path  input path
+     * @param value value
+     */
+    public void put(String path, Value value) {
+        values.put(path, new ContextValue(value, true));
+    }
+
+    /**
      * Push a new value.
      *
      * @param name  input name
