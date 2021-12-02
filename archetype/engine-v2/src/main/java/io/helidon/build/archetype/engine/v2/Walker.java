@@ -125,13 +125,14 @@ public final class Walker<A> {
             if (result == Node.VisitResult.SKIP_SUBTREE || result == Node.VisitResult.TERMINATE) {
                 return result;
             }
-            Script script = ScriptLoader.load(invocation.scriptPath().resolve(invocation.src()));
+            Script script = ScriptLoader.load(invocation.scriptPath().getParent().resolve(invocation.src()));
             if (invocation.kind() == Invocation.Kind.EXEC) {
                 stack.push(script.body().wrap(Block.Kind.CD));
             } else {
                 stack.push(script.body());
             }
             parents.push(invocation);
+            traversing = true;
             return result;
         }
 

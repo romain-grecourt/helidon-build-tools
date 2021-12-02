@@ -289,10 +289,10 @@ abstract class ArchetypeInvoker {
 
         @Override
         Path invoke() {
-            ArchetypeEngineV2 engine = new ArchetypeEngineV2(archetype(), new Prompter(System.in));
+            ArchetypeEngineV2 engine = new ArchetypeEngineV2(archetype());
             Map<String, String> initProperties = initOptions().initProperties();
             Path projectDir = projectDirSupplier().apply(initProperties.get("name"));
-            engine.generate(initProperties, projectDir);
+            engine.generate(new Prompter(System.in), initProperties, Map.of(), projectDir);
             return projectDir;
         }
 

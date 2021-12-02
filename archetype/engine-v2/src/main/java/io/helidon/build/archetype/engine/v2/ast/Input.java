@@ -17,7 +17,6 @@ package io.helidon.build.archetype.engine.v2.ast;
 
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -235,6 +234,12 @@ public abstract class Input extends Block {
         public String name() {
             return name;
         }
+
+        /**
+         * Get the default value.
+         * @return value
+         */
+        public abstract Value defaultValue();
     }
 
     /**
@@ -283,13 +288,10 @@ public abstract class Input extends Block {
             this.defaultValue = builder.attributes.get("default");
         }
 
-        /**
-         * Get the default value.
-         *
-         * @return default value
-         */
-        public Optional<String> defaultValue() {
-            return Optional.ofNullable(defaultValue);
+
+        @Override
+        public Value defaultValue() {
+            return Value.create(defaultValue);
         }
 
         @Override
@@ -315,13 +317,9 @@ public abstract class Input extends Block {
             defaultValue = java.lang.Boolean.parseBoolean(builder.attributes.get("default"));
         }
 
-        /**
-         * Get the default value.
-         *
-         * @return default value
-         */
-        public boolean defaultValue() {
-            return defaultValue;
+        @Override
+        public Value defaultValue() {
+            return Value.create(defaultValue);
         }
 
         @Override
@@ -379,14 +377,17 @@ public abstract class Input extends Block {
         }
 
         /**
-         * Get the default indexes.
+         * Get the index.
          *
-         * @return default indexes
+         * @return default index
          */
-        public java.util.List<Integer> defaultIndexes() {
+        public java.util.List<Integer> optionIndexes(java.util.List<String> optionNames) {
+            if (optionNames == null) {
+                return java.util.List.of();
+            }
             return IntStream.range(0, options.size())
                             .boxed()
-                            .filter(i -> defaultValue.contains(options.get(0).value))
+                            .filter(i -> optionNames.contains(options.get(0).value))
                             .collect(Collectors.toList());
         }
 
@@ -405,13 +406,9 @@ public abstract class Input extends Block {
                          .collect(Collectors.toList());
         }
 
-        /**
-         * Get the default value.
-         *
-         * @return default value
-         */
-        public java.util.List<String> defaultValue() {
-            return defaultValue;
+        @Override
+        public Value defaultValue() {
+            return Value.create(defaultValue);
         }
 
         @Override
@@ -438,28 +435,24 @@ public abstract class Input extends Block {
         }
 
         /**
-         * Get the default index.
+         * Get the index.
          *
-         * @return default index
+         * @return index
          */
-        public int defaultIndex() {
-            if (defaultValue == null) {
+        public int optionIndex(String optionName) {
+            if (optionName == null) {
                 return -1;
             }
             return IntStream.range(0, options.size())
                             .boxed()
-                            .filter(i -> defaultValue.equals(options.get(0).value))
+                            .filter(i -> optionName.equals(options.get(0).value))
                             .findFirst()
                             .orElse(-1);
         }
 
-        /**
-         * Get the default value.
-         *
-         * @return default value
-         */
-        public Optional<String> defaultValue() {
-            return Optional.ofNullable(defaultValue);
+        @Override
+        public Value defaultValue() {
+            return Value.create(defaultValue);
         }
 
         @Override

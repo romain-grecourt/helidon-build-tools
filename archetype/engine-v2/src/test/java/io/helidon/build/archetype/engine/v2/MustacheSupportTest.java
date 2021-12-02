@@ -38,7 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 /**
  * Tests {@link MustacheSupport}.
  */
-public class MustacheSupportTest {
+class MustacheSupportTest {
 
     @Test
     void testSimpleValue() {

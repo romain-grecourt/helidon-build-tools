@@ -40,7 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class ExpressionTest {
 
     @Test
-    public void testEvaluateWithVariables() {
+    void testEvaluateWithVariables() {
         Expression exp;
         Map<String, Value> variables;
 
@@ -85,7 +85,7 @@ class ExpressionTest {
     }
 
     @Test
-    public void testVariable() {
+    void testVariable() {
         //noinspection SpellCheckingInspection
         Exception e = assertThrows(FormatException.class, () -> Expression.parse("${varia!ble}"));
         //noinspection SpellCheckingInspection
@@ -93,7 +93,7 @@ class ExpressionTest {
     }
 
     @Test
-    public void testEvaluate() {
+    void testEvaluate() {
         assertThat(parse("['', 'adc', 'def'] contains 'foo'").eval(), is(false));
         assertThat(parse("!(['', 'adc', 'def'] contains 'foo' == false && false)").eval(), is(true));
         assertThat(parse("!false").eval(), is(true));
@@ -129,7 +129,7 @@ class ExpressionTest {
     }
 
     @Test
-    public void testContainsOperator() {
+    void testContainsOperator() {
         assertThat(parse("['', 'adc', 'def'] contains 'foo'").eval(), is(false));
 
         FormatException e = assertThrows(FormatException.class, () -> parse("['', 'adc', 'def'] contains != 'foo'").eval());
@@ -142,7 +142,7 @@ class ExpressionTest {
     }
 
     @Test
-    public void testUnaryLogicalExpression() {
+    void testUnaryLogicalExpression() {
         assertThat(parse("!true").eval(), is(false));
         assertThat(parse("!false").eval(), is(true));
         assertThat(parse("!('foo' != 'bar')").eval(), is(false));
@@ -153,7 +153,7 @@ class ExpressionTest {
     }
 
     @Test
-    public void testExpressionWithParenthesis() {
+    void testExpressionWithParenthesis() {
         assertThat(parse("(\"foo\") != \"bar\"").eval(), is(true));
         assertThat(parse("((\"foo\")) != \"bar\"").eval(), is(true));
 
@@ -180,7 +180,7 @@ class ExpressionTest {
     }
 
     @Test
-    public void testLiteralWithParenthesis() {
+    void testLiteralWithParenthesis() {
         assertThat(parse("(true)").eval(), is(true));
         assertThat(parse("((true))").eval(), is(true));
         assertThat(parse("((${var}))").eval(s -> Value.create(true)), is(true));
@@ -214,7 +214,7 @@ class ExpressionTest {
     }
 
     @Test
-    public void testPrecedence() {
+    void testPrecedence() {
         assertThat(parse("\"foo\"==\"bar\"|| true").eval(), is(true));
         assertThat(parse("\"foo\"==\"bar\" && true || false").eval(), is(false));
         assertThat(parse("true && \"bar\" != 'foo1'").eval(), is(true));
@@ -222,13 +222,13 @@ class ExpressionTest {
     }
 
     @Test
-    public void testEqualPrecedence() {
+    void testEqualPrecedence() {
         assertThat(parse("\"foo\"!=\"bar\"==true").eval(), is(true));
         assertThat(parse("'foo'!=${var}==true").eval(s -> Value.create("bar")), is(true));
     }
 
     @Test
-    public void testIncorrectOperator() {
+    void testIncorrectOperator() {
         FormatException e = assertThrows(FormatException.class, () -> parse("'foo' !== 'bar'"));
         assertThat(e.getMessage(), startsWith("Unexpected token"));
     }
@@ -239,22 +239,22 @@ class ExpressionTest {
     }
 
     @Test
-    public void testStringLiteralWithDoubleQuotes() {
+    void testStringLiteralWithDoubleQuotes() {
         assertThat(parse("[\"value\"] == \"value\"").eval(), is(false));
     }
 
     @Test
-    public void testStringLiteralWithSingleQuotes() {
+    void testStringLiteralWithSingleQuotes() {
         assertThat(parse("['value'] == 'value'").eval(), is(false));
     }
 
     @Test
-    public void testStringLiteralWithWhitespaces() {
+    void testStringLiteralWithWhitespaces() {
         assertThat(parse("[' value '] != 'value'").eval(), is(true));
     }
 
     @Test
-    public void testBooleanLiteral() {
+    void testBooleanLiteral() {
         assertThat(parse("true").eval(), is(true));
         assertThat(parse("false").eval(), is(false));
         assertThat(parse("true == true").eval(), is(true));
@@ -263,17 +263,17 @@ class ExpressionTest {
     }
 
     @Test
-    public void testEmptyStringArrayLiteral() {
+    void testEmptyStringArrayLiteral() {
         assertThat(parse("[] == []").eval(), is(true));
     }
 
     @Test
-    public void testArrayWithEmptyLiteral() {
+    void testArrayWithEmptyLiteral() {
         assertThat(parse("[''] contains ''").eval(), is(true));
     }
 
     @Test
-    public void testArrayWithStringLiterals() {
+    void testArrayWithStringLiterals() {
         assertThat(parse("['foo'] contains 'foo'").eval(), is(true));
         assertThat(parse("['foo'] contains 'bar'").eval(), is(false));
     }

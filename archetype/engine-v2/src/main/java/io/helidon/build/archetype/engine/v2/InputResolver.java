@@ -17,14 +17,26 @@
 package io.helidon.build.archetype.engine.v2;
 
 import io.helidon.build.archetype.engine.v2.ast.Input;
+import io.helidon.build.archetype.engine.v2.ast.Value;
 
 /**
  * Input resolver.
  */
 public abstract class InputResolver implements Input.Visitor<Context> {
 
-    // TODO provide logic to deal with defaults
-    // This will be used by the cli interactive prompter and the batch mode
+    protected Value defaultValue(Input.NamedInput input, Context context) {
+        String path = context.peek();
+        if (path != null) {
+            path += "." + input.name();
+        } else {
+            path = input.name();
+        }
+        Value defaultValue = context.getDefault(path);
+        if (defaultValue == null) {
+            defaultValue = input.defaultValue();
+        }
+        return defaultValue;
+    }
 
     // TODO provide logic to control option traversal
     // i.e. only traverse selected options for enum and list

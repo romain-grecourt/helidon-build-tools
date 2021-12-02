@@ -38,10 +38,10 @@ import static org.hamcrest.Matchers.nullValue;
 /**
  * Tests {@link Prompter}.
  */
-public class PrompterTest {
+class PrompterTest {
 
     @Test
-    public void testBooleanWithEmptyResponse() {
+    void testBooleanWithEmptyResponse() {
         Block input = booleanInput("boolean-input1", true);
         Context context = Context.create();
         input.accept(new Block.Visitor<>() {
@@ -58,7 +58,7 @@ public class PrompterTest {
     }
 
     @Test
-    public void testBooleanWithEmptyResponse2() {
+    void testBooleanWithEmptyResponse2() {
         Block input = booleanInput("boolean-input2", false);
         Context context = Context.create();
         input.accept(new Block.Visitor<>() {
@@ -76,7 +76,7 @@ public class PrompterTest {
     }
 
     @Test
-    public void testInputBoolean() {
+    void testInputBoolean() {
         Block input = booleanInput("boolean-input3", true);
         Context context = Context.create();
         input.accept(new Block.Visitor<>() {
@@ -94,7 +94,7 @@ public class PrompterTest {
     }
 
     @Test
-    public void testInputListWithEmptyResponse() {
+    void testInputListWithEmptyResponse() {
         Block input = listInput("list-input1",
                 List.of(option("option1", "value1"),
                         option("option2", "value2")),
@@ -115,7 +115,7 @@ public class PrompterTest {
     }
 
     @Test
-    public void testInputListWithEmptyResponseMultipleDefault() {
+    void testInputListWithEmptyResponseMultipleDefault() {
         Block input = listInput("list-input2",
                 List.of(option("option1", "value1"),
                         option("option2", "value2")),
@@ -136,7 +136,7 @@ public class PrompterTest {
     }
 
     @Test
-    public void testInputList() {
+    void testInputList() {
         Block input = listInput("list-input3",
                 List.of(option("option1", "value1"),
                         option("option2", "value2"),
@@ -158,7 +158,7 @@ public class PrompterTest {
     }
 
     @Test
-    public void testInputListResponseDuplicate() {
+    void testInputListResponseDuplicate() {
         Block input = listInput("list-input4",
                 List.of(option("option1", "value1"),
                         option("option2", "value2"),
@@ -180,7 +180,7 @@ public class PrompterTest {
     }
 
     @Test
-    public void testInputEnumWithEmptyResponse() {
+    void testInputEnumWithEmptyResponse() {
         Block input = enumInput("enum-input1",
                 List.of(option("option1", "value1"),
                         option("option2", "value2")),
@@ -201,7 +201,7 @@ public class PrompterTest {
     }
 
     @Test
-    public void testInputEnum() {
+    void testInputEnum() {
         Block input = enumInput("enum-input2",
                 List.of(option("option1", "value1"),
                         option("option2", "value2"),
@@ -223,7 +223,7 @@ public class PrompterTest {
     }
 
     @Test
-    public void testInputTextWithEmptyResponseNoDefault() {
+    void testInputTextWithEmptyResponseNoDefault() {
         Block input = textInput("text-input1", null);
         Context context = Context.create();
         input.accept(new Block.Visitor<>() {
@@ -239,7 +239,7 @@ public class PrompterTest {
     }
 
     @Test
-    public void testInputTextWithEmptyResult() {
+    void testInputTextWithEmptyResult() {
         Block input = textInput("text-input2", "value1");
         Context context = Context.create();
         input.accept(new Block.Visitor<>() {
@@ -257,7 +257,7 @@ public class PrompterTest {
     }
 
     @Test
-    public void testInputText() {
+    void testInputText() {
         Block input = textInput("text-input3", "value1");
         Context context = Context.create();
         input.accept(new Block.Visitor<>() {

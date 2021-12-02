@@ -15,6 +15,7 @@
  */
 package io.helidon.build.archetype.engine.v2;
 
+import io.helidon.build.archetype.engine.v2.Context.ContextValue;
 import io.helidon.build.archetype.engine.v2.ast.Value;
 
 import org.junit.jupiter.api.Test;
@@ -27,14 +28,14 @@ import static org.hamcrest.MatcherAssert.assertThat;
 /**
  * Tests {@link Context}.
  */
-public class ContextTest {
+class ContextTest {
 
     @Test
-    public void testLookup() {
+    void testLookup() {
         Context context = Context.create();
         context.push("foo", Value.create("foo-value"));
 
-        Context.ContextValue value;
+        ContextValue value;
 
         value = context.lookup("foo");
         assertThat(value, is(notNullValue()));
@@ -58,12 +59,40 @@ public class ContextTest {
     }
 
     @Test
-    public void testRelativeLookup() {
+    void testLookupInternalOnly() {
+        Context context = Context.create();
+        context.put("foo", Value.create("foo-value"));
+
+        ContextValue value;
+
+        value = context.lookup("foo");
+        assertThat(value, is(notNullValue()));
+        assertThat(value.asString(), is("foo-value"));
+
+        value = context.lookup("ROOT.foo");
+        assertThat(value, is(notNullValue()));
+        assertThat(value.asString(), is("foo-value"));
+
+        value = context.lookup("PARENT.foo");
+        assertThat(value, is(notNullValue()));
+        assertThat(value.asString(), is("foo-value"));
+
+        value = context.lookup("PARENT.PARENT.foo");
+        assertThat(value, is(notNullValue()));
+        assertThat(value.asString(), is("foo-value"));
+
+        value = context.lookup("PARENT.PARENT.PARENT.foo");
+        assertThat(value, is(notNullValue()));
+        assertThat(value.asString(), is("foo-value"));
+    }
+
+    @Test
+    void testRelativeLookup() {
         Context context = Context.create();
         context.push("foo", Value.create("foo-value"));
         context.push("bar", Value.create("bar-value"));
 
-        Context.ContextValue value;
+        ContextValue value;
 
         value = context.lookup("bar");
         assertThat(value, is(notNullValue()));
@@ -97,13 +126,13 @@ public class ContextTest {
     }
 
     @Test
-    public void testPopInput() {
+    void testPopInput() {
         Context context = Context.create();
         context.push("foo", Value.create("foo-value"));
         context.push("bar", Value.create("bar-value"));
         context.pop();
 
-        Context.ContextValue value;
+        ContextValue value;
 
         value = context.lookup("bar");
         assertThat(value, is(nullValue()));

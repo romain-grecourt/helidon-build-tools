@@ -25,6 +25,7 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import io.helidon.build.archetype.engine.v2.Context.ContextValue;
@@ -33,7 +34,6 @@ import io.helidon.build.archetype.engine.v2.ast.Node.VisitResult;
 import io.helidon.build.archetype.engine.v2.ast.Output;
 import io.helidon.build.archetype.engine.v2.ast.Output.Template;
 import io.helidon.build.archetype.engine.v2.ast.Output.Transformation;
-import io.helidon.build.archetype.engine.v2.ast.Output.Transformation.Replace;
 import io.helidon.build.archetype.engine.v2.spi.TemplateSupport;
 import io.helidon.build.common.PropertyEvaluator;
 import io.helidon.build.common.SourcePath;
@@ -74,10 +74,12 @@ public class Generator implements Output.Visitor<Context> {
 
     @Override
     public VisitResult visitFiles(Output.Files files, Context ctx) {
-        Path dir = ctx.cwd().resolve(files.directory());
+        Path cwd = ctx.cwd();
+        Path dir = cwd.resolve(files.directory());
         for (String resource : scan(files, ctx)) {
             Path source = dir.resolve(resource);
-            Path target = outputDir.resolve(transformations(files, resource, ctx));
+            String targetPath = cwd.relativize(source).toString();
+            Path target = outputDir.resolve(transformations(files, targetPath, ctx));
             copy(source, target);
         }
         return VisitResult.CONTINUE;
@@ -85,10 +87,12 @@ public class Generator implements Output.Visitor<Context> {
 
     @Override
     public VisitResult visitTemplates(Output.Templates templates, Context ctx) {
-        Path dir = ctx.cwd().resolve(templates.directory());
+        Path cwd = ctx.cwd();
+        Path dir = cwd.resolve(templates.directory());
         for (String resource : scan(templates, ctx)) {
             Path source = dir.resolve(resource);
-            Path target = outputDir.resolve(transformations(templates, resource, ctx));
+            String targetPath = cwd.relativize(source).toString();
+            Path target = outputDir.resolve(transformations(templates, targetPath, ctx));
             render(source, target, templates.engine(), ctx, null);
         }
         return VisitResult.CONTINUE;
@@ -107,7 +111,7 @@ public class Generator implements Output.Visitor<Context> {
         List<SourcePath> resources = SourcePath.scan(dir);
         return SourcePath.filter(resources, files.includes(), files.excludes())
                          .stream()
-                         .map(SourcePath::asString)
+                         .map(s -> s.asString(false))
                          .collect(Collectors.toList());
     }
 
@@ -141,19 +145,20 @@ public class Generator implements Output.Visitor<Context> {
     }
 
     private String transformations(Output.Files files, String path, Context ctx) {
-        List<Transformation> transformations =
-                files.transformations()
-                     .stream()
-                     .map(this.transformations::get)
-                     .collect(Collectors.toList());
-        String transformed = path;
-        for (Transformation t : transformations) {
-            for (Replace op : t.operations()) {
-                String replacement = PropertyEvaluator.evaluate(op.replacement(), s -> resolveVariable(s, ctx));
-                transformed = transformed.replaceAll(op.regex(), replacement);
-            }
-        }
-        return transformed;
+        StringBuilder sb = new StringBuilder(path);
+        files.transformations()
+             .stream()
+             .flatMap(id ->
+                     Optional.ofNullable(transformations.get(id))
+                             .map(t -> t.operations().stream())
+                             .orElseThrow(() -> new IllegalArgumentException("Unresolved transformation: " + id)))
+             .forEach(op -> {
+                 String replacement = PropertyEvaluator.evaluate(op.replacement(), s -> resolveVariable(s, ctx));
+                 String current = sb.toString();
+                 sb.setLength(0);
+                 sb.append(current.replaceAll(op.regex(), replacement));
+             });
+        return sb.toString();
     }
 
     private TemplateSupport templateSupport(String engine, Context ctx) {

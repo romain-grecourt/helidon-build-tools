@@ -42,20 +42,63 @@ public class Prompter extends InputResolver {
     /**
      * Create a new prompter.
      *
-     * @param in      input stream to use for reading user input
+     * @param in input stream to use for reading user input
      */
     public Prompter(InputStream in) {
         this.in = Objects.requireNonNull(in, "input stream is null");
     }
 
     @Override
+    public VisitResult visitBoolean(Input.Boolean input, Context ctx) {
+        if (ctx.lookup(input.name()) != null) {
+            // input is already resolved
+            return VisitResult.CONTINUE;
+        }
+        while (true) {
+            try {
+                printLabel(input);
+                Value defaultValue = defaultValue(input, ctx);
+                String defaultText = defaultValue != null ? BoldBlue.apply(defaultValue.asBoolean()) : null;
+                String question = String.format("%s (yes/no)", Bold.apply(input.prompt()));
+                String response = prompt(question, defaultText);
+                if (response == null || response.trim().length() == 0) {
+                    ctx.push(input.name(), defaultValue);
+                    return VisitResult.CONTINUE;
+                }
+                boolean value;
+                switch (response.trim().toLowerCase()) {
+                    case "y":
+                    case "yes":
+                        value = true;
+                        break;
+                    case "n":
+                    case "no":
+                        value = false;
+                        break;
+                    default:
+                        continue;
+                }
+                ctx.push(input.name(), Value.create(value));
+                return VisitResult.CONTINUE;
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    @Override
     public VisitResult visitText(Input.Text input, Context ctx) {
+        if (ctx.lookup(input.name()) != null) {
+            // input is already resolved
+            return VisitResult.CONTINUE;
+        }
         try {
             printLabel(input);
-            String defaultText = input.defaultValue().map(BoldBlue::apply).orElse(null);
+            Value defaultValue = defaultValue(input, ctx);
+            String defaultText = defaultValue != null ? BoldBlue.apply(defaultValue.asString()) : null;
             String response = prompt("Enter text", defaultText);
             if (response == null || response.trim().length() == 0) {
-                ctx.push(input.name(), input.defaultValue().map(Value::create).orElse(null));
+                ctx.push(input.name(), defaultValue);
             } else {
                 ctx.push(input.name(), Value.create(response));
             }
@@ -67,12 +110,17 @@ public class Prompter extends InputResolver {
 
     @Override
     public VisitResult visitEnum(Input.Enum input, Context ctx) {
+        if (ctx.lookup(input.name()) != null) {
+            // input is already resolved
+            return VisitResult.CONTINUE;
+        }
         while (true) {
             try {
                 printLabel(input);
                 printOptions(input);
 
-                int defaultIndex = input.defaultIndex();
+                Value defaultValue = defaultValue(input, ctx);
+                int defaultIndex = input.optionIndex(defaultValue.asString());
                 String defaultText = defaultIndex != -1
                         ? BoldBlue.apply(String.format("%s", defaultIndex + 1))
                         : null;
@@ -81,7 +129,7 @@ public class Prompter extends InputResolver {
                 lastLabel = input.label();
                 if ((response == null || response.trim().length() == 0)) {
                     if (defaultIndex >= 0) {
-                        ctx.push(input.name(), Value.create(input.options().get(defaultIndex).value()));
+                        ctx.push(input.name(), defaultValue);
                         return VisitResult.CONTINUE;
                     }
                 } else {
@@ -101,13 +149,18 @@ public class Prompter extends InputResolver {
 
     @Override
     public VisitResult visitList(Input.List input, Context ctx) {
+        if (ctx.lookup(input.name()) != null) {
+            // input is already resolved
+            return VisitResult.CONTINUE;
+        }
         while (true) {
             try {
                 String question = "Enter selection (one or more numbers separated by the spaces)";
                 printLabel(input);
                 printOptions(input);
 
-                List<Integer> defaultIndexes = input.defaultIndexes();
+                Value defaultValue = defaultValue(input, ctx);
+                List<Integer> defaultIndexes = input.optionIndexes(defaultValue.asList());
                 String defaultText = defaultIndexes.size() > 0
                         ? BoldBlue.apply(String.format("%s",
                         defaultIndexes.stream().map(i -> (i + 1) + "").collect(Collectors.joining(", "))))
@@ -118,7 +171,7 @@ public class Prompter extends InputResolver {
                 lastLabel = input.label();
                 if (response == null || response.trim().length() == 0) {
                     if (!defaultIndexes.isEmpty()) {
-                        ctx.push(input.name(), Value.create(input.defaultValue()));
+                        ctx.push(input.name(), defaultValue);
                         return VisitResult.CONTINUE;
                     }
                 } else {
@@ -127,40 +180,6 @@ public class Prompter extends InputResolver {
                 }
             } catch (NumberFormatException | IndexOutOfBoundsException e) {
                 // TODO print error message
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        }
-    }
-
-    @Override
-    public VisitResult visitBoolean(Input.Boolean input, Context ctx) {
-        while (true) {
-            try {
-                printLabel(input);
-                boolean defaultValue = input.defaultValue();
-                String defaultText = BoldBlue.apply(String.format("%s", defaultValue ? "yes" : "no"));
-                String question = String.format("%s (yes/no)", Bold.apply(input.prompt()));
-                String response = prompt(question, defaultText);
-                if (response == null || response.trim().length() == 0) {
-                    ctx.push(input.name(), Value.create(defaultValue));
-                    return VisitResult.CONTINUE;
-                }
-                boolean value;
-                switch (response.trim().toLowerCase()) {
-                    case "y":
-                    case "yes":
-                        value = true;
-                        break;
-                    case "n":
-                    case "no":
-                        value = false;
-                        break;
-                    default:
-                        continue;
-                }
-                ctx.push(input.name(), Value.create(value));
-                return VisitResult.CONTINUE;
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -190,7 +209,7 @@ public class Prompter extends InputResolver {
 
     private String prompt(String prompt, String defaultText) throws IOException {
         String prompText = defaultText != null
-                ? String.format("%s (Default: %s): ", prompt, defaultText)
+                ? String.format("%s (default: %s): ", prompt, defaultText)
                 : String.format("%s: ", prompt);
         System.out.print(Bold.apply(prompText));
         System.out.flush();

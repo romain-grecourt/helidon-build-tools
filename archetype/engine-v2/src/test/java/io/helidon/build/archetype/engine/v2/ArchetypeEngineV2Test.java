@@ -35,6 +35,9 @@ import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 
+/**
+ * Tests {@link ArchetypeEngineV2}.
+ */
 class ArchetypeEngineV2Test {
 
     @Test

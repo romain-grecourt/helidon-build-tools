@@ -28,6 +28,7 @@ import io.helidon.build.archetype.engine.v2.ast.Value;
  */
 public final class Context {
 
+    private final Map<String, Value> defaults = new HashMap<>();
     private final Map<String, ContextValue> values = new HashMap<>();
     private final Deque<Path> directories = new ArrayDeque<>();
     private final Deque<String> inputs = new ArrayDeque<>();
@@ -75,6 +76,11 @@ public final class Context {
         values.put(path, new ContextValue(value, true));
     }
 
+    // TODO
+    public Value getDefault(String path) {
+        return defaults.get(path);
+    }
+
     /**
      * Push a new value.
      *
@@ -106,6 +112,10 @@ public final class Context {
         inputs.pop();
     }
 
+    public String peek() {
+        return inputs.peek();
+    }
+
     /**
      * Lookup a context value
      *
@@ -113,10 +123,10 @@ public final class Context {
      * @return value, {@code null} if not found
      */
     public ContextValue lookup(String path) {
-        if (inputs.isEmpty() || inputs.peek() == null) {
-            return null;
-        }
         String current = inputs.peek();
+        if (current == null) {
+            current = "";
+        }
         String key;
         if (path.startsWith("ROOT.")) {
             key = path.substring(5);
@@ -169,11 +179,14 @@ public final class Context {
     /**
      * Create a new context.
      *
-     * @param cwd initial working directory
-     * @param env initial environment
+     * @param cwd              initial working directory
+     * @param externalValues   external values
+     * @param externalDefaults external defaults
      * @return context
      */
-    public static Context create(Path cwd, Map<String, String> env) {
+    public static Context create(Path cwd, Map<String, String> externalValues, Map<String, String> externalDefaults) {
+        // TODO need a different type of Value that stores a string and parses when calling asXXX methods
+        // TODO initialize the context with the two maps
         return new Context(cwd);
     }
 

@@ -17,6 +17,7 @@
 package io.helidon.build.archetype.engine.v2;
 
 import java.io.InputStream;
+import java.nio.file.Path;
 
 import io.helidon.build.archetype.engine.v2.ast.Block;
 import io.helidon.build.archetype.engine.v2.ast.Condition;
@@ -30,6 +31,7 @@ import io.helidon.build.archetype.engine.v2.ast.Preset;
 
 import io.helidon.build.archetype.engine.v2.ast.Script;
 import io.helidon.build.archetype.engine.v2.ast.Step;
+import io.helidon.build.common.test.utils.TestFiles;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -43,10 +45,10 @@ import static org.hamcrest.core.IsNull.notNullValue;
 /**
  * Tests {@link ScriptLoader}.
  */
-public class ScriptLoaderTest {
+class ScriptLoaderTest {
 
     @Test
-    public void testInputs() {
+    void testInputs() {
         Script script = load("loader/inputs.xml");
         int[] index = new int[]{0};
         walk(new Input.Visitor<>() {
@@ -57,7 +59,7 @@ public class ScriptLoaderTest {
                 assertThat(input.name(), is("input1"));
                 assertThat(input.label(), is("Text input"));
                 assertThat(input.help(), is("Help 1"));
-                assertThat(input.defaultValue().orElse(null), is("default#1"));
+                assertThat(input.defaultValue().asString(), is("default#1"));
                 assertThat(input.prompt(), is("Enter 1"));
                 return VisitResult.CONTINUE;
             }
@@ -68,7 +70,7 @@ public class ScriptLoaderTest {
                 assertThat(input.name(), is("input2"));
                 assertThat(input.label(), is("Boolean input"));
                 assertThat(input.help(), is("Help 2"));
-                assertThat(input.defaultValue(), is(true));
+                assertThat(input.defaultValue().asBoolean(), is(true));
                 assertThat(input.prompt(), is("Enter 2"));
                 return VisitResult.CONTINUE;
             }
@@ -84,7 +86,7 @@ public class ScriptLoaderTest {
                 assertThat(input.options().get(0).label(), is("Option 3.1"));
                 assertThat(input.options().get(1).value(), is("option3.2"));
                 assertThat(input.options().get(1).label(), is("Option 3.2"));
-                assertThat(input.defaultValue().orElse(null), is("option3.1"));
+                assertThat(input.defaultValue().asString(), is("option3.1"));
                 assertThat(input.prompt(), is("Enter 3"));
                 return VisitResult.CONTINUE;
             }
@@ -99,7 +101,7 @@ public class ScriptLoaderTest {
                 assertThat(input.options().get(0).label(), is("Item 4.1"));
                 assertThat(input.options().get(1).value(), is("item4.2"));
                 assertThat(input.options().get(1).label(), is("Item 4.2"));
-                assertThat(input.defaultValue(), contains("item4.1", "item4.2"));
+                assertThat(input.defaultValue().asList(), contains("item4.1", "item4.2"));
                 assertThat(input.prompt(), is("Enter 4"));
                 return VisitResult.CONTINUE;
             }
@@ -108,7 +110,7 @@ public class ScriptLoaderTest {
     }
 
     @Test
-    public void testNestedInputs() {
+    void testNestedInputs() {
         Script script = load("loader/nested-inputs.xml");
         int[] index = new int[]{0};
         walk(new Input.Visitor<>() {
@@ -124,7 +126,7 @@ public class ScriptLoaderTest {
     }
 
     @Test
-    public void testInvocations() {
+    void testInvocations() {
         Script script = load("loader/invocations.xml");
         int[] index = new int[]{0};
         walk(new Node.Visitor<>() {
@@ -149,7 +151,7 @@ public class ScriptLoaderTest {
     }
 
     @Test
-    public void testPresets() {
+    void testPresets() {
         Script script = load("loader/presets.xml");
         int[] index = new int[]{0};
         walk(new Node.Visitor<>() {
@@ -185,7 +187,7 @@ public class ScriptLoaderTest {
     }
 
     @Test
-    public void testOutput() {
+    void testOutput() {
         Script script = load("loader/output.xml");
         int[] index = new int[]{0};
         walk(new Output.Visitor<>() {
@@ -241,7 +243,7 @@ public class ScriptLoaderTest {
     }
 
     @Test
-    public void testModel() {
+    void testModel() {
         Script script = load("loader/model.xml");
         int[] index = new int[]{0};
         walk(new Model.Visitor<>() {
@@ -328,7 +330,7 @@ public class ScriptLoaderTest {
     }
 
     @Test
-    public void testScopedModel() {
+    void testScopedModel() {
         Script script = load("loader/scoped-model.xml");
         int[] index = new int[]{0};
         walk(new Model.Visitor<>() {
@@ -353,7 +355,7 @@ public class ScriptLoaderTest {
     }
 
     @Test
-    public void testConditional() {
+    void testConditional() {
         Script script = load("loader/conditional.xml");
         int[] index = new int[]{0};
         walk(new Node.Visitor<>() {
@@ -407,6 +409,24 @@ public class ScriptLoaderTest {
             }
         }, script);
         assertThat(index[0], is(3));
+    }
+
+    @Test
+    void testExec() {
+        Path target = TestFiles.targetDir(ScriptLoader.class);
+        Path testResources = target.resolve("test-classes");
+        Script script = ScriptLoader.load(testResources.resolve("loader/exec.xml"));
+        int[] index = new int[]{0};
+        walk(new Model.Visitor<>() {
+            @Override
+            public VisitResult visitValue(Model.Value value, Void arg) {
+                assertThat(++index[0], is(1));
+                assertThat(value.key(), is("foo"));
+                assertThat(value.value(), is("bar"));
+                return VisitResult.CONTINUE;
+            }
+        }, script);
+        assertThat(index[0], is(1));
     }
 
     private static Script load(String path) {

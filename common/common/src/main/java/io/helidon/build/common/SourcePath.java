@@ -72,8 +72,8 @@ public class SourcePath {
         segments = parseSegments(path);
     }
 
-    private static String getRelativePath(Path sourcedir, Path source) {
-        return sourcedir.relativize(source).toString()
+    private static String getRelativePath(Path sourceDir, Path source) {
+        return sourceDir.relativize(source).toString()
                         // force UNIX style path on Windows
                         .replace("\\", "/");
     }
