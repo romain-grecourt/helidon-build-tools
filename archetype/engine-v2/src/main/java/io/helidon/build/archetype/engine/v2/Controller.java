@@ -57,16 +57,37 @@ class Controller extends VisitorAdapter<Context> {
         return VisitResult.SKIP_SUBTREE;
     }
 
+    /**
+     * Traverse the given block.
+     *
+     * @param visitor visitor
+     * @param context context
+     * @param block   block
+     */
     static void run(Model.Visitor<Context> visitor, Context context, Block block) {
         Controller controller = new Controller(visitor);
         Walker.walk(controller, block, context);
     }
 
+    /**
+     * Traverse the given block.
+     *
+     * @param visitor visitor
+     * @param context context
+     * @param block   block
+     */
     static void run(Output.Visitor<Context> visitor, Context context, Block block) {
         Controller controller = new Controller(visitor);
         Walker.walk(controller, block, context);
     }
 
+    /**
+     * Traverse the given block.
+     *
+     * @param visitor visitor
+     * @param context context
+     * @param block   block
+     */
     static void run(Input.Visitor<Context> visitor, Context context, Block block) {
         Controller controller = new Controller(visitor);
         Walker.walk(controller, block, context);
