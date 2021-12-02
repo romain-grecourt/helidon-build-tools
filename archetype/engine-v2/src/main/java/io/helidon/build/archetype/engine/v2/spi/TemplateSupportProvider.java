@@ -20,7 +20,6 @@ import io.helidon.build.archetype.engine.v2.Context;
 import io.helidon.build.archetype.engine.v2.ast.Block;
 
 import java.util.Map;
-import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.function.Function;
 
