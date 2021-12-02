@@ -80,97 +80,108 @@ public class Block extends Statement {
 
     /**
      * Block visitor.
+     *
+     * @param <A> argument type
      */
-    public interface Visitor {
+    public interface Visitor<A> {
 
         /**
          * Visit an input block.
          *
          * @param input input
+         * @param arg   visitor argument
          * @return result
          */
-        default VisitResult visitInput(Input input) {
-            return visitAny(input);
+        default VisitResult visitInput(Input input, A arg) {
+            return visitAny(input, arg);
         }
 
         /**
          * Visit an input block after traversing the nested statements.
          *
          * @param input input
+         * @param arg   visitor argument
          * @return result
          */
-        default VisitResult postVisitInput(Input input) {
-            return postVisitAny(input);
+        default VisitResult postVisitInput(Input input, A arg) {
+            return postVisitAny(input, arg);
         }
 
         /**
          * Visit a step block.
          *
          * @param step step
+         * @param arg  visitor argument
          * @return result
          */
-        default VisitResult visitStep(Step step) {
-            return visitAny(step);
+        default VisitResult visitStep(Step step, A arg) {
+            return visitAny(step, arg);
         }
 
         /**
          * Visit a step block after traversing the nested statements.
          *
          * @param step step
+         * @param arg  visitor argument
          * @return result
          */
-        default VisitResult postVisitStep(Step step) {
-            return postVisitAny(step);
+        default VisitResult postVisitStep(Step step, A arg) {
+            return postVisitAny(step, arg);
         }
 
         /**
          * Visit an output block.
          *
          * @param output output
+         * @param arg    visitor argument
          * @return result
          */
-        default VisitResult visitOutput(Output output) {
-            return visitAny(output);
+        default VisitResult visitOutput(Output output, A arg) {
+            return visitAny(output, arg);
         }
 
         /**
          * Visit an output block after traversing the nested statements.
          *
          * @param output output
+         * @param arg    visitor argument
          * @return result
          */
-        default VisitResult postVisitOutput(Output output) {
-            return postVisitAny(output);
+        default VisitResult postVisitOutput(Output output, A arg) {
+            return postVisitAny(output, arg);
         }
 
         /**
          * Visit a model block.
          *
          * @param model model
+         * @param arg   visitor argument
          * @return result
          */
-        default VisitResult visitModel(Model model) {
-            return visitAny(model);
+        default VisitResult visitModel(Model model, A arg) {
+            return visitAny(model, arg);
         }
 
         /**
          * Visit a model block after traversing the nested statements.
          *
          * @param model model
+         * @param arg   visitor argument
          * @return result
          */
-        default VisitResult postVisitModel(Model model) {
-            return postVisitAny(model);
+        default VisitResult postVisitModel(Model model, A arg) {
+            return postVisitAny(model, arg);
         }
 
         /**
          * Visit any block.
          *
          * @param block block
+         * @param arg   visitor argument
          * @return result
          */
         @SuppressWarnings("unused")
-        default VisitResult visitAny(Block block) {
+        default VisitResult visitAny(Block block, A arg) {
             return VisitResult.CONTINUE;
         }
 
@@ -178,10 +189,11 @@ public class Block extends Statement {
          * Visit any block after traversing the nested statements.
          *
          * @param block block
+         * @param arg   visitor argument
          * @return result
          */
         @SuppressWarnings("unused")
-        default VisitResult postVisitAny(Block block) {
+        default VisitResult postVisitAny(Block block, A arg) {
             return VisitResult.CONTINUE;
         }
     }
@@ -190,28 +202,32 @@ public class Block extends Statement {
      * Visit this block.
      *
      * @param visitor block visitor
+     * @param arg     visitor argument
+     * @param <A>     visitor argument type
      */
-    public VisitResult accept(Visitor visitor) {
-        return visitor.visitAny(this);
+    public <A> VisitResult accept(Visitor<A> visitor, A arg) {
+        return visitor.visitAny(this, arg);
     }
 
     /**
      * Visit this block after traversing the nested statements.
      *
      * @param visitor block visitor
+     * @param arg     visitor argument
+     * @param <A>     visitor argument type
      */
-    public VisitResult acceptAfter(Visitor visitor) {
-        return visitor.postVisitAny(this);
+    public <A> VisitResult acceptAfter(Visitor<A> visitor, A arg) {
+        return visitor.postVisitAny(this, arg);
     }
 
     @Override
-    public final VisitResult accept(Node.Visitor visitor) {
-        return visitor.visitBlock(this);
+    public final <A> VisitResult accept(Node.Visitor<A> visitor, A arg) {
+        return visitor.visitBlock(this, arg);
     }
 
     @Override
-    public VisitResult acceptAfter(Node.Visitor visitor) {
-        return visitor.postVisitBlock(this);
+    public <A> VisitResult acceptAfter(Node.Visitor<A> visitor, A arg) {
+        return visitor.postVisitBlock(this, arg);
     }
 
     /**

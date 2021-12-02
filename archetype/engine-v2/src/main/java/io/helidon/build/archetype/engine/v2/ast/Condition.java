@@ -51,8 +51,8 @@ public final class Condition extends Statement {
     }
 
     @Override
-    public VisitResult accept(Visitor visitor) {
-        return visitor.visitCondition(this);
+    public <A> VisitResult accept(Visitor<A> visitor, A arg) {
+        return visitor.visitCondition(this, arg);
     }
 
     /**

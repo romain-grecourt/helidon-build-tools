@@ -29,67 +29,74 @@ public abstract class Model extends Block {
 
     /**
      * Model visitor.
+     * @param <A> argument type
      */
-    public interface Visitor {
+    public interface Visitor<A> {
 
         /**
          * Visit a list model.
          *
          * @param list list
+         * @param arg   visitor argument
          * @return result
          */
-        default VisitResult visitList(List list) {
-            return visitAny(list);
+        default VisitResult visitList(List list, A arg) {
+            return visitAny(list, arg);
         }
 
         /**
          * Visit a list after traversing the nested statements.
          *
          * @param list list
+         * @param arg   visitor argument
          * @return result
          */
-        default VisitResult postVisitList(List list) {
-            return postVisitAny(list);
+        default VisitResult postVisitList(List list, A arg) {
+            return postVisitAny(list, arg);
         }
 
         /**
          * Visit a map model.
          *
          * @param map map
+         * @param arg   visitor argument
          * @return result
          */
-        default VisitResult visitMap(Map map) {
-            return visitAny(map);
+        default VisitResult visitMap(Map map, A arg) {
+            return visitAny(map, arg);
         }
 
         /**
          * Visit a map after traversing the nested statements.
          *
          * @param map map
+         * @param arg   visitor argument
          * @return result
          */
-        default VisitResult postVisitMap(Map map) {
-            return postVisitAny(map);
+        default VisitResult postVisitMap(Map map, A arg) {
+            return postVisitAny(map, arg);
         }
 
         /**
          * Visit a value.
          *
          * @param value value
+         * @param arg   visitor argument
          * @return result
          */
-        default VisitResult visitValue(Value value) {
-            return visitAny(value);
+        default VisitResult visitValue(Value value, A arg) {
+            return visitAny(value, arg);
         }
 
         /**
          * Visit any model.
          *
          * @param model model
+         * @param arg   visitor argument
          * @return result
          */
         @SuppressWarnings("unused")
-        default VisitResult visitAny(Model model) {
+        default VisitResult visitAny(Model model, A arg) {
             return VisitResult.CONTINUE;
         }
 
@@ -97,10 +104,11 @@ public abstract class Model extends Block {
          * Visit any model after traversing the nested statements.
          *
          * @param model model
+         * @param arg   visitor argument
          * @return result
          */
         @SuppressWarnings("unused")
-        default VisitResult postVisitAny(Model model) {
+        default VisitResult postVisitAny(Model model, A arg) {
             return VisitResult.CONTINUE;
         }
     }
@@ -109,26 +117,32 @@ public abstract class Model extends Block {
      * Visit this model.
      *
      * @param visitor visitor
+     * @param arg visitor argument
+     * @param <A> visitor argument type
      * @return result
      */
-    public abstract VisitResult accept(Visitor visitor);
+    public abstract <A> VisitResult accept(Visitor<A>  visitor, A arg);
 
     /**
      * Visit this model after traversing the nested statements.
      *
      * @param visitor visitor
+     * @param arg visitor argument
+     * @param <A> visitor argument type
      * @return result
      */
-    public abstract VisitResult acceptAfter(Visitor visitor);
-
-    @Override
-    public VisitResult accept(Block.Visitor visitor) {
-        return visitor.visitModel(this);
+    public <A> VisitResult acceptAfter(Visitor<A>  visitor, A arg) {
+        return VisitResult.CONTINUE;
     }
 
     @Override
-    public VisitResult acceptAfter(Block.Visitor visitor) {
-        return visitor.postVisitModel(this);
+    public <A> VisitResult accept(Block.Visitor<A> visitor, A arg) {
+        return visitor.visitModel(this, arg);
+    }
+
+    @Override
+    public <A> VisitResult acceptAfter(Block.Visitor<A> visitor, A arg) {
+        return visitor.postVisitModel(this, arg);
     }
 
     /**
@@ -141,13 +155,13 @@ public abstract class Model extends Block {
         }
 
         @Override
-        public VisitResult accept(Model.Visitor visitor) {
-            return visitor.visitList(this);
+        public <A> VisitResult accept(Model.Visitor<A> visitor, A arg) {
+            return visitor.visitList(this, arg);
         }
 
         @Override
-        public VisitResult acceptAfter(Model.Visitor visitor) {
-            return visitor.postVisitList(this);
+        public <A> VisitResult acceptAfter(Model.Visitor<A> visitor, A arg) {
+            return visitor.postVisitList(this, arg);
         }
     }
 
@@ -195,13 +209,13 @@ public abstract class Model extends Block {
         }
 
         @Override
-        public VisitResult accept(Model.Visitor visitor) {
-            return visitor.visitMap(this);
+        public <A> VisitResult accept(Model.Visitor<A> visitor, A arg) {
+            return visitor.visitMap(this, arg);
         }
 
         @Override
-        public VisitResult acceptAfter(Model.Visitor visitor) {
-            return visitor.postVisitMap(this);
+        public <A> VisitResult acceptAfter(Model.Visitor<A> visitor, A arg) {
+            return visitor.postVisitMap(this, arg);
         }
     }
 
@@ -227,13 +241,8 @@ public abstract class Model extends Block {
         }
 
         @Override
-        public VisitResult accept(Model.Visitor visitor) {
-            return visitor.visitValue(this);
-        }
-
-        @Override
-        public VisitResult acceptAfter(Model.Visitor visitor) {
-            return VisitResult.CONTINUE;
+        public <A> VisitResult accept(Model.Visitor<A> visitor, A arg) {
+            return visitor.visitValue(this, arg);
         }
     }
 

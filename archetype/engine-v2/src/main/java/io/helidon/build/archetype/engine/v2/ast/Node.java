@@ -86,17 +86,21 @@ public abstract class Node {
      * Visit this node.
      *
      * @param visitor visitor
+     * @param arg visitor argument
+     * @param <A> visitor argument type
      * @return result
      */
-    public abstract VisitResult accept(Visitor visitor);
+    public abstract <A> VisitResult accept(Visitor<A> visitor, A arg);
 
     /**
      * Post-visit this node.
      *
      * @param visitor visitor
+     * @param arg visitor argument
+     * @param <A> visitor argument type
      * @return result
      */
-    public VisitResult acceptAfter(Visitor visitor) {
+    public <A> VisitResult acceptAfter(Visitor<A> visitor, A arg) {
         return VisitResult.CONTINUE;
     }
 
@@ -128,76 +132,97 @@ public abstract class Node {
 
     /**
      * Visitor.
+     * @param <A> argument type
      */
-    public interface Visitor {
+    public interface Visitor<A> {
 
         /**
          * Visit a script.
          *
          * @param script script
+         * @param arg   visitor argument
          * @return visit result
          */
-        default VisitResult visitScript(Script script) {
-            return visitNode(script);
+        default VisitResult visitScript(Script script, A arg) {
+            return visitAny(script, arg);
         }
 
         /**
          * Visit a condition.
          *
          * @param condition condition
+         * @param arg   visitor argument
          * @return visit result
          */
-        default VisitResult visitCondition(Condition condition) {
-            return visitNode(condition);
+        default VisitResult visitCondition(Condition condition, A arg) {
+            return visitAny(condition, arg);
         }
 
         /**
          * Visit an invocation.
          *
          * @param invocation invocation
+         * @param arg   visitor argument
          * @return visit result
          */
-        default VisitResult visitInvocation(Invocation invocation) {
-            return visitNode(invocation);
+        default VisitResult visitInvocation(Invocation invocation, A arg) {
+            return visitAny(invocation, arg);
         }
 
         /**
          * Visit a preset.
          *
          * @param preset preset
+         * @param arg   visitor argument
          * @return visit result
          */
-        default VisitResult visitPreset(Preset preset) {
-            return visitNode(preset);
+        default VisitResult visitPreset(Preset preset, A arg) {
+            return visitAny(preset, arg);
         }
 
         /**
          * Visit a block.
          *
          * @param block block
+         * @param arg   visitor argument
          * @return visit result
          */
-        default VisitResult visitBlock(Block block) {
-            return VisitResult.CONTINUE;
+        default VisitResult visitBlock(Block block, A arg) {
+            return visitAny(block, arg);
         }
 
         /**
          * Visit a block after traversing the nested statements.
          *
          * @param block block
+         * @param arg   visitor argument
          * @return visit result
          */
-        default VisitResult postVisitBlock(Block block) {
-            return VisitResult.CONTINUE;
+        default VisitResult postVisitBlock(Block block, A arg) {
+            return postVisitAny(block, arg);
         }
 
         /**
          * Visit a node.
          *
          * @param node node
+         * @param arg   visitor argument
          * @return visit result
          */
-        default VisitResult visitNode(Node node) {
+        @SuppressWarnings("unused")
+        default VisitResult visitAny(Node node, A arg) {
+            return VisitResult.CONTINUE;
+        }
+
+        /**
+         * Visit a node after traversing the nested statements.
+         *
+         * @param node node
+         * @param arg   visitor argument
+         * @return visit result
+         */
+        @SuppressWarnings("unused")
+        default VisitResult postVisitAny(Node node, A arg) {
             return VisitResult.CONTINUE;
         }
     }

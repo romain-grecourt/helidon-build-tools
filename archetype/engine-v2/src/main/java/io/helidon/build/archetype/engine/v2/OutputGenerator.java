@@ -16,15 +16,15 @@
 
 package io.helidon.build.archetype.engine.v2;
 
+import io.helidon.build.archetype.engine.v2.ast.Node.VisitResult;
 import io.helidon.build.archetype.engine.v2.ast.Output;
 
-import java.io.File;
 import java.nio.file.Path;
 
 /**
  * Output generator.
  */
-public class OutputGenerator implements Output.Visitor {
+public class OutputGenerator implements Output.Visitor<Context> {
 
     private final Path directory;
 
@@ -32,10 +32,12 @@ public class OutputGenerator implements Output.Visitor {
         this.directory = directory;
     }
 
-    public void generate(File directory) {
+    @Override
+    public VisitResult visitFile(Output.File file, Context ctx) {
+        return VisitResult.CONTINUE;
     }
 
-//    private final TemplateModel model;
+    //    private final TemplateModel model;
 //    private final Archetype archetype;
 //    private final Map<String, String> properties;
 //    private final List<OutputNode> nodes;

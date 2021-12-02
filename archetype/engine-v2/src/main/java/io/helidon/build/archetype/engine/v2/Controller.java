@@ -7,39 +7,35 @@ import io.helidon.build.archetype.engine.v2.ast.Model;
 import io.helidon.build.archetype.engine.v2.ast.Node.VisitResult;
 import io.helidon.build.archetype.engine.v2.ast.Output;
 
-class Controller extends VisitorAdapter {
+class Controller extends VisitorAdapter<Context> {
 
-    private final Context context;
-
-    private Controller(Output.Visitor outputVisitor,
-                       Model.Visitor modelVisitor,
-                       Input.Visitor inputVisitor,
-                       Context context) {
+    private Controller(Output.Visitor<Context> outputVisitor,
+                       Model.Visitor<Context> modelVisitor,
+                       Input.Visitor<Context> inputVisitor) {
 
         super(outputVisitor, modelVisitor, inputVisitor);
-        this.context = context;
     }
 
     @Override
-    public VisitResult visitCondition(Condition condition) {
-        if (condition.expression().eval(context::lookup)) {
+    public VisitResult visitCondition(Condition condition, Context ctx) {
+        if (condition.expression().eval(ctx::lookup)) {
             return VisitResult.CONTINUE;
         }
         return VisitResult.SKIP_SUBTREE;
     }
 
-    static void run(Model.Visitor visitor, Context context, Block block) {
-        Controller controller = new Controller(null, visitor, null, context);
-        Walker.walk(controller, block);
+    static void run(Model.Visitor<Context> visitor, Context context, Block block) {
+        Controller controller = new Controller(null, visitor, null);
+        Walker.walk(controller, block, context);
     }
 
-    static void run(Output.Visitor visitor, Context context, Block block) {
-        Controller controller = new Controller(visitor, null, null, context);
-        Walker.walk(controller, block);
+    static void run(Output.Visitor<Context> visitor, Context context, Block block) {
+        Controller controller = new Controller(visitor, null, null);
+        Walker.walk(controller, block, context);
     }
 
-    static void run(Input.Visitor visitor, Context context, Block block) {
-        Controller controller = new Controller(null, null, visitor, context);
-        Walker.walk(controller, block);
+    static void run(Input.Visitor<Context> visitor, Context context, Block block) {
+        Controller controller = new Controller(null, null, visitor);
+        Walker.walk(controller, block, context);
     }
 }

@@ -44,13 +44,13 @@ public class PrompterTest {
     public void testBooleanWithEmptyResponse() {
         Block input = booleanInput("boolean-input1", true);
         Context context = Context.create();
-        input.accept(new Block.Visitor() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public VisitResult visitInput(Input input) {
-                input.accept(prompter(context, ""));
+            public VisitResult visitInput(Input input, Context ctx) {
+                input.accept(prompter(""), ctx);
                 return VisitResult.CONTINUE;
             }
-        });
+        }, context);
         Value value = context.lookup("boolean-input1");
         assertThat(value, is(notNullValue()));
         assertThat(value.type(), is(ValueTypes.BOOLEAN));
@@ -61,13 +61,13 @@ public class PrompterTest {
     public void testBooleanWithEmptyResponse2() {
         Block input = booleanInput("boolean-input2", false);
         Context context = Context.create();
-        input.accept(new Block.Visitor() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public VisitResult visitInput(Input input) {
-                input.accept(prompter(context, ""));
+            public VisitResult visitInput(Input input, Context ctx) {
+                input.accept(prompter(""), ctx);
                 return VisitResult.CONTINUE;
             }
-        });
+        }, context);
 
         Value value = context.lookup("boolean-input2");
         assertThat(value, is(notNullValue()));
@@ -79,13 +79,13 @@ public class PrompterTest {
     public void testInputBoolean() {
         Block input = booleanInput("boolean-input3", true);
         Context context = Context.create();
-        input.accept(new Block.Visitor() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public VisitResult visitInput(Input input) {
-                input.accept(prompter(context, "NO"));
+            public VisitResult visitInput(Input input, Context ctx) {
+                input.accept(prompter("NO"), ctx);
                 return VisitResult.CONTINUE;
             }
-       });
+        }, context);
 
         Value value = context.lookup("boolean-input3");
         assertThat(value, is(notNullValue()));
@@ -100,13 +100,13 @@ public class PrompterTest {
                         option("option2", "value2")),
                 List.of("value1"));
         Context context = Context.create();
-        input.accept(new Block.Visitor() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public VisitResult visitInput(Input input) {
-                input.accept(prompter(context, ""));
+            public VisitResult visitInput(Input input, Context ctx) {
+                input.accept(prompter(""), ctx);
                 return VisitResult.CONTINUE;
             }
-       });
+        }, context);
 
         Value value = context.lookup("list-input1");
         assertThat(value, is(notNullValue()));
@@ -121,13 +121,13 @@ public class PrompterTest {
                         option("option2", "value2")),
                 List.of("value1", "value2"));
         Context context = Context.create();
-        input.accept(new Block.Visitor() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public VisitResult visitInput(Input input) {
-                input.accept(prompter(context, ""));
+            public VisitResult visitInput(Input input, Context ctx) {
+                input.accept(prompter(""), ctx);
                 return VisitResult.CONTINUE;
             }
-       });
+        }, context);
 
         Value value = context.lookup("list-input2");
         assertThat(value, is(notNullValue()));
@@ -143,13 +143,13 @@ public class PrompterTest {
                         option("option3", "value3")),
                 List.of());
         Context context = Context.create();
-        input.accept(new Block.Visitor() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public VisitResult visitInput(Input input) {
-                input.accept(prompter(context, "1 3"));
+            public VisitResult visitInput(Input input, Context ctx) {
+                input.accept(prompter("1 3"), ctx);
                 return VisitResult.CONTINUE;
             }
-       });
+        }, context);
 
         Value value = context.lookup("list-input3");
         assertThat(value, is(notNullValue()));
@@ -165,13 +165,13 @@ public class PrompterTest {
                         option("option3", "value3")),
                 List.of());
         Context context = Context.create();
-        input.accept(new Block.Visitor() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public VisitResult visitInput(Input input) {
-                input.accept(prompter(context, "1 3 3 1"));
+            public VisitResult visitInput(Input input, Context ctx) {
+                input.accept(prompter("1 3 3 1"), ctx);
                 return VisitResult.CONTINUE;
             }
-       });
+        }, context);
 
         Value value = context.lookup("list-input4");
         assertThat(value, is(notNullValue()));
@@ -186,13 +186,13 @@ public class PrompterTest {
                         option("option2", "value2")),
                 "value1");
         Context context = Context.create();
-        input.accept(new Block.Visitor() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public VisitResult visitInput(Input input) {
-                input.accept(prompter(context, ""));
+            public VisitResult visitInput(Input input, Context ctx) {
+                input.accept(prompter(""), ctx);
                 return VisitResult.CONTINUE;
             }
-       });
+        }, context);
 
         Value value = context.lookup("enum-input1");
         assertThat(value, is(notNullValue()));
@@ -208,13 +208,13 @@ public class PrompterTest {
                         option("option3", "value3")),
                 "value3");
         Context context = Context.create();
-        input.accept(new Block.Visitor() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public VisitResult visitInput(Input input) {
-                input.accept(prompter(context, "2"));
+            public VisitResult visitInput(Input input, Context ctx) {
+                input.accept(prompter("2"), ctx);
                 return VisitResult.CONTINUE;
             }
-       });
+        }, context);
 
         Value value = context.lookup("enum-input2");
         assertThat(value, is(notNullValue()));
@@ -226,13 +226,13 @@ public class PrompterTest {
     public void testInputTextWithEmptyResponseNoDefault() {
         Block input = textInput("text-input1", null);
         Context context = Context.create();
-        input.accept(new Block.Visitor() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public VisitResult visitInput(Input input) {
-                input.accept(prompter(context, ""));
+            public VisitResult visitInput(Input input, Context ctx) {
+                input.accept(prompter(""), ctx);
                 return VisitResult.CONTINUE;
             }
-       });
+        }, context);
 
         Value value = context.lookup("text-input1");
         assertThat(value, is(nullValue()));
@@ -242,13 +242,13 @@ public class PrompterTest {
     public void testInputTextWithEmptyResult() {
         Block input = textInput("text-input2", "value1");
         Context context = Context.create();
-        input.accept(new Block.Visitor() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public VisitResult visitInput(Input input) {
-                input.accept(prompter(context, ""));
+            public VisitResult visitInput(Input input, Context ctx) {
+                input.accept(prompter(""), ctx);
                 return VisitResult.CONTINUE;
             }
-       });
+        }, context);
 
         Value value = context.lookup("text-input2");
         assertThat(value, is(notNullValue()));
@@ -260,13 +260,13 @@ public class PrompterTest {
     public void testInputText() {
         Block input = textInput("text-input3", "value1");
         Context context = Context.create();
-        input.accept(new Block.Visitor() {
+        input.accept(new Block.Visitor<>() {
             @Override
-            public VisitResult visitInput(Input input) {
-                input.accept(prompter(context, "not-value1"));
+            public VisitResult visitInput(Input input, Context ctx) {
+                input.accept(prompter("not-value1"), ctx);
                 return VisitResult.CONTINUE;
             }
-       });
+        }, context);
 
         Value value = context.lookup("text-input3");
         assertThat(value, is(notNullValue()));
@@ -274,8 +274,8 @@ public class PrompterTest {
         assertThat(value.asString(), is("not-value1"));
     }
 
-    private static Prompter prompter(Context context, String input) {
-        return new Prompter(context, new ByteArrayInputStream(input.getBytes()));
+    private static Prompter prompter(String input) {
+        return new Prompter(new ByteArrayInputStream(input.getBytes()));
     }
 
     private static Block.Builder option(String name, String value) {

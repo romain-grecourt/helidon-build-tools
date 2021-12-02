@@ -39,7 +39,6 @@ import io.helidon.build.archetype.engine.v1.FlowNodeControllers;
 import io.helidon.build.archetype.engine.v1.FlowNodeControllers.FlowNodeController;
 import io.helidon.build.archetype.engine.v1.Maps;
 import io.helidon.build.archetype.engine.v2.ArchetypeEngineV2;
-import io.helidon.build.archetype.engine.v2.Context;
 import io.helidon.build.archetype.engine.v2.Prompter;
 import io.helidon.build.cli.impl.InitOptions.Flavor;
 import io.helidon.build.common.maven.MavenVersion;
@@ -290,19 +289,16 @@ abstract class ArchetypeInvoker {
 
         @Override
         Path invoke() {
-            ArchetypeEngineV2 engine = new ArchetypeEngineV2(archetype(), this::prompter, Map.of());
-            Path projectDir = projectDirSupplier().apply(initOptions().initProperties().get("name"));
-            engine.generate(projectDir);
+            ArchetypeEngineV2 engine = new ArchetypeEngineV2(archetype(), new Prompter(System.in));
+            Map<String, String> initProperties = initOptions().initProperties();
+            Path projectDir = projectDirSupplier().apply(initProperties.get("name"));
+            engine.generate(initProperties, projectDir);
             return projectDir;
         }
 
         @Override
         EngineVersion engineVersion() {
             return EngineVersion.V2;
-        }
-
-        private Prompter prompter(Context ctx) {
-            return new Prompter(ctx, System.in);
         }
 
         private FileSystem archetype() {

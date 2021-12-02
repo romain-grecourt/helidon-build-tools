@@ -22,7 +22,6 @@ import io.helidon.build.archetype.engine.v2.ast.Script;
 import java.nio.file.FileSystem;
 import java.nio.file.Path;
 import java.util.Map;
-import java.util.function.Function;
 
 /**
  * Archetype engine (v2).
@@ -30,29 +29,28 @@ import java.util.function.Function;
 public class ArchetypeEngineV2 {
 
     private final Path cwd;
-    private final Input.Visitor inputResolver;
-    private final Context context;
+    private final InputResolver inputResolver;
 
     /**
      * Create a new archetype engine.
      *
-     * @param fs       archetype file system
-     * @param resolver input resolver factory
-     * @param env      initial context environment
+     * @param fs            archetype file system
+     * @param inputResolver input resolver
      */
-    public ArchetypeEngineV2(FileSystem fs, Function<Context, Input.Visitor> resolver, Map<String, String> env) {
-        cwd = fs.getPath("/");
-        context = Context.create(cwd, env);
-        inputResolver = resolver.apply(context);
+    public ArchetypeEngineV2(FileSystem fs, InputResolver inputResolver) {
+        this.cwd = fs.getPath("/");
+        this.inputResolver = inputResolver;
     }
 
     /**
      * Run the archetype.
      *
+     * @param env       initial context properties
      * @param directory output directory
      */
-    public void generate(Path directory) {
+    public void generate(Map<String, String> env, Path directory) {
         Script entrypoint = ScriptLoader.load(cwd.resolve("flavor.xml"));
+        Context context = Context.create(cwd, env);
         Controller.run(inputResolver, context, entrypoint.body());
         Controller.run(new OutputGenerator(directory), context, entrypoint.body());
     }

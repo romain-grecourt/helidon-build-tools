@@ -68,97 +68,107 @@ public abstract class Input extends Block {
 
     /**
      * Input visitor.
+     * @param <A> argument type
      */
-    public interface Visitor {
+    public interface Visitor<A> {
 
         /**
          * Visit a boolean input.
          *
          * @param input input
+         * @param arg   visitor argument
          * @return result
          */
-        default VisitResult visitBoolean(Boolean input) {
-            return visitAny(input);
+        default VisitResult visitBoolean(Boolean input, A arg) {
+            return visitAny(input, arg);
         }
 
         /**
          * Visit a boolean input after traversing the nested statements.
          *
          * @param input input
+         * @param arg   visitor argument
          * @return result
          */
-        default VisitResult postVisitBoolean(Boolean input) {
-            return postVisitAny(input);
+        default VisitResult postVisitBoolean(Boolean input, A arg) {
+            return postVisitAny(input, arg);
         }
 
         /**
          * Visit a text input.
          *
          * @param input input
+         * @param arg   visitor argument
          * @return result
          */
-        default VisitResult visitText(Text input) {
-            return visitAny(input);
+        default VisitResult visitText(Text input, A arg) {
+            return visitAny(input, arg);
         }
 
         /**
          * Visit a text input after traversing the nested statements.
          *
          * @param input input
+         * @param arg   visitor argument
          * @return result
          */
-        default VisitResult postVisitText(Text input) {
-            return postVisitAny(input);
+        default VisitResult postVisitText(Text input, A arg) {
+            return postVisitAny(input, arg);
         }
 
         /**
          * Visit an enum input.
          *
          * @param input input
+         * @param arg   visitor argument
          * @return result
          */
-        default VisitResult visitEnum(Enum input) {
-            return visitAny(input);
+        default VisitResult visitEnum(Enum input, A arg) {
+            return visitAny(input, arg);
         }
 
         /**
          * Visit an enum input after traversing the nested statements.
          *
          * @param input input
+         * @param arg   visitor argument
          * @return result
          */
-        default VisitResult postVisitEnum(Enum input) {
-            return postVisitAny(input);
+        default VisitResult postVisitEnum(Enum input, A arg) {
+            return postVisitAny(input, arg);
         }
 
         /**
          * Visit a list input.
          *
          * @param input input
+         * @param arg   visitor argument
          * @return result
          */
-        default VisitResult visitList(List input) {
-            return visitAny(input);
+        default VisitResult visitList(List input, A arg) {
+            return visitAny(input, arg);
         }
 
         /**
          * Visit a list input after traversing the nested statements.
          *
          * @param input input
+         * @param arg   visitor argument
          * @return result
          */
-        default VisitResult postVisitList(List input) {
-            return postVisitAny(input);
+        default VisitResult postVisitList(List input, A arg) {
+            return postVisitAny(input, arg);
         }
 
         /**
          * Visit any input.
          *
          * @param input input
+         * @param arg   visitor argument
          * @return result
          */
         @SuppressWarnings("unused")
-        default VisitResult visitAny(Input input) {
+        default VisitResult visitAny(Input input, A arg) {
             return VisitResult.CONTINUE;
         }
 
@@ -166,10 +176,11 @@ public abstract class Input extends Block {
          * Visit any input after traversing the nested statements.
          *
          * @param input input
+         * @param arg   visitor argument
          * @return result
          */
         @SuppressWarnings("unused")
-        default VisitResult postVisitAny(Input input) {
+        default VisitResult postVisitAny(Input input, A arg) {
             return VisitResult.CONTINUE;
         }
     }
@@ -178,26 +189,30 @@ public abstract class Input extends Block {
      * Visit this input.
      *
      * @param visitor visitor
+     * @param arg visitor argument
+     * @param <A> visitor argument type
      * @return result
      */
-    public abstract VisitResult accept(Visitor visitor);
+    public abstract <A> VisitResult accept(Visitor<A> visitor, A arg);
 
     /**
      * Visit this input after traversing the nested statements.
      *
      * @param visitor visitor
+     * @param arg visitor argument
+     * @param <A> visitor argument type
      * @return result
      */
-    public abstract VisitResult acceptAfter(Visitor visitor);
+    public abstract <A> VisitResult acceptAfter(Visitor<A> visitor, A arg);
 
     @Override
-    public VisitResult accept(Block.Visitor visitor) {
-        return visitor.visitInput(this);
+    public <A> VisitResult accept(Block.Visitor<A> visitor, A arg) {
+        return visitor.visitInput(this, arg);
     }
 
     @Override
-    public VisitResult acceptAfter(Block.Visitor visitor) {
-        return visitor.postVisitInput(this);
+    public <A> VisitResult acceptAfter(Block.Visitor<A> visitor, A arg) {
+        return visitor.postVisitInput(this, arg);
     }
 
     /**
@@ -235,13 +250,13 @@ public abstract class Input extends Block {
         }
 
         @Override
-        public VisitResult accept(Input.Visitor visitor) {
+        public <A> VisitResult accept(Input.Visitor<A> visitor, A arg) {
             // TODO
             return VisitResult.CONTINUE;
         }
 
         @Override
-        public VisitResult acceptAfter(Input.Visitor visitor) {
+        public <A> VisitResult acceptAfter(Input.Visitor<A> visitor, A arg) {
             // TODO
             return VisitResult.CONTINUE;
         }
@@ -278,13 +293,13 @@ public abstract class Input extends Block {
         }
 
         @Override
-        public VisitResult accept(Input.Visitor visitor) {
-            return visitor.visitText(this);
+        public <A> VisitResult accept(Input.Visitor<A> visitor, A arg) {
+            return visitor.visitText(this, arg);
         }
 
         @Override
-        public VisitResult acceptAfter(Input.Visitor visitor) {
-            return visitor.postVisitText(this);
+        public <A> VisitResult acceptAfter(Input.Visitor<A> visitor, A arg) {
+            return visitor.postVisitText(this, arg);
         }
     }
 
@@ -310,13 +325,13 @@ public abstract class Input extends Block {
         }
 
         @Override
-        public VisitResult accept(Input.Visitor visitor) {
-            return visitor.visitBoolean(this);
+        public <A> VisitResult accept(Input.Visitor<A> visitor, A arg) {
+            return visitor.visitBoolean(this, arg);
         }
 
         @Override
-        public VisitResult acceptAfter(Input.Visitor visitor) {
-            return visitor.postVisitBoolean(this);
+        public <A> VisitResult acceptAfter(Input.Visitor<A> visitor, A arg) {
+            return visitor.postVisitBoolean(this, arg);
         }
     }
 
@@ -400,13 +415,13 @@ public abstract class Input extends Block {
         }
 
         @Override
-        public VisitResult accept(Input.Visitor visitor) {
-            return visitor.visitList(this);
+        public <A> VisitResult accept(Input.Visitor<A> visitor, A arg) {
+            return visitor.visitList(this, arg);
         }
 
         @Override
-        public VisitResult acceptAfter(Input.Visitor visitor) {
-            return visitor.postVisitList(this);
+        public <A> VisitResult acceptAfter(Input.Visitor<A> visitor, A arg) {
+            return visitor.postVisitList(this, arg);
         }
     }
 
@@ -448,13 +463,13 @@ public abstract class Input extends Block {
         }
 
         @Override
-        public VisitResult accept(Input.Visitor visitor) {
-            return visitor.visitEnum(this);
+        public <A> VisitResult accept(Input.Visitor<A> visitor, A arg) {
+            return visitor.visitEnum(this, arg);
         }
 
         @Override
-        public VisitResult acceptAfter(Input.Visitor visitor) {
-            return visitor.postVisitEnum(this);
+        public <A> VisitResult acceptAfter(Input.Visitor<A> visitor, A arg) {
+            return visitor.postVisitEnum(this, arg);
         }
     }
 

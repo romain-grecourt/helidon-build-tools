@@ -32,7 +32,6 @@ import static org.hamcrest.MatcherAssert.assertThat;
 public class OutputGeneratorTest {
 
     private static Path tempDir;
-//    private ArchetypeArchive archetype;
 
     @BeforeAll
     static void bootstrap() throws IOException {

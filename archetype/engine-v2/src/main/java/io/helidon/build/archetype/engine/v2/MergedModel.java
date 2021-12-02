@@ -159,37 +159,37 @@ abstract class MergedModel {
         }
     }
 
-    private static class Resolver implements Model.Visitor {
+    private static class Resolver implements Model.Visitor<Context> {
 
         MergedModel head = new Map(null, null, 0);
 
         @Override
-        public VisitResult visitList(Model.List list) {
+        public VisitResult visitList(Model.List list, Context ctx) {
             head = head.add(new List(head, list.key(), list.order()));
             return VisitResult.CONTINUE;
         }
 
         @Override
-        public VisitResult visitMap(Model.Map map) {
+        public VisitResult visitMap(Model.Map map, Context ctx) {
             head = head.add(new Map(head, map.key(), map.order()));
             return VisitResult.CONTINUE;
         }
 
         @Override
-        public VisitResult visitValue(Model.Value value) {
+        public VisitResult visitValue(Model.Value value, Context ctx) {
             // value is a leaf-node, thus we are not updating the head
             head.add(new Value(head, value.key(), value.order(), value.value()));
             return VisitResult.CONTINUE;
         }
 
         @Override
-        public VisitResult postVisitList(Model.List list) {
+        public VisitResult postVisitList(Model.List list, Context ctx) {
             head.sort();
-            return postVisitAny(list);
+            return postVisitAny(list, ctx);
         }
 
         @Override
-        public VisitResult postVisitAny(Model model) {
+        public VisitResult postVisitAny(Model model, Context ctx) {
             head = head.parent;
             return VisitResult.CONTINUE;
         }

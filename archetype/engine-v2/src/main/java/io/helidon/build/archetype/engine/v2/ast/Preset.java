@@ -70,8 +70,8 @@ public final class Preset extends Statement {
     }
 
     @Override
-    public VisitResult accept(Node.Visitor visitor) {
-        return visitor.visitPreset(this);
+    public <A> VisitResult accept(Node.Visitor<A> visitor, A arg) {
+        return visitor.visitPreset(this, arg);
     }
 
     /**

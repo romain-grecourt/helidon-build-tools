@@ -7,72 +7,72 @@ import io.helidon.build.archetype.engine.v2.ast.Node;
 import io.helidon.build.archetype.engine.v2.ast.Node.VisitResult;
 import io.helidon.build.archetype.engine.v2.ast.Output;
 
-class VisitorAdapter implements Node.Visitor, Block.Visitor {
+class VisitorAdapter<A> implements Node.Visitor<A>, Block.Visitor<A> {
 
-    private final Output.Visitor outputVisitor;
-    private final Model.Visitor modelVisitor;
-    private final Input.Visitor inputVisitor;
+    private final Output.Visitor<A> outputVisitor;
+    private final Model.Visitor<A> modelVisitor;
+    private final Input.Visitor<A> inputVisitor;
 
-    VisitorAdapter(Output.Visitor outputVisitor, Model.Visitor modelVisitor, Input.Visitor inputVisitor) {
+    VisitorAdapter(Output.Visitor<A> outputVisitor, Model.Visitor<A> modelVisitor, Input.Visitor<A> inputVisitor) {
         this.outputVisitor = outputVisitor;
         this.modelVisitor = modelVisitor;
         this.inputVisitor = inputVisitor;
     }
 
     @Override
-    public VisitResult visitBlock(Block block) {
-        return block.accept((Block.Visitor) this);
+    public VisitResult visitBlock(Block block, A arg) {
+        return block.accept((Block.Visitor) this, arg);
     }
 
     @Override
-    public VisitResult postVisitBlock(Block block) {
-        return block.acceptAfter((Block.Visitor) this);
+    public VisitResult postVisitBlock(Block block, A arg) {
+        return block.acceptAfter((Block.Visitor) this, arg);
     }
 
     @Override
-    public VisitResult visitInput(Input input) {
+    public VisitResult visitInput(Input input, A arg) {
         if (inputVisitor != null) {
-            return input.accept(inputVisitor);
+            return input.accept(inputVisitor, arg);
         }
         return VisitResult.CONTINUE;
     }
 
     @Override
-    public VisitResult postVisitInput(Input input) {
+    public VisitResult postVisitInput(Input input, A arg) {
         if (inputVisitor != null) {
-            return input.acceptAfter(inputVisitor);
+            return input.acceptAfter(inputVisitor, arg);
         }
         return VisitResult.CONTINUE;
     }
 
     @Override
-    public VisitResult visitOutput(Output output) {
+    public VisitResult visitOutput(Output output, A arg) {
         if (outputVisitor != null) {
-            return output.accept(outputVisitor);
+            return output.accept(outputVisitor, arg);
         }
         return VisitResult.CONTINUE;
     }
 
     @Override
-    public VisitResult postVisitOutput(Output output) {
+    public VisitResult postVisitOutput(Output output, A arg) {
         if (outputVisitor != null) {
-            return output.acceptAfter(outputVisitor);
+            return output.acceptAfter(outputVisitor, arg);
         }
         return VisitResult.CONTINUE;
     }
 
     @Override
-    public VisitResult visitModel(Model model) {
+    public VisitResult visitModel(Model model, A arg) {
         if (modelVisitor != null) {
-            return model.accept(modelVisitor);
+            return model.accept(modelVisitor, arg);
         }
         return VisitResult.CONTINUE;
     }
 
     @Override
-    public VisitResult postVisitModel(Model model) {
+    public VisitResult postVisitModel(Model model, A arg) {
         if (modelVisitor != null) {
-            return model.acceptAfter(modelVisitor);
+            return model.acceptAfter(modelVisitor, arg);
         }
         return VisitResult.CONTINUE;
     }

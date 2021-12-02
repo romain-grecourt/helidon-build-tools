@@ -30,12 +30,14 @@ import java.util.ListIterator;
 
 /**
  * Block walker.
+ *
+ * @param <A> visitor argument type
  */
-public final class Walker {
+public final class Walker<A> {
 
     private final Deque<Statement> stack = new ArrayDeque<>();
     private final Deque<Node> parents = new ArrayDeque<>();
-    private final Node.Visitor visitor;
+    private final Node.Visitor<A> visitor;
     private boolean traversing;
 
     /**
@@ -43,17 +45,19 @@ public final class Walker {
      *
      * @param visitor visitor
      * @param root    node to traverse
+     * @param arg     visitor argument
+     * @param <A>     visitor argument type
      */
-    public static void walk(Node.Visitor visitor, Block root) {
-        new Walker(visitor).walk(root);
+    public static <A> void walk(Node.Visitor<A> visitor, Block root, A arg) {
+        new Walker<>(visitor).walk(root, arg);
     }
 
-    private Walker(Node.Visitor visitor) {
+    private Walker(Node.Visitor<A> visitor) {
         this.visitor = new DelegateVisitor(visitor);
     }
 
-    private void walk(Block root) {
-        Node.VisitResult result = root.accept(visitor);
+    private void walk(Block root, A arg) {
+        Node.VisitResult result = root.accept(visitor, arg);
         if (result != Node.VisitResult.CONTINUE) {
             return;
         }
@@ -64,10 +68,10 @@ public final class Walker {
             int parentId = parent != null ? parent.nodeId() : 0;
             int nodeId = stmt.nodeId();
             if (nodeId != parentId) {
-                result = stmt.accept(visitor);
+                result = stmt.accept(visitor, arg);
             } else {
                 if (stmt instanceof Block) {
-                    result = stmt.acceptAfter(visitor);
+                    result = stmt.acceptAfter(visitor, arg);
                 }
                 parentId = parents.pop().nodeId();
             }
@@ -88,25 +92,25 @@ public final class Walker {
                 }
             }
         }
-        root.acceptAfter(visitor);
+        root.acceptAfter(visitor, arg);
     }
 
-    private class DelegateVisitor implements Node.Visitor {
+    private class DelegateVisitor implements Node.Visitor<A> {
 
-        final Node.Visitor delegate;
+        final Node.Visitor<A> delegate;
 
-        DelegateVisitor(Node.Visitor delegate) {
+        DelegateVisitor(Node.Visitor<A> delegate) {
             this.delegate = delegate;
         }
 
         @Override
-        public Node.VisitResult visitScript(Script script) {
-            return delegate.visitScript(script);
+        public Node.VisitResult visitScript(Script script, A arg) {
+            return delegate.visitScript(script, arg);
         }
 
         @Override
-        public Node.VisitResult visitCondition(Condition condition) {
-            Node.VisitResult result = delegate.visitCondition(condition);
+        public Node.VisitResult visitCondition(Condition condition, A arg) {
+            Node.VisitResult result = delegate.visitCondition(condition, arg);
             if (result == Node.VisitResult.CONTINUE) {
                 stack.push(condition.then());
                 parents.push(condition);
@@ -116,8 +120,8 @@ public final class Walker {
         }
 
         @Override
-        public Node.VisitResult visitInvocation(Invocation invocation) {
-            Node.VisitResult result = delegate.visitInvocation(invocation);
+        public Node.VisitResult visitInvocation(Invocation invocation, A arg) {
+            Node.VisitResult result = delegate.visitInvocation(invocation, arg);
             if (result == Node.VisitResult.SKIP_SUBTREE || result == Node.VisitResult.TERMINATE) {
                 return result;
             }
@@ -132,13 +136,13 @@ public final class Walker {
         }
 
         @Override
-        public Node.VisitResult visitPreset(Preset preset) {
-            return delegate.visitPreset(preset);
+        public Node.VisitResult visitPreset(Preset preset, A arg) {
+            return delegate.visitPreset(preset, arg);
         }
 
         @Override
-        public Node.VisitResult visitBlock(Block block) {
-            Node.VisitResult result = delegate.visitBlock(block);
+        public Node.VisitResult visitBlock(Block block, A arg) {
+            Node.VisitResult result = delegate.visitBlock(block, arg);
             if (result != Node.VisitResult.TERMINATE) {
                 List<Statement> statements = block.statements();
                 int children = statements.size();
@@ -150,20 +154,25 @@ public final class Walker {
                     parents.push(block);
                     traversing = true;
                 } else if (children == 0) {
-                    result = visitor.postVisitBlock(block);
+                    result = visitor.postVisitBlock(block, arg);
                 }
             }
             return result;
         }
 
         @Override
-        public Node.VisitResult postVisitBlock(Block block) {
-            return delegate.postVisitBlock(block);
+        public Node.VisitResult postVisitBlock(Block block, A arg) {
+            return delegate.postVisitBlock(block, arg);
         }
 
         @Override
-        public Node.VisitResult visitNode(Node node) {
-            return delegate.visitNode(node);
+        public Node.VisitResult visitAny(Node node, A arg) {
+            return delegate.visitAny(node, arg);
+        }
+
+        @Override
+        public Node.VisitResult postVisitAny(Node node, A arg) {
+            return delegate.visitAny(node, arg);
         }
     }
 }

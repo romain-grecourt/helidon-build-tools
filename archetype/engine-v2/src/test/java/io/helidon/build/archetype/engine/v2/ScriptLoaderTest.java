@@ -54,18 +54,18 @@ public class ScriptLoaderTest {
     @Test
     public void testInputs() {
         Script script = load("loader/inputs.xml");
-        Walker.walk(new Node.Visitor() {
+        Walker.walk(new Node.Visitor<Void>() {
             int index = 0;
 
             @Override
-            public VisitResult visitBlock(Block block) {
-                return block.accept(new Block.Visitor() {
+            public VisitResult visitBlock(Block block, Void arg) {
+                return block.accept(new Block.Visitor<>() {
                     @Override
-                    public VisitResult visitInput(Input input) {
-                        return input.accept(new Input.Visitor() {
+                    public VisitResult visitInput(Input input, Void arg) {
+                        return input.accept(new Input.Visitor<>() {
 
                             @Override
-                            public VisitResult visitText(Input.Text input) {
+                            public VisitResult visitText(Input.Text input, Void arg) {
                                 assertThat(++index, is(1));
                                 assertThat(input.name(), is("input1"));
                                 assertThat(input.label(), is("Text input"));
@@ -76,7 +76,7 @@ public class ScriptLoaderTest {
                             }
 
                             @Override
-                            public VisitResult visitBoolean(Input.Boolean input) {
+                            public VisitResult visitBoolean(Input.Boolean input, Void arg) {
                                 assertThat(++index, is(2));
                                 assertThat(input.name(), is("input2"));
                                 assertThat(input.label(), is("Boolean input"));
@@ -87,7 +87,7 @@ public class ScriptLoaderTest {
                             }
 
                             @Override
-                            public VisitResult visitEnum(Input.Enum input) {
+                            public VisitResult visitEnum(Input.Enum input, Void arg) {
                                 assertThat(++index, is(3));
                                 assertThat(input.name(), is("input3"));
                                 assertThat(input.label(), is("Enum input"));
@@ -103,7 +103,7 @@ public class ScriptLoaderTest {
                             }
 
                             @Override
-                            public VisitResult visitList(Input.List input) {
+                            public VisitResult visitList(Input.List input, Void arg) {
                                 assertThat(++index, is(4));
                                 assertThat(input.name(), is("input4"));
                                 assertThat(input.label(), is("List input"));
@@ -116,63 +116,63 @@ public class ScriptLoaderTest {
                                 assertThat(input.prompt(), is("Enter 4"));
                                 return VisitResult.CONTINUE;
                             }
-                        });
+                        }, arg);
                     }
-                });
+                }, arg);
             }
 
             @Override
-            public VisitResult postVisitBlock(Block block) {
+            public VisitResult postVisitBlock(Block block, Void arg) {
                 if (block.blockKind() == Block.Kind.SCRIPT) {
                     assertThat(index, is(4));
                 }
                 return VisitResult.CONTINUE;
             }
-        }, script.body());
+        }, script.body(), null);
     }
 
     @Test
     public void testNestedInputs() {
         Script script = load("loader/nested-inputs.xml");
-        Walker.walk(new Node.Visitor() {
+        Walker.walk(new Node.Visitor<Void>() {
             int index = 0;
 
             @Override
-            public VisitResult visitBlock(Block block) {
-                return block.accept(new Block.Visitor() {
+            public VisitResult visitBlock(Block block, Void arg) {
+                return block.accept(new Block.Visitor<>() {
                     @Override
-                    public VisitResult visitInput(Input input) {
-                        return input.accept(new Input.Visitor() {
+                    public VisitResult visitInput(Input input, Void arg) {
+                        return input.accept(new Input.Visitor<>() {
                             @Override
-                            public VisitResult visitBoolean(Input.Boolean input) {
+                            public VisitResult visitBoolean(Input.Boolean input, Void arg) {
                                 assertThat(++index <= 5, is(true));
                                 assertThat(input.name(), is("input" + index));
                                 assertThat(input.label(), is("label" + index));
                                 return VisitResult.CONTINUE;
                             }
-                        });
+                        }, arg);
                     }
-                });
+                }, arg);
             }
 
             @Override
-            public VisitResult postVisitBlock(Block block) {
+            public VisitResult postVisitBlock(Block block, Void arg) {
                 if (block.blockKind() == Block.Kind.SCRIPT) {
                     assertThat(index, is(5));
                 }
                 return VisitResult.CONTINUE;
             }
-        }, script.body());
+        }, script.body(), null);
     }
 
     @Test
     public void testInvocations() {
         Script script = load("loader/invocations.xml");
-        Walker.walk(new Node.Visitor() {
+        Walker.walk(new Node.Visitor<Void>() {
             int index = 0;
 
             @Override
-            public VisitResult visitInvocation(Invocation invocation) {
+            public VisitResult visitInvocation(Invocation invocation, Void arg) {
                 switch (++index) {
                     case 1:
                         assertThat(invocation.invocationKind(), is(Invocation.Kind.SOURCE));
@@ -188,23 +188,23 @@ public class ScriptLoaderTest {
             }
 
             @Override
-            public VisitResult postVisitBlock(Block block) {
+            public VisitResult postVisitBlock(Block block, Void arg) {
                 if (block.blockKind() == Block.Kind.SCRIPT) {
                     assertThat(index, is(2));
                 }
                 return VisitResult.CONTINUE;
             }
-        }, script.body());
+        }, script.body(), null);
     }
 
     @Test
     public void testPresets() {
         Script script = load("loader/presets.xml");
-        Walker.walk(new Node.Visitor() {
+        Walker.walk(new Node.Visitor<Void>() {
             int index = 0;
 
             @Override
-            public VisitResult visitPreset(Preset preset) {
+            public VisitResult visitPreset(Preset preset, Void arg) {
                 switch (++index) {
                     case 1:
                         assertThat(preset.path(), is("preset1"));
@@ -231,29 +231,29 @@ public class ScriptLoaderTest {
             }
 
             @Override
-            public VisitResult postVisitBlock(Block block) {
+            public VisitResult postVisitBlock(Block block, Void arg) {
                 if (block.blockKind() == Block.Kind.SCRIPT) {
                     assertThat(index, is(4));
                 }
                 return VisitResult.CONTINUE;
             }
-        }, script.body());
+        }, script.body(), null);
     }
 
     @Test
     public void testOutput() {
         Script script = load("loader/output.xml");
-        Walker.walk(new Node.Visitor() {
+        Walker.walk(new Node.Visitor<Void>() {
             int index = 0;
 
             @Override
-            public VisitResult visitBlock(Block block) {
-                return block.accept(new Block.Visitor() {
+            public VisitResult visitBlock(Block block, Void arg) {
+                return block.accept(new Block.Visitor<>() {
                     @Override
-                    public VisitResult visitOutput(Output output) {
-                        return output.accept(new Output.Visitor() {
+                    public VisitResult visitOutput(Output output, Void arg) {
+                        return output.accept(new Output.Visitor<>() {
                             @Override
-                            public VisitResult visitTransformation(Output.Transformation transformation) {
+                            public VisitResult visitTransformation(Output.Transformation transformation, Void arg) {
                                 assertThat(++index, is(1));
                                 assertThat(transformation.id(), is("t1"));
                                 assertThat(transformation.operations().size(), is(1));
@@ -263,7 +263,7 @@ public class ScriptLoaderTest {
                             }
 
                             @Override
-                            public VisitResult visitTemplates(Output.Templates templates) {
+                            public VisitResult visitTemplates(Output.Templates templates, Void arg) {
                                 assertThat(++index, is(2));
                                 assertThat(templates.transformations(), contains("t1"));
                                 assertThat(templates.engine(), is("tpl-engine-1"));
@@ -274,7 +274,7 @@ public class ScriptLoaderTest {
                             }
 
                             @Override
-                            public VisitResult visitFiles(Output.Files files) {
+                            public VisitResult visitFiles(Output.Files files, Void arg) {
                                 assertThat(++index, is(3));
                                 assertThat(files.transformations(), contains("t2"));
                                 assertThat(files.directory(), is("dir2"));
@@ -284,7 +284,7 @@ public class ScriptLoaderTest {
                             }
 
                             @Override
-                            public VisitResult visitTemplate(Output.Template template) {
+                            public VisitResult visitTemplate(Output.Template template, Void arg) {
                                 assertThat(++index, is(4));
                                 assertThat(template.engine(), is("tpl-engine-2"));
                                 assertThat(template.source(), is("file1.tpl"));
@@ -293,20 +293,20 @@ public class ScriptLoaderTest {
                             }
 
                             @Override
-                            public VisitResult visitFile(Output.File file) {
+                            public VisitResult visitFile(Output.File file, Void arg) {
                                 assertThat(++index, is(5));
                                 assertThat(file.source(), is("file1.txt"));
                                 assertThat(file.target(), is("file2.txt"));
                                 return VisitResult.CONTINUE;
                             }
-                        });
+                        }, arg);
                     }
 
                     @Override
-                    public VisitResult visitModel(Model model) {
-                        return model.accept(new Model.Visitor() {
+                    public VisitResult visitModel(Model model, Void arg) {
+                        return model.accept(new Model.Visitor<>() {
                             @Override
-                            public VisitResult visitMap(Model.Map map) {
+                            public VisitResult visitMap(Model.Map map, Void arg) {
                                 switch (++index) {
                                     case (6):
                                         assertThat(map.key(), is("key1"));
@@ -321,7 +321,7 @@ public class ScriptLoaderTest {
                             }
 
                             @Override
-                            public VisitResult visitList(Model.List list) {
+                            public VisitResult visitList(Model.List list, Void arg) {
                                 switch (++index) {
                                     case (8):
                                         assertThat(list.key(), is("key1.2"));
@@ -339,7 +339,7 @@ public class ScriptLoaderTest {
                             }
 
                             @Override
-                            public VisitResult visitValue(Model.Value value) {
+                            public VisitResult visitValue(Model.Value value, Void arg) {
                                 switch (++index) {
                                     case (7):
                                         assertThat(value.key(), is("key1.1"));
@@ -383,49 +383,49 @@ public class ScriptLoaderTest {
                                 }
                                 return VisitResult.CONTINUE;
                             }
-                        });
+                        }, arg);
                     }
-                });
+                }, arg);
             }
 
             @Override
-            public VisitResult postVisitBlock(Block block) {
+            public VisitResult postVisitBlock(Block block, Void arg) {
                 if (block.blockKind() == Block.Kind.SCRIPT) {
                     assertThat(index, is(19));
                 }
                 return VisitResult.CONTINUE;
             }
-        }, script.body());
+        }, script.body(), null);
     }
 
     @Test
     public void testScopedModel() {
         Script script = load("loader/scoped-model.xml");
-        Walker.walk(new Node.Visitor() {
+        Walker.walk(new Node.Visitor<Void>() {
             int index = 0;
 
             @Override
-            public VisitResult visitBlock(Block block) {
-                return block.accept(new Block.Visitor() {
+            public VisitResult visitBlock(Block block, Void arg) {
+                return block.accept(new Block.Visitor<>() {
                     @Override
-                    public VisitResult visitOutput(Output output) {
-                        return output.accept(new Output.Visitor() {
+                    public VisitResult visitOutput(Output output, Void arg) {
+                        return output.accept(new Output.Visitor<>() {
                             @Override
-                            public VisitResult visitTemplate(Output.Template template) {
+                            public VisitResult visitTemplate(Output.Template template, Void arg) {
                                 assertThat(++index, is(1));
                                 assertThat(template.engine(), is("tpl-engine-1"));
                                 assertThat(template.source(), is("file1.tpl"));
                                 assertThat(template.target(), is("file1.txt"));
                                 return VisitResult.CONTINUE;
                             }
-                        });
+                        }, arg);
                     }
 
                     @Override
-                    public VisitResult visitModel(Model model) {
-                        return model.accept(new Model.Visitor() {
+                    public VisitResult visitModel(Model model, Void arg) {
+                        return model.accept(new Model.Visitor<>() {
                             @Override
-                            public VisitResult visitValue(Model.Value value) {
+                            public VisitResult visitValue(Model.Value value, Void arg) {
                                 switch (++index) {
                                     case 2:
                                         assertThat(value.key(), is("key1"));
@@ -440,29 +440,29 @@ public class ScriptLoaderTest {
                                 }
                                 return VisitResult.CONTINUE;
                             }
-                        });
+                        }, arg);
                     }
-                });
+                }, arg);
             }
 
             @Override
-            public VisitResult postVisitBlock(Block block) {
+            public VisitResult postVisitBlock(Block block, Void arg) {
                 if (block.blockKind() == Block.Kind.SCRIPT) {
                     assertThat(index, is(3));
                 }
                 return VisitResult.CONTINUE;
             }
-        }, script.body());
+        }, script.body(), null);
     }
 
     @Test
     public void testConditional() {
         Script script = load("loader/conditional.xml");
-        Walker.walk(new Node.Visitor() {
+        Walker.walk(new Node.Visitor<Void>() {
             int index = 0;
 
             @Override
-            public VisitResult visitCondition(Condition condition) {
+            public VisitResult visitCondition(Condition condition, Void arg) {
                 if (condition.expression().eval()) {
                     return VisitResult.CONTINUE;
                 }
@@ -470,11 +470,11 @@ public class ScriptLoaderTest {
             }
 
             @Override
-            public VisitResult visitBlock(Block block) {
-                return block.accept(new Block.Visitor() {
+            public VisitResult visitBlock(Block block, Void arg) {
+                return block.accept(new Block.Visitor<>() {
 
                     @Override
-                    public VisitResult visitStep(Step step) {
+                    public VisitResult visitStep(Step step, Void arg) {
                         assertThat(++index, is(1));
                         assertThat(step.label(), is("Step 1"));
                         assertThat(step.help(), is("Help about step 1"));
@@ -482,40 +482,40 @@ public class ScriptLoaderTest {
                     }
 
                     @Override
-                    public VisitResult visitInput(Input input) {
-                        return input.accept(new Input.Visitor() {
+                    public VisitResult visitInput(Input input, Void arg) {
+                        return input.accept(new Input.Visitor<>() {
                             @Override
-                            public VisitResult visitBoolean(Input.Boolean input) {
+                            public VisitResult visitBoolean(Input.Boolean input, Void arg) {
                                 assertThat(++index, is(2));
                                 assertThat(input.name(), is("input1"));
                                 assertThat(input.label(), is("Input 1"));
                                 return VisitResult.CONTINUE;
                             }
-                        });
+                        }, arg);
                     }
 
                     @Override
-                    public VisitResult visitOutput(Output output) {
-                        return output.accept(new Output.Visitor() {
+                    public VisitResult visitOutput(Output output, Void arg) {
+                        return output.accept(new Output.Visitor<>() {
                             @Override
-                            public VisitResult visitFile(Output.File file) {
+                            public VisitResult visitFile(Output.File file, Void arg) {
                                 assertThat(++index, is(3));
                                 assertThat(file.source(), is("file1.txt"));
                                 assertThat(file.target(), is("file2.txt"));
                                 return VisitResult.CONTINUE;
                             }
-                        });
+                        }, arg);
                     }
-                });
+                }, arg);
             }
 
             @Override
-            public VisitResult postVisitBlock(Block block) {
+            public VisitResult postVisitBlock(Block block, Void arg) {
                 if (block.blockKind() == Block.Kind.SCRIPT) {
                     assertThat(index, is(3));
                 }
                 return VisitResult.CONTINUE;
             }
-        }, script.body());
+        }, script.body(), null);
     }
 }

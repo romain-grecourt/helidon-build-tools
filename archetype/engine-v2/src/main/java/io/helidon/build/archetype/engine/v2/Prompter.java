@@ -34,33 +34,30 @@ import static io.helidon.build.common.ansi.AnsiTextStyles.BoldBlue;
 /**
  * Prompter that uses CLI for input/output.
  */
-public class Prompter implements Input.Visitor {
+public class Prompter extends InputResolver {
 
-    private final Context context;
     private final InputStream in;
     private String lastLabel;
 
     /**
      * Create a new prompter.
      *
-     * @param context context
      * @param in      input stream to use for reading user input
      */
-    public Prompter(Context context, InputStream in) {
-        this.context = Objects.requireNonNull(context, "context is null");
+    public Prompter(InputStream in) {
         this.in = Objects.requireNonNull(in, "input stream is null");
     }
 
     @Override
-    public VisitResult visitText(Input.Text input) {
+    public VisitResult visitText(Input.Text input, Context ctx) {
         try {
             printLabel(input);
             String defaultText = input.defaultValue().map(BoldBlue::apply).orElse(null);
             String response = prompt("Enter text", defaultText);
             if (response == null || response.trim().length() == 0) {
-                context.push(input.name(), input.defaultValue().map(Value::create).orElse(null));
+                ctx.push(input.name(), input.defaultValue().map(Value::create).orElse(null));
             } else {
-                context.push(input.name(), Value.create(response));
+                ctx.push(input.name(), Value.create(response));
             }
             return VisitResult.CONTINUE;
         } catch (IOException e) {
@@ -69,7 +66,7 @@ public class Prompter implements Input.Visitor {
     }
 
     @Override
-    public VisitResult visitEnum(Input.Enum input) {
+    public VisitResult visitEnum(Input.Enum input, Context ctx) {
         while (true) {
             try {
                 printLabel(input);
@@ -84,13 +81,13 @@ public class Prompter implements Input.Visitor {
                 lastLabel = input.label();
                 if ((response == null || response.trim().length() == 0)) {
                     if (defaultIndex >= 0) {
-                        context.push(input.name(), Value.create(input.options().get(defaultIndex).value()));
+                        ctx.push(input.name(), Value.create(input.options().get(defaultIndex).value()));
                         return VisitResult.CONTINUE;
                     }
                 } else {
                     int index = Integer.parseInt(response.trim());
                     if (index > 0 && index <= input.options().size()) {
-                        context.push(input.name(), Value.create(input.options().get(index - 1).value()));
+                        ctx.push(input.name(), Value.create(input.options().get(index - 1).value()));
                         return VisitResult.CONTINUE;
                     }
                 }
@@ -103,7 +100,7 @@ public class Prompter implements Input.Visitor {
     }
 
     @Override
-    public VisitResult visitList(Input.List input) {
+    public VisitResult visitList(Input.List input, Context ctx) {
         while (true) {
             try {
                 String question = "Enter selection (one or more numbers separated by the spaces)";
@@ -121,11 +118,11 @@ public class Prompter implements Input.Visitor {
                 lastLabel = input.label();
                 if (response == null || response.trim().length() == 0) {
                     if (!defaultIndexes.isEmpty()) {
-                        context.push(input.name(), Value.create(input.defaultValue()));
+                        ctx.push(input.name(), Value.create(input.defaultValue()));
                         return VisitResult.CONTINUE;
                     }
                 } else {
-                    context.push(input.name(), Value.create(input.parseResponse(response)));
+                    ctx.push(input.name(), Value.create(input.parseResponse(response)));
                     return VisitResult.CONTINUE;
                 }
             } catch (NumberFormatException | IndexOutOfBoundsException e) {
@@ -137,7 +134,7 @@ public class Prompter implements Input.Visitor {
     }
 
     @Override
-    public VisitResult visitBoolean(Input.Boolean input) {
+    public VisitResult visitBoolean(Input.Boolean input, Context ctx) {
         while (true) {
             try {
                 printLabel(input);
@@ -146,7 +143,7 @@ public class Prompter implements Input.Visitor {
                 String question = String.format("%s (yes/no)", Bold.apply(input.prompt()));
                 String response = prompt(question, defaultText);
                 if (response == null || response.trim().length() == 0) {
-                    context.push(input.name(), Value.create(defaultValue));
+                    ctx.push(input.name(), Value.create(defaultValue));
                     return VisitResult.CONTINUE;
                 }
                 boolean value;
@@ -162,7 +159,7 @@ public class Prompter implements Input.Visitor {
                     default:
                         continue;
                 }
-                context.push(input.name(), Value.create(value));
+                ctx.push(input.name(), Value.create(value));
                 return VisitResult.CONTINUE;
             } catch (IOException e) {
                 throw new RuntimeException(e);
