@@ -16,6 +16,8 @@
 
 package io.helidon.build.archetype.engine.v2;
 
+import java.nio.file.Path;
+
 import io.helidon.build.archetype.engine.v2.ast.Block;
 import io.helidon.build.archetype.engine.v2.ast.Condition;
 import io.helidon.build.archetype.engine.v2.ast.Input;
@@ -24,28 +26,42 @@ import io.helidon.build.archetype.engine.v2.ast.Node.VisitResult;
 import io.helidon.build.archetype.engine.v2.ast.Output;
 import io.helidon.build.archetype.engine.v2.ast.Preset;
 
-import java.nio.file.Path;
-import java.util.function.Function;
+import static io.helidon.build.archetype.engine.v2.MergedModel.resolveModel;
 
 /**
  * Controller.
  */
-class Controller extends VisitorAdapter<Context> {
+final class Controller extends VisitorAdapter<Context> {
 
     // TODO unit test
 
     /**
      * Create a new controller instance.
      *
+     * @param inputVisitor input visitor
+     * @param modelVisitor model visitor
+     */
+    Controller(Input.Visitor<Context> inputVisitor, Model.Visitor<Context> modelVisitor) {
+        super(inputVisitor, null, modelVisitor);
+    }
+
+    /**
+     * Create a new controller instance.
+     *
      * @param inputVisitor  input visitor
      * @param outputVisitor output visitor
-     * @param modelVisitor  model visitor
      */
-    Controller(Input.Visitor<Context> inputVisitor,
-               Output.Visitor<Context> outputVisitor,
-               Model.Visitor<Context> modelVisitor) {
+    Controller(Input.Visitor<Context> inputVisitor, Output.Visitor<Context> outputVisitor) {
+        super(inputVisitor, outputVisitor, null);
+    }
 
-        super(inputVisitor, outputVisitor, modelVisitor);
+    /**
+     * Create a new controller instance.
+     *
+     * @param inputVisitor input visitor
+     */
+    Controller(Input.Visitor<Context> inputVisitor) {
+        super(inputVisitor, null, null);
     }
 
     @Override
@@ -88,7 +104,7 @@ class Controller extends VisitorAdapter<Context> {
      * @param context       context
      */
     static void resolveInputs(InputResolver inputResolver, Block block, Context context) {
-        Walker.walk(new Controller(inputResolver, null, null), block, context);
+        Walker.walk(new Controller(inputResolver), block, context);
     }
 
     /**
@@ -99,9 +115,8 @@ class Controller extends VisitorAdapter<Context> {
      * @param context       context
      * @param directory     directory
      */
-    static void generate(InputResolver inputResolver, Block block, Context context, Path directory) {
-        Function<Block, MergedModel> modelResolver = b -> MergedModel.resolve(inputResolver, b, context);
-        Generator generator = new Generator(block, directory, modelResolver);
-        Walker.walk(new Controller(inputResolver, generator, null), block, context);
+    static void generateOutput(InputResolver inputResolver, Block block, Context context, Path directory) {
+        Generator generator = new Generator(block, directory, b -> resolveModel(inputResolver, b, context));
+        Walker.walk(new Controller(inputResolver, generator), block, context);
     }
 }

@@ -34,8 +34,8 @@ import io.helidon.build.common.test.utils.TestFiles;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import static io.helidon.build.archetype.engine.v2.Helper.load0;
-import static io.helidon.build.archetype.engine.v2.Helper.walk;
+import static io.helidon.build.archetype.engine.v2.Nodes.load0;
+import static io.helidon.build.archetype.engine.v2.Nodes.walk;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;

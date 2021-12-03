@@ -15,20 +15,20 @@
  */
 package io.helidon.build.archetype.engine.v2;
 
-import com.github.mustachejava.MustacheException;
-import io.helidon.build.archetype.engine.v2.ast.Block;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
-import java.util.function.Function;
 
+import io.helidon.build.archetype.engine.v2.ast.Block;
+
+import com.github.mustachejava.MustacheException;
 import org.junit.jupiter.api.Test;
 
-import static io.helidon.build.archetype.engine.v2.Helper.model;
-import static io.helidon.build.archetype.engine.v2.Helper.modelList;
-import static io.helidon.build.archetype.engine.v2.Helper.modelMap;
-import static io.helidon.build.archetype.engine.v2.Helper.modelValue;
+import static io.helidon.build.archetype.engine.v2.Nodes.model;
+import static io.helidon.build.archetype.engine.v2.Nodes.modelList;
+import static io.helidon.build.archetype.engine.v2.Nodes.modelMap;
+import static io.helidon.build.archetype.engine.v2.Nodes.modelValue;
+import static io.helidon.build.archetype.engine.v2.MergedModel.resolveModel;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.instanceOf;
@@ -236,7 +236,7 @@ class MustacheSupportTest {
     private static String render(String template, Block scope, Block extraScope) {
         InputStream is = new ByteArrayInputStream(template.getBytes(UTF_8));
         ByteArrayOutputStream os = new ByteArrayOutputStream();
-        MustacheSupport support = new MustacheSupport(scope, b -> MergedModel.resolve(b, null));
+        MustacheSupport support = new MustacheSupport(scope, b -> resolveModel(b, null));
         support.render(is, "test", UTF_8, os, extraScope);
         return os.toString(UTF_8);
     }

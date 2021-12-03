@@ -16,16 +16,21 @@
 
 package io.helidon.build.archetype.engine.v2;
 
-import io.helidon.build.archetype.engine.v2.ast.Block;
-
 import java.nio.file.FileSystem;
 import java.nio.file.Path;
 import java.util.Map;
+
+import io.helidon.build.archetype.engine.v2.ast.Block;
+
+import static io.helidon.build.archetype.engine.v2.Controller.generateOutput;
+import static io.helidon.build.archetype.engine.v2.Controller.resolveInputs;
 
 /**
  * Archetype engine (v2).
  */
 public class ArchetypeEngineV2 {
+
+    private static final String ENTRYPOINT = "main.xml";
 
     private final Path cwd;
 
@@ -53,8 +58,8 @@ public class ArchetypeEngineV2 {
 
         // TODO entry point should be 'main.xml'
         Context context = Context.create(cwd, externalValues, externalDefaults);
-        Block block = ScriptLoader.load(cwd.resolve("flavor.xml")).body();
-        Controller.resolveInputs(inputResolver, block, context);
-        Controller.generate(inputResolver, block, context, directory);
+        Block block = ScriptLoader.load(cwd.resolve(ENTRYPOINT)).body();
+        resolveInputs(inputResolver, block, context);
+        generateOutput(inputResolver, block, context, directory);
     }
 }

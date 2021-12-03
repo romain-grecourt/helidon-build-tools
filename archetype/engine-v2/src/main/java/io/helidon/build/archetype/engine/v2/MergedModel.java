@@ -46,9 +46,9 @@ public abstract class MergedModel {
      * @param context       context
      * @return model
      */
-    public static MergedModel resolve(InputResolver inputResolver, Block block, Context context) {
+    public static MergedModel resolveModel(InputResolver inputResolver, Block block, Context context) {
         ModelResolver modelResolver = new ModelResolver();
-        Walker.walk(new Controller(inputResolver, null, modelResolver), block, context);
+        Walker.walk(new Controller(inputResolver, modelResolver), block, context);
         return modelResolver.head;
     }
 
@@ -59,8 +59,8 @@ public abstract class MergedModel {
      * @param context context
      * @return model
      */
-    public static MergedModel resolve(Block block, Context context) {
-        return resolve(new InputResolver(), block, context);
+    public static MergedModel resolveModel(Block block, Context context) {
+        return resolveModel(new InputResolver(), block, context);
     }
 
     /**

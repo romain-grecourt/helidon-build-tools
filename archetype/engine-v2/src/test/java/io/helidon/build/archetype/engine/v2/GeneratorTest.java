@@ -28,6 +28,7 @@ import io.helidon.build.common.test.utils.TestFiles;
 
 import org.junit.jupiter.api.Test;
 
+import static io.helidon.build.archetype.engine.v2.Controller.generateOutput;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -95,16 +96,16 @@ class GeneratorTest {
         return generate(path, ctx -> {});
     }
 
-    private static Path generate(String path, Consumer<Context> ctxInit) {
+    private static Path generate(String path, Consumer<Context> initializer) {
         Path target = TestFiles.targetDir(GeneratorTest.class);
         Path testResources = target.resolve("test-classes");
         Path scriptPath = testResources.resolve(path);
-        String dirName = scriptPath.getFileName().toString().replaceAll(".xml", "");
-        Path outputDir = target.resolve("generator-ut/" + dirName);
+        String dirname = scriptPath.getFileName().toString().replaceAll(".xml", "");
+        Path outputDir = target.resolve("generator-ut/" + dirname);
         Context context = Context.create(scriptPath.getParent());
-        ctxInit.accept(context);
+        initializer.accept(context);
         Block block = ScriptLoader.load(scriptPath).body();
-        Controller.generate(new InputResolver(), block, context, outputDir);
+        generateOutput(new InputResolver(), block, context, outputDir);
         return outputDir;
     }
 

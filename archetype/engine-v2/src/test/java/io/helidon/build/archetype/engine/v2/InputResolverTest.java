@@ -26,16 +26,15 @@ import io.helidon.build.archetype.engine.v2.ast.Value;
 
 import org.junit.jupiter.api.Test;
 
-import static io.helidon.build.archetype.engine.v2.Helper.enumInput;
-import static io.helidon.build.archetype.engine.v2.Helper.listInput;
-import static io.helidon.build.archetype.engine.v2.Helper.model;
-import static io.helidon.build.archetype.engine.v2.Helper.modelList;
-import static io.helidon.build.archetype.engine.v2.Helper.modelValue;
-import static io.helidon.build.archetype.engine.v2.Helper.option;
-import static io.helidon.build.archetype.engine.v2.Helper.output;
+import static io.helidon.build.archetype.engine.v2.Nodes.inputEnum;
+import static io.helidon.build.archetype.engine.v2.Nodes.inputList;
+import static io.helidon.build.archetype.engine.v2.Nodes.model;
+import static io.helidon.build.archetype.engine.v2.Nodes.modelList;
+import static io.helidon.build.archetype.engine.v2.Nodes.modelValue;
+import static io.helidon.build.archetype.engine.v2.Nodes.inputOption;
+import static io.helidon.build.archetype.engine.v2.Nodes.output;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
-import static org.hamcrest.Matchers.is;
 
 /**
  * Tests {@link InputResolver}.
@@ -44,38 +43,31 @@ public class InputResolverTest {
 
     @Test
     void testEnumOption() {
-        Block input = enumInput("enum-input",
-                List.of(option("option1", "value1", output(model(modelList("colors", modelValue("red"))))),
-                        option("option2", "value2", output(model(modelList("colors", modelValue("green"))))),
-                        option("option3", "value3", output(model(modelList("colors", modelValue("blue")))))),
-                "value3");
+        Block block = inputEnum("enum-input", "value3",
+                inputOption("option1", "value1", output(model(modelList("colors", modelValue("red"))))),
+                inputOption("option2", "value2", output(model(modelList("colors", modelValue("green"))))),
+                inputOption("option3", "value3", output(model(modelList("colors", modelValue("blue"))))));
 
         Context context = Context.create();
         context.put("enum-input", Value.create("value2"));
 
-        String[] color = new String[1];
-        Walker.walk(new VisitorAdapter<>(new InputResolver(), null,
-                new Model.Visitor<>() {
-                    @Override
-                    public VisitResult visitValue(Model.Value value, Context arg) {
-                        color[0] = value.value();
-                        return VisitResult.CONTINUE;
-                    }
-                }), input, context);
-        assertThat(color[0], is("green"));
+        assertThat(modelValues(block, context), contains("green"));
     }
 
     @Test
     void testListOptions() {
-        Block input = listInput("list-input",
-                List.of(option("option1", "value1", output(model(modelList("colors", modelValue("red"))))),
-                        option("option2", "value2", output(model(modelList("colors", modelValue("green"))))),
-                        option("option3", "value3", output(model(modelList("colors", modelValue("blue")))))),
-                List.of());
+        Block block = inputList("list-input", List.of(),
+                inputOption("option1", "value1", output(model(modelList("colors", modelValue("red"))))),
+                inputOption("option2", "value2", output(model(modelList("colors", modelValue("green"))))),
+                inputOption("option3", "value3", output(model(modelList("colors", modelValue("blue"))))));
 
         Context context = Context.create();
         context.put("list-input", Value.create(List.of("value1", "value3")));
 
+        assertThat(modelValues(block, context), contains("red", "blue"));
+    }
+
+    private static List<String> modelValues(Block block, Context context) {
         List<String> colors = new LinkedList<>();
         Walker.walk(new VisitorAdapter<>(new InputResolver(), null,
                 new Model.Visitor<>() {
@@ -84,7 +76,7 @@ public class InputResolverTest {
                         colors.add(value.value());
                         return VisitResult.CONTINUE;
                     }
-                }), input, context);
-        assertThat(colors, contains("red", "blue"));
+                }), block, context);
+        return colors;
     }
 }
