@@ -17,10 +17,12 @@ package io.helidon.build.archetype.engine.v2.ast;
 
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static java.util.Collections.emptyList;
+import static java.util.stream.Collectors.toList;
 
 /**
  * Input block.
@@ -67,6 +69,7 @@ public abstract class Input extends Block {
 
     /**
      * Input visitor.
+     *
      * @param <A> argument type
      */
     public interface Visitor<A> {
@@ -113,6 +116,28 @@ public abstract class Input extends Block {
          */
         default VisitResult postVisitText(Text input, A arg) {
             return postVisitAny(input, arg);
+        }
+
+        /**
+         * Visit an option.
+         *
+         * @param option option
+         * @param arg    visitor argument
+         * @return result
+         */
+        default VisitResult visitOption(Option option, A arg) {
+            return visitAny(option, arg);
+        }
+
+        /**
+         * Visit an option after traversing the nested statements.
+         *
+         * @param option option
+         * @param arg    visitor argument
+         * @return result
+         */
+        default VisitResult postVisitOption(Option option, A arg) {
+            return postVisitAny(option, arg);
         }
 
         /**
@@ -188,8 +213,8 @@ public abstract class Input extends Block {
      * Visit this input.
      *
      * @param visitor visitor
-     * @param arg visitor argument
-     * @param <A> visitor argument type
+     * @param arg     visitor argument
+     * @param <A>     visitor argument type
      * @return result
      */
     public abstract <A> VisitResult accept(Visitor<A> visitor, A arg);
@@ -198,8 +223,8 @@ public abstract class Input extends Block {
      * Visit this input after traversing the nested statements.
      *
      * @param visitor visitor
-     * @param arg visitor argument
-     * @param <A> visitor argument type
+     * @param arg     visitor argument
+     * @param <A>     visitor argument type
      * @return result
      */
     public abstract <A> VisitResult acceptAfter(Visitor<A> visitor, A arg);
@@ -237,6 +262,7 @@ public abstract class Input extends Block {
 
         /**
          * Get the default value.
+         *
          * @return value
          */
         public abstract Value defaultValue();
@@ -256,14 +282,12 @@ public abstract class Input extends Block {
 
         @Override
         public <A> VisitResult accept(Input.Visitor<A> visitor, A arg) {
-            // TODO
-            return VisitResult.CONTINUE;
+            return visitor.visitOption(this, arg);
         }
 
         @Override
         public <A> VisitResult acceptAfter(Input.Visitor<A> visitor, A arg) {
-            // TODO
-            return VisitResult.CONTINUE;
+            return visitor.postVisitOption(this, arg);
         }
 
         /**
@@ -291,7 +315,7 @@ public abstract class Input extends Block {
 
         @Override
         public Value defaultValue() {
-            return Value.create(defaultValue);
+            return defaultValue != null ? Value.create(defaultValue) : null;
         }
 
         @Override
@@ -370,7 +394,9 @@ public abstract class Input extends Block {
             super(builder);
             String rawDefault = builder.attributes.get("default");
             if (rawDefault != null) {
-                defaultValue = Arrays.asList(rawDefault.split(","));
+                defaultValue = Arrays.stream(rawDefault.split(","))
+                                     .map(String::trim)
+                                     .collect(toList());
             } else {
                 defaultValue = emptyList();
             }
@@ -452,7 +478,7 @@ public abstract class Input extends Block {
 
         @Override
         public Value defaultValue() {
-            return Value.create(defaultValue);
+            return defaultValue != null ? Value.create(defaultValue) : null;
         }
 
         @Override
@@ -471,11 +497,11 @@ public abstract class Input extends Block {
      *
      * @param scriptPath script path
      * @param position   position
-     * @param kind       block kind
+     * @param blockKind  block kind
      * @return builder
      */
-    public static Builder builder(Path scriptPath, Position position, Kind kind) {
-        return new Builder(scriptPath, position, kind);
+    public static Builder builder(Path scriptPath, Position position, Kind blockKind) {
+        return new Builder(scriptPath, position, blockKind);
     }
 
     /**
@@ -485,8 +511,8 @@ public abstract class Input extends Block {
 
         String help;
 
-        private Builder(Path scriptPath, Position position, Kind kind) {
-            super(scriptPath, position, kind);
+        private Builder(Path scriptPath, Position position, Kind blockKind) {
+            super(scriptPath, position, blockKind);
         }
 
         private boolean doRemove(Noop.Builder b) {

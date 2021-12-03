@@ -17,15 +17,17 @@ package io.helidon.build.archetype.engine.v2;
 
 import com.github.mustachejava.MustacheException;
 import io.helidon.build.archetype.engine.v2.ast.Block;
-import io.helidon.build.archetype.engine.v2.ast.Model;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
-import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
+import static io.helidon.build.archetype.engine.v2.Helper.model;
+import static io.helidon.build.archetype.engine.v2.Helper.modelList;
+import static io.helidon.build.archetype.engine.v2.Helper.modelMap;
+import static io.helidon.build.archetype.engine.v2.Helper.modelValue;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.instanceOf;
@@ -42,45 +44,45 @@ class MustacheSupportTest {
 
     @Test
     void testSimpleValue() {
-        Block scope = model(value("foo", "bar"));
+        Block scope = model(modelValue("foo", "bar")).build();
         assertThat(render("{{foo}}", scope), is("bar"));
     }
 
     @Test
     void testDottedKeyValue() {
-        Block scope = model(value("foo.bar", "foobar"));
+        Block scope = model(modelValue("foo.bar", "foobar")).build();
         assertThat(render("{{foo.bar}}", scope), is("foobar"));
     }
 
     @Test
     void testSimpleList() {
-        Block scope = model(list("data", value("bar1"), value("bar2")));
+        Block scope = model(modelList("data", modelValue("bar1"), modelValue("bar2"))).build();
         assertThat(render("{{#data}}{{.}},{{/data}}", scope), is("bar1,bar2,"));
     }
 
     @Test
     void testSimpleMap() {
-        Block scope = model(map("data", value("shape", "circle"), value("color", "red")));
+        Block scope = model(modelMap("data", modelValue("shape", "circle"), modelValue("color", "red"))).build();
         assertThat(render("{{#data}}{{shape}}:{{color}}{{/data}}", scope), is("circle:red"));
     }
 
     @Test
     void testListOfMap() {
-        Block scope = model(list("data",
-                map(value("name", "bar"), value("id", "1")),
-                map(value("name", "foo"), value("id", "2"))));
+        Block scope = model(modelList("data",
+                modelMap(modelValue("name", "bar"), modelValue("id", "1")),
+                modelMap(modelValue("name", "foo"), modelValue("id", "2")))).build();
         assertThat(render("{{#data}}{{name}}={{id}},{{/data}}", scope), is("bar=1,foo=2,"));
     }
 
     @Test
     void testListOfListOfMap() {
-        Block scope = model(list("data",
-                list(
-                        map(value("name", "bar"), value("id", "1")),
-                        map(value("name", "foo"), value("id", "2"))),
-                list(
-                        map(value("name", "bob"), value("id", "3")),
-                        map(value("name", "alice"), value("id", "4")))));
+        Block scope = model(modelList("data",
+                modelList(
+                        modelMap(modelValue("name", "bar"), modelValue("id", "1")),
+                        modelMap(modelValue("name", "foo"), modelValue("id", "2"))),
+                modelList(
+                        modelMap(modelValue("name", "bob"), modelValue("id", "3")),
+                        modelMap(modelValue("name", "alice"), modelValue("id", "4"))))).build();
 
         String rendered = render("{{#data}}{{#.}}{{name}}={{id}},{{/.}}{{/data}}", scope);
         assertThat(rendered, is("bar=1,foo=2,bob=3,alice=4,"));
@@ -88,21 +90,21 @@ class MustacheSupportTest {
 
     @Test
     void testListOfListOfListOfMap() {
-        Block scope = model(list("data",
-                list(
-                        list(
-                                map(value("name", "bar"), value("id", "1")),
-                                map(value("name", "foo"), value("id", "2"))),
-                        list(
-                                map(value("name", "bob"), value("id", "3")),
-                                map(value("name", "alice"), value("id", "4")))),
-                list(
-                        list(
-                                map(value("name", "roger"), value("id", "5")),
-                                map(value("name", "joe"), value("id", "6"))),
-                        list(
-                                map(value("name", "john"), value("id", "7")),
-                                map(value("name", "jack"), value("id", "8"))))));
+        Block scope = model(modelList("data",
+                modelList(
+                        modelList(
+                                modelMap(modelValue("name", "bar"), modelValue("id", "1")),
+                                modelMap(modelValue("name", "foo"), modelValue("id", "2"))),
+                        modelList(
+                                modelMap(modelValue("name", "bob"), modelValue("id", "3")),
+                                modelMap(modelValue("name", "alice"), modelValue("id", "4")))),
+                modelList(
+                        modelList(
+                                modelMap(modelValue("name", "roger"), modelValue("id", "5")),
+                                modelMap(modelValue("name", "joe"), modelValue("id", "6"))),
+                        modelList(
+                                modelMap(modelValue("name", "john"), modelValue("id", "7")),
+                                modelMap(modelValue("name", "jack"), modelValue("id", "8")))))).build();
 
         String rendered = render("{{#data}}{{#.}}{{#.}}{{name}}={{id}},{{/.}}{{/.}}{{/data}}", scope);
         assertThat(rendered, is("bar=1,foo=2,bob=3,alice=4,roger=5,joe=6,john=7,jack=8,"));
@@ -110,95 +112,95 @@ class MustacheSupportTest {
 
     @Test
     void testMapOfList() {
-        Block scope = model(map("data",
-                list("shapes", value("circle"), value("rectangle")),
-                list("colors", value("red"), value("blue"))));
+        Block scope = model(modelMap("data",
+                modelList("shapes", modelValue("circle"), modelValue("rectangle")),
+                modelList("colors", modelValue("red"), modelValue("blue")))).build();
         String rendered = render("{{#data}}{{#shapes}}{{.}},{{/shapes}};{{#colors}}{{.}},{{/colors}}{{/data}}", scope);
         assertThat(rendered, is("circle,rectangle,;red,blue,"));
     }
 
     @Test
     void testMapOfMap() {
-        Block scope = model(map("data",
-                map("shapes", value("circle", "red"), value("rectangle", "blue")),
-                map("colors", value("red", "circle"), value("blue", "rectangle"))));
+        Block scope = model(modelMap("data",
+                modelMap("shapes", modelValue("circle", "red"), modelValue("rectangle", "blue")),
+                modelMap("colors", modelValue("red", "circle"), modelValue("blue", "rectangle")))).build();
         String rendered = render("{{#data}}{{#shapes}}{{circle}},{{rectangle}}{{/shapes}};{{#colors}}{{red}},{{blue}}{{/colors}}{{/data}}", scope);
         assertThat(rendered, is("red,blue;circle,rectangle"));
     }
 
     @Test
     void testIterateOnValue() {
-        Block scope = model(value("data", "bar"));
+        Block scope = model(modelValue("data", "bar")).build();
         String rendered = render("{{#data}}{{.}}{{/data}}", scope);
         assertThat(rendered, is("bar"));
     }
 
     @Test
     void testUnknownValue() {
-        Block scope = model();
+        Block scope = model().build();
         MustacheException ex = assertThrows(MustacheException.class, () -> render("{{bar}}", scope));
         assertThat(ex.getMessage(), startsWith("Failed to get value for bar"));
     }
 
     @Test
     void testUnknownIterable() {
-        Block scope = model();
+        Block scope = model().build();
         MustacheException ex = assertThrows(MustacheException.class, () -> render("{{#bar}}{{.}}{{/bar}}", scope));
         assertThat(ex.getMessage(), startsWith("Unresolved model value: 'bar'"));
     }
 
     @Test
     void testListOrder() {
-        Block scope = model(list("data", value("bar1", 0), value("bar2", 100)));
+        Block scope = model(modelList("data", modelValue("bar1", 0), modelValue("bar2", 100))).build();
         assertThat(render("{{#data}}{{.}},{{/data}}", scope), is("bar2,bar1,"));
     }
 
     @Test
     void testMapValueOverrideByOrder() {
-        Block scope = model(map("data", value("shape", "circle", 0), value("shape", "rectangle", 100)));
+        Block scope = model(modelMap("data", modelValue("shape", "circle", 0), modelValue("shape", "rectangle", 100))).build();
         assertThat(render("{{#data}}{{shape}}{{/data}}", scope), is("rectangle"));
     }
 
     @Test
     void testMapValueOverride() {
-        Block scope = model(map("data", value("color", "red", 100), value("color", "blue", 100)));
+        Block scope = model(modelMap("data", modelValue("color", "red", 100), modelValue("color", "blue", 100))).build();
         assertThat(render("{{#data}}{{color}}{{/data}}", scope), is("red"));
     }
 
     @Test
     void testMapOfListMerge() {
-        Block scope = model(map("data",
-                list("shapes", value("circle", 0), value("rectangle", 1)),
-                list("shapes", value("triangle", 2))));
+        Block scope = model(modelMap("data",
+                modelList("shapes", modelValue("circle", 0), modelValue("rectangle", 1)),
+                modelList("shapes", modelValue("triangle", 2)))).build();
         assertThat(render("{{#data}}{{#shapes}}{{.}},{{/shapes}}{{/data}}", scope), is("triangle,rectangle,circle,"));
     }
 
     @Test
     void testListOfMapMerge() {
         Block scope = model(
-                list("data", map(value("shape", "circle"),value("color", "red"))),
-                list("data", map(value("shape", "rectangle"), value("color", "blue"))));
+                modelList("data", modelMap(modelValue("shape", "circle"), modelValue("color", "red"))),
+                modelList("data", modelMap(modelValue("shape", "rectangle"), modelValue("color", "blue")))).build();
         assertThat(render("{{#data}}{{shape}}:{{color}},{{/data}}", scope), is("circle:red,rectangle:blue,"));
     }
 
     @Test
     void testListMerge() {
         Block scope = model(
-                list("data", value("bar1"), value("bar2")),
-                list("data", value("foo1"), value("foo2")));
+                modelList("data", modelValue("bar1"), modelValue("bar2")),
+                modelList("data", modelValue("foo1"), modelValue("foo2"))).build();
         assertThat(render("{{#data}}{{.}},{{/data}}", scope), is("bar1,bar2,foo1,foo2,"));
     }
 
     @Test
     void testMapValueWithoutKey() {
-        Block scope = model(map("data", value("circle")));
+        Block scope = model(modelMap("data", modelValue("circle"))).build();
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> render("", scope));
         assertThat(ex.getMessage(), is("Cannot add a model with no key to a map"));
     }
 
     @Test
     void testMapAsString() {
-        Block scope = model(map("data"));
+        Block scope = model(modelMap("data")).build();
         MustacheException ex = assertThrows(MustacheException.class, () -> render("{{data}}", scope));
         assertThat(ex.getCause(), is(not(nullValue())));
         assertThat(ex.getCause(), is(instanceOf(UnsupportedOperationException.class)));
@@ -206,7 +208,7 @@ class MustacheSupportTest {
 
     @Test
     void testListAsString() {
-        Block scope = model(list("data"));
+        Block scope = model(modelList("data")).build();
         MustacheException ex = assertThrows(MustacheException.class, () -> render("{{data}}", scope));
         assertThat(ex.getCause(), is(not(nullValue())));
         assertThat(ex.getCause(), is(instanceOf(UnsupportedOperationException.class)));
@@ -214,15 +216,15 @@ class MustacheSupportTest {
 
     @Test
     void testExtraScope() {
-        Block scope = model(value("color", "red"));
-        Block extraScope = model(value("shape", "circle"));
+        Block scope = model(modelValue("color", "red")).build();
+        Block extraScope = model(modelValue("shape", "circle")).build();
         assertThat(render("{{shape}}", scope, extraScope), is("circle"));
     }
 
     @Test
     void testExtraScopeOverride() {
-        Block scope = model(value("color", "red"));
-        Block extraScope = model(value("color", "blue"));
+        Block scope = model(modelValue("color", "red")).build();
+        Block extraScope = model(modelValue("color", "blue")).build();
         assertThat(render("{{color}}", scope, extraScope), is("blue"));
     }
 
@@ -236,57 +238,5 @@ class MustacheSupportTest {
         MustacheSupport support = new MustacheSupport(scope, Context.create());
         support.render(is, "test", UTF_8, os, extraScope);
         return os.toString(UTF_8);
-    }
-
-    private static Block model(Block.Builder... statements) {
-        Block.Builder builder = Block.builder(null, null, Block.Kind.MODEL);
-        for (Block.Builder statement : statements) {
-            builder.statement(statement);
-        }
-        return builder.build();
-    }
-
-    private static Block.Builder map(Block.Builder... statements) {
-        return modelBuilder(null, Block.Kind.MAP, 100, statements);
-    }
-
-    private static Block.Builder map(String key, Block.Builder... statements) {
-        return modelBuilder(key, Block.Kind.MAP, 100, statements);
-    }
-
-    private static Block.Builder list(Block.Builder... statements) {
-        return modelBuilder(null, Block.Kind.LIST, 100, statements);
-    }
-
-    private static Block.Builder list(String key, Block.Builder... statements) {
-        return modelBuilder(key, Block.Kind.LIST, 100, statements);
-    }
-
-    private static Block.Builder value(String value) {
-        return modelBuilder(null, Block.Kind.VALUE, 100).value(value);
-    }
-
-    private static Block.Builder value(String value, int order) {
-        return modelBuilder(null, Block.Kind.VALUE, order).value(value);
-    }
-
-    private static Block.Builder value(String key, String value) {
-        return modelBuilder(key, Block.Kind.VALUE, 100).value(value);
-    }
-
-    private static Block.Builder value(String key, String value, int order) {
-        return modelBuilder(key, Block.Kind.VALUE, order).value(value);
-    }
-
-    private static Block.Builder modelBuilder(String key, Block.Kind kind, int order, Block.Builder... statements) {
-        Block.Builder builder = Model.builder(null, null, kind)
-                                     .attributes(Map.of("order", String.valueOf(order)));
-        if (key != null) {
-            builder.attributes(Map.of("key", key));
-        }
-        for (Block.Builder statement : statements) {
-            builder.statement(statement);
-        }
-        return builder;
     }
 }

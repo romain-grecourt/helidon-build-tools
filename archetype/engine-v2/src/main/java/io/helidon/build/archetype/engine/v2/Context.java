@@ -17,23 +17,36 @@ package io.helidon.build.archetype.engine.v2;
 
 import java.nio.file.Path;
 import java.util.ArrayDeque;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
+import io.helidon.build.archetype.engine.v2.ast.Input;
 import io.helidon.build.archetype.engine.v2.ast.Value;
+import io.helidon.build.archetype.engine.v2.ast.ValueTypes;
+import io.helidon.build.common.GenericType;
+
+import static java.util.stream.Collectors.toList;
 
 /**
  * Context.
  */
 public final class Context {
 
+    private static final Map<String, String> NULL_MAP = Collections.emptyMap();
+    private static final Path NULL_PATH = Path.of("");
+
     private final Map<String, Value> defaults = new HashMap<>();
     private final Map<String, ContextValue> values = new HashMap<>();
     private final Deque<Path> directories = new ArrayDeque<>();
     private final Deque<String> inputs = new ArrayDeque<>();
 
-    private Context(Path cwd) {
+    private Context(Path cwd, Map<String, String> externalValues, Map<String, String> externalDefaults) {
+        externalDefaults.forEach((k, v) -> defaults.put(k, new ExternalValue(v)));
+        externalValues.forEach((k, v) -> values.put(k, new ExternalValue(v)));
         directories.push(cwd);
     }
 
@@ -42,14 +55,19 @@ public final class Context {
      *
      * @param dir directory
      */
-    public void pushd(Path dir) {
-        directories.push(cwd().resolve(dir).toAbsolutePath());
+    public void pushCwd(Path dir) {
+        directories.push(dir.toAbsolutePath());
     }
 
     /**
      * Pop the current working directory.
+     *
+     * @throws IllegalStateException if the current cwd is the initial one
      */
-    public void popd() {
+    public void popCwd() {
+        if (directories.size() == 1) {
+            throw new IllegalStateException("Cannot pop the initial working directory");
+        }
         directories.pop();
     }
 
@@ -59,11 +77,17 @@ public final class Context {
      * @return path
      */
     public Path cwd() {
-        Path cwd = directories.peek();
-        if (cwd == null) {
-            throw new IllegalStateException("No current working directory");
-        }
-        return cwd;
+        return directories.peek();
+    }
+
+    /**
+     * Get an external default value.
+     *
+     * @param name input name
+     * @return value
+     */
+    public Value defaultValue(String name) {
+        return defaults.get(path(name));
     }
 
     /**
@@ -76,33 +100,39 @@ public final class Context {
         values.put(path, new ContextValue(value, true));
     }
 
-    // TODO
-    public Value getDefault(String path) {
-        return defaults.get(path);
+    /**
+     * Push the given input name if it already has a value.
+     *
+     * @param name input name
+     * @return {@code true} if the input path was pushed, {@code false} otherwise
+     */
+    public boolean push(String name) {
+        String path = path(name);
+        if (values.get(path) != null) {
+            inputs.push(path);
+            return true;
+        }
+        return false;
     }
 
     /**
-     * Push a new value.
+     * Push a new input value.
      *
      * @param name  input name
      * @param value value
-     * @throws IllegalArgumentException if the key is invalid
+     * @return {@code true} if a value was pushed, {@code false} otherwise
      */
-    public void push(String name, Value value) {
-        if (value == null) {
-            return;
+    public boolean push(String name, Value value) {
+        String path = path(name);
+        if (value != null) {
+            values.put(path, new ContextValue(value, false));
+            inputs.push(path);
+            return true;
+        } else if (values.get(path) != null) {
+            inputs.push(path);
+            return true;
         }
-        if (name.indexOf('.') >= 0) {
-            throw new IllegalArgumentException("Invalid name: " + name);
-        }
-        String path;
-        if (inputs.isEmpty()) {
-            path = name;
-        } else {
-            path = inputs.peek() + "." + name;
-        }
-        values.put(path, new ContextValue(value, false));
-        inputs.push(path);
+        return false;
     }
 
     /**
@@ -110,10 +140,6 @@ public final class Context {
      */
     public void pop() {
         inputs.pop();
-    }
-
-    public String peek() {
-        return inputs.peek();
     }
 
     /**
@@ -157,13 +183,23 @@ public final class Context {
         return values.get(key);
     }
 
+    private String path(String name) {
+        String path = inputs.peek();
+        if (path != null) {
+            path += "." + name;
+        } else {
+            path = name;
+        }
+        return path;
+    }
+
     /**
      * Create a new context.
      *
      * @return context
      */
     static Context create() {
-        return new Context(Path.of(""));
+        return create(NULL_PATH, NULL_MAP, NULL_MAP);
     }
 
     /**
@@ -173,7 +209,7 @@ public final class Context {
      * @return context
      */
     public static Context create(Path cwd) {
-        return new Context(cwd);
+        return new Context(cwd, NULL_MAP, NULL_MAP);
     }
 
     /**
@@ -185,17 +221,20 @@ public final class Context {
      * @return context
      */
     public static Context create(Path cwd, Map<String, String> externalValues, Map<String, String> externalDefaults) {
-        // TODO need a different type of Value that stores a string and parses when calling asXXX methods
-        // TODO initialize the context with the two maps
-        return new Context(cwd);
+        return new Context(cwd, externalValues, externalDefaults);
     }
 
     /**
      * Context value.
      */
-    public static final class ContextValue extends Value {
+    public static class ContextValue extends Value {
 
         private final boolean internal;
+
+        private ContextValue(Object value, GenericType<?> type) {
+            super(value, type);
+            internal = false;
+        }
 
         private ContextValue(Value value, boolean internal) {
             super(value.unwrap(), value.type());
@@ -209,6 +248,30 @@ public final class Context {
          */
         public boolean internal() {
             return internal;
+        }
+    }
+
+    private static final class ExternalValue extends ContextValue {
+
+        private ExternalValue(String value) {
+            super(value, ValueTypes.STRING);
+        }
+
+        @Override
+        public Boolean asBoolean() {
+            return Boolean.valueOf((String) value);
+        }
+
+        @Override
+        public Integer asInt() {
+            return Integer.parseInt((String) value);
+        }
+
+        @Override
+        public List<String> asList() {
+            return Arrays.stream(((String) value).split(","))
+                         .map(String::trim)
+                         .collect(toList());
         }
     }
 }

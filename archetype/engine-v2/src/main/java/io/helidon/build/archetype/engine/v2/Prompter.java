@@ -49,20 +49,19 @@ public class Prompter extends InputResolver {
     }
 
     @Override
-    public VisitResult visitBoolean(Input.Boolean input, Context ctx) {
-        if (ctx.lookup(input.name()) != null) {
-            // input is already resolved
+    public VisitResult visitBoolean(Input.Boolean input, Context context) {
+        if (onVisitInput(input, context)) {
             return VisitResult.CONTINUE;
         }
         while (true) {
             try {
                 printLabel(input);
-                Value defaultValue = defaultValue(input, ctx);
+                Value defaultValue = defaultValue(input, context);
                 String defaultText = defaultValue != null ? BoldBlue.apply(defaultValue.asBoolean()) : null;
                 String question = String.format("%s (yes/no)", Bold.apply(input.prompt()));
                 String response = prompt(question, defaultText);
                 if (response == null || response.trim().length() == 0) {
-                    ctx.push(input.name(), defaultValue);
+                    context.push(input.name(), defaultValue);
                     return VisitResult.CONTINUE;
                 }
                 boolean value;
@@ -78,7 +77,7 @@ public class Prompter extends InputResolver {
                     default:
                         continue;
                 }
-                ctx.push(input.name(), Value.create(value));
+                context.push(input.name(), Value.create(value));
                 return VisitResult.CONTINUE;
             } catch (IOException e) {
                 throw new RuntimeException(e);
@@ -87,20 +86,19 @@ public class Prompter extends InputResolver {
     }
 
     @Override
-    public VisitResult visitText(Input.Text input, Context ctx) {
-        if (ctx.lookup(input.name()) != null) {
-            // input is already resolved
+    public VisitResult visitText(Input.Text input, Context context) {
+        if (onVisitInput(input, context)) {
             return VisitResult.CONTINUE;
         }
         try {
             printLabel(input);
-            Value defaultValue = defaultValue(input, ctx);
+            Value defaultValue = defaultValue(input, context);
             String defaultText = defaultValue != null ? BoldBlue.apply(defaultValue.asString()) : null;
             String response = prompt("Enter text", defaultText);
             if (response == null || response.trim().length() == 0) {
-                ctx.push(input.name(), defaultValue);
+                context.push(input.name(), defaultValue);
             } else {
-                ctx.push(input.name(), Value.create(response));
+                context.push(input.name(), Value.create(response));
             }
             return VisitResult.CONTINUE;
         } catch (IOException e) {
@@ -109,9 +107,8 @@ public class Prompter extends InputResolver {
     }
 
     @Override
-    public VisitResult visitEnum(Input.Enum input, Context ctx) {
-        if (ctx.lookup(input.name()) != null) {
-            // input is already resolved
+    public VisitResult visitEnum(Input.Enum input, Context context) {
+        if (onVisitInput(input, context)) {
             return VisitResult.CONTINUE;
         }
         while (true) {
@@ -119,7 +116,7 @@ public class Prompter extends InputResolver {
                 printLabel(input);
                 printOptions(input);
 
-                Value defaultValue = defaultValue(input, ctx);
+                Value defaultValue = defaultValue(input, context);
                 int defaultIndex = input.optionIndex(defaultValue.asString());
                 String defaultText = defaultIndex != -1
                         ? BoldBlue.apply(String.format("%s", defaultIndex + 1))
@@ -129,13 +126,13 @@ public class Prompter extends InputResolver {
                 lastLabel = input.label();
                 if ((response == null || response.trim().length() == 0)) {
                     if (defaultIndex >= 0) {
-                        ctx.push(input.name(), defaultValue);
+                        context.push(input.name(), defaultValue);
                         return VisitResult.CONTINUE;
                     }
                 } else {
                     int index = Integer.parseInt(response.trim());
                     if (index > 0 && index <= input.options().size()) {
-                        ctx.push(input.name(), Value.create(input.options().get(index - 1).value()));
+                        context.push(input.name(), Value.create(input.options().get(index - 1).value()));
                         return VisitResult.CONTINUE;
                     }
                 }
@@ -148,9 +145,8 @@ public class Prompter extends InputResolver {
     }
 
     @Override
-    public VisitResult visitList(Input.List input, Context ctx) {
-        if (ctx.lookup(input.name()) != null) {
-            // input is already resolved
+    public VisitResult visitList(Input.List input, Context context) {
+        if (onVisitInput(input, context)) {
             return VisitResult.CONTINUE;
         }
         while (true) {
@@ -159,7 +155,7 @@ public class Prompter extends InputResolver {
                 printLabel(input);
                 printOptions(input);
 
-                Value defaultValue = defaultValue(input, ctx);
+                Value defaultValue = defaultValue(input, context);
                 List<Integer> defaultIndexes = input.optionIndexes(defaultValue.asList());
                 String defaultText = defaultIndexes.size() > 0
                         ? BoldBlue.apply(String.format("%s",
@@ -171,11 +167,11 @@ public class Prompter extends InputResolver {
                 lastLabel = input.label();
                 if (response == null || response.trim().length() == 0) {
                     if (!defaultIndexes.isEmpty()) {
-                        ctx.push(input.name(), defaultValue);
+                        context.push(input.name(), defaultValue);
                         return VisitResult.CONTINUE;
                     }
                 } else {
-                    ctx.push(input.name(), Value.create(input.parseResponse(response)));
+                    context.push(input.name(), Value.create(input.parseResponse(response)));
                     return VisitResult.CONTINUE;
                 }
             } catch (NumberFormatException | IndexOutOfBoundsException e) {

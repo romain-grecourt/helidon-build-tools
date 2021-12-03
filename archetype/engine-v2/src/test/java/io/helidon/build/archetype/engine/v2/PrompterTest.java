@@ -16,19 +16,22 @@
 
 package io.helidon.build.archetype.engine.v2;
 
+import java.io.ByteArrayInputStream;
+import java.util.List;
+
 import io.helidon.build.archetype.engine.v2.ast.Block;
 import io.helidon.build.archetype.engine.v2.ast.Input;
 import io.helidon.build.archetype.engine.v2.ast.Node.VisitResult;
 import io.helidon.build.archetype.engine.v2.ast.Value;
 import io.helidon.build.archetype.engine.v2.ast.ValueTypes;
 
-import java.io.ByteArrayInputStream;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
 import org.junit.jupiter.api.Test;
 
+import static io.helidon.build.archetype.engine.v2.Helper.booleanInput;
+import static io.helidon.build.archetype.engine.v2.Helper.enumInput;
+import static io.helidon.build.archetype.engine.v2.Helper.listInput;
+import static io.helidon.build.archetype.engine.v2.Helper.option;
+import static io.helidon.build.archetype.engine.v2.Helper.textInput;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;
@@ -276,55 +279,5 @@ class PrompterTest {
 
     private static Prompter prompter(String input) {
         return new Prompter(new ByteArrayInputStream(input.getBytes()));
-    }
-
-    private static Block.Builder option(String name, String value) {
-        return Input.builder(null, null, Block.Kind.OPTION)
-                    .attributes(attributes(name, value));
-    }
-
-    private static Block textInput(String name, String defaultValue) {
-        return Input.builder(null, null, Block.Kind.TEXT)
-                    .attributes(attributes(name, defaultValue, name))
-                    .build();
-    }
-
-    private static Block booleanInput(String name, boolean defaultValue) {
-        return Input.builder(null, null, Block.Kind.BOOLEAN)
-                    .attributes(attributes(name, String.valueOf(defaultValue), name))
-                    .build();
-    }
-
-    private static Block enumInput(String name, List<Block.Builder> options, String defaultValue) {
-        Block.Builder builder = Input.builder(null, null, Block.Kind.ENUM)
-                                     .attributes(attributes(name, defaultValue, name));
-        for (Block.Builder option : options) {
-            builder.statement(option);
-        }
-        return builder.build();
-    }
-
-    private static Block listInput(String name, List<Block.Builder> options, List<String> defaultValue) {
-        Block.Builder builder = Input.builder(null, null, Block.Kind.LIST)
-                                     .attributes(attributes(name, String.join(",", defaultValue), name));
-        for (Block.Builder option : options) {
-            builder.statement(option);
-        }
-        return builder.build();
-    }
-
-    private static Map<String, String> attributes(String name, String value) {
-        Map<String, String> attributes = new HashMap<>();
-        attributes.put("name", name);
-        attributes.put("value", value);
-        return attributes;
-    }
-
-    private static Map<String, String> attributes(String name, String defaultValue, String prompt) {
-        Map<String, String> attributes = new HashMap<>();
-        attributes.put("name", name);
-        attributes.put("default", defaultValue);
-        attributes.put("prompt", prompt);
-        return attributes;
     }
 }

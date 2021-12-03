@@ -16,7 +16,6 @@
 
 package io.helidon.build.archetype.engine.v2;
 
-import java.io.InputStream;
 import java.nio.file.Path;
 
 import io.helidon.build.archetype.engine.v2.ast.Block;
@@ -35,12 +34,13 @@ import io.helidon.build.common.test.utils.TestFiles;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import static io.helidon.build.archetype.engine.v2.Helper.load0;
+import static io.helidon.build.archetype.engine.v2.Helper.walk;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.nullValue;
-import static org.hamcrest.core.IsNull.notNullValue;
 
 /**
  * Tests {@link ScriptLoader}.
@@ -49,7 +49,7 @@ class ScriptLoaderTest {
 
     @Test
     void testInputs() {
-        Script script = load("loader/inputs.xml");
+        Script script = load0("loader/inputs.xml");
         int[] index = new int[]{0};
         walk(new Input.Visitor<>() {
 
@@ -111,7 +111,7 @@ class ScriptLoaderTest {
 
     @Test
     void testNestedInputs() {
-        Script script = load("loader/nested-inputs.xml");
+        Script script = load0("loader/nested-inputs.xml");
         int[] index = new int[]{0};
         walk(new Input.Visitor<>() {
             @Override
@@ -127,7 +127,7 @@ class ScriptLoaderTest {
 
     @Test
     void testInvocations() {
-        Script script = load("loader/invocations.xml");
+        Script script = load0("loader/invocations.xml");
         int[] index = new int[]{0};
         walk(new Node.Visitor<>() {
 
@@ -152,7 +152,7 @@ class ScriptLoaderTest {
 
     @Test
     void testPresets() {
-        Script script = load("loader/presets.xml");
+        Script script = load0("loader/presets.xml");
         int[] index = new int[]{0};
         walk(new Node.Visitor<>() {
 
@@ -188,7 +188,7 @@ class ScriptLoaderTest {
 
     @Test
     void testOutput() {
-        Script script = load("loader/output.xml");
+        Script script = load0("loader/output.xml");
         int[] index = new int[]{0};
         walk(new Output.Visitor<>() {
             @Override
@@ -244,7 +244,7 @@ class ScriptLoaderTest {
 
     @Test
     void testModel() {
-        Script script = load("loader/model.xml");
+        Script script = load0("loader/model.xml");
         int[] index = new int[]{0};
         walk(new Model.Visitor<>() {
             @Override
@@ -331,7 +331,7 @@ class ScriptLoaderTest {
 
     @Test
     void testScopedModel() {
-        Script script = load("loader/scoped-model.xml");
+        Script script = load0("loader/scoped-model.xml");
         int[] index = new int[]{0};
         walk(new Model.Visitor<>() {
             @Override
@@ -356,7 +356,7 @@ class ScriptLoaderTest {
 
     @Test
     void testConditional() {
-        Script script = load("loader/conditional.xml");
+        Script script = load0("loader/conditional.xml");
         int[] index = new int[]{0};
         walk(new Node.Visitor<>() {
 
@@ -427,27 +427,5 @@ class ScriptLoaderTest {
             }
         }, script);
         assertThat(index[0], is(1));
-    }
-
-    private static Script load(String path) {
-        InputStream is = ScriptLoaderTest.class.getClassLoader().getResourceAsStream(path);
-        assertThat(is, is(notNullValue()));
-        return ScriptLoader.load0(is);
-    }
-
-    private static void walk(Node.Visitor<Void> visitor, Script script) {
-        Walker.walk(visitor, script.body(), null);
-    }
-
-    private static void walk(Input.Visitor<Void> visitor, Script script) {
-        Walker.walk(new VisitorAdapter<>(visitor), script.body(), null);
-    }
-
-    private static void walk(Output.Visitor<Void> visitor, Script script) {
-        Walker.walk(new VisitorAdapter<>(visitor), script.body(), null);
-    }
-
-    private static void walk(Model.Visitor<Void> visitor, Script script) {
-        Walker.walk(new VisitorAdapter<>(visitor), script.body(), null);
     }
 }

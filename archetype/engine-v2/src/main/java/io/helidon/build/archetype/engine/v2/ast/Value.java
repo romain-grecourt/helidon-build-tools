@@ -26,8 +26,8 @@ import java.util.Objects;
  */
 public class Value {
 
-    private final Object value;
-    private final GenericType<?> type;
+    protected final Object value;
+    protected final GenericType<?> type;
 
     /**
      * Create a new value.

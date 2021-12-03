@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Objects;
 
 import static java.util.Collections.emptyList;
+import static java.util.stream.Collectors.toList;
 
 /**
  * Output block.
@@ -39,6 +40,7 @@ public abstract class Output extends Block {
 
     /**
      * Output visitor.
+     *
      * @param <A> argument type
      */
     public interface Visitor<A> {
@@ -47,7 +49,7 @@ public abstract class Output extends Block {
          * Visit a transformation block.
          *
          * @param transformation transformation
-         * @param arg visitor argument
+         * @param arg            visitor argument
          * @return result
          */
         default VisitResult visitTransformation(Transformation transformation, A arg) {
@@ -58,7 +60,7 @@ public abstract class Output extends Block {
          * Visit a files block.
          *
          * @param files files
-         * @param arg visitor argument
+         * @param arg   visitor argument
          * @return result
          */
         default VisitResult visitFiles(Files files, A arg) {
@@ -69,7 +71,7 @@ public abstract class Output extends Block {
          * Visit a templates block.
          *
          * @param templates templates
-         * @param arg visitor argument
+         * @param arg       visitor argument
          * @return result
          */
         default VisitResult visitTemplates(Templates templates, A arg) {
@@ -80,7 +82,7 @@ public abstract class Output extends Block {
          * Visit a file block.
          *
          * @param file file
-         * @param arg visitor argument
+         * @param arg  visitor argument
          * @return result
          */
         default VisitResult visitFile(File file, A arg) {
@@ -91,7 +93,7 @@ public abstract class Output extends Block {
          * Visit a template block.
          *
          * @param template template
-         * @param arg visitor argument
+         * @param arg      visitor argument
          * @return result
          */
         default VisitResult visitTemplate(Template template, A arg) {
@@ -102,7 +104,7 @@ public abstract class Output extends Block {
          * Visit a template block after traversing the nested statements.
          *
          * @param template template
-         * @param arg visitor argument
+         * @param arg      visitor argument
          * @return result
          */
         default VisitResult postVisitTemplate(Template template, A arg) {
@@ -113,7 +115,7 @@ public abstract class Output extends Block {
          * Visit any output.
          *
          * @param output output
-         * @param arg visitor argument
+         * @param arg    visitor argument
          * @return result
          */
         @SuppressWarnings("unused")
@@ -125,7 +127,7 @@ public abstract class Output extends Block {
          * Visit any output after traversing the nested statements.
          *
          * @param output output
-         * @param arg visitor argument
+         * @param arg    visitor argument
          * @return result
          */
         @SuppressWarnings("unused")
@@ -138,8 +140,8 @@ public abstract class Output extends Block {
      * Visit this output.
      *
      * @param visitor visitor
-     * @param arg visitor argument
-     * @param <A> visitor argument type
+     * @param arg     visitor argument
+     * @param <A>     visitor argument type
      * @return result
      */
     public abstract <A> VisitResult accept(Visitor<A> visitor, A arg);
@@ -148,8 +150,8 @@ public abstract class Output extends Block {
      * Visit this output after traversing the nested statements.
      *
      * @param visitor visitor
-     * @param arg visitor argument
-     * @param <A> visitor argument type
+     * @param arg     visitor argument
+     * @param <A>     visitor argument type
      * @return result
      */
     public <A> VisitResult acceptAfter(Visitor<A> visitor, A arg) {
@@ -254,7 +256,9 @@ public abstract class Output extends Block {
         Files(Output.Builder builder) {
             super(builder);
             String attr = builder.attributes.get("transformations");
-            this.transformations = attr != null ? Arrays.asList(attr.split(",")) : emptyList();
+            this.transformations = attr != null ? Arrays.stream(attr.split(","))
+                                                        .map(String::trim)
+                                                        .collect(toList()) : emptyList();
             this.directory = Objects.requireNonNull(builder.directory, "directory is null");
             this.includes = builder.includes;
             this.excludes = builder.excludes;

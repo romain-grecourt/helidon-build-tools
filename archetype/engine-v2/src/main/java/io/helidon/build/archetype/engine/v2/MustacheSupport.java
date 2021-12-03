@@ -16,7 +16,6 @@
 
 package io.helidon.build.archetype.engine.v2;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -25,14 +24,12 @@ import java.io.OutputStreamWriter;
 import java.io.UncheckedIOException;
 import java.io.Writer;
 import java.nio.charset.Charset;
-import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 
 import io.helidon.build.archetype.engine.v2.ast.Block;
-import io.helidon.build.archetype.engine.v2.ast.Output.Template;
 import io.helidon.build.archetype.engine.v2.spi.TemplateSupport;
 
 import com.github.mustachejava.Binding;

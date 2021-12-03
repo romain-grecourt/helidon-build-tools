@@ -17,29 +17,102 @@
 package io.helidon.build.archetype.engine.v2;
 
 import io.helidon.build.archetype.engine.v2.ast.Input;
+import io.helidon.build.archetype.engine.v2.ast.Input.NamedInput;
+import io.helidon.build.archetype.engine.v2.ast.Input.Option;
+import io.helidon.build.archetype.engine.v2.ast.Node.VisitResult;
 import io.helidon.build.archetype.engine.v2.ast.Value;
 
 /**
  * Input resolver.
  */
-public abstract class InputResolver implements Input.Visitor<Context> {
+public class InputResolver implements Input.Visitor<Context> {
 
-    protected Value defaultValue(Input.NamedInput input, Context context) {
-        String path = context.peek();
-        if (path != null) {
-            path += "." + input.name();
-        } else {
-            path = input.name();
-        }
-        Value defaultValue = context.getDefault(path);
+    private NamedInput lastVisited;
+
+    /**
+     * Invoked for every named input visit.
+     *
+     * @param input   input
+     * @param context context
+     * @return {@code true} if the input is resolved, {@code false} otherwise
+     */
+    protected boolean onVisitInput(NamedInput input, Context context) {
+        lastVisited = input;
+        return context.push(input.name());
+    }
+
+    /**
+     * Compute the default value for an input.
+     *
+     * @param input   input
+     * @param context context
+     * @return default value or {@code null} if none
+     */
+    protected Value defaultValue(NamedInput input, Context context) {
+        Value defaultValue = context.defaultValue(input.name());
         if (defaultValue == null) {
             defaultValue = input.defaultValue();
         }
         return defaultValue;
     }
 
-    // TODO provide logic to control option traversal
-    // i.e. only traverse selected options for enum and list
+    @Override
+    public VisitResult visitBoolean(Input.Boolean input, Context context) {
+        return visit(input, context);
+    }
 
-    // TODO unit test
+    @Override
+    public VisitResult visitText(Input.Text input, Context context) {
+        return visit(input, context);
+    }
+
+    @Override
+    public VisitResult visitEnum(Input.Enum input, Context context) {
+        return visit(input, context);
+    }
+
+    @Override
+    public VisitResult visitList(Input.List input, Context context) {
+        return visit(input, context);
+    }
+
+    /**
+     * Default visit implementation.
+     *
+     * @param input   input
+     * @param context context
+     * @return result
+     */
+    protected VisitResult visit(NamedInput input, Context context) {
+        if (onVisitInput(input, context)) {
+            return VisitResult.CONTINUE;
+        }
+        return VisitResult.SKIP_SUBTREE;
+    }
+
+    @Override
+    public VisitResult visitOption(Option option, Context context) {
+        if (lastVisited == null) {
+            throw new IllegalStateException("lastVisited must be non null");
+        }
+        Context.ContextValue inputValue = context.lookup(lastVisited.name());
+        if (inputValue != null) {
+            if (lastVisited instanceof Input.List) {
+                if (inputValue.asList().contains(option.value())) {
+                    return VisitResult.CONTINUE;
+                }
+            } else if (inputValue.asString().equals(option.value())) {
+                return VisitResult.SKIP_SIBLINGS;
+            }
+        }
+        return VisitResult.SKIP_SUBTREE;
+    }
+
+    @Override
+    public VisitResult postVisitAny(Input input, Context context) {
+        if (!(input instanceof Option)) {
+            context.pop();
+        }
+        return VisitResult.CONTINUE;
+    }
 }

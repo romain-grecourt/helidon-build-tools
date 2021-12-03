@@ -16,6 +16,8 @@
 
 package io.helidon.build.archetype.engine.v2.ast;
 
+import io.helidon.build.common.GenericType;
+
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Deque;
@@ -230,8 +232,11 @@ public final class Expression {
             }
             Token op1 = tokens.get(tokens.size() - 1);
             if (token.operator == Operator.NOT) {
-                if (op1.operand != null && op1.operand.type() != ValueTypes.BOOLEAN) {
-                    throw new FormatException("Invalid operand");
+                if (op1.operand != null) {
+                    GenericType<?> type = op1.operand.type();
+                    if (type != null && type != ValueTypes.BOOLEAN) {
+                        throw new FormatException("Invalid operand");
+                    }
                 }
                 valence = 1;
             } else {

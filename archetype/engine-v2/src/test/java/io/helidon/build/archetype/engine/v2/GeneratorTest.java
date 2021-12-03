@@ -28,6 +28,7 @@ import io.helidon.build.common.test.utils.TestFiles;
 
 import org.junit.jupiter.api.Test;
 
+import static io.helidon.build.archetype.engine.v2.Helper.walk;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -104,7 +105,7 @@ class GeneratorTest {
         Block block = ScriptLoader.load(scriptPath).body();
         Context context = Context.create(scriptPath.getParent());
         func.accept(context);
-        Walker.walk(new VisitorAdapter<>(new Generator(block, outputDir)), block, context);
+        Controller.run(new Generator(block, outputDir), context, block);
         return outputDir;
     }
 

@@ -38,33 +38,13 @@ class VisitorAdapter<A> implements Node.Visitor<A>, Block.Visitor<A> {
      * Create a new adapter for the given input visitor.
      *
      * @param inputVisitor input visitor
-     */
-    VisitorAdapter(Input.Visitor<A> inputVisitor) {
-        this.inputVisitor = inputVisitor;
-        this.outputVisitor = null;
-        this.modelVisitor = null;
-    }
-
-    /**
-     * Create a new adapter for the given output visitor.
-     *
      * @param outputVisitor output visitor
+     * @param modelVisitor  model visitor
      */
-    VisitorAdapter(Output.Visitor<A> outputVisitor) {
+    VisitorAdapter(Input.Visitor<A> inputVisitor, Output.Visitor<A> outputVisitor, Model.Visitor<A> modelVisitor) {
+        this.inputVisitor = inputVisitor;
         this.outputVisitor = outputVisitor;
-        this.modelVisitor = null;
-        this.inputVisitor = null;
-    }
-
-    /**
-     * Create a new adapter for the given model visitor.
-     *
-     * @param modelVisitor model visitor
-     */
-    VisitorAdapter(Model.Visitor<A> modelVisitor) {
         this.modelVisitor = modelVisitor;
-        this.outputVisitor = null;
-        this.inputVisitor = null;
     }
 
     @Override

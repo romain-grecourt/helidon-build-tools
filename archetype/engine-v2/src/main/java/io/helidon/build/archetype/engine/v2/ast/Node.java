@@ -86,8 +86,8 @@ public abstract class Node {
      * Visit this node.
      *
      * @param visitor visitor
-     * @param arg visitor argument
-     * @param <A> visitor argument type
+     * @param arg     visitor argument
+     * @param <A>     visitor argument type
      * @return result
      */
     public abstract <A> VisitResult accept(Visitor<A> visitor, A arg);
@@ -96,8 +96,8 @@ public abstract class Node {
      * Post-visit this node.
      *
      * @param visitor visitor
-     * @param arg visitor argument
-     * @param <A> visitor argument type
+     * @param arg     visitor argument
+     * @param <A>     visitor argument type
      * @return result
      */
     public <A> VisitResult acceptAfter(Visitor<A> visitor, A arg) {
@@ -132,6 +132,7 @@ public abstract class Node {
 
     /**
      * Visitor.
+     *
      * @param <A> argument type
      */
     public interface Visitor<A> {
@@ -140,7 +141,7 @@ public abstract class Node {
          * Visit a script.
          *
          * @param script script
-         * @param arg   visitor argument
+         * @param arg    visitor argument
          * @return visit result
          */
         default VisitResult visitScript(Script script, A arg) {
@@ -151,7 +152,7 @@ public abstract class Node {
          * Visit a condition.
          *
          * @param condition condition
-         * @param arg   visitor argument
+         * @param arg       visitor argument
          * @return visit result
          */
         default VisitResult visitCondition(Condition condition, A arg) {
@@ -162,7 +163,7 @@ public abstract class Node {
          * Visit an invocation.
          *
          * @param invocation invocation
-         * @param arg   visitor argument
+         * @param arg        visitor argument
          * @return visit result
          */
         default VisitResult visitInvocation(Invocation invocation, A arg) {
@@ -173,7 +174,7 @@ public abstract class Node {
          * Visit a preset.
          *
          * @param preset preset
-         * @param arg   visitor argument
+         * @param arg    visitor argument
          * @return visit result
          */
         default VisitResult visitPreset(Preset preset, A arg) {
@@ -206,7 +207,7 @@ public abstract class Node {
          * Visit a node.
          *
          * @param node node
-         * @param arg   visitor argument
+         * @param arg  visitor argument
          * @return visit result
          */
         @SuppressWarnings("unused")
@@ -218,7 +219,7 @@ public abstract class Node {
          * Visit a node after traversing the nested statements.
          *
          * @param node node
-         * @param arg   visitor argument
+         * @param arg  visitor argument
          * @return visit result
          */
         @SuppressWarnings("unused")

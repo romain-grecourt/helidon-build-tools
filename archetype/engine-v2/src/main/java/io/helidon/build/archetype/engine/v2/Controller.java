@@ -31,22 +31,35 @@ class Controller extends VisitorAdapter<Context> {
 
     // TODO unit test
 
-    private Controller(Input.Visitor<Context> visitor) {
-        super(visitor);
-    }
+    private Controller(Input.Visitor<Context> inputVisitor,
+                       Output.Visitor<Context> outputVisitor,
+                       Model.Visitor<Context> modelVisitor) {
 
-    private Controller(Output.Visitor<Context> visitor) {
-        super(visitor);
-    }
-
-    private Controller(Model.Visitor<Context> visitor) {
-        super(visitor);
+        super(inputVisitor, outputVisitor, modelVisitor);
     }
 
     @Override
     public VisitResult visitPreset(Preset preset, Context ctx) {
         ctx.put(preset.path(), preset.value());
         return VisitResult.CONTINUE;
+    }
+
+    @Override
+    public VisitResult visitBlock(Block block, Context ctx) {
+        if (block.blockKind() == Block.Kind.CD) {
+            ctx.pushCwd(block.scriptPath().getParent());
+            return VisitResult.CONTINUE;
+        }
+        return super.visitBlock(block, ctx);
+    }
+
+    @Override
+    public VisitResult postVisitBlock(Block block, Context ctx) {
+        if (block.blockKind() == Block.Kind.CD) {
+            ctx.popCwd();
+            return VisitResult.CONTINUE;
+        }
+        return super.postVisitBlock(block, ctx);
     }
 
     @Override
@@ -65,7 +78,7 @@ class Controller extends VisitorAdapter<Context> {
      * @param block   block
      */
     static void run(Model.Visitor<Context> visitor, Context context, Block block) {
-        Controller controller = new Controller(visitor);
+        Controller controller = new Controller(null, null, visitor);
         Walker.walk(controller, block, context);
     }
 
@@ -77,7 +90,7 @@ class Controller extends VisitorAdapter<Context> {
      * @param block   block
      */
     static void run(Output.Visitor<Context> visitor, Context context, Block block) {
-        Controller controller = new Controller(visitor);
+        Controller controller = new Controller(null, visitor, null);
         Walker.walk(controller, block, context);
     }
 
@@ -89,7 +102,7 @@ class Controller extends VisitorAdapter<Context> {
      * @param block   block
      */
     static void run(Input.Visitor<Context> visitor, Context context, Block block) {
-        Controller controller = new Controller(visitor);
+        Controller controller = new Controller(visitor, null, null);
         Walker.walk(controller, block, context);
     }
 }
