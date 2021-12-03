@@ -105,7 +105,8 @@ class GeneratorTest {
         Block block = ScriptLoader.load(scriptPath).body();
         Context context = Context.create(scriptPath.getParent());
         func.accept(context);
-        Controller.run(new Generator(block, outputDir), context, block);
+        Controller controller = Controller.create(block, context);
+        controller.generate(outputDir);
         return outputDir;
     }
 

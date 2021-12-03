@@ -28,6 +28,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
+import java.util.function.Function;
 
 import io.helidon.build.archetype.engine.v2.ast.Block;
 import io.helidon.build.archetype.engine.v2.spi.TemplateSupport;
@@ -45,22 +46,22 @@ import com.github.mustachejava.util.Wrapper;
  */
 public class MustacheSupport implements TemplateSupport {
 
+    private final Function<Block, MergedModel> modelResolver;
     private final MergedModel scope;
     private final DefaultMustacheFactory factory;
     private final Map<String, Mustache> cache;
-    private final Context context;
 
     /**
      * Create a new instance.
      *
-     * @param block   block
-     * @param context context
+     * @param block         block
+     * @param modelResolver model resolver
      */
-    MustacheSupport(Block block, Context context) {
-        this.context = context;
+    MustacheSupport(Block block, Function<Block, MergedModel> modelResolver) {
+        this.modelResolver = modelResolver;
         factory = new DefaultMustacheFactory();
         factory.setObjectHandler(new ModelHandler());
-        scope = MergedModel.resolve(block, context);
+        scope = modelResolver.apply(block);
         cache = new HashMap<>();
     }
 
@@ -70,7 +71,7 @@ public class MustacheSupport implements TemplateSupport {
         try (Writer writer = new OutputStreamWriter(os, charset)) {
             List<Object> scopes;
             if (extraScope != null) {
-                scopes = List.of(scope, MergedModel.resolve(extraScope, context));
+                scopes = List.of(scope, modelResolver.apply(extraScope));
             } else {
                 scopes = List.of(scope);
             }
@@ -94,7 +95,7 @@ public class MustacheSupport implements TemplateSupport {
         public Wrapper find(String name, List<Object> ignore) {
             return scopes -> {
                 ListIterator<Object> it = scopes.listIterator(scopes.size());
-                while(it.hasPrevious()) {
+                while (it.hasPrevious()) {
                     Object scope = it.previous();
                     if (scope instanceof MergedModel) {
                         Object result = ((MergedModel) scope).get(name);

@@ -54,9 +54,9 @@ public class ArchetypeEngineV2 {
 
         // TODO entry point should be 'main.xml'
         Script entrypoint = ScriptLoader.load(cwd.resolve("flavor.xml"));
-        Block block = entrypoint.body();
         Context context = Context.create(cwd, externalValues, externalDefaults);
-        Controller.run(inputResolver, context, block);
-        Controller.run(new Generator(block, directory), context, block);
+        Controller controller = Controller.create(inputResolver, entrypoint.body(), context);
+        controller.resolveInputs();
+        controller.generate(directory);
     }
 }

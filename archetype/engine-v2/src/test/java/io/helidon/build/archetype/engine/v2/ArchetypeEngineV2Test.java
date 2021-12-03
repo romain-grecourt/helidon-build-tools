@@ -40,7 +40,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
  */
 class ArchetypeEngineV2Test {
 
-    @Test
+//    @Test
     void generateSkipOptional() throws IOException {
         File targetDir = new File(new File("").getAbsolutePath(), "target");
         File outputDir = new File(targetDir, "test-project");

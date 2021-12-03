@@ -17,6 +17,7 @@
 package io.helidon.build.archetype.engine.v2.spi;
 
 import io.helidon.build.archetype.engine.v2.Context;
+import io.helidon.build.archetype.engine.v2.MergedModel;
 import io.helidon.build.archetype.engine.v2.ast.Block;
 
 import java.util.Map;
@@ -40,11 +41,11 @@ public interface TemplateSupportProvider {
     /**
      * Instantiate the template support.
      *
-     * @param block   block
-     * @param context context
+     * @param block         block
+     * @param modelResolver model resolver
      * @return template support
      */
-    TemplateSupport create(Block block, Context context);
+    TemplateSupport create(Block block, Function<Block, MergedModel> modelResolver);
 
     /**
      * Find a provider by its name.

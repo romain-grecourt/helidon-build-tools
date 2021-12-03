@@ -24,7 +24,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import io.helidon.build.archetype.engine.v2.ast.Input;
 import io.helidon.build.archetype.engine.v2.ast.Value;
 import io.helidon.build.archetype.engine.v2.ast.ValueTypes;
 import io.helidon.build.common.GenericType;
@@ -120,19 +119,15 @@ public final class Context {
      *
      * @param name  input name
      * @param value value
-     * @return {@code true} if a value was pushed, {@code false} otherwise
      */
-    public boolean push(String name, Value value) {
+    public void push(String name, Value value) {
         String path = path(name);
         if (value != null) {
             values.put(path, new ContextValue(value, false));
             inputs.push(path);
-            return true;
         } else if (values.get(path) != null) {
             inputs.push(path);
-            return true;
         }
-        return false;
     }
 
     /**
@@ -246,6 +241,7 @@ public final class Context {
          *
          * @return {@code true} if external, {@code false} otherwise
          */
+        @SuppressWarnings("unused")
         public boolean internal() {
             return internal;
         }

@@ -26,6 +26,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import io.helidon.build.archetype.engine.v2.Context.ContextValue;
@@ -52,10 +53,12 @@ public class Generator implements Output.Visitor<Context> {
 
     private final Path outputDir;
     private final Block block;
+    private final Function<Block, MergedModel> modelResolver;
 
-    Generator(Block block, Path outputDir) {
+    Generator(Block block, Path outputDir, Function<Block, MergedModel> modelResolver) {
         this.block = block;
         this.outputDir = outputDir;
+        this.modelResolver = modelResolver;
     }
 
     @Override
@@ -93,7 +96,7 @@ public class Generator implements Output.Visitor<Context> {
             Path source = dir.resolve(resource);
             String targetPath = cwd.relativize(source).toString();
             Path target = outputDir.resolve(transformations(templates, targetPath, ctx));
-            render(source, target, templates.engine(), ctx, null);
+            render(source, target, templates.engine(), null);
         }
         return VisitResult.CONTINUE;
     }
@@ -102,7 +105,7 @@ public class Generator implements Output.Visitor<Context> {
     public VisitResult visitTemplate(Template template, Context ctx) {
         Path source = ctx.cwd().resolve(template.source());
         Path target = outputDir.resolve(template.target());
-        render(source, target, template.engine(), ctx, template);
+        render(source, target, template.engine(), template);
         return VisitResult.CONTINUE;
     }
 
@@ -115,8 +118,8 @@ public class Generator implements Output.Visitor<Context> {
                          .collect(Collectors.toList());
     }
 
-    private void render(Path source, Path target, String engine, Context ctx, Template extraScope) {
-        TemplateSupport templateSupport = templateSupport(engine, ctx);
+    private void render(Path source, Path target, String engine, Template extraScope) {
+        TemplateSupport templateSupport = templateSupport(engine);
         try {
             Files.createDirectories(target.getParent());
             InputStream is = Files.newInputStream(source);
@@ -161,7 +164,7 @@ public class Generator implements Output.Visitor<Context> {
         return sb.toString();
     }
 
-    private TemplateSupport templateSupport(String engine, Context ctx) {
-        return templateSupports.computeIfAbsent(engine, eng -> providerByName(eng).create(block, ctx));
+    private TemplateSupport templateSupport(String engine) {
+        return templateSupports.computeIfAbsent(engine, eng -> providerByName(eng).create(block, modelResolver));
     }
 }

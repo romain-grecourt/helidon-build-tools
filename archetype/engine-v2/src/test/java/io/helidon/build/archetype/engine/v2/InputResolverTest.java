@@ -77,13 +77,6 @@ public class InputResolverTest {
         context.put("list-input", Value.create(List.of("value1", "value3")));
 
         List<String> colors = new LinkedList<>();
-
-        // TODO should use the controller for that
-        // TODO controller should store the input resolver to allow for "resolved traversals" for output and model
-        // TemplateSupport needs a handle on the controller order to resolve model for a block
-        // maybe just a Function<Block, MergedModel> instead
-        // Generator also is passed the same function since it's the one that creates template support
-
         Walker.walk(new VisitorAdapter<>(new InputResolver(), null,
                 new Model.Visitor<>() {
                     @Override

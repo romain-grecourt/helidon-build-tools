@@ -19,14 +19,10 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
 
-import io.helidon.build.archetype.engine.v2.ast.Block;
-import io.helidon.build.archetype.engine.v2.ast.Model;
-import io.helidon.build.archetype.engine.v2.ast.Node.VisitResult;
-
 /**
  * Merged model.
  */
-abstract class MergedModel {
+public abstract class MergedModel {
 
     protected final MergedModel parent;
     protected final String key;
@@ -44,7 +40,7 @@ abstract class MergedModel {
      * @param key key
      * @return model
      */
-    MergedModel get(String key) {
+    public MergedModel get(String key) {
         return this.key != null && this.key.equals(key) ? this : null;
     }
 
@@ -53,7 +49,7 @@ abstract class MergedModel {
      *
      * @return string
      */
-    String asString() {
+    public String asString() {
         throw new UnsupportedOperationException();
     }
 
@@ -75,28 +71,24 @@ abstract class MergedModel {
     }
 
     /**
-     * Resolve the merged model for the given block.
-     *
-     * @param block   block
-     * @param context context
-     * @return model
+     * List node.
      */
-    static MergedModel resolve(Block block, Context context) {
-        Resolver resolver = new Resolver();
-        Controller.run(resolver, context, block);
-        return resolver.head;
-    }
+    public static class List extends MergedModel implements Iterable<MergedModel> {
 
-    private static class List extends MergedModel implements Iterable<MergedModel> {
+        private final java.util.List<MergedModel> value = new LinkedList<>();
 
-        final java.util.List<MergedModel> value = new LinkedList<>();
-
-        private List(MergedModel parent, String key, int order) {
+        /**
+         * Create a new instance.
+         *
+         * @param parent parent
+         * @param key    key
+         * @param order  order
+         */
+        List(MergedModel parent, String key, int order) {
             super(parent, key, order);
         }
 
         @Override
-        @SuppressWarnings("NullableProblems")
         public Iterator<MergedModel> iterator() {
             return value.iterator();
         }
@@ -113,16 +105,26 @@ abstract class MergedModel {
         }
     }
 
-    private static class Map extends MergedModel {
+    /**
+     * Map node.
+     */
+    public static class Map extends MergedModel {
 
-        final java.util.Map<String, MergedModel> value = new HashMap<>();
+        private final java.util.Map<String, MergedModel> value = new HashMap<>();
 
-        private Map(MergedModel parent, String key, int order) {
+        /**
+         * Create a new instance.
+         *
+         * @param parent parent
+         * @param key    key
+         * @param order  order
+         */
+        Map(MergedModel parent, String key, int order) {
             super(parent, key, order);
         }
 
         @Override
-        MergedModel get(String key) {
+        public MergedModel get(String key) {
             return value.get(key);
         }
 
@@ -144,54 +146,29 @@ abstract class MergedModel {
         }
     }
 
-    private static class Value extends MergedModel {
+    /**
+     * Value node.
+     */
+    public static class Value extends MergedModel {
 
-        final String value;
+        private final String value;
 
-        private Value(MergedModel parent, String key, int order, String value) {
+        /**
+         * Create a new instance.
+         *
+         * @param parent parent
+         * @param key    key
+         * @param order  order
+         * @param value  value
+         */
+        Value(MergedModel parent, String key, int order, String value) {
             super(parent, key, order);
             this.value = value;
         }
 
         @Override
-        String asString() {
+        public String asString() {
             return value;
-        }
-    }
-
-    private static class Resolver implements Model.Visitor<Context> {
-
-        MergedModel head = new Map(null, null, 0);
-
-        @Override
-        public VisitResult visitList(Model.List list, Context ctx) {
-            head = head.add(new List(head, list.key(), list.order()));
-            return VisitResult.CONTINUE;
-        }
-
-        @Override
-        public VisitResult visitMap(Model.Map map, Context ctx) {
-            head = head.add(new Map(head, map.key(), map.order()));
-            return VisitResult.CONTINUE;
-        }
-
-        @Override
-        public VisitResult visitValue(Model.Value value, Context ctx) {
-            // value is a leaf-node, thus we are not updating the head
-            head.add(new Value(head, value.key(), value.order(), value.value()));
-            return VisitResult.CONTINUE;
-        }
-
-        @Override
-        public VisitResult postVisitList(Model.List list, Context ctx) {
-            head.sort();
-            return postVisitAny(list, ctx);
-        }
-
-        @Override
-        public VisitResult postVisitAny(Model model, Context ctx) {
-            head = head.parent;
-            return VisitResult.CONTINUE;
         }
     }
 }

@@ -16,6 +16,9 @@
 
 package io.helidon.build.archetype.engine.v2;
 
+import java.nio.file.Path;
+import java.util.Objects;
+
 import io.helidon.build.archetype.engine.v2.ast.Block;
 import io.helidon.build.archetype.engine.v2.ast.Condition;
 import io.helidon.build.archetype.engine.v2.ast.Input;
@@ -27,82 +30,105 @@ import io.helidon.build.archetype.engine.v2.ast.Preset;
 /**
  * Controller.
  */
-class Controller extends VisitorAdapter<Context> {
+class Controller {
+
+    private final InputResolver inputResolver;
+    private final Block block;
+    private final Context context;
 
     // TODO unit test
 
-    private Controller(Input.Visitor<Context> inputVisitor,
-                       Output.Visitor<Context> outputVisitor,
-                       Model.Visitor<Context> modelVisitor) {
-
-        super(inputVisitor, outputVisitor, modelVisitor);
-    }
-
-    @Override
-    public VisitResult visitPreset(Preset preset, Context ctx) {
-        ctx.put(preset.path(), preset.value());
-        return VisitResult.CONTINUE;
-    }
-
-    @Override
-    public VisitResult visitBlock(Block block, Context ctx) {
-        if (block.blockKind() == Block.Kind.CD) {
-            ctx.pushCwd(block.scriptPath().getParent());
-            return VisitResult.CONTINUE;
-        }
-        return super.visitBlock(block, ctx);
-    }
-
-    @Override
-    public VisitResult postVisitBlock(Block block, Context ctx) {
-        if (block.blockKind() == Block.Kind.CD) {
-            ctx.popCwd();
-            return VisitResult.CONTINUE;
-        }
-        return super.postVisitBlock(block, ctx);
-    }
-
-    @Override
-    public VisitResult visitCondition(Condition condition, Context ctx) {
-        if (condition.expression().eval(ctx::lookup)) {
-            return VisitResult.CONTINUE;
-        }
-        return VisitResult.SKIP_SUBTREE;
+    private Controller(InputResolver inputResolver, Block block, Context context) {
+        this.inputResolver = Objects.requireNonNull(inputResolver, "inputResolver is null");
+        this.block = block;
+        this.context = context;
     }
 
     /**
-     * Traverse the given block.
+     * Create a new controller.
      *
-     * @param visitor visitor
-     * @param context context
-     * @param block   block
+     * @param inputResolver input resolver
+     * @param block         block
+     * @param context       context
+     * @return controller
      */
-    static void run(Model.Visitor<Context> visitor, Context context, Block block) {
-        Controller controller = new Controller(null, null, visitor);
-        Walker.walk(controller, block, context);
+    static Controller create(InputResolver inputResolver, Block block, Context context) {
+        return new Controller(inputResolver, block, context);
     }
 
     /**
-     * Traverse the given block.
+     * Create a new controller.
      *
-     * @param visitor visitor
-     * @param context context
      * @param block   block
+     * @param context context
+     * @return controller
      */
-    static void run(Output.Visitor<Context> visitor, Context context, Block block) {
-        Controller controller = new Controller(null, visitor, null);
-        Walker.walk(controller, block, context);
+    static Controller create(Block block, Context context) {
+        return new Controller(new InputResolver(), block, context);
     }
 
     /**
-     * Traverse the given block.
-     *
-     * @param visitor visitor
-     * @param context context
-     * @param block   block
+     * Resolve the inputs.
      */
-    static void run(Input.Visitor<Context> visitor, Context context, Block block) {
-        Controller controller = new Controller(visitor, null, null);
-        Walker.walk(controller, block, context);
+    void resolveInputs() {
+        Walker.walk(new VisitorImpl(inputResolver, null, null), block, context);
+    }
+
+    /**
+     * Generate.
+     *
+     * @param outputDir output directory
+     */
+    void generate(Path outputDir) {
+        Generator generator = new Generator(block, outputDir, this::resolveModel);
+        Walker.walk(new VisitorImpl(inputResolver, generator, null), block, context);
+    }
+
+    private MergedModel resolveModel(Block block) {
+        ModelResolver modelResolver = new ModelResolver();
+        Walker.walk(new VisitorImpl(inputResolver, null, modelResolver), block, context);
+        return modelResolver.model();
+    }
+
+    private static final class VisitorImpl extends VisitorAdapter<Context> {
+
+        VisitorImpl(Input.Visitor<Context> inputVisitor,
+                    Output.Visitor<Context> outputVisitor,
+                    Model.Visitor<Context> modelVisitor) {
+
+            super(inputVisitor, outputVisitor, modelVisitor);
+        }
+
+        @Override
+        public VisitResult visitPreset(Preset preset, Context ctx) {
+            ctx.put(preset.path(), preset.value());
+            return VisitResult.CONTINUE;
+        }
+
+        @Override
+        public VisitResult visitBlock(Block block, Context ctx) {
+            if (block.blockKind() == Block.Kind.CD) {
+                ctx.pushCwd(block.scriptPath().getParent());
+                return VisitResult.CONTINUE;
+            }
+            return super.visitBlock(block, ctx);
+        }
+
+        @Override
+        public VisitResult postVisitBlock(Block block, Context ctx) {
+            if (block.blockKind() == Block.Kind.CD) {
+                ctx.popCwd();
+                return VisitResult.CONTINUE;
+            }
+            return super.postVisitBlock(block, ctx);
+        }
+
+        @Override
+        public VisitResult visitCondition(Condition condition, Context ctx) {
+            if (condition.expression().eval(ctx::lookup)) {
+                return VisitResult.CONTINUE;
+            }
+            return VisitResult.SKIP_SUBTREE;
+        }
     }
 }

@@ -235,8 +235,14 @@ class MustacheSupportTest {
     private static String render(String template, Block scope, Block extraScope) {
         InputStream is = new ByteArrayInputStream(template.getBytes(UTF_8));
         ByteArrayOutputStream os = new ByteArrayOutputStream();
-        MustacheSupport support = new MustacheSupport(scope, Context.create());
+        MustacheSupport support = new MustacheSupport(scope, MustacheSupportTest::resolveModel);
         support.render(is, "test", UTF_8, os, extraScope);
         return os.toString(UTF_8);
+    }
+
+    private static MergedModel resolveModel(Block block) {
+        ModelResolver modelResolver = new ModelResolver();
+        Walker.walk(new VisitorAdapter<>(null, null, modelResolver), block, null);
+        return modelResolver.model();
     }
 }
