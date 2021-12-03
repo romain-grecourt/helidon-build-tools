@@ -53,6 +53,17 @@ public abstract class MergedModel {
     }
 
     /**
+     * Resolve the model for the given block.
+     *
+     * @param block   block
+     * @param context context
+     * @return model
+     */
+    public static MergedModel resolve(Block block, Context context) {
+        return resolve(new InputResolver(), block, context);
+    }
+
+    /**
      * Get a model node by key.
      *
      * @param key key

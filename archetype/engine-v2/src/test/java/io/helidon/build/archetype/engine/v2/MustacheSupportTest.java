@@ -236,8 +236,7 @@ class MustacheSupportTest {
     private static String render(String template, Block scope, Block extraScope) {
         InputStream is = new ByteArrayInputStream(template.getBytes(UTF_8));
         ByteArrayOutputStream os = new ByteArrayOutputStream();
-        Function<Block, MergedModel> modelResolver =  b -> MergedModel.resolve(new InputResolver(), b, null);
-        MustacheSupport support = new MustacheSupport(scope, modelResolver);
+        MustacheSupport support = new MustacheSupport(scope, b -> MergedModel.resolve(b, null));
         support.render(is, "test", UTF_8, os, extraScope);
         return os.toString(UTF_8);
     }
