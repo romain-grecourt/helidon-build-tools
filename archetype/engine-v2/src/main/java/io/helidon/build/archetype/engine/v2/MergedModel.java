@@ -15,6 +15,10 @@
  */
 package io.helidon.build.archetype.engine.v2;
 
+import io.helidon.build.archetype.engine.v2.ast.Block;
+import io.helidon.build.archetype.engine.v2.ast.Model;
+import io.helidon.build.archetype.engine.v2.ast.Node.VisitResult;
+
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -32,6 +36,20 @@ public abstract class MergedModel {
         this.parent = parent;
         this.key = key;
         this.order = order;
+    }
+
+    /**
+     * Resolve the model for the given block.
+     *
+     * @param inputResolver input resolver
+     * @param block         block
+     * @param context       context
+     * @return model
+     */
+    public static MergedModel resolve(InputResolver inputResolver, Block block, Context context) {
+        ModelResolver modelResolver = new ModelResolver();
+        Walker.walk(new Controller(inputResolver, null, modelResolver), block, context);
+        return modelResolver.head;
     }
 
     /**
@@ -169,6 +187,42 @@ public abstract class MergedModel {
         @Override
         public String asString() {
             return value;
+        }
+    }
+
+    private static final class ModelResolver implements Model.Visitor<Context> {
+
+        MergedModel head = new Map(null, null, 0);
+
+        @Override
+        public VisitResult visitList(Model.List list, Context ctx) {
+            head = head.add(new List(head, list.key(), list.order()));
+            return VisitResult.CONTINUE;
+        }
+
+        @Override
+        public VisitResult visitMap(Model.Map map, Context ctx) {
+            head = head.add(new Map(head, map.key(), map.order()));
+            return VisitResult.CONTINUE;
+        }
+
+        @Override
+        public VisitResult visitValue(Model.Value value, Context ctx) {
+            // value is a leaf-node, thus we are not updating the head
+            head.add(new Value(head, value.key(), value.order(), value.value()));
+            return VisitResult.CONTINUE;
+        }
+
+        @Override
+        public VisitResult postVisitList(Model.List list, Context ctx) {
+            head.sort();
+            return postVisitAny(list, ctx);
+        }
+
+        @Override
+        public VisitResult postVisitAny(Model model, Context ctx) {
+            head = head.parent;
+            return VisitResult.CONTINUE;
         }
     }
 }

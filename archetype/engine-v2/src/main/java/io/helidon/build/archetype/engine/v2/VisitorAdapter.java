@@ -30,9 +30,9 @@ import io.helidon.build.archetype.engine.v2.ast.Output;
  */
 class VisitorAdapter<A> implements Node.Visitor<A>, Block.Visitor<A> {
 
-    private Input.Visitor<A> inputVisitor;
-    private Output.Visitor<A> outputVisitor;
-    private Model.Visitor<A> modelVisitor;
+    private final Input.Visitor<A> inputVisitor;
+    private final Output.Visitor<A> outputVisitor;
+    private final Model.Visitor<A> modelVisitor;
 
     /**
      * Create a new adapter for the given input visitor.
@@ -44,33 +44,6 @@ class VisitorAdapter<A> implements Node.Visitor<A>, Block.Visitor<A> {
     VisitorAdapter(Input.Visitor<A> inputVisitor, Output.Visitor<A> outputVisitor, Model.Visitor<A> modelVisitor) {
         this.inputVisitor = inputVisitor;
         this.outputVisitor = outputVisitor;
-        this.modelVisitor = modelVisitor;
-    }
-
-    /**
-     * Set the input visitor.
-     *
-     * @param inputVisitor visitor
-     */
-    protected void inputVisitor(Input.Visitor<A> inputVisitor) {
-        this.inputVisitor = inputVisitor;
-    }
-
-    /**
-     * Set the output visitor.
-     *
-     * @param outputVisitor visitor
-     */
-    protected void outputVisitor(Output.Visitor<A> outputVisitor) {
-        this.outputVisitor = outputVisitor;
-    }
-
-    /**
-     * Set the model visitor.
-     *
-     * @param modelVisitor visitor
-     */
-    protected void modelVisitor(Model.Visitor<A> modelVisitor) {
         this.modelVisitor = modelVisitor;
     }
 

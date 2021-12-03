@@ -61,6 +61,12 @@ public class ScriptLoader {
                     .compute(path, (p, r) -> load0(p));
     }
 
+    /**
+     * Load a script.
+     *
+     * @param path script path
+     * @return script
+     */
     static Script load0(Path path) {
         try {
             return load0(Files.newInputStream(path), path);
@@ -69,6 +75,12 @@ public class ScriptLoader {
         }
     }
 
+    /**
+     * Load a script with an input stream.
+     *
+     * @param is input stream
+     * @return script
+     */
     static Script load0(InputStream is) {
         return load0(is, null);
     }

@@ -24,6 +24,8 @@ import java.util.Objects;
  */
 public final class Script extends Node {
 
+    // TODO investigate how to make script as a block
+
     private final Block body;
 
     private Script(Builder builder) {

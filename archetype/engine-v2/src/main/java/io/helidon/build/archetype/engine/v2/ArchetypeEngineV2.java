@@ -17,7 +17,6 @@
 package io.helidon.build.archetype.engine.v2;
 
 import io.helidon.build.archetype.engine.v2.ast.Block;
-import io.helidon.build.archetype.engine.v2.ast.Script;
 
 import java.nio.file.FileSystem;
 import java.nio.file.Path;
@@ -53,10 +52,9 @@ public class ArchetypeEngineV2 {
                          Path directory) {
 
         // TODO entry point should be 'main.xml'
-        Script entrypoint = ScriptLoader.load(cwd.resolve("flavor.xml"));
         Context context = Context.create(cwd, externalValues, externalDefaults);
-        Controller controller = Controller.create(inputResolver, entrypoint.body(), context);
-        controller.resolveInputs();
-        controller.generate(directory);
+        Block block = ScriptLoader.load(cwd.resolve("flavor.xml")).body();
+        Controller.resolveInputs(inputResolver, block, context);
+        Controller.generate(inputResolver, block, context, directory);
     }
 }
