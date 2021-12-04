@@ -22,8 +22,10 @@ import io.helidon.build.archetype.engine.v2.ast.Model;
 import io.helidon.build.archetype.engine.v2.ast.Node;
 import io.helidon.build.archetype.engine.v2.ast.Output;
 import io.helidon.build.archetype.engine.v2.ast.Script;
+import io.helidon.build.common.test.utils.TestFiles;
 
 import java.io.InputStream;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,9 +35,21 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.IsNull.notNullValue;
 
 /**
- * Node test helper.
+ * Test helper.
  */
-class Nodes {
+class TestHelper {
+
+    /**
+     * Load a script using the {@code test-classes} directory.
+     *
+     * @param path path
+     * @return script
+     */
+    static Script load(String path) {
+        Path target = TestFiles.targetDir(TestHelper.class);
+        Path testResources = target.resolve("test-classes");
+        return ScriptLoader.load(testResources.resolve(path));
+    }
 
     /**
      * Load a script using class-loader resource.
@@ -44,7 +58,7 @@ class Nodes {
      * @return script
      */
     static Script load0(String path) {
-        InputStream is = Nodes.class.getClassLoader().getResourceAsStream(path);
+        InputStream is = TestHelper.class.getClassLoader().getResourceAsStream(path);
         assertThat(is, is(notNullValue()));
         return ScriptLoader.load0(is);
     }

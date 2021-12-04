@@ -52,29 +52,29 @@ class ExpressionTest {
 
         exp = Expression.parse("!(${array} contains 'basic-auth' == false && ${var})");
         variables = Map.of(
-                "var", Value.create(true),
+                "var", Value.TRUE,
                 "array", Value.create(List.of("a", "b", "c")));
         assertThat(exp.eval(variables::get), is(false));
 
         exp = Expression.parse("!${var}");
-        variables = Map.of("var", Value.create(true));
+        variables = Map.of("var", Value.TRUE);
         assertThat(exp.eval(variables::get), is(false));
 
         exp = Expression.parse("['', 'adc', 'def'] contains ${var1} == ${var4} && ${var2} || !${var3}");
         variables = Map.of(
                 "var1", Value.create("abc"),
-                "var2", Value.create(false),
-                "var3", Value.create(true),
-                "var4", Value.create(true));
+                "var2", Value.FALSE,
+                "var3", Value.TRUE,
+                "var4", Value.TRUE);
         assertThat(exp.eval(variables::get), is(false));
 
         exp = Expression.parse("${var1} contains ${var2} == ${var3} && ${var4} || ${var5}");
         variables = Map.of(
                 "var1", Value.create(List.of("a", "b", "c")),
                 "var2", Value.create("c"),
-                "var3", Value.create(true),
-                "var4", Value.create(true),
-                "var5", Value.create(false));
+                "var3", Value.TRUE,
+                "var4", Value.TRUE,
+                "var5", Value.FALSE);
         assertThat(exp.eval(variables::get), is(true));
 
         exp = Expression.parse(" ${var1} == ${var1} && ${var2} contains ''");
@@ -159,10 +159,10 @@ class ExpressionTest {
 
         assertThat(parse("((\"foo\") != \"bar\")").eval(), is(true));
         assertThat(parse("\"foo\" != (\"bar\")").eval(), is(true));
-        assertThat(parse("(\"foo\"==\"bar\")|| ${foo1}").eval(s -> Value.create(true)), is(true));
+        assertThat(parse("(\"foo\"==\"bar\")|| ${foo1}").eval(s -> Value.TRUE), is(true));
         assertThat(parse("(\"foo\"==\"bar\"|| true)").eval(), is(true));
-        assertThat(parse("${foo}==(true|| false)").eval(s -> Value.create(true)), is(true));
-        assertThat(parse("true==((${var}|| false)&&true)").eval(s -> Value.create(true)), is(true));
+        assertThat(parse("${foo}==(true|| false)").eval(s -> Value.TRUE), is(true));
+        assertThat(parse("true==((${var}|| false)&&true)").eval(s -> Value.TRUE), is(true));
 
         FormatException e;
 
@@ -183,7 +183,7 @@ class ExpressionTest {
     void testLiteralWithParenthesis() {
         assertThat(parse("(true)").eval(), is(true));
         assertThat(parse("((true))").eval(), is(true));
-        assertThat(parse("((${var}))").eval(s -> Value.create(true)), is(true));
+        assertThat(parse("((${var}))").eval(s -> Value.TRUE), is(true));
         assertThat(parse("(\"value\") == (\"value\")").eval(), is(true));
         assertThat(parse("((\"value\")) == ((\"value\"))").eval(), is(true));
         assertThat(parse("\"(value)\" == \"(value)\"").eval(), is(true));

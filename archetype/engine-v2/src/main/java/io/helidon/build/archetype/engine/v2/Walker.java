@@ -23,10 +23,14 @@ import io.helidon.build.archetype.engine.v2.ast.Preset;
 import io.helidon.build.archetype.engine.v2.ast.Script;
 import io.helidon.build.archetype.engine.v2.ast.Statement;
 
+import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
 import java.util.ListIterator;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * Block walker.
@@ -38,26 +42,44 @@ public final class Walker<A> {
     private final Deque<Statement> stack = new ArrayDeque<>();
     private final Deque<Node> parents = new ArrayDeque<>();
     private final Node.Visitor<A> visitor;
+    private final Function<Invocation, Path> pathResolver;
     private boolean traversing;
 
     /**
      * Traverse the given block node with the specified visitor and argument.
      *
      * @param visitor visitor
-     * @param root    node to traverse
+     * @param block   node to traverse, must be non {@code null}
+     * @param arg     visitor argument
+     * @param cwd     cwd supplier
+     * @param <A>     visitor argument type
+     * @throws NullPointerException if block is {@code null}
+     */
+    public static <A> void walk(Node.Visitor<A> visitor, Block block, A arg, Supplier<Path> cwd) {
+        new Walker<>(visitor, i -> cwd.get()).walk(block, arg);
+    }
+
+    /**
+     * Traverse the given block node with the specified visitor and argument.
+     *
+     * @param visitor visitor
+     * @param block   node to traverse, must be non {@code null}
      * @param arg     visitor argument
      * @param <A>     visitor argument type
+     * @throws NullPointerException if block is {@code null}
      */
-    public static <A> void walk(Node.Visitor<A> visitor, Block root, A arg) {
-        new Walker<>(visitor).walk(root, arg);
+    public static <A> void walk(Node.Visitor<A> visitor, Block block, A arg) {
+        new Walker<>(visitor, i -> i.scriptPath().getParent()).walk(block, arg);
     }
 
-    private Walker(Node.Visitor<A> visitor) {
+    private Walker(Node.Visitor<A> visitor, Function<Invocation, Path> pathResolver) {
         this.visitor = new DelegateVisitor(visitor);
+        this.pathResolver = pathResolver;
     }
 
-    private void walk(Block root, A arg) {
-        Node.VisitResult result = root.accept(visitor, arg);
+    private void walk(Block block, A arg) {
+        Objects.requireNonNull(block, "block is null");
+        Node.VisitResult result = block.accept(visitor, arg);
         if (result != Node.VisitResult.CONTINUE) {
             return;
         }
@@ -92,7 +114,7 @@ public final class Walker<A> {
                 }
             }
         }
-        root.acceptAfter(visitor, arg);
+        block.acceptAfter(visitor, arg);
     }
 
     private class DelegateVisitor implements Node.Visitor<A> {
@@ -125,7 +147,7 @@ public final class Walker<A> {
             if (result == Node.VisitResult.SKIP_SUBTREE || result == Node.VisitResult.TERMINATE) {
                 return result;
             }
-            Script script = ScriptLoader.load(invocation.scriptPath().getParent().resolve(invocation.src()));
+            Script script = ScriptLoader.load(pathResolver.apply(invocation).resolve(invocation.src()));
             if (invocation.kind() == Invocation.Kind.EXEC) {
                 stack.push(script.body().wrap(Block.Kind.CD));
             } else {

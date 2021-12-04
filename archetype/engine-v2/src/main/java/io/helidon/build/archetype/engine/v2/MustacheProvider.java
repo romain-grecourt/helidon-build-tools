@@ -16,8 +16,6 @@
 
 package io.helidon.build.archetype.engine.v2;
 
-import java.util.function.Function;
-
 import io.helidon.build.archetype.engine.v2.ast.Block;
 import io.helidon.build.archetype.engine.v2.spi.TemplateSupport;
 import io.helidon.build.archetype.engine.v2.spi.TemplateSupportProvider;
@@ -33,7 +31,7 @@ public class MustacheProvider implements TemplateSupportProvider {
     }
 
     @Override
-    public TemplateSupport create(Block block, Function<Block, MergedModel> modelResolver) {
-        return new MustacheSupport(block, modelResolver);
+    public TemplateSupport create(Block block, Context context) {
+        return new MustacheSupport(block, context);
     }
 }

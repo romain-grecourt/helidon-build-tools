@@ -15,7 +15,6 @@
  */
 package io.helidon.build.archetype.engine.v2;
 
-import io.helidon.build.archetype.engine.v2.Context.ContextValue;
 import io.helidon.build.archetype.engine.v2.ast.Value;
 
 import org.junit.jupiter.api.Test;
@@ -35,7 +34,7 @@ class ContextTest {
         Context context = Context.create();
         context.push("foo", Value.create("foo-value"));
 
-        ContextValue value;
+        Value value;
 
         value = context.lookup("foo");
         assertThat(value, is(notNullValue()));
@@ -63,7 +62,7 @@ class ContextTest {
         Context context = Context.create();
         context.put("foo", Value.create("foo-value"));
 
-        ContextValue value;
+        Value value;
 
         value = context.lookup("foo");
         assertThat(value, is(notNullValue()));
@@ -92,7 +91,7 @@ class ContextTest {
         context.push("foo", Value.create("foo-value"));
         context.push("bar", Value.create("bar-value"));
 
-        ContextValue value;
+        Value value;
 
         value = context.lookup("bar");
         assertThat(value, is(notNullValue()));
@@ -132,7 +131,7 @@ class ContextTest {
         context.push("bar", Value.create("bar-value"));
         context.pop();
 
-        ContextValue value;
+        Value value;
 
         value = context.lookup("bar");
         assertThat(value, is(nullValue()));

@@ -26,6 +26,16 @@ import java.util.Objects;
  */
 public class Value {
 
+    /**
+     * True boolean value.
+     */
+    public static final Value TRUE = new Value(true, ValueTypes.BOOLEAN);
+
+    /**
+     * False boolean value.
+     */
+    public static final Value FALSE = new Value(false, ValueTypes.BOOLEAN);
+
     protected final Object value;
     protected final GenericType<?> type;
 
@@ -143,7 +153,7 @@ public class Value {
      * @return Value
      */
     public static Value create(boolean value) {
-        return new Value(value, ValueTypes.BOOLEAN);
+        return value ? TRUE : FALSE;
     }
 
     /**

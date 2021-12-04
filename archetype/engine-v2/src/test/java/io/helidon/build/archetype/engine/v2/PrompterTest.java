@@ -27,11 +27,11 @@ import io.helidon.build.archetype.engine.v2.ast.ValueTypes;
 
 import org.junit.jupiter.api.Test;
 
-import static io.helidon.build.archetype.engine.v2.Nodes.inputBoolean;
-import static io.helidon.build.archetype.engine.v2.Nodes.inputEnum;
-import static io.helidon.build.archetype.engine.v2.Nodes.inputList;
-import static io.helidon.build.archetype.engine.v2.Nodes.inputOption;
-import static io.helidon.build.archetype.engine.v2.Nodes.inputText;
+import static io.helidon.build.archetype.engine.v2.TestHelper.inputBoolean;
+import static io.helidon.build.archetype.engine.v2.TestHelper.inputEnum;
+import static io.helidon.build.archetype.engine.v2.TestHelper.inputList;
+import static io.helidon.build.archetype.engine.v2.TestHelper.inputOption;
+import static io.helidon.build.archetype.engine.v2.TestHelper.inputText;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;

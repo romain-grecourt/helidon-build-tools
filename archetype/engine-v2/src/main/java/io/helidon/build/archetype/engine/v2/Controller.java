@@ -16,52 +16,27 @@
 
 package io.helidon.build.archetype.engine.v2;
 
-import java.nio.file.Path;
-
 import io.helidon.build.archetype.engine.v2.ast.Block;
 import io.helidon.build.archetype.engine.v2.ast.Condition;
-import io.helidon.build.archetype.engine.v2.ast.Input;
 import io.helidon.build.archetype.engine.v2.ast.Model;
 import io.helidon.build.archetype.engine.v2.ast.Node.VisitResult;
 import io.helidon.build.archetype.engine.v2.ast.Output;
 import io.helidon.build.archetype.engine.v2.ast.Preset;
 
-import static io.helidon.build.archetype.engine.v2.MergedModel.resolveModel;
+import java.util.Objects;
 
 /**
  * Controller.
+ * Context aware visitor adapter with convenience methods to perform full AST traversal with complete flow control.
+ * Always uses an implementation {@link InputResolver} in order to control the flow of input nodes.
  */
 final class Controller extends VisitorAdapter<Context> {
 
-    // TODO unit test
+    private Controller(InputResolver inputResolver,
+                       Output.Visitor<Context> outputVisitor,
+                       Model.Visitor<Context> modelVisitor) {
 
-    /**
-     * Create a new controller instance.
-     *
-     * @param inputVisitor input visitor
-     * @param modelVisitor model visitor
-     */
-    Controller(Input.Visitor<Context> inputVisitor, Model.Visitor<Context> modelVisitor) {
-        super(inputVisitor, null, modelVisitor);
-    }
-
-    /**
-     * Create a new controller instance.
-     *
-     * @param inputVisitor  input visitor
-     * @param outputVisitor output visitor
-     */
-    Controller(Input.Visitor<Context> inputVisitor, Output.Visitor<Context> outputVisitor) {
-        super(inputVisitor, outputVisitor, null);
-    }
-
-    /**
-     * Create a new controller instance.
-     *
-     * @param inputVisitor input visitor
-     */
-    Controller(Input.Visitor<Context> inputVisitor) {
-        super(inputVisitor, null, null);
+        super(inputResolver, outputVisitor, modelVisitor);
     }
 
     @Override
@@ -97,26 +72,96 @@ final class Controller extends VisitorAdapter<Context> {
     }
 
     /**
-     * Resolve inputs.
+     * Walk.
      *
      * @param inputResolver input resolver
-     * @param block         block
-     * @param context       context
+     * @param block         block, must be non {@code null}
+     * @param context       context, must be non {@code null}
+     * @throws NullPointerException if context or block is {@code null}
      */
-    static void resolveInputs(InputResolver inputResolver, Block block, Context context) {
-        Walker.walk(new Controller(inputResolver), block, context);
+    static void walk(InputResolver inputResolver, Block block, Context context) {
+        walk(inputResolver, null, null, block, context);
     }
 
     /**
-     * Generate output.
+     * Walk.
      *
      * @param inputResolver input resolver
-     * @param block         block
-     * @param context       context
-     * @param directory     directory
+     * @param outputVisitor output visitor
+     * @param block         block, must be non {@code null}
+     * @param context       context, must be non {@code null}
+     * @throws NullPointerException if context or block is {@code null}
      */
-    static void generateOutput(InputResolver inputResolver, Block block, Context context, Path directory) {
-        Generator generator = new Generator(block, directory, b -> resolveModel(inputResolver, b, context));
-        Walker.walk(new Controller(inputResolver, generator), block, context);
+    static void walk(InputResolver inputResolver, Output.Visitor<Context> outputVisitor, Block block, Context context) {
+        walk(inputResolver, outputVisitor, null, block, context);
+    }
+
+    /**
+     * Walk.
+     *
+     * @param inputResolver input resolver
+     * @param modelVisitor  model visitor
+     * @param block         block, must be non {@code null}
+     * @param context       context, must be non {@code null}
+     * @throws NullPointerException if context or block is {@code null}
+     */
+    static void walk(InputResolver inputResolver, Model.Visitor<Context> modelVisitor, Block block, Context context) {
+        walk(inputResolver, null, modelVisitor, block, context);
+    }
+
+    /**
+     * Walk using a {@link Batch} input resolver.
+     *
+     * @param block   block, must be non {@code null}
+     * @param context context, must be non {@code null}
+     * @throws NullPointerException if context or block is {@code null}
+     */
+    static void walk(Block block, Context context) {
+        walk(new Batch(), null, null, block, context);
+    }
+
+    /**
+     * Walk using a {@link Batch} input resolver.
+     *
+     * @param outputVisitor output visitor
+     * @param block         block, must be non {@code null}
+     * @param context       context, must be non {@code null}
+     * @throws NullPointerException if context or block is {@code null}
+     */
+    static void walk(Output.Visitor<Context> outputVisitor, Block block, Context context) {
+        walk(new Batch(), outputVisitor, null, block, context);
+    }
+
+    /**
+     * Walk using a {@link Batch} input resolver.
+     *
+     * @param modelVisitor model visitor
+     * @param block        block, must be non {@code null}
+     * @param context      context, must be non {@code null}
+     * @throws NullPointerException if context or block is {@code null}
+     */
+    static void walk(Model.Visitor<Context> modelVisitor, Block block, Context context) {
+        walk(new Batch(), null, modelVisitor, block, context);
+    }
+
+    /**
+     * Walk.
+     *
+     * @param inputResolver input resolver
+     * @param outputVisitor output visitor
+     * @param modelVisitor  model visitor
+     * @param block         block, must be non {@code null}
+     * @param context       context, must be non {@code null}
+     * @throws NullPointerException if context or block is {@code null}
+     */
+    static void walk(InputResolver inputResolver,
+                     Output.Visitor<Context> outputVisitor,
+                     Model.Visitor<Context> modelVisitor,
+                     Block block,
+                     Context context) {
+
+        Objects.requireNonNull(context, "context is null");
+        Controller controller = new Controller(inputResolver, outputVisitor, modelVisitor);
+        Walker.walk(controller, block, context, context::cwd);
     }
 }

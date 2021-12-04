@@ -28,6 +28,7 @@ import io.helidon.build.archetype.engine.v2.ast.Value;
 import io.helidon.build.archetype.engine.v2.ast.ValueTypes;
 import io.helidon.build.common.GenericType;
 
+import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
 
 /**
@@ -96,7 +97,24 @@ public final class Context {
      * @param value value
      */
     public void put(String path, Value value) {
-        values.put(path, new ContextValue(value, true));
+        ContextValue current = values.get(path);
+        if (current == null) {
+            values.put(path, new ContextValue(value, true));
+        } else {
+            String fullPath = inputs.stream().map(i -> i + "=" + values.get(i).unwrap()).collect(joining(";"));
+            String peek = inputs.peek();
+            String name = peek == null ? path : path.substring(peek.length());
+            if (current.external) {
+                throw new IllegalStateException(String.format(
+                        "%s requires %s=%s", fullPath, name, value.unwrap()));
+            } else if (current.internal) {
+                throw new IllegalStateException(String.format(
+                        "Archetype error, internal value '%s' already set", path));
+            } else {
+                throw new IllegalStateException(String.format(
+                        "Archetype error, value '%s' already set", path));
+            }
+        }
     }
 
     /**
@@ -105,7 +123,7 @@ public final class Context {
      * @param name input name
      * @return {@code true} if the input path was pushed, {@code false} otherwise
      */
-    public boolean push(String name) {
+    public boolean pushIfPresent(String name) {
         String path = path(name);
         if (values.get(path) != null) {
             inputs.push(path);
@@ -143,7 +161,7 @@ public final class Context {
      * @param path input path
      * @return value, {@code null} if not found
      */
-    public ContextValue lookup(String path) {
+    public Value lookup(String path) {
         String current = inputs.peek();
         if (current == null) {
             current = "";
@@ -178,7 +196,13 @@ public final class Context {
         return values.get(key);
     }
 
-    private String path(String name) {
+    /**
+     * Compute the path for a given input name.
+     *
+     * @param name name
+     * @return input path
+     */
+    public String path(String name) {
         String path = inputs.peek();
         if (path != null) {
             path += "." + name;
@@ -222,28 +246,21 @@ public final class Context {
     /**
      * Context value.
      */
-    public static class ContextValue extends Value {
+    private static class ContextValue extends Value {
 
         private final boolean internal;
+        private final boolean external;
 
         private ContextValue(Object value, GenericType<?> type) {
             super(value, type);
             internal = false;
+            external = true;
         }
 
         private ContextValue(Value value, boolean internal) {
             super(value.unwrap(), value.type());
             this.internal = internal;
-        }
-
-        /**
-         * Is the value internal.
-         *
-         * @return {@code true} if external, {@code false} otherwise
-         */
-        @SuppressWarnings("unused")
-        public boolean internal() {
-            return internal;
+            this.external = true;
         }
     }
 

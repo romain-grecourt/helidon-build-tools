@@ -291,9 +291,7 @@ abstract class ArchetypeInvoker {
         Path invoke() {
             ArchetypeEngineV2 engine = new ArchetypeEngineV2(archetype());
             Map<String, String> initProperties = initOptions().initProperties();
-            Path projectDir = projectDirSupplier().apply(initProperties.get("name"));
-            engine.generate(new Prompter(System.in), initProperties, Map.of(), projectDir);
-            return projectDir;
+            return engine.generate(new Prompter(System.in), initProperties, Map.of(), projectDirSupplier());
         }
 
         @Override
@@ -304,6 +302,12 @@ abstract class ArchetypeInvoker {
         private FileSystem archetype() {
             // TODO This is a temporary method which need to be removed
             //  Instead, a mechanism for passing archetype to cli has to be found.
+
+
+            // TODO grab the archetype path from initOptions if it is there
+            //   If the path ends with .zip, create a zip filesystem
+            //   Otherwise it is a directory create a virtual filesystem
+            // TODO otherwise use a new method in metadata to get the path fo the archetype.zip
             try {
                 Path tempDirectory = Files.createTempDirectory("archetype");
                 Path data = tempDirectory.resolve("cli-data.zip");

@@ -24,8 +24,11 @@ import io.helidon.build.archetype.engine.v2.ast.Value;
 
 /**
  * Input resolver.
+ * Provides input resolution and controls the traversal of input nodes.
+ *
+ * @see Controller
  */
-public class InputResolver implements Input.Visitor<Context> {
+public abstract class InputResolver implements Input.Visitor<Context> {
 
     private NamedInput lastVisited;
 
@@ -38,7 +41,7 @@ public class InputResolver implements Input.Visitor<Context> {
      */
     protected boolean onVisitInput(NamedInput input, Context context) {
         lastVisited = input;
-        return context.push(input.name());
+        return context.pushIfPresent(input.name());
     }
 
     /**
@@ -57,45 +60,11 @@ public class InputResolver implements Input.Visitor<Context> {
     }
 
     @Override
-    public VisitResult visitBoolean(Input.Boolean input, Context context) {
-        return visit(input, context);
-    }
-
-    @Override
-    public VisitResult visitText(Input.Text input, Context context) {
-        return visit(input, context);
-    }
-
-    @Override
-    public VisitResult visitEnum(Input.Enum input, Context context) {
-        return visit(input, context);
-    }
-
-    @Override
-    public VisitResult visitList(Input.List input, Context context) {
-        return visit(input, context);
-    }
-
-    /**
-     * Default visit implementation.
-     *
-     * @param input   input
-     * @param context context
-     * @return result
-     */
-    protected VisitResult visit(NamedInput input, Context context) {
-        if (onVisitInput(input, context)) {
-            return VisitResult.CONTINUE;
-        }
-        return VisitResult.SKIP_SUBTREE;
-    }
-
-    @Override
     public VisitResult visitOption(Option option, Context context) {
         if (lastVisited == null) {
             throw new IllegalStateException("lastVisited must be non null");
         }
-        Context.ContextValue inputValue = context.lookup(lastVisited.name());
+        Value inputValue = context.lookup(lastVisited.name());
         if (inputValue != null) {
             if (lastVisited instanceof Input.List) {
                 if (inputValue.asList().contains(option.value())) {

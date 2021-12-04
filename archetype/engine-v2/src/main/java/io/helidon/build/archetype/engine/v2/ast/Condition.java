@@ -72,7 +72,7 @@ public final class Condition extends Statement {
     public static final class Builder extends Statement.Builder<Condition, Builder> {
 
         private Expression expression;
-        private Statement.Builder<?, ?> then;
+        Statement.Builder<?, ?> then;
 
         private Builder(Path scriptPath, Position position) {
             super(scriptPath, position);

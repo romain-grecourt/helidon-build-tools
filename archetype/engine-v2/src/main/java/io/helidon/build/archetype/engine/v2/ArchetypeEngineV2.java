@@ -19,11 +19,11 @@ package io.helidon.build.archetype.engine.v2;
 import java.nio.file.FileSystem;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.function.Function;
 
 import io.helidon.build.archetype.engine.v2.ast.Block;
 
-import static io.helidon.build.archetype.engine.v2.Controller.generateOutput;
-import static io.helidon.build.archetype.engine.v2.Controller.resolveInputs;
+import static java.util.Objects.requireNonNull;
 
 /**
  * Archetype engine (v2).
@@ -44,22 +44,33 @@ public class ArchetypeEngineV2 {
     }
 
     /**
-     * Run the archetype.
+     * Generate a project.
      *
-     * @param inputResolver    input resolver
-     * @param externalValues   external values
-     * @param externalDefaults external defaults
-     * @param directory        output directory
+     * @param inputResolver     input resolver
+     * @param externalValues    external values
+     * @param externalDefaults  external defaults
+     * @param directorySupplier output directory supplier
+     * @return output directory
      */
-    public void generate(InputResolver inputResolver,
+    public Path generate(InputResolver inputResolver,
                          Map<String, String> externalValues,
                          Map<String, String> externalDefaults,
-                         Path directory) {
+                         Function<String, Path> directorySupplier) {
 
-        // TODO entry point should be 'main.xml'
         Context context = Context.create(cwd, externalValues, externalDefaults);
         Block block = ScriptLoader.load(cwd.resolve(ENTRYPOINT)).body();
-        resolveInputs(inputResolver, block, context);
-        generateOutput(inputResolver, block, context, directory);
+
+        // resolve inputs
+        Controller.walk(inputResolver, block, context);
+
+        // resolve output directory
+        String projectName = requireNonNull(context.lookup("project.name"), "project name is null").asString();
+        Path directory = directorySupplier.apply(projectName);
+
+        //  generate output
+        Generator generator = new Generator(block, directorySupplier.apply(projectName), context);
+        Controller.walk(generator, block, context);
+
+        return directory;
     }
 }

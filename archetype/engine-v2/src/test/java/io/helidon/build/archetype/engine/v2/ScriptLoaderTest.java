@@ -34,12 +34,13 @@ import io.helidon.build.common.test.utils.TestFiles;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import static io.helidon.build.archetype.engine.v2.Nodes.load0;
-import static io.helidon.build.archetype.engine.v2.Nodes.walk;
+import static io.helidon.build.archetype.engine.v2.TestHelper.load0;
+import static io.helidon.build.archetype.engine.v2.TestHelper.walk;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.empty;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 
 /**
@@ -59,6 +60,8 @@ class ScriptLoaderTest {
                 assertThat(input.name(), is("input1"));
                 assertThat(input.label(), is("Text input"));
                 assertThat(input.help(), is("Help 1"));
+                assertThat(input.isOptional(), is(true));
+                assertThat(input.defaultValue(), is(not(nullValue())));
                 assertThat(input.defaultValue().asString(), is("default#1"));
                 assertThat(input.prompt(), is("Enter 1"));
                 return VisitResult.CONTINUE;
@@ -70,6 +73,7 @@ class ScriptLoaderTest {
                 assertThat(input.name(), is("input2"));
                 assertThat(input.label(), is("Boolean input"));
                 assertThat(input.help(), is("Help 2"));
+                assertThat(input.isOptional(), is(false));
                 assertThat(input.defaultValue().asBoolean(), is(true));
                 assertThat(input.prompt(), is("Enter 2"));
                 return VisitResult.CONTINUE;
@@ -81,11 +85,13 @@ class ScriptLoaderTest {
                 assertThat(input.name(), is("input3"));
                 assertThat(input.label(), is("Enum input"));
                 assertThat(input.help(), is("Help 3"));
+                assertThat(input.isOptional(), is(false));
                 assertThat(input.options().size(), is(2));
                 assertThat(input.options().get(0).value(), is("option3.1"));
                 assertThat(input.options().get(0).label(), is("Option 3.1"));
                 assertThat(input.options().get(1).value(), is("option3.2"));
                 assertThat(input.options().get(1).label(), is("Option 3.2"));
+                assertThat(input.defaultValue(), is(not(nullValue())));
                 assertThat(input.defaultValue().asString(), is("option3.1"));
                 assertThat(input.prompt(), is("Enter 3"));
                 return VisitResult.CONTINUE;
@@ -97,6 +103,7 @@ class ScriptLoaderTest {
                 assertThat(input.name(), is("input4"));
                 assertThat(input.label(), is("List input"));
                 assertThat(input.help(), is("Help 4"));
+                assertThat(input.isOptional(), is(false));
                 assertThat(input.options().get(0).value(), is("item4.1"));
                 assertThat(input.options().get(0).label(), is("Item 4.1"));
                 assertThat(input.options().get(1).value(), is("item4.2"));

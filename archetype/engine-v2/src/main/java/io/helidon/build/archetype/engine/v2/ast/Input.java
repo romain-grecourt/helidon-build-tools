@@ -17,10 +17,10 @@ package io.helidon.build.archetype.engine.v2.ast;
 
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import static java.lang.Boolean.parseBoolean;
 import static java.util.Collections.emptyList;
 import static java.util.stream.Collectors.toList;
 
@@ -245,10 +245,12 @@ public abstract class Input extends Block {
     public static abstract class NamedInput extends Input {
 
         private final String name;
+        private final boolean optional;
 
         private NamedInput(Input.Builder builder) {
             super(builder);
             this.name = builder.attribute("name");
+            this.optional = parseBoolean(builder.attributes.get("optional"));
         }
 
         /**
@@ -258,6 +260,15 @@ public abstract class Input extends Block {
          */
         public String name() {
             return name;
+        }
+
+        /**
+         * Test if this input is optional.
+         *
+         * @return {@code true} if optional, {@code false} otherwise
+         */
+        public boolean isOptional() {
+            return optional;
         }
 
         /**
@@ -338,7 +349,7 @@ public abstract class Input extends Block {
 
         private Boolean(Input.Builder builder) {
             super(builder);
-            defaultValue = java.lang.Boolean.parseBoolean(builder.attributes.get("default"));
+            defaultValue = parseBoolean(builder.attributes.get("default"));
         }
 
         @Override

@@ -26,13 +26,13 @@ import io.helidon.build.archetype.engine.v2.ast.Value;
 
 import org.junit.jupiter.api.Test;
 
-import static io.helidon.build.archetype.engine.v2.Nodes.inputEnum;
-import static io.helidon.build.archetype.engine.v2.Nodes.inputList;
-import static io.helidon.build.archetype.engine.v2.Nodes.model;
-import static io.helidon.build.archetype.engine.v2.Nodes.modelList;
-import static io.helidon.build.archetype.engine.v2.Nodes.modelValue;
-import static io.helidon.build.archetype.engine.v2.Nodes.inputOption;
-import static io.helidon.build.archetype.engine.v2.Nodes.output;
+import static io.helidon.build.archetype.engine.v2.TestHelper.inputEnum;
+import static io.helidon.build.archetype.engine.v2.TestHelper.inputList;
+import static io.helidon.build.archetype.engine.v2.TestHelper.model;
+import static io.helidon.build.archetype.engine.v2.TestHelper.modelList;
+import static io.helidon.build.archetype.engine.v2.TestHelper.modelValue;
+import static io.helidon.build.archetype.engine.v2.TestHelper.inputOption;
+import static io.helidon.build.archetype.engine.v2.TestHelper.output;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 
@@ -68,15 +68,15 @@ public class InputResolverTest {
     }
 
     private static List<String> modelValues(Block block, Context context) {
-        List<String> colors = new LinkedList<>();
-        Walker.walk(new VisitorAdapter<>(new InputResolver(), null,
+        List<String> values = new LinkedList<>();
+        Walker.walk(new VisitorAdapter<>(new Batch(), null,
                 new Model.Visitor<>() {
                     @Override
                     public VisitResult visitValue(Model.Value value, Context arg) {
-                        colors.add(value.value());
+                        values.add(value.value());
                         return VisitResult.CONTINUE;
                     }
                 }), block, context);
-        return colors;
+        return values;
     }
 }

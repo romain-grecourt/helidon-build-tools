@@ -26,15 +26,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import io.helidon.build.archetype.engine.v2.Context.ContextValue;
 import io.helidon.build.archetype.engine.v2.ast.Block;
 import io.helidon.build.archetype.engine.v2.ast.Node.VisitResult;
 import io.helidon.build.archetype.engine.v2.ast.Output;
 import io.helidon.build.archetype.engine.v2.ast.Output.Template;
 import io.helidon.build.archetype.engine.v2.ast.Output.Transformation;
+import io.helidon.build.archetype.engine.v2.ast.Value;
 import io.helidon.build.archetype.engine.v2.spi.TemplateSupport;
 import io.helidon.build.common.PropertyEvaluator;
 import io.helidon.build.common.SourcePath;
@@ -53,12 +52,12 @@ public class Generator implements Output.Visitor<Context> {
 
     private final Path outputDir;
     private final Block block;
-    private final Function<Block, MergedModel> modelResolver;
+    private final Context context;
 
-    Generator(Block block, Path outputDir, Function<Block, MergedModel> modelResolver) {
+    Generator(Block block, Path outputDir, Context context) {
         this.block = block;
         this.outputDir = outputDir;
-        this.modelResolver = modelResolver;
+        this.context = context;
     }
 
     @Override
@@ -140,7 +139,7 @@ public class Generator implements Output.Visitor<Context> {
     }
 
     private String resolveVariable(String var, Context ctx) {
-        ContextValue value = ctx.lookup(var);
+        Value value = ctx.lookup(var);
         if (value == null) {
             throw new IllegalArgumentException("Unresolved variable: " + var);
         }
@@ -165,6 +164,6 @@ public class Generator implements Output.Visitor<Context> {
     }
 
     private TemplateSupport templateSupport(String engine) {
-        return templateSupports.computeIfAbsent(engine, eng -> providerByName(eng).create(block, modelResolver));
+        return templateSupports.computeIfAbsent(engine, eng -> providerByName(eng).create(block, context));
     }
 }

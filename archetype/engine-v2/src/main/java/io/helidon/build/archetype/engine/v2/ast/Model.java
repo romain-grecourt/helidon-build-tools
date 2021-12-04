@@ -275,13 +275,22 @@ public abstract class Model extends Block {
             return this;
         }
 
+        private static Block.Builder valueBuilder(Noop.Builder noop) {
+            return new Builder(noop.scriptPath, noop.position, Kind.VALUE)
+                    .value(noop.value)
+                    .attributes(noop.attributes);
+        }
+
         @Override
         protected Block doBuild() {
             statements.replaceAll(b -> {
                 if (b instanceof Noop.Builder) {
-                    return new Builder(b.scriptPath, b.position, Kind.VALUE)
-                            .value(((Noop.Builder) b).value)
-                            .attributes(b.attributes);
+                    return valueBuilder((Noop.Builder) b);
+                } else if (b instanceof Condition.Builder) {
+                    Condition.Builder c = (Condition.Builder) b;
+                    if (c.then instanceof Noop.Builder) {
+                        c.then(valueBuilder((Noop.Builder) c.then));
+                    }
                 }
                 return b;
             });

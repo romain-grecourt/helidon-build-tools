@@ -22,13 +22,14 @@ import java.nio.file.Path;
 import java.util.function.Consumer;
 
 import io.helidon.build.archetype.engine.v2.ast.Block;
+import io.helidon.build.archetype.engine.v2.ast.Script;
 import io.helidon.build.archetype.engine.v2.ast.Value;
 import io.helidon.build.common.Strings;
 import io.helidon.build.common.test.utils.TestFiles;
 
 import org.junit.jupiter.api.Test;
 
-import static io.helidon.build.archetype.engine.v2.Controller.generateOutput;
+import static io.helidon.build.archetype.engine.v2.TestHelper.load;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -97,15 +98,16 @@ class GeneratorTest {
     }
 
     private static Path generate(String path, Consumer<Context> initializer) {
-        Path target = TestFiles.targetDir(GeneratorTest.class);
-        Path testResources = target.resolve("test-classes");
-        Path scriptPath = testResources.resolve(path);
+        Script script = load(path);
+        Path scriptPath = script.scriptPath();
         String dirname = scriptPath.getFileName().toString().replaceAll(".xml", "");
+        Path target = TestFiles.targetDir(GeneratorTest.class);
         Path outputDir = target.resolve("generator-ut/" + dirname);
-        Context context = Context.create(scriptPath.getParent());
+        Context context = Context.create(script.scriptPath().getParent());
         initializer.accept(context);
-        Block block = ScriptLoader.load(scriptPath).body();
-        generateOutput(new InputResolver(), block, context, outputDir);
+        Block block = script.body();
+        Generator generator = new Generator(block, outputDir, context);
+        Controller.walk(generator, block, context);
         return outputDir;
     }
 

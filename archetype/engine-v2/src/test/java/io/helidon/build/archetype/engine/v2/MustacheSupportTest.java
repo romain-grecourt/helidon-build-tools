@@ -24,11 +24,10 @@ import io.helidon.build.archetype.engine.v2.ast.Block;
 import com.github.mustachejava.MustacheException;
 import org.junit.jupiter.api.Test;
 
-import static io.helidon.build.archetype.engine.v2.Nodes.model;
-import static io.helidon.build.archetype.engine.v2.Nodes.modelList;
-import static io.helidon.build.archetype.engine.v2.Nodes.modelMap;
-import static io.helidon.build.archetype.engine.v2.Nodes.modelValue;
-import static io.helidon.build.archetype.engine.v2.MergedModel.resolveModel;
+import static io.helidon.build.archetype.engine.v2.TestHelper.model;
+import static io.helidon.build.archetype.engine.v2.TestHelper.modelList;
+import static io.helidon.build.archetype.engine.v2.TestHelper.modelMap;
+import static io.helidon.build.archetype.engine.v2.TestHelper.modelValue;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.instanceOf;
@@ -236,7 +235,7 @@ class MustacheSupportTest {
     private static String render(String template, Block scope, Block extraScope) {
         InputStream is = new ByteArrayInputStream(template.getBytes(UTF_8));
         ByteArrayOutputStream os = new ByteArrayOutputStream();
-        MustacheSupport support = new MustacheSupport(scope, b -> resolveModel(b, null));
+        MustacheSupport support = new MustacheSupport(scope, Context.create());
         support.render(is, "test", UTF_8, os, extraScope);
         return os.toString(UTF_8);
     }
