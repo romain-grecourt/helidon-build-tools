@@ -64,7 +64,8 @@ public interface TemplateSupportProvider {
      * Provider cache.
      */
     class Cache {
-        static final Map<String, TemplateSupportProvider> ENTRIES =
+
+        private static final Map<String, TemplateSupportProvider> ENTRIES =
                 ServiceLoader.load(TemplateSupportProvider.class)
                              .stream()
                              .map(ServiceLoader.Provider::get)

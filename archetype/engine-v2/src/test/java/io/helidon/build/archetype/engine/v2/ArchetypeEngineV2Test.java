@@ -15,22 +15,23 @@
  */
 package io.helidon.build.archetype.engine.v2;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
-import io.helidon.build.common.Strings;
 import io.helidon.build.common.test.utils.TestFiles;
+
 import org.junit.jupiter.api.Test;
 
+import static io.helidon.build.archetype.engine.v2.TestHelper.engine;
+import static io.helidon.build.archetype.engine.v2.TestHelper.readFile;
+import static io.helidon.build.common.test.utils.TestFiles.pathOf;
+import static java.nio.file.Files.isDirectory;
+import static java.util.stream.Collectors.toList;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -40,58 +41,32 @@ import static org.hamcrest.MatcherAssert.assertThat;
  */
 class ArchetypeEngineV2Test {
 
-//    @Test
-    void generateSkipOptional() throws IOException {
-        File targetDir = new File(new File("").getAbsolutePath(), "target");
-        File outputDir = new File(targetDir, "test-project");
-        Path outputDirPath = outputDir.toPath();
-        if (Files.exists(outputDirPath)) {
-            Files.walk(outputDirPath)
-                    .sorted(Comparator.reverseOrder())
-                    .map(Path::toFile)
-                    .forEach(File::delete);
+    private static Path projectDir(Path parentDirectory, String projectName) {
+        Path newProjectDir = parentDirectory.resolve(projectName);
+        for (int i = 1; Files.exists(newProjectDir); i++) {
+            newProjectDir = parentDirectory.resolve(projectName + "-" + i);
         }
-        assertThat(Files.exists(outputDirPath), is(false));
+        return newProjectDir;
+    }
 
-        Map<String, String> initContextValues = new HashMap<>();
-        initContextValues.put("flavor", "se");
-        initContextValues.put("base", "bare");
-        initContextValues.put("build-system", "maven");
-//        ArchetypeEngineV2 archetypeEngineV2 = new ArchetypeEngineV2(getArchetype(
-//                Paths.get("src/main/resources/archetype").toFile()),
-//                "flavor.xml",
-//                new Prompter() {
-//                    @Override
-//                    public String prompt(TextInput input) {
-//                        return null;
-//                    }
-//
-//                    @Override
-//                    public String prompt(EnumInput input) {
-//                        return null;
-//                    }
-//
-//                    @Override
-//                    public List<String> prompt(ListInput input) {
-//                        return null;
-//                    }
-//
-//                    @Override
-//                    public boolean prompt(BooleanInput input) {
-//                        return false;
-//                    }
-//                },
-//                initContextValues,
-//                true);
+    @Test
+    void generateSkipOptional() throws IOException {
 
-//        archetypeEngineV2.generate(outputDir);
-        assertThat(Files.exists(outputDirPath), is(true));
+        Map<String, String> externalValues = Map.of(
+                "flavor", "se",
+                "flavor.base", "bare",
+                "build-system", "maven");
+        Path directory = TestFiles.targetDir(ArchetypeEngineV2Test.class).resolve("e2e");
 
-        assertThat(Files.walk(outputDirPath)
-                        .filter(p -> !Files.isDirectory(p))
-                        .map((p) -> TestFiles.pathOf(outputDirPath.relativize(p)))
+        ArchetypeEngineV2 engine = engine("e2e");
+        Path outputDir = engine.generate(new Batch(), externalValues, Map.of(), n -> projectDir(directory, n));
+        assertThat(Files.exists(outputDir), is(true));
+
+        assertThat(Files.walk(outputDir)
+                        .filter(p -> !isDirectory(p))
+                        .map((p) -> pathOf(outputDir.relativize(p)))
                         .sorted()
-                        .collect(Collectors.toList()),
+                        .collect(toList()),
                 is(List.of(
                         ".helidon",
                         "README.md",
@@ -105,26 +80,26 @@ class ArchetypeEngineV2Test {
                         "src/test/java/io/helidon/examples/bare/se/MainTest.java"
                 )));
 
-        String mainTest = readFile(outputDirPath.resolve("src/test/java/io/helidon/examples/bare/se/MainTest.java"));
+        String mainTest = readFile(outputDir.resolve("src/test/java/io/helidon/examples/bare/se/MainTest.java"));
         assertThat(mainTest, containsString("package io.helidon.examples.bare.se;"));
         assertThat(mainTest, containsString("public class MainTest {"));
 
-        String loggingProperties = readFile(outputDirPath.resolve("src/main/resources/logging.properties"));
+        String loggingProperties = readFile(outputDir.resolve("src/main/resources/logging.properties"));
         assertThat(loggingProperties, containsString("handlers=io.helidon.common.HelidonConsoleHandler"));
 
-        String applicationYaml = readFile(outputDirPath.resolve("src/main/resources/application.yaml"));
+        String applicationYaml = readFile(outputDir.resolve("src/main/resources/application.yaml"));
         assertThat(applicationYaml, containsString("greeting: \"Hello\""));
 
-        String packageInfo = readFile(outputDirPath.resolve("src/main/java/io/helidon/examples/bare/se/package-info.java"));
+        String packageInfo = readFile(outputDir.resolve("src/main/java/io/helidon/examples/bare/se/package-info.java"));
         assertThat(packageInfo, containsString("package io.helidon.examples.bare.se;"));
 
-        String mainClass = readFile(outputDirPath.resolve("src/main/java/io/helidon/examples/bare/se/Main.java"));
+        String mainClass = readFile(outputDir.resolve("src/main/java/io/helidon/examples/bare/se/Main.java"));
         assertThat(mainClass, containsString("package io.helidon.examples.bare.se;"));
 
-        String greetService = readFile(outputDirPath.resolve("src/main/java/io/helidon/examples/bare/se/GreetService.java"));
+        String greetService = readFile(outputDir.resolve("src/main/java/io/helidon/examples/bare/se/GreetService.java"));
         assertThat(greetService, containsString("package io.helidon.examples.bare.se;"));
 
-        String pom = readFile(outputDirPath.resolve("pom.xml"));
+        String pom = readFile(outputDir.resolve("pom.xml"));
         assertThat(pom, containsString("<groupId>io.helidon.applications</groupId>"));
         assertThat(pom, containsString("<artifactId>helidon-bare-se</artifactId>"));
         assertThat(pom, containsString("<mainClass>io.helidon.examples.bare.se.Main</mainClass>"));
@@ -133,19 +108,15 @@ class ArchetypeEngineV2Test {
         assertThat(pom, containsString("<artifactId>maven-dependency-plugin</artifactId>"));
         assertThat(pom, containsString("<id>copy-libs</id>"));
 
-        String readme = readFile(outputDirPath.resolve("README.md"));
+        String readme = readFile(outputDir.resolve("README.md"));
         assertThat(readme, containsString("Helidon SE Bare"));
         assertThat(readme, containsString("java -jar target/helidon-bare-se.jar"));
         assertThat(readme, containsString("## Exercise the application"));
 
-        String helidonFile = readFile(outputDirPath.resolve(".helidon"));
+        String helidonFile = readFile(outputDir.resolve(".helidon"));
         DateTimeFormatter dtf = DateTimeFormatter.ofPattern("EEE MMM dd");
         ZonedDateTime now = ZonedDateTime.now();
         assertThat(helidonFile, containsString(dtf.format(now)));
-        assertThat(helidonFile, containsString("project.directory="+outputDirPath.toString()));
-    }
-
-    private static String readFile(Path file) throws IOException {
-        return Strings.normalizeNewLines(Files.readString(file));
+        assertThat(helidonFile, containsString("project.directory=" + outputDir));
     }
 }

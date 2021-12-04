@@ -21,15 +21,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.function.Consumer;
 
-import io.helidon.build.archetype.engine.v2.ast.Block;
 import io.helidon.build.archetype.engine.v2.ast.Script;
 import io.helidon.build.archetype.engine.v2.ast.Value;
-import io.helidon.build.common.Strings;
 import io.helidon.build.common.test.utils.TestFiles;
 
 import org.junit.jupiter.api.Test;
 
 import static io.helidon.build.archetype.engine.v2.TestHelper.load;
+import static io.helidon.build.archetype.engine.v2.TestHelper.readFile;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -105,13 +104,8 @@ class GeneratorTest {
         Path outputDir = target.resolve("generator-ut/" + dirname);
         Context context = Context.create(script.scriptPath().getParent());
         initializer.accept(context);
-        Block block = script.body();
-        Generator generator = new Generator(block, outputDir, context);
-        Controller.walk(generator, block, context);
+        Generator generator = new Generator(script, outputDir, context);
+        Controller.walk(generator, script, context);
         return outputDir;
-    }
-
-    private static String readFile(Path file) throws IOException {
-        return Strings.normalizeNewLines(Files.readString(file));
     }
 }

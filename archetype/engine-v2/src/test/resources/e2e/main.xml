@@ -24,10 +24,10 @@
         <inputs>
             <enum name="flavor" label="Select a flavor">
                 <option value="se" label="Helidon SE">
-                    <source src="se/se.xml"/>
+                    <exec src="se/se.xml"/>
                 </option>
                 <option value="mp" label="Helidon MP">
-                    <source src="mp/mp.xml"/>
+                    <exec src="mp/mp.xml"/>
                 </option>
             </enum>
         </inputs>

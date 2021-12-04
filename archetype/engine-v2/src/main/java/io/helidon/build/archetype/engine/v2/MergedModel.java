@@ -23,6 +23,9 @@ import java.util.LinkedList;
 
 /**
  * Merged model.
+ * Tree representation of the model nodes for a given block.
+ *
+ * @see #resolveModel(Block, Context)
  */
 public abstract class MergedModel {
 
@@ -37,11 +40,12 @@ public abstract class MergedModel {
     }
 
     /**
-     * Resolve the model for the given block.
+     * Perform a full traversal of the given block to resolve the merged model tree.
      *
-     * @param block   block
-     * @param context context
-     * @return model
+     * @param block   block, must be non {@code null}
+     * @param context context, must be non {@code null}
+     * @return root node of the merged model tree
+     * @throws NullPointerException if context or block is {@code null}
      */
     public static MergedModel resolveModel(Block block, Context context) {
         ModelResolver modelResolver = new ModelResolver();

@@ -317,7 +317,7 @@ public abstract class Node {
          *
          * @return new instance
          */
-        public final T build() {
+        public T build() {
             if (instance == null) {
                 instance = doBuild();
             }

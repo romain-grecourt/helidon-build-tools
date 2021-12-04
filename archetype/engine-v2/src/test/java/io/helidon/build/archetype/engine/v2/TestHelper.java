@@ -22,9 +22,14 @@ import io.helidon.build.archetype.engine.v2.ast.Model;
 import io.helidon.build.archetype.engine.v2.ast.Node;
 import io.helidon.build.archetype.engine.v2.ast.Output;
 import io.helidon.build.archetype.engine.v2.ast.Script;
+import io.helidon.build.common.Strings;
+import io.helidon.build.common.VirtualFileSystem;
 import io.helidon.build.common.test.utils.TestFiles;
 
+import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.FileSystem;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
@@ -38,6 +43,29 @@ import static org.hamcrest.core.IsNull.notNullValue;
  * Test helper.
  */
 class TestHelper {
+
+    /**
+     * Read the content of a file as a string.
+     *
+     * @param file file
+     * @return string
+     * @throws IOException if an IO error occurs
+     */
+    static String readFile(Path file) throws IOException {
+        return Strings.normalizeNewLines(Files.readString(file));
+    }
+
+    /**
+     * Create a new archetype engine.
+     *
+     * @param path archetype directory path under {@code test-classes}.
+     * @return engine
+     */
+    static ArchetypeEngineV2 engine(String path) {
+        Path target = TestFiles.targetDir(TestHelper.class);
+        FileSystem fileSystem = VirtualFileSystem.create(target.resolve("test-classes/" + path));
+        return new ArchetypeEngineV2(fileSystem);
+    }
 
     /**
      * Load a script using the {@code test-classes} directory.
@@ -70,7 +98,7 @@ class TestHelper {
      * @param script  script
      */
     static void walk(Node.Visitor<Void> visitor, Script script) {
-        Walker.walk(visitor, script.body(), null);
+        Walker.walk(visitor, script, null);
     }
 
     /**
@@ -80,7 +108,7 @@ class TestHelper {
      * @param script  script
      */
     static void walk(Input.Visitor<Void> visitor, Script script) {
-        Walker.walk(new VisitorAdapter<>(visitor, null, null), script.body(), null);
+        Walker.walk(new VisitorAdapter<>(visitor, null, null), script, null);
     }
 
     /**
@@ -90,7 +118,7 @@ class TestHelper {
      * @param script  script
      */
     static void walk(Output.Visitor<Void> visitor, Script script) {
-        Walker.walk(new VisitorAdapter<>(null, visitor, null), script.body(), null);
+        Walker.walk(new VisitorAdapter<>(null, visitor, null), script, null);
     }
 
     /**
@@ -100,7 +128,7 @@ class TestHelper {
      * @param script  script
      */
     static void walk(Model.Visitor<Void> visitor, Script script) {
-        Walker.walk(new VisitorAdapter<>(null, null, visitor), script.body(), null);
+        Walker.walk(new VisitorAdapter<>(null, null, visitor), script, null);
     }
 
     /**

@@ -54,6 +54,14 @@ public class Generator implements Output.Visitor<Context> {
     private final Block block;
     private final Context context;
 
+    /**
+     * Create a new generator.
+     *
+     * @param block     block,  must be non {@code null}
+     * @param outputDir output directory
+     * @param context   context, must be non {@code null}
+     * @throws NullPointerException if context or block is {@code null}
+     */
     Generator(Block block, Path outputDir, Context context) {
         this.block = block;
         this.outputDir = outputDir;

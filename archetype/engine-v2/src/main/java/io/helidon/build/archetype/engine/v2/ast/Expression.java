@@ -16,8 +16,6 @@
 
 package io.helidon.build.archetype.engine.v2.ast;
 
-import io.helidon.build.common.GenericType;
-
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Deque;
@@ -34,6 +32,8 @@ import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.StreamSupport;
+
+import io.helidon.build.common.GenericType;
 
 import static java.util.Spliterator.ORDERED;
 import static java.util.Spliterators.spliteratorUnknownSize;

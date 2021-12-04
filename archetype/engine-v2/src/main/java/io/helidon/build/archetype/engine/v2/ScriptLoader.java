@@ -45,6 +45,7 @@ import io.helidon.build.common.xml.SimpleXMLParser.XMLReaderException;
 
 /**
  * Script loader.
+ * XML reader for script document with caching.
  */
 public class ScriptLoader {
 

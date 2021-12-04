@@ -67,7 +67,7 @@ public class VirtualFileSystem extends FileSystem {
 
     private static final VFSProvider PROVIDER = new VFSProvider();
 
-    private final Path internalRoot;
+    private final Path iRoot;
     private final VPath root = new VPath(this, "/");
     private volatile boolean isOpen;
 
@@ -81,8 +81,8 @@ public class VirtualFileSystem extends FileSystem {
         return new VirtualFileSystem(path);
     }
 
-    private VirtualFileSystem(Path internalRoot) {
-        this.internalRoot = internalRoot;
+    private VirtualFileSystem(Path iRoot) {
+        this.iRoot = iRoot;
         this.isOpen = true;
     }
 
@@ -115,7 +115,7 @@ public class VirtualFileSystem extends FileSystem {
     @Override
     public Path getPath(String first, String... more) {
         if (more.length == 0) {
-            if (isWithinBounds(internalRoot.resolve(first))) {
+            if (isWithinBounds(iRoot.resolve("./" + first))) {
                 return new VPath(this, first);
             } else {
                 throw new InvalidVirtualPathException(this, first);
@@ -132,7 +132,7 @@ public class VirtualFileSystem extends FileSystem {
             }
         }
         String path = sb.toString();
-        if (isWithinBounds(internalRoot.resolve(path))) {
+        if (isWithinBounds(iRoot.resolve(path))) {
             return new VPath(this, path);
         }
         throw new InvalidVirtualPathException(this, path);
@@ -145,32 +145,32 @@ public class VirtualFileSystem extends FileSystem {
 
     @Override
     public final UserPrincipalLookupService getUserPrincipalLookupService() {
-        return internalRoot.getFileSystem().getUserPrincipalLookupService();
+        return iRoot.getFileSystem().getUserPrincipalLookupService();
     }
 
     @Override
     public final WatchService newWatchService() throws IOException {
-        return internalRoot.getFileSystem().newWatchService();
+        return iRoot.getFileSystem().newWatchService();
     }
 
     @Override
     public PathMatcher getPathMatcher(String syntaxAndInput) {
-        return internalRoot.getFileSystem().getPathMatcher(syntaxAndInput);
+        return iRoot.getFileSystem().getPathMatcher(syntaxAndInput);
     }
 
     @Override
     public final Iterable<FileStore> getFileStores() {
-        return internalRoot.getFileSystem().getFileStores();
+        return iRoot.getFileSystem().getFileStores();
     }
 
     @Override
     public final Set<String> supportedFileAttributeViews() {
-        return internalRoot.getFileSystem().supportedFileAttributeViews();
+        return iRoot.getFileSystem().supportedFileAttributeViews();
     }
 
     @Override
     public final String toString() {
-        return "virtual:" + internalRoot.toUri();
+        return "virtual:" + iRoot.toUri();
     }
 
     @Override
@@ -181,17 +181,17 @@ public class VirtualFileSystem extends FileSystem {
     private VPath relativize(VPath path, VPath other) {
         Path otherInternal = internal(other);
         if (isWithinBounds(otherInternal)) {
-            otherInternal = internalRoot;
+            otherInternal = iRoot;
         }
         return new VPath(this, internal(path).relativize(otherInternal).toString(), true);
     }
 
     private String normalize(String path) {
-        return internalRoot.relativize(internalRoot.resolve(path).normalize()).toString();
+        return iRoot.relativize(iRoot.resolve(path).normalize()).toString();
     }
 
     private boolean isWithinBounds(Path path) {
-        return path.startsWith(internalRoot);
+        return path.toAbsolutePath().startsWith(iRoot);
     }
 
     private synchronized void cleanup() {
@@ -201,21 +201,21 @@ public class VirtualFileSystem extends FileSystem {
     }
 
     private Path internal(VPath path) {
-        return internalRoot.resolve(path.toString());
+        return iRoot.resolve(path.toString());
     }
 
     private Path relative0(VPath path) {
-        return internalRoot.relativize(internalRoot.resolve(path.toString()));
+        return iRoot.relativize(iRoot.resolve("./" + path.toString()));
     }
 
     private FileSystemProvider provider0() {
-        return internalRoot.getFileSystem().provider();
+        return iRoot.getFileSystem().provider();
     }
 
     private static final class InvalidVirtualPathException extends InvalidPathException {
 
         InvalidVirtualPathException(VirtualFileSystem fs, String input) {
-            super(input, "Not within virtual root: " + fs.internalRoot);
+            super(input, "Not within virtual root: " + fs.iRoot);
         }
     }
 
@@ -291,7 +291,7 @@ public class VirtualFileSystem extends FileSystem {
             if (!fs.isWithinBounds(internal)) {
                 throw new InvalidVirtualPathException(fs, internal.toString());
             }
-            return new VPath(fs, fs.internalRoot.relativize(internal).toString(), true);
+            return new VPath(fs, fs.iRoot.relativize(internal).toString(), true);
         }
 
         @Override
@@ -303,7 +303,7 @@ public class VirtualFileSystem extends FileSystem {
         public URI toUri() {
             try {
                 return new URI("virtual:",
-                        String.format("%s!%s", fs.internalRoot.toUri(), fs.relative0(this)), null);
+                        String.format("%s!%s", fs.iRoot.toUri(), fs.relative0(this)), null);
             } catch (URISyntaxException ex) {
                 throw new AssertionError(ex);
             }
@@ -343,7 +343,7 @@ public class VirtualFileSystem extends FileSystem {
             if (o.path.isEmpty()) {
                 return this;
             }
-            Path internal = fs.relative0(this).resolve(other.toString());
+            Path internal = fs.iRoot.resolve(fs.relative0(this).resolve(other.toString()));
             if (!fs.isWithinBounds(internal)) {
                 throw new InvalidVirtualPathException(fs, internal.toString());
             }
@@ -520,7 +520,7 @@ public class VirtualFileSystem extends FileSystem {
             if (!vlink.fs.isWithinBounds(targetPath)) {
                 throw new InvalidVirtualPathException(vlink.fs, targetPath.toString());
             }
-            return new VPath(vlink.fs, vlink.fs.internalRoot.relativize(targetPath.toAbsolutePath()).toString());
+            return new VPath(vlink.fs, vlink.fs.iRoot.relativize(targetPath.toAbsolutePath()).toString());
         }
 
         @Override
@@ -550,7 +550,7 @@ public class VirtualFileSystem extends FileSystem {
         @Override
         public FileStore getFileStore(Path path) throws IOException {
             VPath vpath = VPath.unwrap(path);
-            return vpath.fs.provider0().getFileStore(vpath.fs.internalRoot);
+            return vpath.fs.provider0().getFileStore(vpath.fs.iRoot);
         }
 
         @Override
@@ -598,7 +598,7 @@ public class VirtualFileSystem extends FileSystem {
             return new DirectoryStream<>() {
                 @Override
                 public Iterator<Path> iterator() {
-                    return stream.map(p -> (Path) new VPath(vpath.fs, vpath.fs.internalRoot.relativize(p).toString()))
+                    return stream.map(p -> (Path) new VPath(vpath.fs, vpath.fs.iRoot.relativize(p).toString()))
                                  .iterator();
                 }
 

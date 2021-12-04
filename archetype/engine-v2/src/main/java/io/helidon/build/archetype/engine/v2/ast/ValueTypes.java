@@ -21,7 +21,7 @@ import io.helidon.build.common.GenericType;
 import java.util.List;
 
 /**
- * All supported value types.
+ * All built-in value types.
  */
 public final class ValueTypes {
 

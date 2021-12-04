@@ -31,9 +31,9 @@
     <exec src="customize-hello-world.xml"/>
     <output>
         <model>
-            <item id="readme-description">Minimal Helidon SE project suitable to start from scratch.</item>
-            <list id="readme-section">
-                <item order="20">
+            <value key="readme-description">Minimal Helidon SE project suitable to start from scratch.</value>
+            <list key="readme-section">
+                <value order="20">
                     <![CDATA[
                     ## Exercise the application
 
@@ -60,7 +60,7 @@
                     . . .
                     ```
 ]]>
-                </item>
+                </value>
             </list>
         </model>
     </output>

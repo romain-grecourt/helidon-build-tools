@@ -30,6 +30,7 @@ import java.util.stream.Collectors;
 
 import static io.helidon.build.common.ansi.AnsiTextStyles.Bold;
 import static io.helidon.build.common.ansi.AnsiTextStyles.BoldBlue;
+import static io.helidon.build.common.ansi.AnsiTextStyles.BoldRed;
 
 /**
  * Prompter that uses CLI for input/output.
@@ -137,7 +138,7 @@ public class Prompter extends InputResolver {
                     }
                 }
             } catch (NumberFormatException e) {
-                // TODO print error message
+                System.out.println(BoldRed.apply(e.getMessage()));
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -175,7 +176,7 @@ public class Prompter extends InputResolver {
                     return VisitResult.CONTINUE;
                 }
             } catch (NumberFormatException | IndexOutOfBoundsException e) {
-                // TODO print error message
+                System.out.println(BoldRed.apply(e.getMessage()));
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -204,10 +205,10 @@ public class Prompter extends InputResolver {
     }
 
     private String prompt(String prompt, String defaultText) throws IOException {
-        String prompText = defaultText != null
+        String promptText = defaultText != null
                 ? String.format("%s (default: %s): ", prompt, defaultText)
                 : String.format("%s: ", prompt);
-        System.out.print(Bold.apply(prompText));
+        System.out.print(Bold.apply(promptText));
         System.out.flush();
         return new BufferedReader(new InputStreamReader(in)).readLine();
     }

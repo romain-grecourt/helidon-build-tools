@@ -34,6 +34,7 @@ import java.util.function.Supplier;
 
 /**
  * Block walker.
+ * Provides facility to do depth-first traversal of the AST tree.
  *
  * @param <A> visitor argument type
  */
@@ -77,6 +78,7 @@ public final class Walker<A> {
         this.pathResolver = pathResolver;
     }
 
+    // TODO create an invocation stack to make a stack trace when exception are thrown
     private void walk(Block block, A arg) {
         Objects.requireNonNull(block, "block is null");
         Node.VisitResult result = block.accept(visitor, arg);
@@ -149,9 +151,9 @@ public final class Walker<A> {
             }
             Script script = ScriptLoader.load(pathResolver.apply(invocation).resolve(invocation.src()));
             if (invocation.kind() == Invocation.Kind.EXEC) {
-                stack.push(script.body().wrap(Block.Kind.CD));
+                stack.push(script.wrap(Block.Kind.CD));
             } else {
-                stack.push(script.body());
+                stack.push(script);
             }
             parents.push(invocation);
             traversing = true;

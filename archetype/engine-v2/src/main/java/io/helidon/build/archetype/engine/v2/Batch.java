@@ -23,6 +23,7 @@ import io.helidon.build.archetype.engine.v2.ast.Value;
 
 /**
  * Batch input resolver.
+ * Only fails if a non-optional input is unresolved, or an optional input cannot be resolved with a default value.
  */
 public class Batch extends InputResolver {
 

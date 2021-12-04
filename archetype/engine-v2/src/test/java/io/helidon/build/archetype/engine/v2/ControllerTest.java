@@ -24,8 +24,8 @@ import io.helidon.build.archetype.engine.v2.ast.Model;
 import io.helidon.build.archetype.engine.v2.ast.Node.VisitResult;
 import io.helidon.build.archetype.engine.v2.ast.Script;
 import io.helidon.build.archetype.engine.v2.ast.Value;
-
 import io.helidon.build.archetype.engine.v2.ast.ValueTypes;
+
 import org.junit.jupiter.api.Test;
 
 import static io.helidon.build.archetype.engine.v2.TestHelper.load;
@@ -45,7 +45,7 @@ class ControllerTest {
     void testPresets() {
         Script script = load0("controller/presets.xml");
         Context context = Context.create();
-        Controller.walk(script.body(), context);
+        Controller.walk(script, context);
 
         Value preset1 = context.lookup("preset1");
         assertThat(preset1, is(not(nullValue())));
@@ -79,7 +79,7 @@ class ControllerTest {
         context.put("doBlue", Value.TRUE);
         context.put("doShapes", Value.FALSE);
 
-        List<String> values = modelValues(script.body(), context);
+        List<String> values = modelValues(script, context);
         assertThat(values, contains("red", "blue"));
     }
 
@@ -88,7 +88,7 @@ class ControllerTest {
         Script script = load("controller/exec.xml");
         Context context = Context.create(script.scriptPath().getParent());
 
-        List<String> values = modelValues(script.body(), context);
+        List<String> values = modelValues(script, context);
         assertThat(values, contains("red"));
     }
 
@@ -97,7 +97,7 @@ class ControllerTest {
         Script script = load("controller/source.xml");
         Context context = Context.create(script.scriptPath().getParent());
 
-        List<String> values = modelValues(script.body(), context);
+        List<String> values = modelValues(script, context);
         assertThat(values, contains("green"));
     }
 

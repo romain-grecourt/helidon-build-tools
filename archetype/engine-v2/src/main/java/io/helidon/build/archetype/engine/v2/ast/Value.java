@@ -23,6 +23,7 @@ import java.util.Objects;
 
 /**
  * Value.
+ * The wrapped value is typed and can only be used as such.
  */
 public class Value {
 

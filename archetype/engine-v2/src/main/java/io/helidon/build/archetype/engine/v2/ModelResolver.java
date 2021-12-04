@@ -20,6 +20,7 @@ import io.helidon.build.archetype.engine.v2.ast.Node;
 
 /**
  * Model resolver.
+ * Builds a tree of model nodes that are merged while building.
  */
 final class ModelResolver implements Model.Visitor<Context> {
 

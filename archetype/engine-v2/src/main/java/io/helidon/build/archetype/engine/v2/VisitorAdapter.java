@@ -25,6 +25,7 @@ import io.helidon.build.archetype.engine.v2.ast.Output;
 
 /**
  * Visitor adapter.
+ * Combines all visitor interfaces together in order to facilitate the use of individual visitor interfaces.
  *
  * @param <A> visitor argument type
  */

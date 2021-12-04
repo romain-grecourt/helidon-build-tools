@@ -23,6 +23,7 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import io.helidon.build.archetype.engine.v2.ast.Value;
 import io.helidon.build.archetype.engine.v2.ast.ValueTypes;
@@ -33,6 +34,13 @@ import static java.util.stream.Collectors.toList;
 
 /**
  * Context.
+ * Holds the state for an archetype invocation.
+ *
+ * <ul>
+ *     <li>Used to maintain the current working directory for resolving files and scripts.</li>
+ *     <li>Used to maintain the input nesting hierarchy</li>
+ *     <li>Used to maintain the values (external, internal, pushed)</li>
+ * </ul>
  */
 public final class Context {
 
@@ -45,6 +53,8 @@ public final class Context {
     private final Deque<String> inputs = new ArrayDeque<>();
 
     private Context(Path cwd, Map<String, String> externalValues, Map<String, String> externalDefaults) {
+        Objects.requireNonNull(externalDefaults, "externalDefaults is null");
+        Objects.requireNonNull(externalDefaults, "externalValues is null");
         externalDefaults.forEach((k, v) -> defaults.put(k, new ExternalValue(v)));
         externalValues.forEach((k, v) -> values.put(k, new ExternalValue(v)));
         directories.push(cwd);
@@ -95,6 +105,7 @@ public final class Context {
      *
      * @param path  input path
      * @param value value
+     * @throws IllegalStateException if a value already exists
      */
     public void put(String path, Value value) {
         ContextValue current = values.get(path);
@@ -235,9 +246,10 @@ public final class Context {
      * Create a new context.
      *
      * @param cwd              initial working directory
-     * @param externalValues   external values
-     * @param externalDefaults external defaults
+     * @param externalValues   external values, must be non {code null}
+     * @param externalDefaults external defaults, must be non {code null}
      * @return context
+     * @throws NullPointerException if externalValues or externalDefaults is {@code null}
      */
     public static Context create(Path cwd, Map<String, String> externalValues, Map<String, String> externalDefaults) {
         return new Context(cwd, externalValues, externalDefaults);

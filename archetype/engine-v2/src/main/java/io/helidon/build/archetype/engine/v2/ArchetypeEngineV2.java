@@ -21,7 +21,7 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.function.Function;
 
-import io.helidon.build.archetype.engine.v2.ast.Block;
+import io.helidon.build.archetype.engine.v2.ast.Script;
 
 import static java.util.Objects.requireNonNull;
 
@@ -31,6 +31,7 @@ import static java.util.Objects.requireNonNull;
 public class ArchetypeEngineV2 {
 
     private static final String ENTRYPOINT = "main.xml";
+    private static final String PROJECT_NAME = "project.name";
 
     private final Path cwd;
 
@@ -58,18 +59,18 @@ public class ArchetypeEngineV2 {
                          Function<String, Path> directorySupplier) {
 
         Context context = Context.create(cwd, externalValues, externalDefaults);
-        Block block = ScriptLoader.load(cwd.resolve(ENTRYPOINT)).body();
+        Script script = ScriptLoader.load(cwd.resolve(ENTRYPOINT));
 
         // resolve inputs
-        Controller.walk(inputResolver, block, context);
+        Controller.walk(inputResolver, script, context);
 
         // resolve output directory
-        String projectName = requireNonNull(context.lookup("project.name"), "project name is null").asString();
+        String projectName = requireNonNull(context.lookup(PROJECT_NAME), "project name is null").asString();
         Path directory = directorySupplier.apply(projectName);
 
         //  generate output
-        Generator generator = new Generator(block, directorySupplier.apply(projectName), context);
-        Controller.walk(generator, block, context);
+        Generator generator = new Generator(script, directorySupplier.apply(projectName), context);
+        Controller.walk(generator, script, context);
 
         return directory;
     }

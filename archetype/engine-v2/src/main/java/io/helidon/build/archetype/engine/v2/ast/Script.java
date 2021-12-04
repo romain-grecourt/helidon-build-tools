@@ -17,38 +17,14 @@
 package io.helidon.build.archetype.engine.v2.ast;
 
 import java.nio.file.Path;
-import java.util.Objects;
 
 /**
  * Script.
  */
-public final class Script extends Node {
-
-    // TODO investigate how to make script as a block
-
-    private final Block body;
+public final class Script extends Block {
 
     private Script(Builder builder) {
         super(builder);
-        this.body = Objects.requireNonNull(builder.body, "body is null").build();
-    }
-
-    /**
-     * Get the body.
-     *
-     * @return body
-     */
-    public Block body() {
-        return body;
-    }
-
-    @Override
-    public <A> VisitResult accept(Visitor<A> visitor, A arg) {
-        VisitResult result = visitor.visitScript(this, arg);
-        if (result != VisitResult.CONTINUE) {
-            return result;
-        }
-        return body.accept(visitor, arg);
     }
 
     /**
@@ -65,24 +41,20 @@ public final class Script extends Node {
     /**
      * Script builder.
      */
-    public static final class Builder extends Node.Builder<Script, Builder> {
-
-        private final Block.Builder body;
+    public static final class Builder extends Block.Builder {
 
         private Builder(Path scriptPath, Position position) {
-            super(scriptPath, position);
-            this.body = Block.builder(scriptPath, position, Block.Kind.SCRIPT);
-        }
-
-        @Override
-        public Builder statement(Statement.Builder<? extends Statement, ?> builder) {
-            body.statement(builder);
-            return this;
+            super(scriptPath, position, Kind.SCRIPT);
         }
 
         @Override
         protected Script doBuild() {
             return new Script(this);
+        }
+
+        @Override
+        public Script build() {
+            return (Script) super.build();
         }
     }
 }
