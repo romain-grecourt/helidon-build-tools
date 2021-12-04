@@ -138,17 +138,6 @@ public abstract class Node {
     public interface Visitor<A> {
 
         /**
-         * Visit a script.
-         *
-         * @param script script
-         * @param arg    visitor argument
-         * @return visit result
-         */
-        default VisitResult visitScript(Script script, A arg) {
-            return visitAny(script, arg);
-        }
-
-        /**
          * Visit a condition.
          *
          * @param condition condition
@@ -231,7 +220,7 @@ public abstract class Node {
     /**
      * Node builder.
      *
-     * @param <T> sub-type
+     * @param <T> node sub-type
      * @param <U> builder sub-type
      */
     @SuppressWarnings("unchecked")
