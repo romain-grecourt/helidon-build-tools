@@ -163,7 +163,7 @@ class VirtualFileSystemTest {
     @Test
     void testToUri() {
         assertThat(vfs().getPath("green").toUri().toString(),
-                is(String.format("virtual:file://%s/!green", toString(ROOT))));
+                is(String.format("virtual:file://%s%s/!green", IS_WINDOWS ? "/" : "", toString(ROOT))));
     }
 
     @Test
