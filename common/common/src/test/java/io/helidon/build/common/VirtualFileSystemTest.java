@@ -28,6 +28,7 @@ import java.util.stream.Collectors;
 
 import io.helidon.build.common.test.utils.TestFiles;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import static io.helidon.build.common.Strings.normalizeNewLines;
@@ -220,7 +221,7 @@ class VirtualFileSystemTest {
     @Test
     void testWalk() throws IOException {
         FileSystem fs = vfs();
-        List<String> paths = Files.walk(fs.getPath("/")).map(Path::toString).collect(Collectors.toList());
+        List<String> paths = Files.walk(fs.getPath("/")).map(p -> toString(p)).collect(Collectors.toList());
         assertThat(paths, hasItems("/", "dir1", "dir1/file.txt", "blue", "green"));
     }
 
@@ -279,6 +280,7 @@ class VirtualFileSystemTest {
 
     @Test
     void testIsHidden() throws IOException {
+        Assumptions.assumeFalse(System.getProperty("os.name").startsWith("Windows"));
         FileSystem fs = vfs();
         Path path1 = echo(fs.getPath("dir1/.testIsHidden.txt"), "bar\n");
         assertThat(Files.isHidden(path1), is(true));
@@ -309,6 +311,6 @@ class VirtualFileSystemTest {
     }
 
     private String toString(Path path) {
-        return normalizeNewLines(path.toString());
+        return path.toString().replace("\\", "/");
     }
 }
