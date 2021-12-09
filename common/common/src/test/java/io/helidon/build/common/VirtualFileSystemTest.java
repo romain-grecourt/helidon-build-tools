@@ -49,6 +49,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  */
 class VirtualFileSystemTest {
 
+    private static final boolean IS_WINDOWS = System.getProperty("os.name").startsWith("Windows");
     private static final Path ROOT = TestFiles.targetDir(VirtualFileSystemTest.class)
                                               .resolve("test-classes/vfs")
                                               .normalize();
@@ -152,6 +153,7 @@ class VirtualFileSystemTest {
 
     @Test
     void testToRealPath() throws IOException {
+        Assumptions.assumeFalse(IS_WINDOWS);
         FileSystem fs = VirtualFileSystem.create(TestFiles.targetDir(VirtualFileSystemTest.class)
                                                           .resolve("../src/test/resources/vfs")
                                                           .normalize());
@@ -241,6 +243,7 @@ class VirtualFileSystemTest {
 
     @Test
     void testSymbolicLink() {
+        Assumptions.assumeFalse(IS_WINDOWS);
         FileSystem fs = VirtualFileSystem.create(TestFiles.targetDir(VirtualFileSystemTest.class)
                                                           .resolve("../src/test/resources/vfs")
                                                           .normalize());
@@ -280,7 +283,7 @@ class VirtualFileSystemTest {
 
     @Test
     void testIsHidden() throws IOException {
-        Assumptions.assumeFalse(System.getProperty("os.name").startsWith("Windows"));
+        Assumptions.assumeFalse(IS_WINDOWS);
         FileSystem fs = vfs();
         Path path1 = echo(fs.getPath("dir1/.testIsHidden.txt"), "bar\n");
         assertThat(Files.isHidden(path1), is(true));
