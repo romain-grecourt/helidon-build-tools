@@ -186,10 +186,6 @@ public final class DevCommand extends BaseCommand {
             terminalModeOutput = new TerminalModeOutput();
         }
 
-        // Add a shutdown hook to print an exit message
-
-        Runtime.getRuntime().addShutdownHook(new Thread(DevCommand::exiting));
-
         // Execute helidon-maven-cli-plugin to enter dev loop
 
         PrintStream stdOut = terminalMode
@@ -374,7 +370,7 @@ public final class DevCommand extends BaseCommand {
         private void updateProgress(String line) {
             if (!progressCompleted) {
                 if (debugger) {
-                    System.out.println();
+                    STDOUT.println();
                     progressCompleted = true;
                 } else if (!skipHeader) {
                     if (line.contains(DOWNLOADING_MESSAGE_PREFIX)) {
@@ -462,7 +458,7 @@ public final class DevCommand extends BaseCommand {
                         STDOUT.println(errorMessage);
                     }
                 } else {
-                    STDOUT.println(line);
+                    STDOUT.print(line);
                 }
                 if (appendLine) {
                     STDOUT.println();

@@ -26,7 +26,7 @@ init() {
     local -r projectDir=$(dirname "${0}")
     local -r targetDir="${projectDir}/target/"
     local -r jarFile="${targetDir}/helidon.jar"
-    local -r attach="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005"
+    local -r attach="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5008"
     local -r attachMvn="-Dmvn.debug.port=5006"
     local -r attachMvnChild="-Dmvn.child.debug.port=5007"
     local -r attachPlugin="-Dplugin.debug.port=5006"
