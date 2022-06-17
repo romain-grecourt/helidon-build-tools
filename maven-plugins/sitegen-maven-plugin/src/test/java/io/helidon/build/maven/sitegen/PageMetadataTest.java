@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ import static org.junit.jupiter.api.Assertions.fail;
  */
 public class PageMetadataTest {
 
-    private static final Path SOURCE_DIR = getFile(SOURCE_DIR_PREFIX + "testmetadata").toPath();
+    private static final Path SOURCE_DIR = getFile(SOURCE_DIR_PREFIX + "testmetadata");
     private static final String BACKEND_NAME = "dummy";
     private static AsciidocPageRenderer pageRenderer;
 

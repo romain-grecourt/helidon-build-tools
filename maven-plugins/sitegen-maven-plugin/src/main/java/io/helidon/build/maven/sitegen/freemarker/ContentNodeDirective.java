@@ -19,13 +19,14 @@ package io.helidon.build.maven.sitegen.freemarker;
 import java.io.IOException;
 import java.util.Map;
 
+import io.helidon.build.maven.sitegen.models.Page;
+
 import freemarker.core.Environment;
 import freemarker.template.TemplateDirectiveBody;
 import freemarker.template.TemplateDirectiveModel;
 import freemarker.template.TemplateException;
 import freemarker.template.TemplateModel;
 import freemarker.template.TemplateModelException;
-import io.helidon.build.maven.sitegen.models.Page;
 import org.asciidoctor.ast.ContentNode;
 
 /**

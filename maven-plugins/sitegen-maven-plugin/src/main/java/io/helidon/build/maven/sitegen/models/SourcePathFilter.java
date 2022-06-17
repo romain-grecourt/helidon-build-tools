@@ -75,9 +75,12 @@ public abstract class SourcePathFilter implements Model {
 
     /**
      * Base builder for subclasses of {@link SourcePathFilter}.
+     *
+     * @param <T> builder subtype
+     * @param <U> subtype
      */
     @SuppressWarnings({"unchecked", "unused"})
-    public static abstract class AbstractBuilder<T extends AbstractBuilder<T, U>, U extends SourcePathFilter>
+    public abstract static class AbstractBuilder<T extends AbstractBuilder<T, U>, U extends SourcePathFilter>
             implements Supplier<U> {
 
         private final List<String> includes = new ArrayList<>();

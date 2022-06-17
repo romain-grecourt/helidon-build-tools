@@ -68,7 +68,7 @@ public class IncludePreprocessor extends Preprocessor {
     static List<String> convertHybridToBracketed(List<String> lines) {
         List<String> augmentedLines = new ArrayList<>();
 
-        for (AtomicInteger lineNumber = new AtomicInteger(0); lineNumber.get() < lines.size(); ) {
+        for (AtomicInteger lineNumber = new AtomicInteger(0); lineNumber.get() < lines.size();) {
             String line = lines.get(lineNumber.get());
             if (line.startsWith("include::")) {
                 augmentedLines.addAll(handleADocInclude(lines, lineNumber));
@@ -94,7 +94,7 @@ public class IncludePreprocessor extends Preprocessor {
     static List<String> convertBracketedToNatural(List<String> lines) {
         List<String> result = new ArrayList<>();
 
-        for (AtomicInteger lineNumber = new AtomicInteger(0); lineNumber.get() < lines.size(); ) {
+        for (AtomicInteger lineNumber = new AtomicInteger(0); lineNumber.get() < lines.size();) {
             String line = lines.get(lineNumber.get());
             if (Include.isIncludeStart(line)) {
                 result.addAll(bracketedIncludeToNatural(lines, lineNumber));

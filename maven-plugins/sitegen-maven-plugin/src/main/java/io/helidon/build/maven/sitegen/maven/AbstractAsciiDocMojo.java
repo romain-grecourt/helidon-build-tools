@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,6 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Properties;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -230,7 +229,7 @@ public abstract class AbstractAsciiDocMojo extends AbstractMojo {
          * to gather attributes that might be needed to resolve include
          * references during the second, real AsciiDoctor processing.
          */
-        Map<String, Object> attributes = new HashMap<>(Maps.fromProperties(projectProperties(project)));
+        Map<String, Object> attributes = new HashMap<>(projectProperties(project));
         isPrelim.set(true);
         Document doc = asciiDoctor.loadFile(adocFilePath.toFile(),
                 asciiDoctorOptions(
@@ -344,15 +343,14 @@ public abstract class AbstractAsciiDocMojo extends AbstractMojo {
      * Get the project properties.
      *
      * @param project project
-     * @return properties
+     * @return map
      */
-    static Properties projectProperties(MavenProject project) {
-        Properties properties = new Properties();
-        properties.putAll(project.getProperties());
-        properties.setProperty("project.groupId", project.getGroupId());
-        properties.setProperty("project.artifactId", project.getArtifactId());
-        properties.setProperty("project.version", project.getVersion());
-        properties.setProperty("project.basedir", project.getBasedir().getAbsolutePath());
-        return properties;
+    static Map<String, String> projectProperties(MavenProject project) {
+        Map<String, String> map = new HashMap<>(Maps.fromProperties(project.getProperties()));
+        map.put("project.groupId", project.getGroupId());
+        map.put("project.artifactId", project.getArtifactId());
+        map.put("project.version", project.getVersion());
+        map.put("project.basedir", project.getBasedir().getAbsolutePath());
+        return map;
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,16 +22,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Properties;
+import java.util.Map;
 import java.util.function.Supplier;
 
 import io.helidon.build.maven.sitegen.models.Header;
 import io.helidon.build.maven.sitegen.models.PageFilter;
 import io.helidon.build.maven.sitegen.models.StaticAsset;
+import io.helidon.build.maven.sitegen.spi.BackendProvider;
+
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
-import static io.helidon.build.maven.sitegen.Helper.requireNonNull;
+import static java.util.Objects.requireNonNull;
 
 /**
  * Yet another site generator.
@@ -140,7 +142,7 @@ public class Site {
          * @return this builder
          */
         public Builder config(InputStream inputStream) {
-            return config(inputStream, new Properties());
+            return config(inputStream, Map.of());
         }
 
         /**
@@ -150,9 +152,9 @@ public class Site {
          * @param properties  properties to add for resolution
          * @return this builder
          */
-        public Builder config(InputStream inputStream, Properties properties) {
+        public Builder config(InputStream inputStream, Map<String, String> properties) {
             Yaml yaml = new Yaml(new SafeConstructor());
-            Config config = Config.create(yaml.loadAs(inputStream, Object.class));
+            Config config = Config.create(yaml.loadAs(inputStream, Object.class), properties);
             return config(config, properties);
         }
 
@@ -163,7 +165,7 @@ public class Site {
          * @return this builder
          */
         public Builder config(Config config) {
-            return config(config, new Properties());
+            return config(config, Map.of());
         }
 
         /**
@@ -173,9 +175,7 @@ public class Site {
          * @param properties properties to add for resolution
          * @return this builder
          */
-        public Builder config(Config config, Properties properties) {
-
-            // TODO use properties in the config for substitutions
+        public Builder config(Config config, Map<String, String> properties) {
 
             backend = config.get("backend")
                             .asOptional()
@@ -279,7 +279,7 @@ public class Site {
          * @return this builder
          */
         public Builder backend(Backend backend) {
-            this.backend = requireNonNull(backend, "backend");
+            this.backend = requireNonNull(backend, "backend is null!");
             THREAD_LOCAL.set(backend.getName());
             return this;
         }

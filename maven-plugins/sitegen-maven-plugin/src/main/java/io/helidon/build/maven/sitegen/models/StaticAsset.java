@@ -18,7 +18,7 @@ package io.helidon.build.maven.sitegen.models;
 
 import io.helidon.build.maven.sitegen.Config;
 
-import static io.helidon.build.maven.sitegen.Helper.requireValidString;
+import static io.helidon.build.common.Strings.requireValid;
 
 /**
  * Configuration for static assets.
@@ -32,7 +32,7 @@ public class StaticAsset extends SourcePathFilter {
 
     private StaticAsset(Builder builder) {
         super(builder);
-        this.target = requireValidString(builder.target, "asset target");
+        this.target = requireValid(builder.target, "target is invalid!");
     }
 
     /**

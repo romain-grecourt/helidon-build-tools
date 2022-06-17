@@ -19,7 +19,7 @@ package io.helidon.build.maven.sitegen.maven;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.Properties;
+import java.util.Map;
 
 import io.helidon.build.maven.sitegen.RenderingException;
 import io.helidon.build.maven.sitegen.Site;
@@ -80,7 +80,7 @@ public class GenerateMojo extends AbstractMojo {
 
         project.addCompileSourceRoot(siteSourceDirectory.getAbsolutePath());
 
-        Properties properties = AbstractAsciiDocMojo.projectProperties(project);
+        Map<String, String> properties = AbstractAsciiDocMojo.projectProperties(project);
 
         try {
             site = Site.builder()

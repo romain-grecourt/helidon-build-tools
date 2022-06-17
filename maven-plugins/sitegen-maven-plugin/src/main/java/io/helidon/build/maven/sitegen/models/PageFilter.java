@@ -18,8 +18,6 @@ package io.helidon.build.maven.sitegen.models;
 
 import io.helidon.build.maven.sitegen.Config;
 
-import static io.helidon.build.maven.sitegen.Helper.requireValidString;
-
 /**
  * Configuration for a page filter.
  */

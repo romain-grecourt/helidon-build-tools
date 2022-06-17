@@ -19,24 +19,24 @@ package io.helidon.build.maven.sitegen.models;
 import io.helidon.build.maven.sitegen.Config;
 import io.helidon.build.maven.sitegen.Model;
 
-import static io.helidon.build.maven.sitegen.Helper.requireNonNull;
-import static io.helidon.build.maven.sitegen.Helper.requireValidString;
+import static io.helidon.build.common.Strings.requireValid;
+import static java.util.Objects.requireNonNull;
 
 /**
  * A page represents a document to be rendered.
  */
 public class Page implements Model {
 
-    private final String sourcePath;
+    private final String source;
     private final String sourceExt;
-    private final String targetPath;
+    private final String target;
     private final Metadata metadata;
 
     private Page(Builder builder) {
-        this.sourcePath = requireValidString(builder.source, "source");
-        this.sourceExt = requireValidString(builder.ext, "ext");
-        this.targetPath = requireValidString(builder.target, "target");
-        this.metadata = requireNonNull(builder.metadata, "metadata");
+        this.source = requireValid(builder.source, "source is invalid!");
+        this.sourceExt = requireValid(builder.ext, "ext is invalid!");
+        this.target = requireValid(builder.target, "target is invalid!");
+        this.metadata = requireNonNull(builder.metadata, "metadata is null!");
     }
 
     /**
@@ -44,8 +44,8 @@ public class Page implements Model {
      *
      * @return source path.
      */
-    public String sourcePath() {
-        return sourcePath;
+    public String source() {
+        return source;
     }
 
     /**
@@ -62,8 +62,8 @@ public class Page implements Model {
      *
      * @return target path.
      */
-    public String targetPath() {
-        return targetPath;
+    public String target() {
+        return target;
     }
 
     /**
@@ -79,11 +79,11 @@ public class Page implements Model {
     public Object get(String attr) {
         switch (attr) {
             case "source":
-                return sourcePath;
+                return source;
             case "ext":
                 return sourceExt;
             case "target":
-                return targetPath;
+                return target;
             case "metadata":
                 return metadata;
             default:
@@ -180,7 +180,7 @@ public class Page implements Model {
             this.description = builder.description;
             this.keywords = builder.keywords;
             this.h1 = builder.h1;
-            this.title = requireValidString(builder.docTitle, "title");
+            this.title = requireValid(builder.docTitle, "docTitle is invalid!");
             this.h1Prefix = builder.h1Prefix;
         }
 

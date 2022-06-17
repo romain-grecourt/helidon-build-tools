@@ -16,12 +16,12 @@
 
 package io.helidon.build.maven.sitegen.models;
 
+import java.util.function.Supplier;
+
 import io.helidon.build.maven.sitegen.Config;
 import io.helidon.build.maven.sitegen.Model;
 
-import java.util.function.Supplier;
-
-import static io.helidon.build.maven.sitegen.Helper.requireValidString;
+import static io.helidon.build.common.Strings.requireValid;
 
 /**
  * Configuration for image or icon.
@@ -32,8 +32,8 @@ public class Glyph implements Model {
     private final String value;
 
     private Glyph(Builder builder) {
-        this.type = requireValidString(builder.type, "glyph type");
-        this.value = requireValidString(builder.value, "glyph value");
+        this.type = requireValid(builder.type, "type is invalid!");
+        this.value = requireValid(builder.value, "glyph is invalid!");
     }
 
     /**

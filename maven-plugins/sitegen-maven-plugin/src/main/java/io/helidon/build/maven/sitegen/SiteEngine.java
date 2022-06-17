@@ -23,7 +23,7 @@ import java.util.function.Supplier;
 import io.helidon.build.maven.sitegen.asciidoctor.AsciidocEngine;
 import io.helidon.build.maven.sitegen.freemarker.FreemarkerEngine;
 
-import static io.helidon.build.maven.sitegen.Helper.requireValidString;
+import static io.helidon.build.common.Strings.requireValid;
 
 /**
  * Configuration of {@link FreemarkerEngine} and {@link AsciidocEngine}.
@@ -73,7 +73,7 @@ public final class SiteEngine {
      * @param engine  the engine instance to register
      */
     public static void register(String backend, SiteEngine engine) {
-        REGISTRY.put(requireValidString(backend, "backend"), engine);
+        REGISTRY.put(requireValid(backend, "backend is invalid!"), engine);
     }
 
     /**
@@ -82,7 +82,7 @@ public final class SiteEngine {
      * @param backend the backend to remove
      */
     public static void deregister(String backend) {
-        REGISTRY.remove(requireValidString(backend, "backend"));
+        REGISTRY.remove(requireValid(backend, "backend is invalid!"));
     }
 
     /**

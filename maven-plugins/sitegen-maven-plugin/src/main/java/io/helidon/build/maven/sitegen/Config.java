@@ -22,6 +22,8 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import io.helidon.build.common.SubstitutionVariables;
+
 /**
  * Simple config.
  */
@@ -44,10 +46,18 @@ public final class Config {
 
     private final Object value;
     private final Config parent;
+    private final SubstitutionVariables substitutions;
+
+    private Config(Object value, Map<String, String> properties) {
+        this.value = value;
+        this.parent = null;
+        this.substitutions = SubstitutionVariables.of(properties);
+    }
 
     private Config(Object value, Config parent) {
         this.value = value;
-        this.parent = parent != null ? parent : this;
+        this.parent = parent;
+        this.substitutions = parent.substitutions;
     }
 
     /**
@@ -77,15 +87,6 @@ public final class Config {
     public Config get(String key) {
         Object v = value != null ? ((Map<?, ?>) value).get(key) : null;
         return new Config(v, this);
-    }
-
-    /**
-     * Detach this config.
-     *
-     * @return new detached config
-     */
-    public Config detach() {
-        throw new UnsupportedOperationException("Not implemented yet");
     }
 
     /**
@@ -200,10 +201,21 @@ public final class Config {
      * Map the value to a map using a mapping function.
      *
      * @param mapper mapping function
+     * @param <T>    requested type
      * @return optional
      */
     public <T> Optional<Map<String, T>> asMap(Function<Object, T> mapper) {
-        throw new UnsupportedOperationException("Not implemented yet");
+        if (value == null) {
+            return Optional.empty();
+        }
+        if (value instanceof Map) {
+            return Optional.of(((Map<?, ?>) value)
+                    .entrySet()
+                    .stream()
+                    .map(e -> Map.entry(e.getKey().toString(), mapper.apply(e.getValue())))
+                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
+        }
+        throw new MappingException(value.getClass(), Map.class);
     }
 
     /**
@@ -229,12 +241,22 @@ public final class Config {
     /**
      * Create a new instance.
      *
+     * @param value      underlying value
+     * @param properties substitution properties
+     * @return new instance
+     */
+    public static Config create(Object value, Map<String, String> properties) {
+        return new Config(value, properties);
+    }
+
+    /**
+     * Create a new instance.
+     *
      * @param value underlying value
      * @return new instance
      */
     public static Config create(Object value) {
-        // TODO support properties substitutions
-        return new Config(value, null);
+        return new Config(value, Map.of());
     }
 
     private static <T> T cast(Object value, Class<T> type) {

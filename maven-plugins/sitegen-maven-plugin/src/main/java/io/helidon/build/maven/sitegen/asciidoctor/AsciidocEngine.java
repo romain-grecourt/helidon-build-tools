@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,10 +27,10 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 import io.helidon.build.maven.sitegen.Config;
-import io.helidon.build.maven.sitegen.models.Page;
 import io.helidon.build.maven.sitegen.RenderingContext;
 import io.helidon.build.maven.sitegen.RenderingException;
 import io.helidon.build.maven.sitegen.Site;
+import io.helidon.build.maven.sitegen.models.Page;
 
 import org.asciidoctor.Asciidoctor;
 import org.asciidoctor.Attributes;
@@ -43,10 +43,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.bridge.SLF4JBridgeHandler;
 
-import static io.helidon.build.maven.sitegen.Helper.requireNonNull;
-import static io.helidon.build.maven.sitegen.Helper.requireValidString;
-import static io.helidon.build.maven.sitegen.Helper.requireValidFile;
-import static io.helidon.build.maven.sitegen.Helper.relativePath;
+import static io.helidon.build.common.FileUtils.requireFile;
+import static io.helidon.build.common.Strings.requireValid;
+import static java.util.Objects.requireNonNull;
 
 /**
  * A facade over Asciidoctorj.
@@ -70,7 +69,7 @@ public class AsciidocEngine {
     private AsciidocEngine(Builder builder) {
         SLF4JBridgeHandler.removeHandlersForRootLogger();
         SLF4JBridgeHandler.install();
-        this.backend = requireValidString(Site.THREAD_LOCAL.get(), "backend");
+        this.backend = requireValid(Site.THREAD_LOCAL.get(), "backend is invalid!");
         this.attributes = builder.attributes;
         this.libraries = builder.libraries;
         this.imagesdir = builder.imagesDir;
@@ -122,7 +121,7 @@ public class AsciidocEngine {
      * @return the header as {@code Map<String, Object>}, never {@code null}
      */
     public Map<String, Object> readDocumentHeader(Path source) {
-        requireValidFile(source, "source");
+        requireFile(source);
         OptionsBuilder optionsBuilder =
                 Options.builder()
                        .attributes(Attributes.builder().attributes(attributes).build())
@@ -154,8 +153,8 @@ public class AsciidocEngine {
      */
     @SuppressWarnings("GrazieInspection")
     public void render(Page page, RenderingContext ctx, Path target, Map<String, Object> extraAttributes) {
-        requireNonNull(page, "page");
-        requireNonNull(ctx, "ctx");
+        requireNonNull(page, "page is null!");
+        requireNonNull(ctx, "ctx is null!");
 
         asciidoctor.requireLibraries(libraries);
         if (extraAttributes == null) {
@@ -164,8 +163,7 @@ public class AsciidocEngine {
 
         Path outputDir = ctx.outputDir();
         Path sourceDir = ctx.sourceDir();
-        Path source = sourceDir.resolve(page.sourcePath());
-        requireValidFile(source, "source");
+        Path source = requireFile(sourceDir.resolve(page.source()));
 
         // set attributes
         AttributesBuilder attrsBuilder =
@@ -301,7 +299,6 @@ public class AsciidocEngine {
                                    .orElseGet(List::of));
 
             attributes.putAll(config.get("attributes")
-                                    .detach()
                                     .asMap()
                                     .orElseGet(Map::of));
 
@@ -370,5 +367,11 @@ public class AsciidocEngine {
             LOGGER.error("Error while parsing section0 title of " + source, ex);
         }
         return null;
+    }
+
+    private static String relativePath(Path sourceDir, Path source) {
+        return sourceDir.relativize(source).toString()
+                        // force UNIX style path on Windows
+                        .replace("\\", "/");
     }
 }

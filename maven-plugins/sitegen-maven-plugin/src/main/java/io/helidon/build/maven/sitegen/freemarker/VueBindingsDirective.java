@@ -38,7 +38,7 @@ public class VueBindingsDirective extends ContentNodeDirective {
 
         StringWriter writer = new StringWriter();
         body.render(writer);
-        bindings.put(page(node).sourcePath(), writer.toString());
+        bindings.put(page(node).source(), writer.toString());
     }
 
 

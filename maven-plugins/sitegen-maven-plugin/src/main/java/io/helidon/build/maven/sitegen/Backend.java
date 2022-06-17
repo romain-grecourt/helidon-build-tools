@@ -18,7 +18,7 @@ package io.helidon.build.maven.sitegen;
 
 import java.util.Map;
 
-import static io.helidon.build.maven.sitegen.Helper.requireValidString;
+import io.helidon.build.common.Strings;
 
 /**
  * Backend base class.
@@ -33,7 +33,7 @@ public abstract class Backend implements Model {
      * @param name the name of the backend
      */
     protected Backend(String name) {
-        this.name = requireValidString(name, "name");
+        this.name = Strings.requireValid(name, "name");
     }
 
     /**

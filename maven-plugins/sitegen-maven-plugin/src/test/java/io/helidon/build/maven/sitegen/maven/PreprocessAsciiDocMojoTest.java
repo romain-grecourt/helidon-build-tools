@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,6 @@
  */
 package io.helidon.build.maven.sitegen.maven;
 
-import com.github.difflib.DiffUtils;
-import com.github.difflib.algorithm.DiffException;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,7 +24,10 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
-import static io.helidon.build.maven.sitegen.MavenPluginHelper.mojo;
+import com.github.difflib.DiffUtils;
+import com.github.difflib.algorithm.DiffException;
+
+import static io.helidon.build.maven.sitegen.maven.MavenPluginHelper.mojo;
 import static io.helidon.build.maven.sitegen.maven.AbstractAsciiDocMojo.inputs;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 

@@ -19,8 +19,8 @@ package io.helidon.build.maven.sitegen.models;
 import io.helidon.build.maven.sitegen.Config;
 import io.helidon.build.maven.sitegen.Model;
 
-import static io.helidon.build.maven.sitegen.Helper.requireNonNull;
-import static io.helidon.build.maven.sitegen.Helper.requireValidString;
+import static io.helidon.build.common.Strings.requireValid;
+import static java.util.Objects.requireNonNull;
 
 /**
  * Configuration for different type of web resources such as css stylesheets or scripts.
@@ -31,7 +31,7 @@ public class WebResource implements Model {
     private final String type;
 
     private WebResource(Builder builder) {
-        this.location = requireNonNull(builder.location, "value");
+        this.location = requireNonNull(builder.location, "location is null!");
         this.type = builder.type;
     }
 
@@ -160,8 +160,8 @@ public class WebResource implements Model {
         private final Type type;
 
         private Location(Type type, String value) {
-            this.type = requireNonNull(type, "type");
-            this.value = requireValidString(value, "value");
+            this.type = requireNonNull(type, "type is null!");
+            this.value = requireValid(value, "value is invalid!");
         }
 
         /**

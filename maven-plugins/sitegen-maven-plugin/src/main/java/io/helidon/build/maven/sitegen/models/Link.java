@@ -15,10 +15,10 @@
  */
 package io.helidon.build.maven.sitegen.models;
 
-import io.helidon.build.maven.sitegen.Model;
-
 import java.util.HashMap;
 import java.util.Map;
+
+import io.helidon.build.maven.sitegen.Model;
 
 import static java.util.Objects.requireNonNull;
 
@@ -49,13 +49,13 @@ public final class Link implements Model {
                     this.source = builder.refId;
                 }
                 if (builder.pages.containsKey("/" + source)) {
-                    this.target = builder.pages.get("/" + source).targetPath();
+                    this.target = builder.pages.get("/" + source).target();
                 } else {
                     this.target = "";
                 }
                 this.hash = builder.fragment;
                 if ((hash != null && (this.target == null || this.target.isEmpty()))
-                        || builder.page.targetPath().equals(this.target)) {
+                        || builder.page.target().equals(this.target)) {
                     this.type = "xref_anchor_self";
                 } else if (hash != null && builder.target != null && !hash.equals(source)) {
                     this.type = "xref_anchor";

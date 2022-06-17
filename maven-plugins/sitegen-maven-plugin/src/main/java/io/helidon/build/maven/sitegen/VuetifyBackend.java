@@ -20,13 +20,19 @@ import java.io.IOException;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.ListIterator;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import io.helidon.build.common.SourcePath;
 import io.helidon.build.maven.sitegen.asciidoctor.AsciidocPageRenderer;
@@ -35,32 +41,27 @@ import io.helidon.build.maven.sitegen.freemarker.TemplateSession;
 import io.helidon.build.maven.sitegen.models.Nav;
 import io.helidon.build.maven.sitegen.models.Page;
 
-import static io.helidon.build.maven.sitegen.Helper.copyResources;
+import static io.helidon.build.common.Strings.requireValid;
 import static io.helidon.build.maven.sitegen.Helper.loadResourceDirAsPath;
-import static io.helidon.build.maven.sitegen.Helper.requireValidString;
+import static io.helidon.build.maven.sitegen.RenderingContext.copyResources;
 import static io.helidon.build.maven.sitegen.asciidoctor.AsciidocPageRenderer.ADOC_EXT;
 
 /**
- * A backend implementation for vuetifyjs.
+ * A backend implementation for Vuetify.
  *
  * @see <a href="https://vuetifyjs.com">https://vuetifyjs.com</a>
  */
-@SuppressWarnings("unused")
 public class VuetifyBackend extends Backend {
 
     /**
      * The Vuetify backend name.
      */
-    public static final String BACKEND_NAME = "vuetify";
+    public static final String BACKEND_NAME = "files";
 
-    private static final String STATIC_RESOURCES = "/helidon-sitegen-static/vuetify";
-    private static final String THEME_PROP = "theme";
-    private static final String NAVIGATION_PROP = "navigation";
-    private static final String HOME_PAGE_PROP = "homePage";
-    private static final String RELEASES_PROP = "releases";
+    private static final String STATIC_RESOURCES = "files/vuetify";
 
     private final Map<String, PageRenderer> pageRenderers;
-    private final Nav navigation;
+    private final Nav nav;
     private final Map<String, String> theme;
     private final Path staticResources;
     private final String home;
@@ -69,8 +70,8 @@ public class VuetifyBackend extends Backend {
     private VuetifyBackend(Builder builder) {
         super(BACKEND_NAME);
         this.theme = builder.theme;
-        this.navigation = builder.navigation;
-        this.home = requireValidString(builder.home, "home");
+        this.nav = builder.nav;
+        this.home = requireValid(builder.home, "home is invalid!");
         this.releases = builder.releases;
         this.pageRenderers = Map.of(ADOC_EXT, AsciidocPageRenderer.create(BACKEND_NAME));
         try {
@@ -81,12 +82,12 @@ public class VuetifyBackend extends Backend {
     }
 
     /**
-     * Get the navigation.
+     * Get the navigation tree root.
      *
      * @return navigation tree root or {@code null} if not set
      */
-    public Nav navigation() {
-        return navigation;
+    public Nav nav() {
+        return nav;
     }
 
     /**
@@ -143,45 +144,32 @@ public class VuetifyBackend extends Backend {
             throw new IllegalStateException("unable to get home page");
         }
 
-        // resolve navigation
-//        Navigation resolvedNavigation = navigation == null ? null
-//                : navigation.resolve(ctx.getPages().values());
-//        Navigation resolvedNavigation = null;
-
         // resolve navigation routes
-        List<String> navRouteEntries = List.of();
-//        List<String> navRouteEntries = resolvedNavigation != null
-//                 ? resolvedNavigation.items().stream()
-//                                     .filter(NavItem::isGroup)
-//                                     .flatMap((item) -> item.asGroup().getItems().stream())
-//                                     .filter(NavItem::isSubgroup)
-//                                     .flatMap((groupItem) -> groupItem.asSubGroup().getItems().stream())
-//                                     .filter(NavItem::isLink)
-//                                     .map((subGroupItem) -> ctx.getPageForRoute(
-//                        subGroupItem.asLink()
-//                            .getHref())
-//                            .getSourcePath())
-//                                     .collect(Collectors.toList()) : Collections.emptyList();
+        Set<String> navRoutes = resolveNav()
+                .stream()
+                .flatMap(n -> n.items().stream()) // categories
+                .flatMap(n -> n.items().stream()) // groups
+                .flatMap(n -> n.items().stream()) // subgroups
+                .flatMap(n -> Optional.ofNullable(n.href()).stream())
+                .map(ctx::pageForRoute)
+                .map(Page::source)
+                .collect(Collectors.toSet());
 
-        // resolve route entries
-        List<String> routeEntries = Stream.concat(
-                                                  navRouteEntries.contains(home.sourcePath())
-                                                          ? Stream.empty() : Stream.of(home.sourcePath()),
-                                                  Stream.concat(navRouteEntries.stream(),
-                                                          ctx.pages().keySet().stream()
-                                                             .filter(item -> !navRouteEntries.contains(item))))
-                                          .collect(Collectors.toList());
+        // resolve all routes
+        Set<String> allRoutes = new HashSet<>(navRoutes);
+        allRoutes.add(home.source());
+        allRoutes.addAll(ctx.pages().keySet());
 
         Map<String, String> allBindings = session.vueBindings().bindings();
 
         Map<String, Object> model = new HashMap<>();
         model.put("searchEntries", session.searchIndex().entries());
-        model.put("navRouteEntries", navRouteEntries);
-        model.put("routeEntries", routeEntries);
+        model.put("navRouteEntries", navRoutes);
+        model.put("routeEntries", allRoutes);
         model.put("customLayoutEntries", session.customLayouts().mappings());
         model.put("pages", ctx.pages());
         model.put("metadata", home.metadata());
-        model.put("navigation", null); // TODO
+        model.put("navigation", nav);
         model.put("header", ctx.site().header());
         model.put("theme", theme);
         model.put("home", home);
@@ -192,12 +180,12 @@ public class VuetifyBackend extends Backend {
 
         // custom bindings
         for (Page page : ctx.pages().values()) {
-            String bindings = allBindings.get(page.sourcePath());
+            String bindings = allBindings.get(page.source());
             if (bindings != null) {
                 Map<String, Object> bindingsModel = new HashMap<>(model);
                 bindingsModel.put("bindings", bindings);
                 bindingsModel.put("page", page);
-                String path = "pages/" + page.targetPath() + "_custom.js";
+                String path = "pages/" + page.target() + "_custom.js";
                 freemarker.renderFile("custom_bindings", path, bindingsModel, ctx);
             }
         }
@@ -214,20 +202,63 @@ public class VuetifyBackend extends Backend {
         // copy vuetify resources
         try {
             copyResources(staticResources, ctx.outputDir());
-        } catch (IOException ex) {
+        } catch (
+                IOException ex) {
             throw new RenderingException("An error occurred during static resource processing ", ex);
         }
+    }
+
+    private Optional<Nav> resolveNav() {
+        if (nav == null) {
+            return Optional.empty();
+        }
+        Deque<Nav.Builder> builders = new ArrayDeque<>();
+        Deque<Nav> stack = new ArrayDeque<>();
+        stack.push(nav);
+        builders.push(Nav.builder());
+        Nav.Builder parent = null;
+        while (!stack.isEmpty() && !builders.isEmpty()) {
+            Nav node = stack.peek();
+            Nav.Builder builder = builders.peek();
+            List<Nav> items = node.items();
+            if (parent != builder && !items.isEmpty()) {
+                // 1st tree-node pass
+                ListIterator<Nav> it = items.listIterator(items.size());
+                while (it.hasPrevious()) {
+                    Nav item = it.previous();
+                    builders.push(Nav.builder(builder));
+                    stack.push(item);
+                }
+            } else {
+                // leaf-node, or 2nd tree-node pass
+                builder.title(node.title())
+                       .href(node.href())
+                       .pathprefix(node.pathprefix())
+                       .includes(node.includes())
+                       .excludes(node.excludes())
+                       .glyph(node.glyph());
+                Nav.Builder nextParent = builder.parent();
+                if (nextParent != null) {
+                    nextParent.item(builder.build());
+                    parent = nextParent;
+                    builders.pop();
+                }
+                stack.pop();
+            }
+        }
+        return Optional.of(builders.pop().build());
     }
 
     /**
      * A builder of {@link VuetifyBackend}.
      */
+    @SuppressWarnings("unused")
     public static class Builder implements Supplier<VuetifyBackend> {
 
         private final Map<String, String> theme = new HashMap<>();
-        private Nav navigation;
+        private Nav nav;
         private String home;
-        private List<String> releases;
+        private final List<String> releases = new ArrayList<>();
 
         /**
          * Set the theme.
@@ -245,11 +276,11 @@ public class VuetifyBackend extends Backend {
         /**
          * Set the navigation.
          *
-         * @param navigation navigation
+         * @param nav nav
          * @return this builder
          */
-        public Builder navigation(Nav navigation) {
-            this.navigation = navigation;
+        public Builder nav(Nav nav) {
+            this.nav = nav;
             return this;
         }
 
@@ -259,8 +290,8 @@ public class VuetifyBackend extends Backend {
          * @param supplier navigation supplier
          * @return this builder
          */
-        public Builder navigation(Supplier<Nav> supplier) {
-            this.navigation = supplier.get();
+        public Builder nav(Supplier<Nav> supplier) {
+            this.nav = supplier.get();
             return this;
         }
 
@@ -309,7 +340,6 @@ public class VuetifyBackend extends Backend {
          */
         public Builder config(Config config) {
             theme.putAll(config.get("theme")
-                               .detach()
                                .asMap(String.class)
                                .orElseGet(Map::of));
             home = config.get("home").asString().orElse(null);
@@ -332,6 +362,7 @@ public class VuetifyBackend extends Backend {
         public VuetifyBackend get() {
             return build();
         }
+
     }
 
     /**

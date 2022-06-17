@@ -16,8 +16,6 @@
 
 package io.helidon.build.maven.sitegen.models;
 
-import io.helidon.build.maven.sitegen.Config;
-
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -25,7 +23,9 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.function.Supplier;
 
-import static io.helidon.build.maven.sitegen.Helper.requireValidString;
+import io.helidon.build.maven.sitegen.Config;
+
+import static io.helidon.build.common.Strings.requireValid;
 
 /**
  * Navigation tree.
@@ -43,7 +43,7 @@ public final class Nav extends SourcePathFilter {
 
     private Nav(Builder builder) {
         super(builder);
-        this.title = requireValidString(builder.title, "title");
+        this.title = requireValid(builder.title, "title is invalid!");
         this.glyph = builder.glyph;
         this.href = builder.href;
         this.target = builder.target;
@@ -159,6 +159,16 @@ public final class Nav extends SourcePathFilter {
     }
 
     /**
+     * Create a new builder.
+     *
+     * @param parent parent builder
+     * @return builder
+     */
+    public static Builder builder(Nav.Builder parent) {
+        return new Builder(parent);
+    }
+
+    /**
      * Builder of {@link Nav}.
      */
     public static final class Builder extends AbstractBuilder<Builder, Nav> {
@@ -176,6 +186,15 @@ public final class Nav extends SourcePathFilter {
         }
 
         /**
+         * Get the parent builder.
+         *
+         * @return parent builder
+         */
+        public Builder parent() {
+            return parent;
+        }
+
+        /**
          * Set the title.
          *
          * @param title title
@@ -189,7 +208,8 @@ public final class Nav extends SourcePathFilter {
         /**
          * Set the glyph.
          *
-         * @param glyph glyph
+         * @param type  glyph type
+         * @param value glyph value
          * @return this builder
          */
         public Builder glyph(String type, String value) {

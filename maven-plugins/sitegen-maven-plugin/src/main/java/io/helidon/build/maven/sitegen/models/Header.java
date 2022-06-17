@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,23 +16,18 @@
 
 package io.helidon.build.maven.sitegen.models;
 
-import io.helidon.build.maven.sitegen.Config;
-import io.helidon.build.maven.sitegen.Model;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import io.helidon.build.maven.sitegen.Config;
+import io.helidon.build.maven.sitegen.Model;
+
 /**
  * Configuration for default header values.
  */
 public class Header implements Model {
-
-    private static final String FAVICON_PROP = "favicon";
-    private static final String STYLESHEETS_PROP = "stylesheets";
-    private static final String SCRIPTS_PROP = "scripts";
-    private static final String META_PROP = "meta";
 
     private final WebResource favicon;
     private final List<WebResource> stylesheets;
@@ -85,13 +80,13 @@ public class Header implements Model {
     @Override
     public Object get(String attr) {
         switch (attr) {
-            case (FAVICON_PROP):
+            case "favicon":
                 return favicon;
-            case (STYLESHEETS_PROP):
+            case "stylesheets":
                 return stylesheets;
-            case (SCRIPTS_PROP):
+            case "scripts":
                 return scripts;
-            case (META_PROP):
+            case "meta":
                 return meta;
             default:
                 throw new IllegalArgumentException("Unknown attribute: " + attr);
@@ -186,7 +181,6 @@ public class Header implements Model {
                   .forEach(stylesheets::add);
 
             meta.putAll(config.get("meta")
-                              .detach()
                               .asMap(String.class)
                               .orElseGet(Map::of));
             return this;

@@ -23,16 +23,16 @@ import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-import io.helidon.build.maven.sitegen.Helper;
-
 import freemarker.cache.URLTemplateLoader;
+
+import static io.helidon.build.maven.sitegen.Helper.loadResourceDirAsPath;
 
 /**
  * A Freemarker template loader used for loading templates from classpath.
  */
 final class TemplateLoader extends URLTemplateLoader {
 
-    private static final String TEMPLATES_RESOURCE = "/helidon-sitegen-templates/";
+    private static final String TEMPLATES_RESOURCE = "/templates/";
     private static final String TEMPLATE_FILE_EXT = ".ftl";
 
     private final Path templatesDir;
@@ -42,7 +42,7 @@ final class TemplateLoader extends URLTemplateLoader {
      */
     TemplateLoader(){
         try {
-            templatesDir = Helper.loadResourceDirAsPath(TEMPLATES_RESOURCE);
+            templatesDir = loadResourceDirAsPath(TEMPLATES_RESOURCE);
         } catch (URISyntaxException | IOException | IllegalStateException  ex) {
             throw new IllegalStateException("Unable to get templates directory", ex);
         }

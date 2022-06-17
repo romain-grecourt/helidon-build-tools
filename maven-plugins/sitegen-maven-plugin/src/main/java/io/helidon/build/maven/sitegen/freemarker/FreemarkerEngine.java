@@ -43,8 +43,8 @@ import org.asciidoctor.ast.ContentNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static io.helidon.build.maven.sitegen.Helper.requireNonNull;
-import static io.helidon.build.maven.sitegen.Helper.requireValidString;
+import static io.helidon.build.common.Strings.requireValid;
+import static java.util.Objects.requireNonNull;
 
 /**
  * A facade over freemarker.
@@ -62,7 +62,7 @@ public class FreemarkerEngine {
     private final Configuration freemarker;
 
     private FreemarkerEngine(Builder builder) {
-        this.backend = requireValidString(Site.THREAD_LOCAL.get(), "backend");
+        this.backend = requireValid(Site.THREAD_LOCAL.get(), "backend is invalid!");
         this.directives = builder.directives;
         this.model = builder.model;
         freemarker = new Configuration(FREEMARKER_VERSION);
@@ -125,9 +125,9 @@ public class FreemarkerEngine {
      */
     public String renderString(String template, ContentNode node) throws RenderingException {
         Object session = node.getDocument().getAttribute("templateSession");
-        requireNonNull(session, "document attribute 'templateSession'");
+        requireNonNull(session, "template session is null!");
         if (!(session instanceof TemplateSession)) {
-            throw new IllegalStateException("document attribute 'templateSession' is not valid");
+            throw new IllegalStateException("Invalid template session");
         }
         // TODO extract page, pages, templateSession
         // and set them as variables
@@ -225,12 +225,10 @@ public class FreemarkerEngine {
          */
         public Builder config(Config config) {
             directives.putAll(config.get("directives")
-                                    .detach()
                                     .asMap(String.class)
                                     .orElseGet(Map::of));
 
             model.putAll(config.get("model")
-                               .detach()
                                .asMap(String.class)
                                .orElseGet(Map::of));
             return this;

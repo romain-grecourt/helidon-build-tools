@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package io.helidon.build.maven.sitegen.models;
 /**
  * Search index entry model.
  */
+@SuppressWarnings("unused")
 public class SearchEntry {
 
     private final String location;
@@ -59,7 +60,7 @@ public class SearchEntry {
     }
 
     /**
-     * Create a new instance
+     * Create a new instance.
      *
      * @param location the page location
      * @param text     the page text

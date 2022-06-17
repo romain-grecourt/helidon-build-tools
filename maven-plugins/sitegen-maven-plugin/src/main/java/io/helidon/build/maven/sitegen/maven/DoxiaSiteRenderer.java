@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2021 Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2020, 2022 Oracle and/or its affiliates. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.Map;
-import java.util.Properties;
 
 import io.helidon.build.maven.sitegen.RenderingException;
 import io.helidon.build.maven.sitegen.Site;
@@ -88,16 +88,16 @@ public class DoxiaSiteRenderer extends DefaultSiteRenderer {
             }
         }
 
-        Properties properties = new Properties();
+        Map<String, String> properties = new HashMap<>();
         Map<String, ?> templateProps = context.getTemplateProperties();
         if (templateProps != null) {
-            properties.putAll(templateProps);
+            templateProps.forEach((k, v) -> properties.put(k, v.toString()));
             MavenProject project = (MavenProject) templateProps.get("project");
             if (project != null) {
-                properties.setProperty("project.groupId", project.getGroupId());
-                properties.setProperty("project.artifactId", project.getArtifactId());
-                properties.setProperty("project.version", project.getVersion());
-                properties.setProperty("project.basedir", project.getBasedir().getAbsolutePath());
+                properties.put("project.groupId", project.getGroupId());
+                properties.put("project.artifactId", project.getArtifactId());
+                properties.put("project.version", project.getVersion());
+                properties.put("project.basedir", project.getBasedir().getAbsolutePath());
             }
         }
 
