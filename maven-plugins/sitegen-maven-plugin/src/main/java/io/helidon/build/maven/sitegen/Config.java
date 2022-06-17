@@ -16,13 +16,23 @@
 
 package io.helidon.build.maven.sitegen;
 
+import java.io.IOException;
+import java.io.Reader;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import io.helidon.build.common.FileUtils;
 import io.helidon.build.common.SubstitutionVariables;
+
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 /**
  * Simple config.
@@ -85,7 +95,7 @@ public final class Config {
      * @return node
      */
     public Config get(String key) {
-        Object v = value != null ? ((Map<?, ?>) value).get(key) : null;
+        Object v = value instanceof Map ? ((Map<?, ?>) value).get(key) : null;
         return new Config(v, this);
     }
 
@@ -252,19 +262,66 @@ public final class Config {
     /**
      * Create a new instance.
      *
-     * @param value underlying value
+     * @param path       resource path
+     * @param clazz      class used to load the resource
+     * @param properties substitution properties
      * @return new instance
      */
-    public static Config create(Object value) {
-        return new Config(value, Map.of());
+    public static Config create(String path, Class<?> clazz, Map<String, String> properties) {
+        return create(FileUtils.resourceAsPath(path, clazz), properties);
     }
 
-    private static <T> T cast(Object value, Class<T> type) {
-        if (value != null) {
-            if (type.isInstance(value)) {
-                return type.cast(value);
+    /**
+     * Create a new instance.
+     *
+     * @param path       path
+     * @param properties substitution properties
+     * @return new instance
+     */
+    public static Config create(Path path, Map<String, String> properties) {
+        try {
+            return create(Files.newBufferedReader(path), properties);
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
+        }
+    }
+
+    /**
+     * Create a new instance.
+     *
+     * @param reader     reader
+     * @param properties substitution properties
+     * @return new instance
+     */
+    public static Config create(Reader reader, Map<String, String> properties) {
+        Yaml yaml = new Yaml(new SafeConstructor());
+        return create(yaml.loadAs(reader, Object.class), properties);
+    }
+
+    private static final Set<Class<?>> PRIMITIVE_BOXED =
+            Set.of(
+                    Boolean.class,
+                    Character.class,
+                    Byte.class,
+                    Short.class,
+                    Integer.class,
+                    Long.class,
+                    Float.class,
+                    Double.class
+            );
+
+
+    private <T> T cast(Object obj, Class<T> type) {
+        if (obj != null) {
+            if (type.equals(String.class)
+                    || obj.getClass().isPrimitive()
+                    || PRIMITIVE_BOXED.contains(obj.getClass())) {
+                return type.cast(substitutions.resolve(String.valueOf(obj)));
             }
-            throw new MappingException(value.getClass(), type);
+            if (type.isInstance(obj)) {
+                return type.cast(obj);
+            }
+            throw new MappingException(obj.getClass(), type);
         }
         return null;
     }

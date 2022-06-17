@@ -41,7 +41,6 @@ public class VueBindingsDirective extends ContentNodeDirective {
         bindings.put(page(node).source(), writer.toString());
     }
 
-
     /**
      * Get the stored bindings.
      *

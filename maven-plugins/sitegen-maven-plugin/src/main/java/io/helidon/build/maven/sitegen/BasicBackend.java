@@ -36,7 +36,7 @@ public class BasicBackend extends Backend {
 
     private BasicBackend() {
         super(BACKEND_NAME);
-        this.pageRenderers = Map.of(ADOC_EXT, AsciidocPageRenderer.create(BACKEND_NAME));
+        pageRenderers = Map.of(ADOC_EXT, AsciidocPageRenderer.create(BACKEND_NAME));
     }
 
     @Override

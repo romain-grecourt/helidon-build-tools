@@ -61,7 +61,7 @@ public final class AsciidocPageRenderer implements PageRenderer {
         requireNonNull(source, "source is null!");
         SiteEngine siteEngine = SiteEngine.get(backendName);
         Map<String, Object> docHeader = siteEngine.asciidoc().readDocumentHeader(source);
-        return Metadata.create(Config.create(docHeader));
+        return Metadata.create(Config.create(docHeader, Map.of()));
     }
 
     /**

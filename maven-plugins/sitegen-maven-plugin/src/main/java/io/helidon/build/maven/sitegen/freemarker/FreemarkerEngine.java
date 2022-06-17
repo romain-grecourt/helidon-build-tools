@@ -29,7 +29,6 @@ import java.util.Map.Entry;
 import io.helidon.build.maven.sitegen.Config;
 import io.helidon.build.maven.sitegen.RenderingContext;
 import io.helidon.build.maven.sitegen.RenderingException;
-import io.helidon.build.maven.sitegen.Site;
 
 import freemarker.core.Environment;
 import freemarker.template.Configuration;
@@ -62,9 +61,9 @@ public class FreemarkerEngine {
     private final Configuration freemarker;
 
     private FreemarkerEngine(Builder builder) {
-        this.backend = requireValid(Site.THREAD_LOCAL.get(), "backend is invalid!");
-        this.directives = builder.directives;
-        this.model = builder.model;
+        backend = requireValid(builder.backend, "backend is invalid!");
+        directives = builder.directives;
+        model = builder.model;
         freemarker = new Configuration(FREEMARKER_VERSION);
         freemarker.setTemplateLoader(new TemplateLoader());
         freemarker.setDefaultEncoding("UTF-8");
@@ -98,10 +97,9 @@ public class FreemarkerEngine {
      * @param targetPath the relative target path of the file to create
      * @param model      the model for the template to use
      * @param ctx        the processing context
-     * @return the created file
      * @throws RenderingException if an error occurred
      */
-    public Path renderFile(String template, String targetPath, Map<String, Object> model, RenderingContext ctx)
+    public void renderFile(String template, String targetPath, Map<String, Object> model, RenderingContext ctx)
             throws RenderingException {
 
         try {
@@ -109,7 +107,6 @@ public class FreemarkerEngine {
             Path target = ctx.outputDir().resolve(targetPath);
             Files.createDirectories(target.getParent());
             Files.writeString(target, rendered);
-            return target;
         } catch (IOException ex) {
             throw new RenderingException("error while writing rendered output to file", ex);
         }
@@ -168,7 +165,7 @@ public class FreemarkerEngine {
                     env.setVariable(directive.getKey(), directive.getValue());
                 }
             }
-            env.setVariable("helper", new Helper(OBJECT_WRAPPER));
+            env.setVariable("helper", new LinkHashModel(OBJECT_WRAPPER));
             env.setVariable("passthroughfix", new PassthroughFixDirective());
             env.setTemplateExceptionHandler(TemplateExceptionHandler.RETHROW_HANDLER);
             env.setLogTemplateExceptions(false);
@@ -190,6 +187,11 @@ public class FreemarkerEngine {
 
         private final Map<String, String> directives = new HashMap<>();
         private final Map<String, String> model = new HashMap<>();
+        private final String backend;
+
+        private Builder(String backend) {
+            this.backend = backend;
+        }
 
         /**
          * Add custom directives.
@@ -227,7 +229,6 @@ public class FreemarkerEngine {
             directives.putAll(config.get("directives")
                                     .asMap(String.class)
                                     .orElseGet(Map::of));
-
             model.putAll(config.get("model")
                                .asMap(String.class)
                                .orElseGet(Map::of));
@@ -247,28 +248,31 @@ public class FreemarkerEngine {
     /**
      * Create a new instance from configuration.
      *
-     * @param config config
+     * @param backend backend name
+     * @param config  config
      * @return new instance
      */
-    public static FreemarkerEngine create(Config config) {
-        return builder().config(config).build();
+    public static FreemarkerEngine create(String backend, Config config) {
+        return builder(backend).config(config).build();
     }
 
     /**
      * Create a new instance.
      *
+     * @param backend backend name
      * @return new instance
      */
-    public static FreemarkerEngine create() {
-        return builder().build();
+    public static FreemarkerEngine create(String backend) {
+        return builder(backend).build();
     }
 
     /**
      * Create a new builder.
      *
+     * @param backend backend name
      * @return new builder
      */
-    public static Builder builder() {
-        return new Builder();
+    public static Builder builder(String backend) {
+        return new Builder(backend);
     }
 }

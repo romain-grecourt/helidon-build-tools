@@ -34,7 +34,7 @@ public class BasicBackendTest {
 
     @Test
     public void testBasic1() throws Exception {
-        Path sourceDir = getFile(SOURCE_DIR_PREFIX + "testbasic1");
+        Path sourceDir = getFile(SOURCE_DIR_PREFIX + "basic1");
 
         Site.builder()
             .page(PageFilter.builder().includes("**/*.adoc").excludes("**/_*"))
@@ -48,7 +48,7 @@ public class BasicBackendTest {
 
     @Test
     public void testBasic2() throws Exception {
-        Path sourceDir = getFile(SOURCE_DIR_PREFIX + "testbasic2");
+        Path sourceDir = getFile(SOURCE_DIR_PREFIX + "basic2");
 
         Site.builder()
             .page(PageFilter.builder().includes("**/*.adoc").excludes("**/_*"))
@@ -62,7 +62,7 @@ public class BasicBackendTest {
 
     @Test
     public void testBasic3() throws Exception {
-        Path sourceDir = getFile(SOURCE_DIR_PREFIX + "testbasic3");
+        Path sourceDir = getFile(SOURCE_DIR_PREFIX + "basic3");
 
         Site.builder()
             .page(PageFilter.builder().includes("**/*.adoc").excludes("**/_*"))

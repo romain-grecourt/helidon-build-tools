@@ -17,10 +17,9 @@
 package io.helidon.build.maven.sitegen.maven;
 
 import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.util.Map;
 
+import io.helidon.build.maven.sitegen.Config;
 import io.helidon.build.maven.sitegen.RenderingException;
 import io.helidon.build.maven.sitegen.Site;
 
@@ -83,9 +82,8 @@ public class GenerateMojo extends AbstractMojo {
         Map<String, String> properties = AbstractAsciiDocMojo.projectProperties(project);
 
         try {
-            site = Site.builder()
-                       .config(Files.newInputStream(siteConfigFile.toPath()), properties)
-                       .build();
+            Config config = Config.create(siteConfigFile.toPath(), properties);
+            site = Site.create(config);
 
             // enable jruby verbose mode on debugging
             if (getLog().isDebugEnabled()) {
@@ -93,7 +91,7 @@ public class GenerateMojo extends AbstractMojo {
             }
 
             site.generate(siteSourceDirectory.toPath(), siteOutputDirectory.toPath());
-        } catch (IOException | RenderingException ex) {
+        } catch (RenderingException ex) {
             throw new MojoExecutionException(ex.getMessage(), ex);
         }
     }

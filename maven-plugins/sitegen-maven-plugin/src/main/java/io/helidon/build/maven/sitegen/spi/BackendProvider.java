@@ -54,13 +54,7 @@ public interface BackendProvider {
      */
     static Backend get(Config config) {
         String name = config.get("name").asString().orElse(null);
-        Config backendConfig = config.get("config")
-                                     .asOptional()
-                                     .map(bc -> bc.parent()
-                                                  .get(bc.asString()
-                                                         .orElseThrow(IllegalStateException::new)))
-                                     .orElse(null);
-        return get(name, backendConfig);
+        return get(name, config);
     }
 
     /**

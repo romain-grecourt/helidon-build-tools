@@ -28,7 +28,9 @@ import freemarker.cache.FileTemplateLoader;
 import freemarker.template.Configuration;
 import freemarker.template.Template;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.CoreMatchers.is;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Test helper.
@@ -60,30 +62,6 @@ public abstract class TestHelper {
         return Path.of(getBasedirPath(), path);
     }
 
-    static void assertString(String expected, String actual, String name) {
-        if (expected == null) {
-            assertNull(actual, name);
-        } else {
-            assertNotNull(actual, name);
-            assertEquals(expected, actual, name);
-        }
-    }
-
-    static void assertList(int expectedSize, List<?> list, String name) {
-        assertNotNull(list, name);
-        assertEquals(expectedSize, list.size(), name + ".size");
-        for (int i = 0; i < expectedSize; i++) {
-            assertNotNull(list.get(i), name + "[" + i + "]");
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    static <T> T assertType(Object actual, Class<T> expected, String name) {
-        assertNotNull(actual, name);
-        assertEquals(actual.getClass(), expected, name);
-        return (T) actual;
-    }
-
     /**
      * Render the expected template and compare it with the given actual file.
      * The actual file must exist and be identical to the rendered template,
@@ -96,7 +74,7 @@ public abstract class TestHelper {
      */
     public static void assertRendering(Path outputDir, Path expectedTpl, Path actual) throws Exception {
 
-        assertTrue(Files.exists(actual), actual.toAbsolutePath() + " does not exist");
+        assertThat(Files.exists(actual), is(true));
 
         // render expected
         FileTemplateLoader ftl = new FileTemplateLoader(expectedTpl.getParent().toFile());

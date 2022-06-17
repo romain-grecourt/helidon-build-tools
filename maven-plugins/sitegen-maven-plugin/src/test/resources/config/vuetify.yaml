@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+# Copyright (c) 2018, 2022 Oracle and/or its affiliates.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ backend:
         value: "import_contacts"
       items:
         - title: "Main Documentation"
-          pathprefix: "/about"
+          pathprefix: "/"
           items:
             - title: "About"
               pathprefix: "/about"
@@ -35,30 +35,30 @@ backend:
                 value: "weekend"
               items:
                 - includes:
-                    - "**/*.adoc"
+                    - "**/about*.adoc"
             - title: "Getting Started"
               pathprefix: "/getting-started"
               glyph:
                 type: "icon"
                 value: "weekend"
               items:
-                - includes:
-                    - "**/*.adoc"
+                - excludes:
+                    - "**/start*.adoc"
             - title: "Let's code"
               pathprefix: "/lets-code"
               glyph:
                 type: "icon"
                 value: "weekend"
               items:
-                -  includes:
-                     - "**/*.adoc"
+                - includes:
+                    - "**/*.adoc"
         - title: "Extra Resources"
           items:
-              - title: "Google"
-                href: "https://google.com"
-              - title: "Amazon"
-                href: "https://amazon.com"
-        - title: "Github"
+            - title: "Google"
+              href: "https://google.com"
+            - title: "Amazon"
+              href: "https://amazon.com"
+        - title: "GitHub"
           href: "https://github.com"
     theme:
         primary: "#1976D2"

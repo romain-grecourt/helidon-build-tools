@@ -19,7 +19,7 @@ glyph:
   value: "import_contacts"
 items:
   - title: "Main Documentation"
-    pathprefix: "/about"
+    pathprefix: "/"
     items:
       - title: "About"
         pathprefix: "/about"

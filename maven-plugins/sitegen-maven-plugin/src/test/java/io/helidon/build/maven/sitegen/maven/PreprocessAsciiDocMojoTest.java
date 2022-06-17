@@ -111,7 +111,7 @@ public class PreprocessAsciiDocMojoTest {
                          String goal,
                          Class<? extends AbstractAsciiDocMojo> mojoClass) throws Exception {
 
-        AbstractAsciiDocMojo mojo = mojo(pomFile, INCLUDES_TEST_ROOT.toFile(), goal, mojoClass);
+        AbstractAsciiDocMojo mojo = mojo(pomFile, INCLUDES_TEST_ROOT, goal, mojoClass);
 
         mojo.execute();
 

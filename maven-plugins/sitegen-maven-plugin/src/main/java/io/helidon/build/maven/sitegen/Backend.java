@@ -41,7 +41,7 @@ public abstract class Backend implements Model {
      *
      * @return the backend name
      */
-    public String getName() {
+    public String name() {
         return name;
     }
 

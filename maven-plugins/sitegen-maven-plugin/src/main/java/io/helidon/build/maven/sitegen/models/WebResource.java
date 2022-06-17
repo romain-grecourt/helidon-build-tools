@@ -79,8 +79,20 @@ public class WebResource implements Model {
          * @param location location
          * @return this builder
          */
-        public Builder href(Location location) {
+        public Builder location(Location location) {
             this.location = location;
+            return this;
+        }
+
+        /**
+         * Set the location.
+         *
+         * @param type  location type
+         * @param value location value
+         * @return this builder
+         */
+        public Builder location(Location.Type type, String value) {
+            this.location = Location.create(type, value);
             return this;
         }
 

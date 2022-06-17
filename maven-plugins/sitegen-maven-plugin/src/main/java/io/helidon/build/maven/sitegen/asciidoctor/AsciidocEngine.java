@@ -29,7 +29,6 @@ import java.util.function.Supplier;
 import io.helidon.build.maven.sitegen.Config;
 import io.helidon.build.maven.sitegen.RenderingContext;
 import io.helidon.build.maven.sitegen.RenderingException;
-import io.helidon.build.maven.sitegen.Site;
 import io.helidon.build.maven.sitegen.models.Page;
 
 import org.asciidoctor.Asciidoctor;
@@ -69,7 +68,7 @@ public class AsciidocEngine {
     private AsciidocEngine(Builder builder) {
         SLF4JBridgeHandler.removeHandlersForRootLogger();
         SLF4JBridgeHandler.install();
-        this.backend = requireValid(Site.THREAD_LOCAL.get(), "backend is invalid!");
+        this.backend = requireValid(builder.backend, "backend is invalid!");
         this.attributes = builder.attributes;
         this.libraries = builder.libraries;
         this.imagesdir = builder.imagesDir;
@@ -222,6 +221,11 @@ public class AsciidocEngine {
         private final List<String> libraries = new ArrayList<>();
         private final Map<String, Object> attributes = new HashMap<>();
         private String imagesDir = DEFAULT_IMAGESDIR;
+        private final String backend;
+
+        private Builder(String backend) {
+            this.backend = backend;
+        }
 
         /**
          * Add libraries.
@@ -302,7 +306,7 @@ public class AsciidocEngine {
                                     .asMap()
                                     .orElseGet(Map::of));
 
-            imagesDir = config.get("imagesdir")
+            imagesDir = config.get("images-dir")
                               .asString()
                               .orElse(null);
             return this;
@@ -327,28 +331,31 @@ public class AsciidocEngine {
      * Create a new instance from configuration.
      *
      * @param config config
+     * @param backend backend name
      * @return new instance
      */
-    public static AsciidocEngine create(Config config) {
-        return builder().config(config).build();
+    public static AsciidocEngine create(String backend, Config config) {
+        return builder(backend).config(config).build();
     }
 
     /**
      * Create a new instance.
      *
+     * @param backend backend name
      * @return new instance
      */
-    public static AsciidocEngine create() {
-        return builder().build();
+    public static AsciidocEngine create(String backend) {
+        return builder(backend).build();
     }
 
     /**
      * Create a new builder.
      *
+     * @param backend backend name
      * @return new builder
      */
-    public static Builder builder() {
-        return new Builder();
+    public static Builder builder(String backend) {
+        return new Builder(backend);
     }
 
     private static String parseSection0Title(Path source) {

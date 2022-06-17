@@ -24,12 +24,13 @@ import io.helidon.build.maven.sitegen.VuetifyBackend;
 import org.junit.jupiter.api.Test;
 
 import static io.helidon.build.maven.sitegen.maven.MavenPluginHelper.mojo;
-import static io.helidon.build.maven.sitegen.TestHelper.assertList;
-import static io.helidon.build.maven.sitegen.TestHelper.assertString;
-import static io.helidon.build.maven.sitegen.TestHelper.assertType;
 import static io.helidon.build.maven.sitegen.TestHelper.getFile;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.hamcrest.CoreMatchers.hasItems;
+import static org.hamcrest.CoreMatchers.instanceOf;
+import static org.hamcrest.CoreMatchers.not;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.nullValue;
+import static org.hamcrest.MatcherAssert.assertThat;
 
 /**
  * Tests {@link GenerateMojo}.
@@ -43,8 +44,8 @@ public class GenerateMojoTest {
         GenerateMojo mojo = mojo("generate-mojo/pom-basic-backend.xml", OUTPUT_DIR, "generate", GenerateMojo.class);
         mojo.execute();
         Site site = mojo.getSite();
-        assertNotNull(site, "site is null");
-        assertEquals("basic", site.backend().getName());
+        assertThat(site, is(not(nullValue())));
+        assertThat(site.backend().name(), is("basic"));
     }
 
     @Test
@@ -52,11 +53,10 @@ public class GenerateMojoTest {
         GenerateMojo mojo = mojo("generate-mojo/pom-vuetify-backend.xml", OUTPUT_DIR, "generate", GenerateMojo.class);
         mojo.execute();
         Site site = mojo.getSite();
-        assertNotNull(site, "site is null");
-        assertEquals("files", site.backend().getName());
-        VuetifyBackend backend = assertType(site.backend(), VuetifyBackend.class, "vuetify backend class");
-        assertList(2, backend.releases(), "backend.releases");
-        assertString("bar", backend.releases().get(0), "backend.releases[0]");
-        assertString("test-version", backend.releases().get(1), "backend.releases[1]");
+        assertThat(site, is(not(nullValue())));
+        assertThat(site.backend().name(), is("vuetify"));
+        assertThat(site.backend(), is(instanceOf(VuetifyBackend.class)));
+        VuetifyBackend backend = (VuetifyBackend) site.backend();
+        assertThat(backend.releases(), hasItems("bar", "test-version"));
     }
 }

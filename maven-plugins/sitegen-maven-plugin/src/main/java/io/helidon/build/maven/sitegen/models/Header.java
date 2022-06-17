@@ -178,7 +178,7 @@ public class Header implements Model {
                   .orElseGet(List::of)
                   .stream()
                   .map(WebResource::create)
-                  .forEach(stylesheets::add);
+                  .forEach(scripts::add);
 
             meta.putAll(config.get("meta")
                               .asMap(String.class)

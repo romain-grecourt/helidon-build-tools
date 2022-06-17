@@ -26,6 +26,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
+import io.helidon.build.maven.sitegen.Config;
 import io.helidon.build.maven.sitegen.RenderingException;
 import io.helidon.build.maven.sitegen.Site;
 
@@ -101,11 +102,10 @@ public class DoxiaSiteRenderer extends DefaultSiteRenderer {
             }
         }
 
-        Path siteDirectory = context.getSiteDirectories().iterator().next().toPath();
-        Path siteConfigFile = siteDirectory.resolve("sitegen.yaml");
-        Site site = Site.builder()
-                        .config(Files.newInputStream(siteConfigFile), properties)
-                        .build();
+        Path siteDir = context.getSiteDirectories().iterator().next().toPath();
+        Path configFile = siteDir.resolve("sitegen.yaml");
+        Config config = Config.create(configFile, properties);
+        Site site = Site.create(config);
 
         // enable jruby verbose mode on debugging
         if (getLogger().isDebugEnabled()) {
@@ -113,7 +113,7 @@ public class DoxiaSiteRenderer extends DefaultSiteRenderer {
         }
 
         try {
-            site.generate(siteDirectory, outputDir);
+            site.generate(siteDir, outputDir);
         } catch (RenderingException ex) {
             throw new RendererException(ex.getMessage(), ex);
         }

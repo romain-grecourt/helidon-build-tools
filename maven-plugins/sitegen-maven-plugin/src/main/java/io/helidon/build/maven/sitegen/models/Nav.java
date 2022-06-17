@@ -352,9 +352,12 @@ public final class Nav extends SourcePathFilter {
             title = config.get("title").asString().orElseThrow(() -> new IllegalArgumentException("title is required"));
             glyph = config.get("glyph").asOptional().map(Glyph::create).orElse(null);
             href = config.get("href").asString().orElse(null);
-            target = config.get("target").asString().orElse(null);
+            target = config.get("target").asString().orElse("_blank");
             pathprefix = config.get("pathprefix").asString().orElse(null);
-            config.get("items").asOptional().ifPresent(super::config);
+            config.get("items")
+                  .asNodeList()
+                  .orElseGet(List::of)
+                  .forEach(super::config);
         }
 
         /**

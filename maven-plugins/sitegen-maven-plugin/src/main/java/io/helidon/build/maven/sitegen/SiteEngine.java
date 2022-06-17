@@ -18,6 +18,7 @@ package io.helidon.build.maven.sitegen;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 import io.helidon.build.maven.sitegen.asciidoctor.AsciidocEngine;
@@ -36,16 +37,10 @@ public final class SiteEngine {
     private final FreemarkerEngine freemarker;
 
     private SiteEngine(Builder builder) {
-        if (builder.freemarker != null) {
-            this.freemarker = builder.freemarker;
-        } else {
-            this.freemarker = FreemarkerEngine.create();
-        }
-        if (builder.asciidoc != null) {
-            this.asciidoc = builder.asciidoc;
-        } else {
-            this.asciidoc = AsciidocEngine.create();
-        }
+        freemarker = Optional.ofNullable(builder.freemarker)
+                             .orElseGet(() -> FreemarkerEngine.create(builder.backend));
+        asciidoc = Optional.ofNullable(builder.asciidoc)
+                           .orElseGet(() -> AsciidocEngine.create(builder.backend));
     }
 
     /**
@@ -107,6 +102,11 @@ public final class SiteEngine {
 
         private FreemarkerEngine freemarker;
         private AsciidocEngine asciidoc;
+        private final String backend;
+
+        private Builder(String backend) {
+            this.backend = backend;
+        }
 
         /**
          * Set the freemarker engine to use.
@@ -148,8 +148,14 @@ public final class SiteEngine {
          * @return this builder
          */
         public Builder config(Config config) {
-            freemarker = config.get("freemarker").asOptional().map(FreemarkerEngine::create).orElse(null);
-            asciidoc = config.get("asciidoctor").asOptional().map(AsciidocEngine::create).orElse(null);
+            freemarker = config.get("freemarker")
+                               .asOptional()
+                               .map(c -> FreemarkerEngine.create(backend, c))
+                               .orElse(null);
+            asciidoc = config.get("asciidoctor")
+                             .asOptional()
+                             .map(c -> AsciidocEngine.create(backend, c))
+                             .orElse(null);
             return this;
         }
 
@@ -171,28 +177,31 @@ public final class SiteEngine {
     /**
      * Create a new instance from configuration.
      *
-     * @param config config
+     * @param backend backend name
+     * @param config  config
      * @return new instance
      */
-    public static SiteEngine create(Config config) {
-        return builder().config(config).build();
+    public static SiteEngine create(String backend, Config config) {
+        return builder(backend).config(config).build();
     }
 
     /**
      * Create a new instance.
      *
+     * @param backend backend name
      * @return new instance
      */
-    public static SiteEngine create() {
-        return builder().build();
+    public static SiteEngine create(String backend) {
+        return builder(backend).build();
     }
 
     /**
      * Create a new builder.
      *
+     * @param backend backend name
      * @return new builder
      */
-    public static Builder builder() {
-        return new Builder();
+    public static Builder builder(String backend) {
+        return new Builder(backend);
     }
 }

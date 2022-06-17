@@ -17,7 +17,6 @@
 package io.helidon.build.maven.sitegen;
 
 import java.io.IOException;
-import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
@@ -41,8 +40,8 @@ import io.helidon.build.maven.sitegen.freemarker.TemplateSession;
 import io.helidon.build.maven.sitegen.models.Nav;
 import io.helidon.build.maven.sitegen.models.Page;
 
+import static io.helidon.build.common.FileUtils.resourceAsPath;
 import static io.helidon.build.common.Strings.requireValid;
-import static io.helidon.build.maven.sitegen.Helper.loadResourceDirAsPath;
 import static io.helidon.build.maven.sitegen.RenderingContext.copyResources;
 import static io.helidon.build.maven.sitegen.asciidoctor.AsciidocPageRenderer.ADOC_EXT;
 
@@ -56,29 +55,23 @@ public class VuetifyBackend extends Backend {
     /**
      * The Vuetify backend name.
      */
-    public static final String BACKEND_NAME = "files";
+    public static final String BACKEND_NAME = "vuetify";
 
-    private static final String STATIC_RESOURCES = "files/vuetify";
-
-    private final Map<String, PageRenderer> pageRenderers;
+    private final Map<String, PageRenderer> renderers;
     private final Nav nav;
     private final Map<String, String> theme;
-    private final Path staticResources;
+    private final Path staticFiles;
     private final String home;
     private final List<String> releases;
 
     private VuetifyBackend(Builder builder) {
         super(BACKEND_NAME);
-        this.theme = builder.theme;
-        this.nav = builder.nav;
-        this.home = requireValid(builder.home, "home is invalid!");
-        this.releases = builder.releases;
-        this.pageRenderers = Map.of(ADOC_EXT, AsciidocPageRenderer.create(BACKEND_NAME));
-        try {
-            staticResources = loadResourceDirAsPath(STATIC_RESOURCES);
-        } catch (URISyntaxException | IOException ex) {
-            throw new IllegalStateException(ex);
-        }
+        theme = builder.theme;
+        nav = builder.nav;
+        home = requireValid(builder.home, "home is invalid!");
+        releases = builder.releases;
+        renderers = Map.of(ADOC_EXT, AsciidocPageRenderer.create(BACKEND_NAME));
+        staticFiles = resourceAsPath("/files/vuetify", VuetifyBackend.class);
     }
 
     /**
@@ -119,7 +112,7 @@ public class VuetifyBackend extends Backend {
 
     @Override
     public Map<String, PageRenderer> renderers() {
-        return pageRenderers;
+        return renderers;
     }
 
     @Override
@@ -201,7 +194,7 @@ public class VuetifyBackend extends Backend {
 
         // copy vuetify resources
         try {
-            copyResources(staticResources, ctx.outputDir());
+            copyResources(staticFiles, ctx.outputDir());
         } catch (
                 IOException ex) {
             throw new RenderingException("An error occurred during static resource processing ", ex);
@@ -342,10 +335,16 @@ public class VuetifyBackend extends Backend {
             theme.putAll(config.get("theme")
                                .asMap(String.class)
                                .orElseGet(Map::of));
-            home = config.get("home").asString().orElse(null);
+            home = config.get("homePage")
+                         .asString()
+                         .orElse(null);
             releases.addAll(config.get("releases")
                                   .asList(String.class)
                                   .orElseGet(List::of));
+            nav = config.get("navigation")
+                        .asOptional()
+                        .map(Nav::create)
+                        .orElse(null);
             return this;
         }
 

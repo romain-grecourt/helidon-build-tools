@@ -19,6 +19,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystemAlreadyExistsException;
 import java.nio.file.FileSystems;
@@ -760,19 +762,19 @@ public final class FileUtils {
             }
             Path root = fs.getRootDirectories().iterator().next();
             Files.walk(root)
-                    .filter(p -> !p.equals(root))
-                    .forEach(file -> {
-                        Path filePath = directory.resolve(Path.of(file.toString().substring(1)));
-                        try {
-                            if (Files.isDirectory(file)) {
-                                Files.createDirectories(filePath);
-                            } else {
-                                Files.copy(file, filePath);
-                            }
-                        } catch (IOException ioe) {
-                            throw new UncheckedIOException(ioe);
-                        }
-                    });
+                 .filter(p -> !p.equals(root))
+                 .forEach(file -> {
+                     Path filePath = directory.resolve(Path.of(file.toString().substring(1)));
+                     try {
+                         if (Files.isDirectory(file)) {
+                             Files.createDirectories(filePath);
+                         } else {
+                             Files.copy(file, filePath);
+                         }
+                     } catch (IOException ioe) {
+                         throw new UncheckedIOException(ioe);
+                     }
+                 });
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -816,5 +818,26 @@ public final class FileUtils {
     }
 
     private FileUtils() {
+    }
+
+    /**
+     * Get a resource as a {@link Path} instance.
+     *
+     * @param path the resource path
+     * @return Path
+     * @throws IllegalArgumentException if the resource path is not found, or if the URI scheme is not supported
+     */
+    public static Path resourceAsPath(String path, Class<?> clazz) throws IllegalArgumentException {
+        // get classloader resource URL
+        URL templatesDirURL = clazz.getResource(path);
+        if (templatesDirURL == null) {
+            throw new IllegalArgumentException("resource not found: " + path);
+        }
+        // convert URL to Path
+        try {
+            return pathOf(templatesDirURL.toURI());
+        } catch (URISyntaxException ex) {
+            throw new RuntimeException(ex);
+        }
     }
 }

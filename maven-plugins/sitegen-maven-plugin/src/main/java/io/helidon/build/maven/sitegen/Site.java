@@ -17,12 +17,12 @@
 package io.helidon.build.maven.sitegen;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 import io.helidon.build.maven.sitegen.models.Header;
@@ -30,20 +30,10 @@ import io.helidon.build.maven.sitegen.models.PageFilter;
 import io.helidon.build.maven.sitegen.models.StaticAsset;
 import io.helidon.build.maven.sitegen.spi.BackendProvider;
 
-import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.constructor.SafeConstructor;
-
-import static java.util.Objects.requireNonNull;
-
 /**
  * Yet another site generator.
  */
 public class Site {
-
-    /**
-     * Ugly!
-     */
-    public static final ThreadLocal<String> THREAD_LOCAL = new ThreadLocal<>();
 
     private final SiteEngine engine;
     private final List<StaticAsset> assets;
@@ -52,14 +42,15 @@ public class Site {
     private final Backend backend;
 
     private Site(Builder builder) {
-        this.backend = builder.backend != null ? builder.backend : BasicBackend.create();
-        final String backendName = this.backend.getName();
-        THREAD_LOCAL.set(backendName);
-        this.engine = builder.engine != null ? builder.engine : SiteEngine.create();
-        this.header = builder.header != null ? builder.header : Header.create();
+        backend = Optional.ofNullable(builder.backend)
+                          .orElseGet(BasicBackend::create);
+        engine = Optional.ofNullable(builder.engine)
+                         .orElseGet(() -> SiteEngine.create(backend.name()));
+        header = Optional.ofNullable(builder.header)
+                         .orElseGet(Header::create);
         this.assets = builder.assets;
         this.pages = builder.pages;
-        SiteEngine.register(backendName, this.engine);
+        SiteEngine.register(backend.name(), this.engine);
     }
 
     /**
@@ -138,29 +129,6 @@ public class Site {
         /**
          * Apply the specified configuration.
          *
-         * @param inputStream the inputStream to read configuration
-         * @return this builder
-         */
-        public Builder config(InputStream inputStream) {
-            return config(inputStream, Map.of());
-        }
-
-        /**
-         * Apply the specified configuration.
-         *
-         * @param inputStream the inputStream to read configuration
-         * @param properties  properties to add for resolution
-         * @return this builder
-         */
-        public Builder config(InputStream inputStream, Map<String, String> properties) {
-            Yaml yaml = new Yaml(new SafeConstructor());
-            Config config = Config.create(yaml.loadAs(inputStream, Object.class), properties);
-            return config(config, properties);
-        }
-
-        /**
-         * Apply the specified configuration.
-         *
          * @param config config
          * @return this builder
          */
@@ -176,18 +144,15 @@ public class Site {
          * @return this builder
          */
         public Builder config(Config config, Map<String, String> properties) {
-
             backend = config.get("backend")
                             .asOptional()
                             .map(BackendProvider::get)
                             .orElseGet(BasicBackend::create);
 
-            THREAD_LOCAL.set(backend.getName());
-
             engine = config.get("engine")
                            .asOptional()
-                           .map(SiteEngine::create)
-                           .orElseGet(SiteEngine::create);
+                           .map(c -> SiteEngine.create(backend.name(), c))
+                           .orElse(null);
 
             config.get("assets")
                   .asNodeList()
@@ -272,15 +237,12 @@ public class Site {
 
         /**
          * Set the backend.
-         * <p>
-         * Must be invoked first.
          *
          * @param backend the backend to use
          * @return this builder
          */
         public Builder backend(Backend backend) {
-            this.backend = requireNonNull(backend, "backend is null!");
-            THREAD_LOCAL.set(backend.getName());
+            this.backend = backend;
             return this;
         }
 
@@ -367,6 +329,16 @@ public class Site {
         public Site build() {
             return new Site(this);
         }
+    }
+
+    /**
+     * Create a new instance from configuration.
+     *
+     * @param config config
+     * @return new instance
+     */
+    public static Site create(Config config) {
+        return builder().config(config).build();
     }
 
     /**
