@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,64 +16,62 @@
 
 package io.helidon.build.maven.sitegen.asciidoctor;
 
-import java.io.File;
+import java.nio.file.Path;
 import java.util.Map;
 
-import io.helidon.build.maven.sitegen.Page;
+import io.helidon.build.maven.sitegen.Config;
+import io.helidon.build.maven.sitegen.models.Page;
 import io.helidon.build.maven.sitegen.PageRenderer;
 import io.helidon.build.maven.sitegen.RenderingContext;
 import io.helidon.build.maven.sitegen.SiteEngine;
 
-import static io.helidon.build.maven.sitegen.Helper.asString;
-import static io.helidon.build.maven.sitegen.Helper.checkNonNull;
-import static io.helidon.build.maven.sitegen.Helper.checkNonNullNonEmpty;
-import static io.helidon.build.maven.sitegen.Helper.checkValidDir;
-import static io.helidon.build.maven.sitegen.Page.Metadata;
+import static io.helidon.build.maven.sitegen.Helper.requireNonNull;
+import static io.helidon.build.maven.sitegen.Helper.requireValidString;
+import static io.helidon.build.maven.sitegen.Helper.requireValidDirectory;
+import static io.helidon.build.maven.sitegen.models.Page.Metadata;
 
 /**
  * Implementation of a {@link PageRenderer} for asciidoc documents.
  */
-public class AsciidocPageRenderer implements PageRenderer {
+public final class AsciidocPageRenderer implements PageRenderer {
 
     /**
      * Constant for the asciidoc file extension.
      */
     public static final String ADOC_EXT = "adoc";
+
     private final String backendName;
 
-    /**
-     * Create a new instance of {@link AsciidocPageRenderer}.
-     *
-     * @param backendName the name of the backend
-     */
-    public AsciidocPageRenderer(String backendName) {
+    private AsciidocPageRenderer(String backendName) {
         this.backendName = backendName;
     }
 
     @Override
-    public void process(Page page, RenderingContext ctx, File pagesdir, String ext) {
-        checkNonNull(page, "page");
-        checkNonNull(ctx, "ctx");
-        checkValidDir(pagesdir, "pagesdir");
-        checkNonNullNonEmpty(ext, "ext");
+    public void process(Page page, RenderingContext ctx, Path pagesDir, String ext) {
+        requireNonNull(page, "page");
+        requireNonNull(ctx, "ctx");
+        requireValidDirectory(pagesDir, "pagesDir");
+        requireValidString(ext, "ext");
         SiteEngine siteEngine = SiteEngine.get(backendName);
-        File target = new File(pagesdir, page.getTargetPath() + "." + ext);
-        siteEngine.asciidoc().render(page, ctx, target,
-                Map.of("page", page,
-                       "pages", ctx.getPages()));
+        Path target = pagesDir.resolve(page.targetPath()).resolve("." + ext);
+        siteEngine.asciidoc().render(page, ctx, target, Map.of("page", page, "pages", ctx.pages()));
     }
 
     @Override
-    public Metadata readMetadata(File source) {
-        checkNonNull(source, "source");
+    public Metadata readMetadata(Path source) {
+        requireNonNull(source, "source");
         SiteEngine siteEngine = SiteEngine.get(backendName);
-        Map<String, Object> docHeader = siteEngine
-                .asciidoc().readDocumentHeader(source);
-        return new Metadata(
-                asString(docHeader.get("description")),
-                asString(docHeader.get("keywords")),
-                asString(docHeader.get("h1")),
-                asString(docHeader.get("doctitle")),
-                asString(docHeader.get("h1prefix")));
+        Map<String, Object> docHeader = siteEngine.asciidoc().readDocumentHeader(source);
+        return Metadata.create(Config.create(docHeader));
+    }
+
+    /**
+     * Create a new instance.
+     *
+     * @param backendName backend name
+     * @return new instance
+     */
+    public static AsciidocPageRenderer create(String backendName) {
+        return new AsciidocPageRenderer(backendName);
     }
 }

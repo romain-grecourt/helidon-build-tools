@@ -22,6 +22,7 @@ import io.helidon.build.maven.sitegen.maven.GenerateMojo;
 
 import org.junit.jupiter.api.Test;
 
+import static io.helidon.build.maven.sitegen.MavenPluginHelper.mojo;
 import static io.helidon.build.maven.sitegen.TestHelper.assertList;
 import static io.helidon.build.maven.sitegen.TestHelper.assertString;
 import static io.helidon.build.maven.sitegen.TestHelper.assertType;
@@ -30,8 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
- *
- * @author rgrecour
+ * Tests {@link GenerateMojo}.
  */
 public class GenerateMojoTest {
 
@@ -39,31 +39,23 @@ public class GenerateMojoTest {
 
     @Test
     public void testBasicBackendConfiguration() throws Exception {
-        GenerateMojo mojo = MavenPluginHelper.getInstance().getMojo(
-                "generate-mojo/pom-basic-backend.xml",
-                OUTPUT_DIR,
-                "generate",
-                GenerateMojo.class);
+        GenerateMojo mojo = mojo("generate-mojo/pom-basic-backend.xml", OUTPUT_DIR, "generate", GenerateMojo.class);
         mojo.execute();
         Site site = mojo.getSite();
         assertNotNull(site, "site is null");
-        assertEquals("basic", site.getBackend().getName());
+        assertEquals("basic", site.backend().getName());
     }
 
     @Test
     public void testVuetifyBackendConfiguration() throws Exception {
-        GenerateMojo mojo = MavenPluginHelper.getInstance().getMojo(
-                "generate-mojo/pom-vuetify-backend.xml",
-                OUTPUT_DIR,
-                "generate",
-                GenerateMojo.class);
+        GenerateMojo mojo = mojo("generate-mojo/pom-vuetify-backend.xml", OUTPUT_DIR, "generate", GenerateMojo.class);
         mojo.execute();
         Site site = mojo.getSite();
         assertNotNull(site, "site is null");
-        assertEquals("vuetify", site.getBackend().getName());
-        VuetifyBackend backend = assertType(site.getBackend(), VuetifyBackend.class, "vuetify backend class");
-        assertList(2, backend.getReleases(), "backend.releases");
-        assertString("bar", backend.getReleases().get(0), "backend.releases[0]");
-        assertString("test-version", backend.getReleases().get(1), "backend.releases[1]");
+        assertEquals("vuetify", site.backend().getName());
+        VuetifyBackend backend = assertType(site.backend(), VuetifyBackend.class, "vuetify backend class");
+        assertList(2, backend.releases(), "backend.releases");
+        assertString("bar", backend.releases().get(0), "backend.releases[0]");
+        assertString("test-version", backend.releases().get(1), "backend.releases[1]");
     }
 }

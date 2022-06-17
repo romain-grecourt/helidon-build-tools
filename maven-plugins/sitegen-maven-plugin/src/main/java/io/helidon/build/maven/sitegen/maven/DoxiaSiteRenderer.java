@@ -18,6 +18,10 @@ package io.helidon.build.maven.sitegen.maven;
 import java.io.File;
 import java.io.IOException;
 import java.io.Writer;
+import java.nio.charset.Charset;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Properties;
@@ -35,7 +39,6 @@ import org.apache.maven.plugins.site.render.ReportDocumentRenderer;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.component.annotations.Component;
 import org.codehaus.plexus.util.IOUtil;
-import org.codehaus.plexus.util.WriterFactory;
 
 /**
  * Doxia site renderer.
@@ -47,20 +50,22 @@ public class DoxiaSiteRenderer extends DefaultSiteRenderer {
     public void render(Collection<DocumentRenderer> documents, SiteRenderingContext context, File outputDirectory)
             throws RendererException, IOException {
 
+        Path outputDir = outputDirectory.toPath();
         for (DocumentRenderer docRenderer : documents) {
             if (!(docRenderer instanceof ReportDocumentRenderer)) {
                 continue;
             }
             RenderingContext renderingContext = docRenderer.getRenderingContext();
-            File outputFile = new File(outputDirectory, docRenderer.getOutputName());
-            File inputFile = new File(renderingContext.getBasedir(), renderingContext.getInputName());
-            boolean modified = !outputFile.exists()
-                    || (inputFile.lastModified() > outputFile.lastModified())
-                    || (context.getDecoration().getLastModified() > outputFile.lastModified());
+            Path outputFile = outputDir.resolve(docRenderer.getOutputName());
+            Path inputFile = renderingContext.getBasedir().toPath().resolve(renderingContext.getInputName());
+            FileTime lastModifiedTime = Files.getLastModifiedTime(outputFile);
+            boolean modified = !Files.exists(outputFile)
+                    || (Files.getLastModifiedTime(inputFile).compareTo(lastModifiedTime) > 0)
+                    || (context.getDecoration().getLastModified() > lastModifiedTime.toMillis());
 
             if (modified || docRenderer.isOverwrite()) {
-                if (!outputFile.getParentFile().exists()) {
-                    outputFile.getParentFile().mkdirs();
+                if (!Files.exists(outputFile)) {
+                    Files.createDirectories(outputFile.getParent());
                 }
 
                 if (getLogger().isDebugEnabled()) {
@@ -70,7 +75,7 @@ public class DoxiaSiteRenderer extends DefaultSiteRenderer {
                 Writer writer = null;
                 try {
                     if (!docRenderer.isExternalReport()) {
-                        writer = WriterFactory.newWriter(outputFile, context.getOutputEncoding());
+                        writer = Files.newBufferedWriter(outputFile, Charset.forName(context.getOutputEncoding()));
                     }
                     docRenderer.renderDocument(writer, this, context);
                 } finally {
@@ -96,10 +101,10 @@ public class DoxiaSiteRenderer extends DefaultSiteRenderer {
             }
         }
 
-        File siteDirectory = context.getSiteDirectories().iterator().next();
-        File siteConfigFile = new File(siteDirectory, "sitegen.yaml");
+        Path siteDirectory = context.getSiteDirectories().iterator().next().toPath();
+        Path siteConfigFile = siteDirectory.resolve("sitegen.yaml");
         Site site = Site.builder()
-                        .config(siteConfigFile, properties)
+                        .config(Files.newInputStream(siteConfigFile), properties)
                         .build();
 
         // enable jruby verbose mode on debugging
@@ -108,18 +113,17 @@ public class DoxiaSiteRenderer extends DefaultSiteRenderer {
         }
 
         try {
-            site.generate(siteDirectory, outputDirectory);
+            site.generate(siteDirectory, outputDir);
         } catch (RenderingException ex) {
             throw new RendererException(ex.getMessage(), ex);
         }
     }
 
     @Override
-    public void copyResources(SiteRenderingContext siteRenderingContext, File resourcesDirectory, File outputDirectory)
-            throws IOException {
+    public void copyResources(SiteRenderingContext context, File resourcesDir, File outputDir) {
     }
 
     @Override
-    public void copyResources(SiteRenderingContext siteRenderingContext, File outputDirectory) throws IOException {
+    public void copyResources(SiteRenderingContext context, File outputDirectory) {
     }
 }

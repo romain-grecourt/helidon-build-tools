@@ -28,13 +28,14 @@ import org.asciidoctor.jruby.internal.RubyAttributesMapDecorator;
  * A Freemarker {@code ObjectMapper} to wrap and unwrap objects to and
  * from {@code TemplateModel}.
  */
-public class ObjectWrapper extends DefaultObjectWrapper {
+final class ObjectWrapper extends DefaultObjectWrapper {
 
     /**
-     * Create a new instance of {@link ObjectWrapper}.
+     * Create a new instance.
+     *
      * @param incompatibleImprovements the freemarker version
      */
-    public ObjectWrapper(Version incompatibleImprovements) {
+    ObjectWrapper(Version incompatibleImprovements) {
         super(incompatibleImprovements);
         this.setSimpleMapWrapper(true);
     }
@@ -50,7 +51,7 @@ public class ObjectWrapper extends DefaultObjectWrapper {
         if (obj instanceof RubyAttributesMapDecorator) {
             return new ContentNodeAttributesModel(this, (RubyAttributesMapDecorator) obj);
         }
-        if (obj instanceof Document){
+        if (obj instanceof Document) {
             return new SimpleObjectModel(obj);
         }
         return super.wrap(obj);
@@ -61,8 +62,8 @@ public class ObjectWrapper extends DefaultObjectWrapper {
         if (model instanceof ContentNodeHashModel) {
             return ((ContentNodeHashModel) model).getContentNode();
         }
-        if (model instanceof SimpleObjectModel){
-            return ((SimpleObjectModel) model).getWrapped();
+        if (model instanceof SimpleObjectModel) {
+            return ((SimpleObjectModel) model).wrapped();
         }
         return super.unwrap(model);
     }

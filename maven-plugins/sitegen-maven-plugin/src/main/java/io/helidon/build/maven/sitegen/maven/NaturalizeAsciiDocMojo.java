@@ -31,8 +31,7 @@ import org.apache.maven.plugins.annotations.Mojo;
  * this goal. (This goal inherits the common settings and adds no others.)
  */
 @Mojo(name = "naturalize-adoc",
-        defaultPhase = LifecyclePhase.GENERATE_SOURCES,
-        requiresProject = true)
+        defaultPhase = LifecyclePhase.GENERATE_SOURCES)
 public class NaturalizeAsciiDocMojo extends AbstractAsciiDocMojo {
 
     @Override

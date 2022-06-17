@@ -34,20 +34,20 @@ import static io.helidon.build.maven.sitegen.asciidoctor.CardBlockProcessor.BLOC
 
 /**
  * An asciidoctor converter that supports backends implemented with Freemarker.
- *
+ * <p>
  * The Freemarker templates are loaded from classpath, see {@link TemplateLoader}
  */
 public class AsciidocConverter extends AbstractConverter<String> {
 
-    private static final Logger LOGGER =
-            LoggerFactory.getLogger(AsciidocConverter.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(AsciidocConverter.class);
 
     private final FreemarkerEngine templateEngine;
 
     /**
      * Create a new instance of {@link AsciidocConverter}.
+     *
      * @param backend the backend name
-     * @param opts the asciidoctor invocation options
+     * @param opts    the asciidoctor invocation options
      */
     public AsciidocConverter(String backend, Map<String, Object> opts) {
         super(backend, opts);
@@ -55,10 +55,7 @@ public class AsciidocConverter extends AbstractConverter<String> {
     }
 
     @Override
-    public String convert(ContentNode node,
-                          String transform,
-                          Map<Object, Object> opts) {
-
+    public String convert(ContentNode node, String transform, Map<Object, Object> opts) {
         if (node != null && node.getNodeName() != null) {
             String templateName;
             if (node.equals(node.getDocument())) {
@@ -69,10 +66,13 @@ public class AsciidocConverter extends AbstractConverter<String> {
                 // detect phrase node for generated block links
                 if (node.getNodeName().equals("inline_anchor")
                         && BLOCK_LINK_TEXT.equals(((PhraseNode) node).getText())) {
+
                     // store the link model as an attribute in the corresponding
                     // block
-                    node.getParent().getParent().getAttributes()
-                            .put("_link", (PhraseNode) node);
+                    node.getParent()
+                        .getParent()
+                        .getAttributes()
+                        .put("_link", node);
                     // the template for the block is responsible for rendering
                     // the link, discard the output
                     return "";

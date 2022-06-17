@@ -16,289 +16,365 @@
 
 package io.helidon.build.maven.sitegen;
 
-import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
-import java.util.Collections;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Properties;
-import java.util.stream.Collectors;
+import java.util.function.Supplier;
 
-import io.helidon.config.Config;
-import io.helidon.config.ConfigFilters;
-import io.helidon.config.ConfigMappers;
-import io.helidon.config.ConfigSources;
+import io.helidon.build.maven.sitegen.models.Header;
+import io.helidon.build.maven.sitegen.models.PageFilter;
+import io.helidon.build.maven.sitegen.models.StaticAsset;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
 
-import static io.helidon.build.maven.sitegen.Helper.checkNonNull;
+import static io.helidon.build.maven.sitegen.Helper.requireNonNull;
 
 /**
  * Yet another site generator.
  */
 public class Site {
 
-    private static final String ENGINE_PROP = "engine";
-    private static final String ASSETS_PROP = "assets";
-    private static final String HEADER_PROP = "header";
-    private static final String PAGES_PROP = "pages";
-    private static final String BACKEND_PROP = "backend";
-
     /**
      * Ugly!
      */
-    public static final ThreadLocal<String> THREADLOCAL = new ThreadLocal<>();
+    public static final ThreadLocal<String> THREAD_LOCAL = new ThreadLocal<>();
 
     private final SiteEngine engine;
     private final List<StaticAsset> assets;
     private final Header header;
-    private final List<SourcePathFilter> pages;
+    private final List<PageFilter> pages;
     private final Backend backend;
 
-    private Site(SiteEngine engine,
-                List<StaticAsset> assets,
-                Header header,
-                List<SourcePathFilter> pages,
-                Backend backend) {
-        this.backend = backend == null ? new BasicBackend() : backend;
+    private Site(Builder builder) {
+        this.backend = builder.backend != null ? builder.backend : BasicBackend.create();
         final String backendName = this.backend.getName();
-        THREADLOCAL.set(backendName);
-        this.engine = engine == null ? SiteEngine.builder().build() : engine;
-        this.assets = assets == null ? Collections.emptyList() : assets;
-        this.header = header == null ? new Header() : header;
-        this.pages = pages == null ? Collections.emptyList() : pages;
+        THREAD_LOCAL.set(backendName);
+        this.engine = builder.engine != null ? builder.engine : SiteEngine.create();
+        this.header = builder.header != null ? builder.header : Header.create();
+        this.assets = builder.assets;
+        this.pages = builder.pages;
         SiteEngine.register(backendName, this.engine);
     }
 
     /**
      * Get the configured site engine.
-     * @return {@link SiteEngine}, never {@code null}
+     *
+     * @return site engine, never {@code null}
      */
-    public SiteEngine getEngine() {
+    public SiteEngine engine() {
         return engine;
     }
 
     /**
      * Get the configured static assets.
-     * @return {@link StaticAsset}, never {@code null}
+     *
+     * @return list of assets, never {@code null}
      */
-    public List<StaticAsset> getAssets() {
+    public List<StaticAsset> assets() {
         return assets;
     }
 
     /**
      * Get the configured header.
-     * @return {@link Header}, never {@code null}
+     *
+     * @return header, never {@code null}
      */
-    public Header getHeader() {
+    public Header header() {
         return header;
     }
 
     /**
      * Get the configured pages filter.
-     * @return {@link SourcePathFilter}, never {@code null}
+     *
+     * @return list of filters, never {@code null}
      */
-    public List<SourcePathFilter> getPages() {
+    public List<PageFilter> pages() {
         return pages;
     }
 
     /**
      * Get the configured backend.
-     * @return {@link Backend}, never {@code null}
+     *
+     * @return backend, never {@code null}
      */
-    public Backend getBackend() {
+    public Backend backend() {
         return backend;
     }
 
     /**
      * Triggers rendering of the site.
      *
-     * @param sourcedir the source directory containing the site documents, must
-     * be an existing directory
-     * @param outputdir the output directory where to generate the site files,
-     * the directory and the missing parents will be automatically created
+     * @param sourceDir the source directory containing the site documents
+     * @param outputDir the output directory where to generate the site files
      * @throws RenderingException if any error occurs while processing the site
      */
-    public void generate(File sourcedir, File outputdir) throws RenderingException {
+    public void generate(Path sourceDir, Path outputDir) throws RenderingException {
         try {
-            Files.createDirectories(outputdir.toPath());
+            Files.createDirectories(outputDir);
+            backend.generate(new RenderingContext(this, sourceDir, outputDir));
         } catch (IOException ex) {
             throw new RenderingException(ex.getMessage(), ex);
         }
-        backend.generate(new RenderingContext(this, sourcedir, outputdir));
     }
 
     /**
-     * A fluent builder to create {@link Site} instances.
+     * A builder of {@link Site}.
      */
-    public static class Builder extends AbstractBuilder<Site> {
+    @SuppressWarnings("unused")
+    public static class Builder {
+
+        private Backend backend;
+        private SiteEngine engine;
+        private Header header;
+        private final List<StaticAsset> assets = new ArrayList<>();
+        private final List<PageFilter> pages = new ArrayList<>();
 
         /**
-         * Apply the configuration represented by the given configuration file.
-         * @param configFile the file to read the configuration from
-         * @return the {@link Builder} instance
+         * Apply the specified configuration.
+         *
+         * @param inputStream the inputStream to read configuration
+         * @return this builder
          */
-        public Builder config(File configFile){
-            return config(configFile, new Properties());
+        public Builder config(InputStream inputStream) {
+            return config(inputStream, new Properties());
         }
 
         /**
-         * Apply the configuration represented by the given configuration file.
-         * @param configFile the file to read the configuration from
-         * @param properties properties to add for resolution
-         * @return the {@link Builder} instance
+         * Apply the specified configuration.
+         *
+         * @param inputStream the inputStream to read configuration
+         * @param properties  properties to add for resolution
+         * @return this builder
          */
-        public Builder config(File configFile, Properties properties) {
+        public Builder config(InputStream inputStream, Properties properties) {
+            Yaml yaml = new Yaml(new SafeConstructor());
+            Config config = Config.create(yaml.loadAs(inputStream, Object.class));
+            return config(config, properties);
+        }
 
-            // TODO wrap this with a try/catch for ConfigException.
+        /**
+         * Apply the specified configuration.
+         *
+         * @param config config
+         * @return this builder
+         */
+        public Builder config(Config config) {
+            return config(config, new Properties());
+        }
 
-            // load config file as config nodes
-            Config config = Config.builder()
-                .addFilter(ConfigFilters.valueResolving())
-                .addMapper(Properties.class, (Config c) -> ConfigMappers.toProperties(c.detach()))
-                .sources(ConfigSources.file(configFile.getAbsolutePath()), ConfigSources.create(properties))
-                .build();
+        /**
+         * Apply the specified configuration.
+         *
+         * @param config     config
+         * @param properties properties to add for resolution
+         * @return this builder
+         */
+        public Builder config(Config config, Properties properties) {
 
-            // backend
-            config.get(BACKEND_PROP)
-                    .asNode()
-                    .ifPresentOrElse(c -> {
-                        Backend backend = Backend.builder().config(c).build();
-                        put(BACKEND_PROP, backend);
-                        THREADLOCAL.set(backend.getName());
-                    }, () -> {
-                        // default backend
-                        Backend backend = new BasicBackend();
-                        put(BACKEND_PROP, backend);
-                        THREADLOCAL.set(backend.getName());
-                    });
+            // TODO use properties in the config for substitutions
 
-            //  engine
-            config.get(ENGINE_PROP).ifExists(c -> put(ENGINE_PROP, SiteEngine.builder()
-                    .config(c)
-                    .build()));
+            backend = config.get("backend")
+                            .asOptional()
+                            .map(BackendProvider::get)
+                            .orElseGet(BasicBackend::create);
 
-            // assets
-            config.get(ASSETS_PROP)
-                    .asNodeList()
-                    .ifPresent(list -> put(ASSETS_PROP, list
-                            .stream()
-                            .map(n -> StaticAsset.builder().config(n).build())
-                            .collect(Collectors.toList())));
+            THREAD_LOCAL.set(backend.getName());
 
-            // header
-            config.get(HEADER_PROP).ifExists(c -> put(HEADER_PROP, Header.builder()
-                    .config(c)
-                    .build()));
+            engine = config.get("engine")
+                           .asOptional()
+                           .map(SiteEngine::create)
+                           .orElseGet(SiteEngine::create);
 
-            // pages
-            config.get(PAGES_PROP)
-                    .asNodeList()
-                    .ifPresent(list -> put(PAGES_PROP, list
-                            .stream()
-                            .map(n -> SourcePathFilter.builder()
-                                    .config(n)
-                                    .build())
-                            .collect(Collectors.toList())));
+            config.get("assets")
+                  .asNodeList()
+                  .orElseGet(List::of)
+                  .stream()
+                  .map(StaticAsset::create)
+                  .forEach(assets::add);
 
+            header = config.get("header")
+                           .asOptional()
+                           .map(Header::create).orElse(null);
+
+            config.get("pages")
+                  .asNodeList()
+                  .orElseGet(List::of)
+                  .stream()
+                  .map(PageFilter::create)
+                  .forEach(pages::add);
             return this;
         }
 
         /**
-         * Set the page filters.
-         * @param pages the filters for all documents in the source directory
-         * @return the {@link Builder} instance
+         * Add page filters.
+         *
+         * @param pages document filters
+         * @return this builder
          */
-        public Builder pages(List<SourcePathFilter> pages){
-            put(PAGES_PROP, pages);
+        public Builder pages(List<PageFilter> pages) {
+            if (pages != null) {
+                this.pages.addAll(pages);
+            }
+            return this;
+        }
+
+        /**
+         * Add a page filter.
+         *
+         * @param supplier document filter supplier
+         * @return this builder
+         */
+        public Builder page(Supplier<PageFilter> supplier) {
+            if (supplier != null) {
+                this.pages.add(supplier.get());
+            }
+            return this;
+        }
+
+        /**
+         * Add a page filter.
+         *
+         * @param page document filter
+         * @return this builder
+         */
+        public Builder page(PageFilter page) {
+            if (page != null) {
+                this.pages.add(page);
+            }
             return this;
         }
 
         /**
          * Set the site engine.
+         *
          * @param engine the site engine to use
-         * @return the {@link Builder} instance
+         * @return this builder
          */
-        public Builder engine(SiteEngine engine){
-            put(ENGINE_PROP, engine);
+        public Builder engine(SiteEngine engine) {
+            this.engine = engine;
+            return this;
+        }
+
+        /**
+         * Set the site engine.
+         *
+         * @param supplier site engine builder
+         * @return this builder
+         */
+        public Builder engine(Supplier<SiteEngine> supplier) {
+            this.engine = supplier.get();
             return this;
         }
 
         /**
          * Set the backend.
-         *
+         * <p>
          * Must be invoked first.
          *
          * @param backend the backend to use
-         * @return the {@link Builder} instance
+         * @return this builder
          */
-        public Builder backend(Backend backend){
-            checkNonNull(backend, BACKEND_PROP);
-            put(BACKEND_PROP, backend);
-            THREADLOCAL.set(backend.getName());
+        public Builder backend(Backend backend) {
+            this.backend = requireNonNull(backend, "backend");
+            THREAD_LOCAL.set(backend.getName());
+            return this;
+        }
+
+        /**
+         * Set the backend.
+         * <p>
+         * Must be invoked first.
+         *
+         * @param supplier backend supplier
+         * @return this builder
+         */
+        public Builder backend(Supplier<? extends Backend> supplier) {
+            return backend(supplier.get());
+        }
+
+        /**
+         * Set the header.
+         *
+         * @param header the header to use
+         * @return this builder
+         */
+        public Builder header(Header header) {
+            this.header = header;
             return this;
         }
 
         /**
          * Set the header.
-         * @param header the header to use
-         * @return the {@link Builder} instance
+         *
+         * @param supplier supplier of header
+         * @return this builder
          */
-        public Builder header(Header header){
-            put(HEADER_PROP, header);
+        public Builder header(Supplier<Header> supplier) {
+            if (supplier != null) {
+                this.header = supplier.get();
+            }
             return this;
         }
 
         /**
-         * Set the static asset filters.
+         * Add static asset filters.
+         *
          * @param assets the assets to use
-         * @return the {@link Builder} instance
+         * @return this builder
          */
-        public Builder assets(List<StaticAsset> assets){
-            put(ASSETS_PROP, assets);
+        public Builder assets(List<StaticAsset> assets) {
+            if (assets != null) {
+                this.assets.addAll(assets);
+            }
             return this;
         }
 
-        @Override
-        public Site build(){
-            SiteEngine engine = null;
-            List<StaticAsset> assets = null;
-            Header header = null;
-            List<SourcePathFilter> pages = null;
-            Backend backend = null;
-            for (Map.Entry<String, Object> entry : values()) {
-                String attr = entry.getKey();
-                Object val = entry.getValue();
-                switch (attr) {
-                    case(ENGINE_PROP):
-                        engine = asType(val, SiteEngine.class);
-                        break;
-                    case(ASSETS_PROP):
-                        assets = asList(val, StaticAsset.class);
-                        break;
-                    case(HEADER_PROP):
-                        header = asType(val, Header.class);
-                        break;
-                    case(PAGES_PROP):
-                        pages = asList(val, SourcePathFilter.class);
-                        break;
-                    case(BACKEND_PROP):
-                        backend = asType(val, Backend.class);
-                        break;
-                    default:
-                        throw new IllegalStateException(
-                                "Unkown attribute: " + attr);
-                }
+        /**
+         * Add a static asset filter.
+         *
+         * @param asset the asset add
+         * @return this builder
+         */
+        public Builder asset(StaticAsset asset) {
+            if (asset != null) {
+                this.assets.add(asset);
             }
-            return new Site(engine, assets, header, pages, backend);
+            return this;
+        }
+
+        /**
+         * Add a static asset filter.
+         *
+         * @param supplier supplier of asset
+         * @return this builder
+         */
+        public Builder asset(Supplier<StaticAsset> supplier) {
+            if (supplier != null) {
+                this.assets.add(supplier.get());
+            }
+            return this;
+        }
+
+        /**
+         * Build a new instance.
+         *
+         * @return new instance
+         */
+        public Site build() {
+            return new Site(this);
         }
     }
 
     /**
-     * Create a new {@link Builder} instance.
+     * Create a new builder.
      *
-     * @return the created builder
+     * @return new builder
      */
-    public static Builder builder(){
+    public static Builder builder() {
         return new Builder();
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,26 +30,21 @@ import freemarker.cache.URLTemplateLoader;
 /**
  * A Freemarker template loader used for loading templates from classpath.
  */
-public class TemplateLoader extends URLTemplateLoader {
+final class TemplateLoader extends URLTemplateLoader {
 
-    private static final String TEMPLATES_RESOURCE =
-            "/helidon-sitegen-templates/";
+    private static final String TEMPLATES_RESOURCE = "/helidon-sitegen-templates/";
     private static final String TEMPLATE_FILE_EXT = ".ftl";
 
     private final Path templatesDir;
 
     /**
-     * Create a new instance of {@link TemplateLoader}.
+     * Create a new instance.
      */
-    public TemplateLoader(){
+    TemplateLoader(){
         try {
-            templatesDir = Helper
-                    .loadResourceDirAsPath(TEMPLATES_RESOURCE);
-        } catch (URISyntaxException
-                | IOException
-                | IllegalStateException  ex) {
-            throw new IllegalStateException(
-                    "Unable to get templates directory", ex);
+            templatesDir = Helper.loadResourceDirAsPath(TEMPLATES_RESOURCE);
+        } catch (URISyntaxException | IOException | IllegalStateException  ex) {
+            throw new IllegalStateException("Unable to get templates directory", ex);
         }
     }
 

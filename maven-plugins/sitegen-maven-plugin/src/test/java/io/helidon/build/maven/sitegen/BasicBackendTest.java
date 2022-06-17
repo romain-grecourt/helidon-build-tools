@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,64 +16,61 @@
 
 package io.helidon.build.maven.sitegen;
 
-import java.io.File;
-import java.util.List;
+import java.nio.file.Path;
 
+import io.helidon.build.maven.sitegen.models.PageFilter;
 import org.junit.jupiter.api.Test;
 
+import static io.helidon.build.maven.sitegen.TestHelper.SOURCE_DIR_PREFIX;
+import static io.helidon.build.maven.sitegen.TestHelper.assertRendering;
+import static io.helidon.build.maven.sitegen.TestHelper.getFile;
+
 /**
- *
- * @author rgrecour
+ * Tests {@link BasicBackend}.
  */
 public class BasicBackendTest {
 
-    private static final File OUTPUT_DIR = TestHelper.getFile("target/basic-backend-test");
+    private static final Path OUTPUT_DIR = getFile("target/basic-backend-test");
 
     @Test
     public void testBasic1() throws Exception {
-        File sourcedir = TestHelper.getFile(TestHelper.SOURCE_DIR_PREFIX + "testbasic1");
+        Path sourceDir = getFile(SOURCE_DIR_PREFIX + "testbasic1");
+
         Site.builder()
-                .pages(List.of(SourcePathFilter.builder()
-                        .includes(List.of("**/*.adoc"))
-                        .excludes(List.of("**/_*"))
-                        .build()))
-                .build()
-                .generate(sourcedir, OUTPUT_DIR);
-        TestHelper.assertRendering(
-                OUTPUT_DIR,
-                new File(sourcedir, "_expected.ftl"),
-                new File(OUTPUT_DIR, "basic.html"));
+            .page(PageFilter.builder().includes("**/*.adoc").excludes("**/_*"))
+            .build()
+            .generate(sourceDir, OUTPUT_DIR);
+
+        assertRendering(OUTPUT_DIR,
+                sourceDir.resolve("_expected.ftl"),
+                OUTPUT_DIR.resolve("basic.html"));
     }
 
     @Test
     public void testBasic2() throws Exception {
-        File sourcedir = TestHelper.getFile(TestHelper.SOURCE_DIR_PREFIX + "testbasic2");
+        Path sourceDir = getFile(SOURCE_DIR_PREFIX + "testbasic2");
+
         Site.builder()
-                .pages(List.of(SourcePathFilter.builder()
-                        .includes(List.of("**/*.adoc"))
-                        .excludes(List.of("**/_*"))
-                        .build()))
-                .build()
-                .generate(sourcedir, OUTPUT_DIR);
-        TestHelper.assertRendering(
-                OUTPUT_DIR,
-                new File(sourcedir, "_expected.ftl"),
-                new File(OUTPUT_DIR, "example-manual.html"));
+            .page(PageFilter.builder().includes("**/*.adoc").excludes("**/_*"))
+            .build()
+            .generate(sourceDir, OUTPUT_DIR);
+
+        assertRendering(OUTPUT_DIR,
+                sourceDir.resolve("_expected.ftl"),
+                OUTPUT_DIR.resolve("example-manual.html"));
     }
 
     @Test
     public void testBasic3() throws Exception {
-        File sourcedir = TestHelper.getFile(TestHelper.SOURCE_DIR_PREFIX + "testbasic3");
+        Path sourceDir = getFile(SOURCE_DIR_PREFIX + "testbasic3");
+
         Site.builder()
-                .pages(List.of(SourcePathFilter.builder()
-                        .includes(List.of("**/*.adoc"))
-                        .excludes(List.of("**/_*"))
-                        .build()))
-                .build()
-                .generate(sourcedir, OUTPUT_DIR);
-        TestHelper.assertRendering(
-                OUTPUT_DIR,
-                new File(sourcedir, "_expected.ftl"),
-                new File(OUTPUT_DIR, "passthrough.html"));
+            .page(PageFilter.builder().includes("**/*.adoc").excludes("**/_*"))
+            .build()
+            .generate(sourceDir, OUTPUT_DIR);
+
+        assertRendering(OUTPUT_DIR,
+                sourceDir.resolve("_expected.ftl"),
+                OUTPUT_DIR.resolve("passthrough.html"));
     }
 }

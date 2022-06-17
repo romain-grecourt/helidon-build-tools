@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,167 +18,181 @@ package io.helidon.build.maven.sitegen;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Map.Entry;
+import java.util.function.Supplier;
 
 import io.helidon.build.maven.sitegen.asciidoctor.AsciidocEngine;
 import io.helidon.build.maven.sitegen.freemarker.FreemarkerEngine;
-import io.helidon.config.Config;
 
-import static io.helidon.build.maven.sitegen.Helper.checkNonNullNonEmpty;
+import static io.helidon.build.maven.sitegen.Helper.requireValidString;
 
 /**
- * Configuration of pair of {@link FreemarkerEngine} and {@link AsciidocEngine}
- * indexed by backend names in a static registry.
+ * Configuration of {@link FreemarkerEngine} and {@link AsciidocEngine}.
  */
-public class SiteEngine {
+public final class SiteEngine {
 
     private static final Map<String, SiteEngine> REGISTRY = new HashMap<>();
-    private static final String FREEMARKER_PROP = "freemarker";
-    private static final String ASCIIDOCTOR_PROP = "asciidoctor";
-    private static final String BACKEND_PROP = "backend";
+
     private final AsciidocEngine asciidoc;
     private final FreemarkerEngine freemarker;
 
-    /**
-     * Create a new instance of {@link SiteEngine}.
-     * @param freemarker the freemarker engine
-     * @param asciidoc the asciidoc engine
-     */
-    public SiteEngine(FreemarkerEngine freemarker, AsciidocEngine asciidoc) {
-        this.freemarker = freemarker == null
-                ? FreemarkerEngine.builder().build()
-                : freemarker;
-        this.asciidoc = asciidoc == null
-                ? AsciidocEngine.builder().build()
-                : asciidoc;
+    private SiteEngine(Builder builder) {
+        if (builder.freemarker != null) {
+            this.freemarker = builder.freemarker;
+        } else {
+            this.freemarker = FreemarkerEngine.create();
+        }
+        if (builder.asciidoc != null) {
+            this.asciidoc = builder.asciidoc;
+        } else {
+            this.asciidoc = AsciidocEngine.create();
+        }
     }
 
     /**
      * Get the asciidoc engine.
-     * @return instance of {@link AsciidocEngine}, never {@code null}
+     *
+     * @return asciidoc engine, never {@code null}
      */
-    public AsciidocEngine asciidoc(){
+    public AsciidocEngine asciidoc() {
         return asciidoc;
     }
 
     /**
      * Get the freemarker engine.
-     * @return instance of {@link FreemarkerEngine}, never {@code null}
+     *
+     * @return freemarker engine, never {@code null}
      */
-    public FreemarkerEngine freemarker(){
+    public FreemarkerEngine freemarker() {
         return freemarker;
     }
 
     /**
-     * Register a new {@link SiteEngine} in the registry with the given backend
-     * name.
+     * Register a site engine in the registry with the given backend  name.
+     *
      * @param backend the backend name to use as key in the registry
-     * @param engine the engine instance to register
+     * @param engine  the engine instance to register
      */
     public static void register(String backend, SiteEngine engine) {
-        checkNonNullNonEmpty(backend, BACKEND_PROP);
-        REGISTRY.put(backend, engine);
+        REGISTRY.put(requireValidString(backend, "backend"), engine);
     }
 
     /**
-     * Remove the {@link SiteEngine} registered for the given backend.
+     * Remove the registered for the given backend.
+     *
      * @param backend the backend to remove
      */
     public static void deregister(String backend) {
-        checkNonNullNonEmpty(backend, BACKEND_PROP);
-        REGISTRY.remove(backend);
+        REGISTRY.remove(requireValidString(backend, "backend"));
     }
 
     /**
-     * Get a {@link SiteEngine} from the registry.
-     * @param backend the backend name identifying the registered {@link SiteEngine}
-     * @return instance of {@link SiteEngine}, never {@code null}
-     * @throws IllegalArgumentException if there is no {@link SiteEngine} registered
-     * for the given backend name
+     * Get a site engine from the registry.
+     *
+     * @param backend the backend name
+     * @return site engine, never {@code null}
+     * @throws IllegalArgumentException if site engine is found for the given backend name
      */
     public static SiteEngine get(String backend) {
         SiteEngine siteEngine = REGISTRY.get(backend);
         if (siteEngine == null) {
-            throw new IllegalArgumentException(
-                    "no site engine found for backend: " + backend);
+            throw new IllegalArgumentException("no site engine found for backend: " + backend);
         }
         return siteEngine;
     }
 
     /**
-     * A fluent builder to create {@link SiteEngine} instances.
+     * A builder of {@link SiteEngine}.
      */
-    public static class Builder extends AbstractBuilder<SiteEngine> {
+    public static class Builder implements Supplier<SiteEngine> {
+
+        private FreemarkerEngine freemarker;
+        private AsciidocEngine asciidoc;
 
         /**
          * Set the freemarker engine to use.
+         *
          * @param freemarker the freemarker engine
-         * @return the {@link Builder} instance
+         * @return this builder
          */
-        public Builder freemarker(FreemarkerEngine freemarker){
-            put(FREEMARKER_PROP, freemarker);
+        public Builder freemarker(FreemarkerEngine freemarker) {
+            this.freemarker = freemarker;
             return this;
         }
 
         /**
          * Set the asciidoctor engine to use.
-         * @param asciidoctor the asciidoctor engine
-         * @return the {@link Builder} instance
+         *
+         * @param asciidoc asciidoc engine
+         * @return this builder
          */
-        public Builder asciidoctor(AsciidocEngine asciidoctor){
-            put(ASCIIDOCTOR_PROP, asciidoctor);
+        public Builder asciidoctor(AsciidocEngine asciidoc) {
+            this.asciidoc = asciidoc;
             return this;
         }
 
         /**
-         * Apply the configuration represented by the given {@link Config} node.
-         * @param node a {@link Config} node containing configuration values to apply
-         * @return the {@link Builder} instance
+         * Set the asciidoctor engine to use.
+         *
+         * @param supplier asciidoc engine supplier
+         * @return this builder
          */
-        public Builder config(Config node){
-            if (node.exists()) {
-                node.get(FREEMARKER_PROP).ifExists(c
-                        -> put(FREEMARKER_PROP,
-                                FreemarkerEngine.builder()
-                                        .config(c)
-                                        .build()));
-                node.get(ASCIIDOCTOR_PROP).ifExists(c
-                        -> put(ASCIIDOCTOR_PROP,
-                                AsciidocEngine.builder()
-                                        .config(c)
-                                        .build()));
-            }
+        public Builder asciidoctor(Supplier<AsciidocEngine> supplier) {
+            this.asciidoc = supplier.get();
             return this;
         }
 
-        @Override
+        /**
+         * Apply the specified configuration.
+         *
+         * @param config config
+         * @return this builder
+         */
+        public Builder config(Config config) {
+            freemarker = config.get("freemarker").asOptional().map(FreemarkerEngine::create).orElse(null);
+            asciidoc = config.get("asciidoctor").asOptional().map(AsciidocEngine::create).orElse(null);
+            return this;
+        }
+
+        /**
+         * Build the instance.
+         *
+         * @return new instance.
+         */
         public SiteEngine build() {
-            FreemarkerEngine freemarker = null;
-            AsciidocEngine asciidoctor = null;
-            for (Entry<String, Object> entry : values()) {
-                String attr = entry.getKey();
-                Object val = entry.getValue();
-                switch (attr) {
-                    case(FREEMARKER_PROP):
-                        freemarker = asType(val, FreemarkerEngine.class);
-                        break;
-                    case(ASCIIDOCTOR_PROP):
-                        asciidoctor = asType(val, AsciidocEngine.class);
-                        break;
-                    default:
-                        throw new IllegalStateException(
-                                "Unkown attribute: " + attr);
-                }
-            }
-            return new SiteEngine(freemarker, asciidoctor);
+            return new SiteEngine(this);
+        }
+
+        @Override
+        public SiteEngine get() {
+            return build();
         }
     }
 
     /**
-     * Create a new {@link Builder} instance.
-     * @return the created builder
+     * Create a new instance from configuration.
+     *
+     * @param config config
+     * @return new instance
      */
-    public static Builder builder(){
+    public static SiteEngine create(Config config) {
+        return builder().config(config).build();
+    }
+
+    /**
+     * Create a new instance.
+     *
+     * @return new instance
+     */
+    public static SiteEngine create() {
+        return builder().build();
+    }
+
+    /**
+     * Create a new builder.
+     *
+     * @return new builder
+     */
+    public static Builder builder() {
         return new Builder();
     }
 }

@@ -39,20 +39,19 @@ import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
  */
 public abstract class Helper {
 
-    private static final org.slf4j.Logger LOGGER =
-            LoggerFactory.getLogger(Helper.class);
+    private static final org.slf4j.Logger LOGGER = LoggerFactory.getLogger(Helper.class);
 
     /**
      * Load a resource directory as a {@link java.nio.file.Path} instance.
      *
      * @param resourcePath the resource path to load
      * @return the created path instance
-     * @throws URISyntaxException if the resource URL cannot be converted to a =
-     *  URI
-     * @throws IOException if an error occurred during {@link FileSystem}
-     *  creation
+     * @throws URISyntaxException    if the resource URL cannot be converted to a =
+     *                               URI
+     * @throws IOException           if an error occurred during {@link FileSystem}
+     *                               creation
      * @throws IllegalStateException if the resource path is not found, or if
-     * the URI scheme is not <code>jar</code> or <code>file</code>
+     *                               the URI scheme is not <code>jar</code> or <code>file</code>
      */
     public static Path loadResourceDirAsPath(String resourcePath)
             throws URISyntaxException, IOException, IllegalStateException {
@@ -60,8 +59,7 @@ public abstract class Helper {
         // get classloader resource URL
         URL templatesDirURL = AsciidocConverter.class.getResource(resourcePath);
         if (templatesDirURL == null) {
-            throw new IllegalStateException("resource not found: "
-                    + resourcePath);
+            throw new IllegalStateException("resource not found: " + resourcePath);
         }
         // convert URL to Path
         return pathOf(templatesDirURL.toURI());
@@ -89,9 +87,7 @@ public abstract class Helper {
      * @param outputDir the target output directory where to copy the files
      * @throws IOException if an error occurred during processing
      */
-    public static void copyResources(Path resources, File outputDir)
-            throws IOException {
-
+    public static void copyResources(Path resources, Path outputDir) throws IOException {
         try {
             Files.walkFileTree(resources, new FileVisitor<>() {
                 @Override
@@ -103,7 +99,7 @@ public abstract class Helper {
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                     if (!Files.isDirectory(file)) {
                         String targetRelativePath = resources.relativize(file).toString();
-                        Path targetPath = outputDir.toPath().resolve(targetRelativePath);
+                        Path targetPath = outputDir.resolve(targetRelativePath);
                         Files.createDirectories(targetPath.getParent());
                         LOGGER.debug("Copying static resource: {} to {}", targetRelativePath, targetPath);
                         Files.copy(file, targetPath, REPLACE_EXISTING);
@@ -123,84 +119,131 @@ public abstract class Helper {
                 }
             });
         } catch (IOException ex) {
-            throw new RenderingException(
-                    "An error occurred during static resource processing ", ex);
+            throw new RenderingException("An error occurred during static resource processing ", ex);
         }
     }
 
     /**
-     * Verify that a given {@code Object} is non-null.
+     * Enforce that a given instance is non {@code null}.
      *
-     * @param arg the {@code Object} instance to check
-     * @param name the name of the instance used for the exception message
-     * @throws IllegalArgumentException if arg is null
+     * @param instance the instance to check
+     * @param name     the name of the instance used for the exception message
+     * @param <T>      arg type
+     * @return arg
+     * @throws IllegalArgumentException if the supplied instance is {@code null}
      */
-    public static void checkNonNull(Object arg, String name)
-        throws IllegalArgumentException {
-
-        if (arg == null) {
+    public static <T> T requireNonNull(T instance, String name) throws IllegalArgumentException {
+        if (instance == null) {
             throw new IllegalArgumentException(name + " is null");
         }
+        return instance;
     }
 
     /**
-     * Verify that a given {@code String} is non-null and non-empty.
+     * Enforce that a given instance is non {@code null} and of the given type.
      *
-     * @param arg the {@code String} instance to check
+     * @param obj  the instance to check
+     * @param type required type
      * @param name the name of the instance used for the exception message
-     * @throws IllegalArgumentException if arg is null or empty
+     * @param <T>  required type
+     * @return supplied instance casted as the required type
+     * @throws IllegalArgumentException if the supplied instance is {@code null} or not of the required type
      */
-    public static void checkNonNullNonEmpty(String arg, String name){
-        if (arg == null || arg.isEmpty()) {
+    public static <T> T requireType(Object obj, Class<T> type, String name) {
+        if (obj != null) {
+            if (type.isInstance(obj)) {
+                return type.cast(obj);
+            }
+            throw new IllegalArgumentException(name + " is not a " + type.getSimpleName());
+        }
+        throw new IllegalArgumentException(name + " is null");
+    }
+
+    /**
+     * Enforce that a given instance is of the given type.
+     *
+     * @param obj          the instance to check
+     * @param type         required type
+     * @param defaultValue default value
+     * @param name         the name of the instance used for the exception message
+     * @param <T>          required type
+     * @return supplied instance casted as the required type
+     * @throws IllegalArgumentException if the supplied instance is not of the required type
+     */
+    public static <T> T requireType(Object obj, Class<T> type, T defaultValue, String name) {
+        if (obj != null) {
+            if (type.isInstance(obj)) {
+                return type.cast(obj);
+            }
+            throw new IllegalArgumentException(name + " is not a " + type.getSimpleName());
+        }
+        return defaultValue;
+    }
+
+    /**
+     * Verify that a given {@link String} instance is non {@code null} and non-empty.
+     *
+     * @param str  the instance to check
+     * @param name the name of the instance used for the exception message
+     * @return supplied instance
+     * @throws IllegalArgumentException if the supplied instance is {@code null} or empty
+     */
+    public static String requireValidString(String str, String name) {
+        if (str == null || str.isEmpty()) {
             throw new IllegalArgumentException(name + " is null or empty");
         }
+        return str;
     }
 
     /**
-     * Verify that a given {@code File} is non-null and exists.
+     * Verify that a given {@link Path} instance is non {@code null} and exists.
      *
-     * @param arg the @{code File} instance to check
+     * @param file the instance to check
      * @param name the name of the instance used for the exception message
-     * @throws IllegalArgumentException if arg is null or does not exist
+     * @return supplied instance
+     * @throws IllegalArgumentException if the supplied instance is {@code null} or does not exist
      */
-    public static void checkNonNullExistent(File arg, String name){
-        if (arg == null) {
+    @SuppressWarnings("UnusedReturnValue")
+    public static Path requireExistentFile(Path file, String name) {
+        if (file == null) {
             throw new IllegalArgumentException(name + "is null");
         }
-        if (!arg.exists()) {
-            throw new IllegalArgumentException(
-                    arg.getAbsolutePath() + " does not exist");
+        if (!Files.exists(file)) {
+            throw new IllegalArgumentException(file.toAbsolutePath() + " does not exist");
         }
+        return file;
     }
 
     /**
-     * Verify that a given {@code File} is non-null, exists and is a file.
+     * Verify that a given {@link Path} instance is non {@code null}, exists and is a file.
      *
-     * @param arg the @{code File} instance to check
+     * @param file the instance to check
      * @param name the name of the instance used for the exception message
-     * @throws IllegalArgumentException if arg is null, does not exist, or is not a file
+     * @return supplied instance
+     * @throws IllegalArgumentException if the supplied instance is {@code null}, does not exist, or is not a file
      */
-    public static void checkValidFile(File arg, String name){
-        checkNonNullExistent(arg, name);
-        if (!arg.isFile()) {
-            throw new IllegalArgumentException(
-                    arg.getAbsolutePath() + " is not a file");
+    public static Path requireValidFile(Path file, String name) {
+        requireExistentFile(file, name);
+        if (!Files.isRegularFile(file)) {
+            throw new IllegalArgumentException(file.toAbsolutePath() + " is not a file");
         }
+        return file;
     }
 
     /**
-     * Verify that a given {@code File} is non-null, exists and is a directory.
+     * Verify that a given {@link Path} instance is non {@code null}, exists and is a directory.
      *
-     * @param arg the @{code File} instance to check
+     * @param dir  the instance to check
      * @param name the name of the instance used for the exception message
-     * @throws IllegalArgumentException if arg is null, does not exist, or is not a directory
+     * @return file
+     * @throws IllegalArgumentException if the supplied instance is {@code null}, does not exist, or is not a directory
      */
-    public static void checkValidDir(File arg, String name) {
-        checkNonNullExistent(arg, name);
-        if (!arg.isDirectory()) {
-            throw new IllegalArgumentException(
-                    arg.getAbsolutePath() + " is not a directory");
+    public static Path requireValidDirectory(Path dir, String name) {
+        requireExistentFile(dir, name);
+        if (!Files.isDirectory(dir)) {
+            throw new IllegalArgumentException(dir.toAbsolutePath() + " is not a directory");
         }
+        return dir;
     }
 
     /**
@@ -209,7 +252,7 @@ public abstract class Helper {
      * @param filepath the file path with an extension
      * @return the file extension
      */
-    public static String getFileExt(String filepath){
+    public static String fileExtension(String filepath) {
         int index = filepath.lastIndexOf(".");
         return index < 0 ? null : filepath.substring(index + 1);
     }
@@ -218,10 +261,10 @@ public abstract class Helper {
      * Replace the file extension in the given file path.
      *
      * @param filepath the file path to use
-     * @param ext the new file extension
+     * @param ext      the new file extension
      * @return the filepath with the new extension
      */
-    public static String replaceFileExt(String filepath, String ext){
+    public static String replaceFileExt(String filepath, String ext) {
         String path = filepath;
         path = path.substring(0, path.lastIndexOf("."));
         return path + ext;
@@ -231,12 +274,12 @@ public abstract class Helper {
      * Get the relative path for a given source file within the source directory.
      *
      * @param sourceDir the source directory
-     * @param source the source file
+     * @param source    the source file
      * @return the relative path of the source file
      */
-    public static String getRelativePath(File sourceDir, File source) {
-        return sourceDir.toPath().relativize(source.toPath()).toString()
-                // force UNIX style path on Windows
-                .replace("\\", "/");
+    public static String relativePath(Path sourceDir, Path source) {
+        return sourceDir.relativize(source).toString()
+                        // force UNIX style path on Windows
+                        .replace("\\", "/");
     }
 }

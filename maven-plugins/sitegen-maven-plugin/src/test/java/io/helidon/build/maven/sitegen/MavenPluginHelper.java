@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,8 @@ package io.helidon.build.maven.sitegen;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.Collections;
+import java.util.Map;
+
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.io.DefaultModelReader;
 import org.apache.maven.plugin.Mojo;
@@ -27,15 +28,14 @@ import org.apache.maven.plugin.testing.AbstractMojoTestCase;
 import org.apache.maven.project.MavenProject;
 
 /**
- *
- * @author rgrecour
+ * Maven plugin helper.
  */
 public final class MavenPluginHelper extends AbstractMojoTestCase {
 
-    private MavenPluginHelper(){
+    private MavenPluginHelper() {
         try {
             this.setUp();
-        } catch(Exception ex){
+        } catch (Exception ex) {
             throw new RuntimeException(ex);
         }
     }
@@ -44,16 +44,34 @@ public final class MavenPluginHelper extends AbstractMojoTestCase {
         static final MavenPluginHelper INSTANCE = new MavenPluginHelper();
     }
 
-    public static MavenPluginHelper getInstance() {
-        return LazyHolder.INSTANCE;
+    /**
+     * Get a mojo.
+     *
+     * @param pom      pom
+     * @param dir      dir
+     * @param execName exec name
+     * @return MavenProject
+     * @throws IOException if an IO error occurs
+     */
+    public static <T> T mojo(String pom, File dir, String execName, Class<T> clazz) throws Exception {
+        return LazyHolder.INSTANCE.mojo0(pom, dir, execName, clazz);
     }
 
-    public MavenProject newMavenProject(String pom, File dir)
-            throws IOException {
+    /**
+     * Create a new maven project.
+     *
+     * @param pom pom
+     * @param dir dir
+     * @return MavenProject
+     * @throws IOException if an IO error occurs
+     */
+    public static MavenProject newMavenProject(String pom, File dir) throws IOException {
+        return LazyHolder.INSTANCE.newMavenProject0(pom, dir);
+    }
 
+    private MavenProject newMavenProject0(String pom, File dir) throws IOException {
         File pomFile = getTestFile("src/test/resources/" + pom);
-        org.apache.maven.model.Model model = new DefaultModelReader()
-                .read(pomFile, Collections.emptyMap());
+        org.apache.maven.model.Model model = new DefaultModelReader().read(pomFile, Map.of());
         model.getBuild().setDirectory(dir.getAbsolutePath());
         MavenProject project = new MavenProject(model);
         project.getProperties().put("project.build.sourceEncoding", "UTF-8");
@@ -61,8 +79,8 @@ public final class MavenPluginHelper extends AbstractMojoTestCase {
         return project;
     }
 
-    public <T> T getMojo (String pom, File dir, String execName, Class<T> clazz) throws Exception {
-        MavenProject project = newMavenProject(pom, dir);
+    private <T> T mojo0(String pom, File dir, String execName, Class<T> clazz) throws Exception {
+        MavenProject project = newMavenProject0(pom, dir);
         MavenSession session = newMavenSession(project);
         MojoExecution execution = newMojoExecution(execName);
         Mojo mojo = lookupConfiguredMojo(session, execution);

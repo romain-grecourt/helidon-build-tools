@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,26 +31,31 @@ public class BasicBackend extends Backend {
      * The basic backend name.
      */
     public static final String BACKEND_NAME = "basic";
+
     private final Map<String, PageRenderer> pageRenderers;
 
-    /**
-     * Create a new instance of {@link BasicBackend}.
-     */
-    public BasicBackend() {
+    private BasicBackend() {
         super(BACKEND_NAME);
-        this.pageRenderers = Map.of(
-                ADOC_EXT, new AsciidocPageRenderer(BACKEND_NAME)
-        );
+        this.pageRenderers = Map.of(ADOC_EXT, AsciidocPageRenderer.create(BACKEND_NAME));
     }
 
     @Override
-    public Map<String, PageRenderer> pageRenderers() {
+    public Map<String, PageRenderer> renderers() {
         return pageRenderers;
     }
 
     @Override
     public void generate(RenderingContext ctx) {
-        ctx.processPages(ctx.getOutputdir(), "html");
+        ctx.processPages(ctx.outputDir(), "html");
         ctx.copyStaticAssets();
+    }
+
+    /**
+     * Create a new instance.
+     *
+     * @return new instance
+     */
+    public static BasicBackend create() {
+        return new BasicBackend();
     }
 }

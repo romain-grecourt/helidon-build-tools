@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,58 +16,70 @@
 
 package io.helidon.build.maven.sitegen;
 
-import java.util.Iterator;
 import java.util.List;
 import java.util.ServiceLoader;
 
-import io.helidon.config.Config;
-
-import static io.helidon.build.maven.sitegen.Helper.checkNonNullNonEmpty;
+import static io.helidon.build.maven.sitegen.Helper.requireValidString;
 
 /**
- * Service Provider Interface (SPI) for site backend.
+ * Backend SPI.
  */
 public interface BackendProvider {
 
     /**
-     * Create the {@link Backend} instance from configuration.
-     * @param name the backend name
-     * @param node the {@link Config} node containing relevant configuration
+     * Create a new instance from configuration.
+     *
+     * @param name   the backend name
+     * @param config configuration
      * @return the created backend if the name matches, {@code null} otherwise
      */
-    Backend create(String name, Config node);
+    Backend create(String name, Config config);
 
     /**
      * The built-in backends.
      */
-    List<BackendProvider> BUILTINS =
-            List.of(new BasicBackendProvider(), new VuetifyBackendProvider());
+    List<BackendProvider> BUILTINS = List.of(new BasicBackendProvider(), new VuetifyBackendProvider());
+
+    /**
+     * Get a backend from configuration.
+     *
+     * @param config config
+     * @return the backend instance
+     * @throws IllegalArgumentException if the configured backend is not found
+     */
+    static Backend get(Config config) {
+        String name = config.get("name").asString().orElse(null);
+        Config backendConfig = config.get("config")
+                                     .asOptional()
+                                     .map(bc -> bc.parent()
+                                                  .get(bc.asString()
+                                                         .orElseThrow(IllegalStateException::new)))
+                                     .orElse(null);
+        return get(name, backendConfig);
+    }
 
     /**
      * Get a backend by its name.
-     * @param backendName the identity of the backend to retrieve
-     * @param node the {@link Config} node containing relevant configuration
+     *
+     * @param name   backend name
+     * @param config config
      * @return the backend instance
-     * @throws IllegalArgumentException if no backend is found
+     * @throws IllegalArgumentException if the specified backend is not found
      */
-    static Backend get(String backendName, Config node){
-        checkNonNullNonEmpty(backendName, "backend name");
+    static Backend get(String name, Config config) {
+        requireValidString(name, "name");
         for (BackendProvider provider : BUILTINS) {
-            Backend backend = provider.create(backendName, node);
+            Backend backend = provider.create(name, config);
             if (backend != null) {
                 return backend;
             }
         }
-        Iterator<BackendProvider> it = ServiceLoader
-                .load(BackendProvider.class).iterator();
-        while (it.hasNext()) {
-            BackendProvider provider = it.next();
-            Backend backend = provider.create(backendName, node);
+        for (BackendProvider provider : ServiceLoader.load(BackendProvider.class)) {
+            Backend backend = provider.create(name, config);
             if (backend != null) {
                 return backend;
             }
         }
-        throw new IllegalArgumentException(
-                "backend: " + backendName + "not found");
+        throw new IllegalArgumentException("backend: " + name + "not found");
     }
 }

@@ -16,12 +16,10 @@
 
 package io.helidon.build.maven.sitegen;
 
-import io.helidon.config.Config;
-
 /**
  * Backend provider for {@link VuetifyBackend}.
  */
-public class VuetifyBackendProvider implements BackendProvider {
+public final class VuetifyBackendProvider implements BackendProvider {
 
     @Override
     public VuetifyBackend create(String name, Config node) {

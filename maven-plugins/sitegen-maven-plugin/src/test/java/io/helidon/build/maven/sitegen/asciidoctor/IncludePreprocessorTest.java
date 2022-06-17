@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit tests for the include preprocessing logic.
+ * Tests {@link IncludePreprocessor}.
  */
 public class IncludePreprocessorTest {
 

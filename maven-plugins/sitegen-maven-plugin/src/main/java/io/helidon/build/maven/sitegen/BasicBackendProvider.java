@@ -16,17 +16,15 @@
 
 package io.helidon.build.maven.sitegen;
 
-import io.helidon.config.Config;
-
 /**
  * Backend provider for {@link BasicBackend}.
  */
-public class BasicBackendProvider implements BackendProvider {
+public final class BasicBackendProvider implements BackendProvider {
 
     @Override
     public BasicBackend create(String name, Config node) {
         if (BasicBackend.BACKEND_NAME.equals(name)) {
-            return new BasicBackend();
+            return BasicBackend.create();
         }
         return null;
     }

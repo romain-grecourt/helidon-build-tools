@@ -16,40 +16,35 @@
 
 package io.helidon.build.maven.sitegen;
 
-import java.io.File;
+import java.nio.file.Path;
 
-import io.helidon.build.maven.sitegen.Page.Metadata;
-import io.helidon.build.maven.sitegen.asciidoctor.AsciidocEngine;
+import io.helidon.build.maven.sitegen.models.Page.Metadata;
 import io.helidon.build.maven.sitegen.asciidoctor.AsciidocPageRenderer;
-import io.helidon.build.maven.sitegen.freemarker.FreemarkerEngine;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterAll;
 
 import static io.helidon.build.maven.sitegen.TestHelper.SOURCE_DIR_PREFIX;
 import static io.helidon.build.maven.sitegen.TestHelper.assertString;
 import static io.helidon.build.maven.sitegen.TestHelper.getFile;
-import org.junit.jupiter.api.AfterAll;
 
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.fail;
 
 /**
- *
- * @author rgrecour
+ * Tests {@link Metadata}.
  */
 public class PageMetadataTest {
 
-    private static final File SOURCEDIR = getFile(SOURCE_DIR_PREFIX + "testmetadata");
+    private static final Path SOURCE_DIR = getFile(SOURCE_DIR_PREFIX + "testmetadata").toPath();
     private static final String BACKEND_NAME = "dummy";
     private static AsciidocPageRenderer pageRenderer;
 
     @BeforeAll
     public static void init(){
-        SiteEngine.register(BACKEND_NAME, new SiteEngine(
-                new FreemarkerEngine(BACKEND_NAME, null, null),
-                new AsciidocEngine(BACKEND_NAME, null, null, null)));
-        pageRenderer = new AsciidocPageRenderer(BACKEND_NAME);
+        SiteEngine.register(BACKEND_NAME, SiteEngine.create());
+        pageRenderer = AsciidocPageRenderer.create(BACKEND_NAME);
     }
 
     @AfterAll
@@ -58,16 +53,13 @@ public class PageMetadataTest {
         SiteEngine.deregister(BACKEND_NAME);
     }
 
-    private static Metadata readMetadata(String fname){
-        return pageRenderer.readMetadata(new File(SOURCEDIR, fname));
-    }
-
     @Test
     public void testPageWithNoTitle(){
         try {
             readMetadata("no_title.adoc");
             fail("no_title.adoc is not a valid document");
         } catch (IllegalArgumentException ex) {
+            // do nothing
         }
     }
 
@@ -79,12 +71,9 @@ public class PageMetadataTest {
         } catch (Throwable ex) {
             fail("no_description.adoc is a valid document", ex);
         }
-        if (m == null) {
-            throw new AssertionError("metadata is null");
-        }
-        assertString("This is a title", m.getTitle(), "metadata.title");
-        assertString("This is a title", m.getH1(), "metadata.h1");
-        assertNull(m.getDescription(), "metadata.description");
+        assertString("This is a title", m.title(), "metadata.title");
+        assertString("This is a title", m.h1(), "metadata.h1");
+        assertNull(m.description(), "metadata.description");
     }
 
     @Test
@@ -95,11 +84,8 @@ public class PageMetadataTest {
         } catch (Throwable ex) {
             fail("title_and_h1.adoc is a valid document", ex);
         }
-        if (m == null) {
-            throw new AssertionError("metadata is null");
-        }
-        assertString("This is the document title", m.getTitle(), "metadata.title");
-        assertString("This is an h1 title", m.getH1(), "metadata.h1");
+        assertString("This is the document title", m.title(), "metadata.title");
+        assertString("This is an h1 title", m.h1(), "metadata.h1");
     }
 
     @Test
@@ -110,10 +96,7 @@ public class PageMetadataTest {
         } catch (Throwable ex) {
             fail("with_description.adoc is a valid document", ex);
         }
-        if (m == null) {
-            throw new AssertionError("metadata is null");
-        }
-        assertString("This is a description", m.getDescription(), "metadata.description");
+        assertString("This is a description", m.description(), "metadata.description");
     }
 
     @Test
@@ -124,9 +107,10 @@ public class PageMetadataTest {
         } catch (Throwable ex) {
             fail("with_keywords.adoc is a valid document", ex);
         }
-        if (m == null) {
-            throw new AssertionError("metadata is null");
-        }
-        assertString("keyword1, keyword2, keyword3", m.getKeywords(), "metadata.keywords");
+        assertString("keyword1, keyword2, keyword3", m.keywords(), "metadata.keywords");
+    }
+
+    private static Metadata readMetadata(String filename){
+        return pageRenderer.readMetadata(SOURCE_DIR.resolve(filename));
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,27 @@
 
 package io.helidon.build.maven.sitegen;
 
-import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
 import io.helidon.build.common.SourcePath;
 import io.helidon.build.maven.sitegen.freemarker.TemplateSession;
+import io.helidon.build.maven.sitegen.models.Page;
+import io.helidon.build.maven.sitegen.models.SourcePathFilter;
+import io.helidon.build.maven.sitegen.models.StaticAsset;
 
-import static io.helidon.build.maven.sitegen.Helper.checkNonNull;
-import static io.helidon.build.maven.sitegen.Helper.checkNonNullNonEmpty;
-import static io.helidon.build.maven.sitegen.Helper.checkValidDir;
+import static io.helidon.build.maven.sitegen.Helper.fileExtension;
+import static io.helidon.build.maven.sitegen.Helper.replaceFileExt;
+import static io.helidon.build.maven.sitegen.Helper.requireNonNull;
+import static io.helidon.build.maven.sitegen.Helper.requireValidString;
+import static io.helidon.build.maven.sitegen.Helper.requireValidDirectory;
 import static io.helidon.build.maven.sitegen.Helper.copyResources;
 
 /**
@@ -37,61 +47,61 @@ public class RenderingContext {
     private final Site site;
     private final TemplateSession templateSession;
     private final Map<String, Page> pages;
-    private final File sourcedir;
-    private final File outputdir;
+    private final Path sourceDir;
+    private final Path outputDir;
     private final List<SourcePath> sourcePaths;
 
-    RenderingContext(Site site, File sourcedir, File outputdir) {
-        checkNonNull(site, "site");
-        checkValidDir(sourcedir, "sourcedir");
-        checkNonNull(outputdir, "outputdir");
-        this.site = site;
-        this.sourcedir = sourcedir;
-        this.outputdir = outputdir;
-        this.templateSession = new TemplateSession();
-        this.sourcePaths = SourcePath.scan(sourcedir);
-        this.pages = Page.create(
-                sourcePaths, site.getPages(), sourcedir, site.getBackend());
+    RenderingContext(Site site, Path sourceDir, Path outputDir) {
+        this.site = requireNonNull(site, "site");
+        this.sourceDir = requireValidDirectory(sourceDir, "sourceDir");
+        this.outputDir = requireNonNull(outputDir, "outputDir");
+        this.templateSession = TemplateSession.create();
+        this.sourcePaths = SourcePath.scan(this.sourceDir);
+        this.pages = createPages(sourcePaths, site.pages(), sourceDir, site.backend());
     }
 
     /**
-     * Get the source directory of the site.
+     * Get the source directory.
+     *
      * @return the source directory, never {@code null}
      */
-    public File getSourcedir() {
-        return sourcedir;
+    public Path sourceDir() {
+        return sourceDir;
     }
 
     /**
-     * Get the output directory of this site processing invocation.
+     * Get the output directory.
+     *
      * @return the source directory, never {@code null}
      */
-    public File getOutputdir() {
-        return outputdir;
+    public Path outputDir() {
+        return outputDir;
     }
 
     /**
      * Get the {@link TemplateSession} of this site processing invocation.
+     *
      * @return the template session, never {@code null}
      */
-    public TemplateSession getTemplateSession() {
+    public TemplateSession templateSession() {
         return templateSession;
     }
 
     /**
      * Get all scanned pages.
      *
-     * @return the scanned pages indexed by source path, never {@code null}
+     * @return the scanned pages, never {@code null}
      */
-    public Map<String, Page> getPages() {
+    public Map<String, Page> pages() {
         return pages;
     }
 
     /**
-     * Get the configured {@link Site} instance.
-     * @return the {@link Site} instance
+     * Get the configured site.
+     *
+     * @return site
      */
-    public Site getSite() {
+    public Site site() {
         return site;
     }
 
@@ -99,12 +109,13 @@ public class RenderingContext {
      * Find a page with the given target path.
      *
      * @param route the target path to search
-     * @return the {@link Page} instance if found, {@code null} otherwise
+     * @return the page if found, {@code null} otherwise
      */
-    public Page getPageForRoute(String route) {
-        checkNonNullNonEmpty(route, "route");
+    @SuppressWarnings("unused")
+    public Page pageForRoute(String route) {
+        requireValidString(route, "route");
         for (Page page : pages.values()) {
-            if (route.equals(page.getTargetPath())) {
+            if (route.equals(page.targetPath())) {
                 return page;
             }
         }
@@ -115,17 +126,15 @@ public class RenderingContext {
      * Copy the scanned static assets in the output directory.
      */
     public void copyStaticAssets() {
-        for (StaticAsset asset : site.getAssets()) {
-            for (SourcePath path : SourcePath.filter(
-                    sourcePaths, asset.getIncludes(), asset.getExcludes())) {
-                File targetDir = new File(outputdir, asset.getTarget());
-                targetDir.mkdirs();
+        for (StaticAsset asset : site.assets()) {
+            List<SourcePath> filteredPaths = SourcePath.filter(sourcePaths, asset.includes(), asset.excludes());
+            for (SourcePath path : filteredPaths) {
                 try {
-                    copyResources(new File(sourcedir, path.asString()).toPath(),
-                            new File(targetDir, path.asString()));
+                    Path targetDir = outputDir.resolve(asset.target());
+                    Files.createDirectories(targetDir);
+                    copyResources(sourceDir.resolve(path.asString()), targetDir.resolve(path.asString()));
                 } catch (IOException ex) {
-                    throw new RenderingException(
-                            "An error occurred while copying resource: " + path.asString(), ex);
+                    throw new RenderingException("An error occurred while copying resource: " + path.asString(), ex);
                 }
             }
         }
@@ -134,13 +143,87 @@ public class RenderingContext {
     /**
      * Process the rendering of all pages.
      *
-     * @param pagesdir the directory where to generate the rendered files
-     * @param ext the file extension to use for the rendered files
+     * @param pagesDir the directory where to generate the rendered files
+     * @param ext      the file extension to use for the rendered files
      */
-    public void processPages(File pagesdir, String ext) {
+    public void processPages(Path pagesDir, String ext) {
         for (Page page : pages.values()) {
-            PageRenderer renderer = site.getBackend().getPageRenderer(page.getSourceExt());
-            renderer.process(page, this, pagesdir, ext);
+            PageRenderer renderer = site.backend().renderer(page.sourceExt());
+            renderer.process(page, this, pagesDir, ext);
         }
+    }
+
+    /**
+     * Create pages.
+     *
+     * @param paths     a list of path to match
+     * @param filters   a list of filters to apply
+     * @param sourceDir the source directory containing the paths
+     * @param backend   the backend to use for reading the metadata
+     * @return map of pages indexed by relative source path
+     */
+    public static Map<String, Page> createPages(List<SourcePath> paths,
+                                                List<SourcePathFilter> filters,
+                                                Path sourceDir,
+                                                Backend backend) {
+
+        requireNonNull(paths, "paths");
+        requireNonNull(filters, "filters");
+        List<SourcePath> filteredSourcePaths;
+        if (filters.isEmpty()) {
+            filteredSourcePaths = paths;
+        } else {
+            filteredSourcePaths = new ArrayList<>();
+            for (SourcePathFilter filter : filters) {
+                filteredSourcePaths.addAll(SourcePath.filter(paths, filter.includes(), filter.excludes()));
+            }
+        }
+        Map<String, Page> pages = new HashMap<>();
+        for (SourcePath filteredPath : SourcePath.sort(filteredSourcePaths)) {
+            String path = filteredPath.asString();
+            if (pages.containsKey(path)) {
+                throw new IllegalStateException("Source path " + path + "already included");
+            }
+            String ext = fileExtension(path);
+            Page.Metadata metadata = backend.renderer(ext)
+                                            .readMetadata(sourceDir.resolve(path));
+            pages.put(path, Page.builder()
+                                .source(path)
+                                .ext(ext)
+                                .target(replaceFileExt(path, ""))
+                                .metadata(metadata)
+                                .build());
+        }
+        return pages;
+    }
+
+    /**
+     * Filter the given pages with the specified filters.
+     *
+     * @param pages    the pages to filter
+     * @param includes include patterns
+     * @param excludes exclude patterns
+     * @return filtered pages
+     */
+    @SuppressWarnings("unused")
+    public static List<Page> filterPages(Collection<Page> pages,
+                                         Collection<String> includes,
+                                         Collection<String> excludes) {
+
+        requireNonNull(pages, "pages");
+        Map<SourcePath, Page> sourcePaths = new HashMap<>();
+        for (Page page : pages) {
+            sourcePaths.put(new SourcePath(page.sourcePath()), page);
+        }
+        List<SourcePath> filteredSourcePaths = SourcePath.filter(sourcePaths.keySet(), includes, excludes);
+        List<Page> filtered = new LinkedList<>();
+        for (SourcePath sourcePath : SourcePath.sort(filteredSourcePaths)) {
+            Page page = sourcePaths.get(sourcePath);
+            if (page == null) {
+                throw new IllegalStateException("Unable to get page for path: " + sourcePath.asString());
+            }
+            filtered.add(page);
+        }
+        return filtered;
     }
 }

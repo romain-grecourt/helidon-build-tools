@@ -1,12 +1,12 @@
 <#--
   Copyright (c) 2018 Oracle and/or its affiliates. All rights reserved.
- 
+
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
   You may obtain a copy of the License at
- 
+
       http://www.apache.org/licenses/LICENSE-2.0
- 
+
   Unless required by applicable law or agreed to in writing, software
   distributed under the License is distributed on an "AS IS" BASIS,
   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -91,7 +91,7 @@ function createNav(){
                             action: <#if groupitem.glyph??>'${groupitem.glyph.value}'<#else>null</#if>,
 <#if groupitem.islink>
                             href: '${groupitem.href}',
-                            target: '_blank'
+                            target: '${groupitem.target}',
 <#elseif groupitem.isgroup>
                             group: <#if groupitem.pathprefix??>'${groupitem.pathprefix}'<#else>null</#if>,
                             items: [
@@ -119,7 +119,7 @@ function createNav(){
             action: <#if groupitem.glyph??>'${groupitem.glyph.value}'<#else>null</#if>,
 <#if groupitem.islink>
             href: '${groupitem.href}',
-            target: '_blank'
+            target: '${groupitem.target}',
 <#elseif groupitem.isgroup>
             group: <#if groupitem.pathprefix??>'${groupitem.pathprefix}'<#else>null</#if>,
             items: [
@@ -137,7 +137,7 @@ function createNav(){
             title: '${navitem.title?js_string}',
             action: <#if navitem.glyph??>'${navitem.glyph}'<#else>null</#if>,
             href: '${navitem.href}',
-            target: '_blank'
+            target: '${navitem.target}'
         }<#if navitem?has_next>,</#if>
 </#if>
 </#list>

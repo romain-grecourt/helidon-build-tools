@@ -27,21 +27,22 @@ import org.asciidoctor.ast.ContentNode;
 
 /**
  * A Freemarker template model to resolve {@link ContentNode}.
- *
+ * <p>
  * This provides properties style references on {@link ContentNode} objects
  * inside Freemarker templates.
  */
-public class ContentNodeHashModel implements TemplateHashModel {
+final class ContentNodeHashModel implements TemplateHashModel {
 
     private final ObjectWrapper objectWrapper;
     private final ContentNode contentNode;
 
     /**
-     * Create a new instance of {@link ContentNodeHashModel}.
+     * Create a new instance.
+     *
      * @param objectWrapper the object wrapper to use
-     * @param node the {@link ContentNode} to expose as {@link TemplateHashModel}
+     * @param node          the node to expose as model
      */
-    public ContentNodeHashModel(ObjectWrapper objectWrapper, ContentNode node) {
+    ContentNodeHashModel(ObjectWrapper objectWrapper, ContentNode node) {
         Objects.requireNonNull(objectWrapper);
         this.objectWrapper = objectWrapper;
         Objects.requireNonNull(node);
@@ -86,9 +87,9 @@ public class ContentNodeHashModel implements TemplateHashModel {
             try {
                 return objectWrapper.wrap(getterMethod.invoke(contentNode));
             } catch (InvocationTargetException
-                    | SecurityException
-                    | IllegalAccessException
-                    | IllegalArgumentException ex) {
+                     | SecurityException
+                     | IllegalAccessException
+                     | IllegalArgumentException ex) {
                 throw new TemplateModelException(String.format(
                         "Error during getter invocation: node=%s, methodname=%s",
                         contentNode,

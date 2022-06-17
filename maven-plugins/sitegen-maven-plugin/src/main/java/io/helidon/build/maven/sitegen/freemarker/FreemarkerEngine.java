@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,19 +17,19 @@
 package io.helidon.build.maven.sitegen.freemarker;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
-import java.util.Collections;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 
-import io.helidon.build.maven.sitegen.AbstractBuilder;
+import io.helidon.build.maven.sitegen.Config;
 import io.helidon.build.maven.sitegen.RenderingContext;
 import io.helidon.build.maven.sitegen.RenderingException;
 import io.helidon.build.maven.sitegen.Site;
-import io.helidon.config.Config;
 
 import freemarker.core.Environment;
 import freemarker.template.Configuration;
@@ -43,18 +43,15 @@ import org.asciidoctor.ast.ContentNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static io.helidon.build.maven.sitegen.Helper.checkNonNull;
-import static io.helidon.build.maven.sitegen.Helper.checkNonNullNonEmpty;
+import static io.helidon.build.maven.sitegen.Helper.requireNonNull;
+import static io.helidon.build.maven.sitegen.Helper.requireValidString;
 
 /**
  * A facade over freemarker.
  */
+@SuppressWarnings("unused")
 public class FreemarkerEngine {
 
-    private static final String BACKEND_PROP = "backend";
-    private static final String DIRECTIVES_PROP = "directives";
-    private static final String MODEL_PROP = "model";
-    private static final String DEFAULT_ENCODING = "UTF-8";
     private static final Logger LOGGER = LoggerFactory.getLogger(FreemarkerEngine.class);
     private static final Version FREEMARKER_VERSION = Configuration.VERSION_2_3_23;
     private static final ObjectWrapper OBJECT_WRAPPER = new ObjectWrapper(FREEMARKER_VERSION);
@@ -64,88 +61,73 @@ public class FreemarkerEngine {
     private final Map<String, String> model;
     private final Configuration freemarker;
 
-    /**
-     * Create a new instance of {@link FreemarkerEngine}.
-     * @param backend the backend name
-     * @param directives custom directives to register
-     * @param model some model attributes to set for each rendering invocation
-     */
-    public FreemarkerEngine(String backend,
-                            Map<String, String> directives,
-                            Map<String, String> model) {
-        checkNonNullNonEmpty(backend, BACKEND_PROP);
-        this.backend = backend;
-        this.directives = directives == null ? Collections.emptyMap() : directives;
-        this.model = model == null ? Collections.emptyMap() : model;
+    private FreemarkerEngine(Builder builder) {
+        this.backend = requireValidString(Site.THREAD_LOCAL.get(), "backend");
+        this.directives = builder.directives;
+        this.model = builder.model;
         freemarker = new Configuration(FREEMARKER_VERSION);
         freemarker.setTemplateLoader(new TemplateLoader());
-        freemarker.setDefaultEncoding(DEFAULT_ENCODING);
+        freemarker.setDefaultEncoding("UTF-8");
         freemarker.setObjectWrapper(OBJECT_WRAPPER);
-        freemarker.setTemplateExceptionHandler(
-                TemplateExceptionHandler.RETHROW_HANDLER);
+        freemarker.setTemplateExceptionHandler(TemplateExceptionHandler.RETHROW_HANDLER);
         freemarker.setLogTemplateExceptions(false);
     }
 
     /**
      * Get the custom directives in-use.
-     * @return {@code Map<String, String>}, never {@code null}
+     *
+     * @return map, never {@code null}
      */
-    public Map<String, String> getDirectives() {
+    public Map<String, String> directives() {
         return directives;
     }
 
     /**
      * Get the custom model in-use.
-     * @return {@code Map<String, String>}, never {@code null}
+     *
+     * @return map, never {@code null}
      */
-    public Map<String, String> getModel() {
+    public Map<String, String> model() {
         return model;
     }
 
     /**
      * Render a template to a file.
      *
-     * @param template the relative path of the template to render
+     * @param template   the relative path of the template to render
      * @param targetPath the relative target path of the file to create
-     * @param model the model for the template to use
-     * @param ctx the processing context
+     * @param model      the model for the template to use
+     * @param ctx        the processing context
      * @return the created file
      * @throws RenderingException if an error occurred
      */
-    public File renderFile(String template,
-                           String targetPath,
-                           Map<String, Object> model,
-                           RenderingContext ctx)
+    public Path renderFile(String template, String targetPath, Map<String, Object> model, RenderingContext ctx)
             throws RenderingException {
 
-        String rendered = renderString(template, model, ctx.getTemplateSession());
-        File target = new File(ctx.getOutputdir(), targetPath);
-        target.getParentFile().mkdirs();
-        try (FileWriter writer = new FileWriter(target)) {
-            writer.write(rendered);
+        try {
+            String rendered = renderString(template, model, ctx.templateSession());
+            Path target = ctx.outputDir().resolve(targetPath);
+            Files.createDirectories(target.getParent());
+            Files.writeString(target, rendered);
+            return target;
         } catch (IOException ex) {
-            throw new RenderingException(
-                    "error while writing rendered output to file", ex);
+            throw new RenderingException("error while writing rendered output to file", ex);
         }
-        return target;
     }
 
     /**
      * Render a template.
      *
      * @param template the relative path of the template to render
-     * @param node the asciidoctor node to use as model for the template
+     * @param node     the asciidoctor node to use as model for the template
      * @return the rendered output
      * @throws RenderingException if an error occurred
      */
-    public String renderString(String template, ContentNode node)
-            throws RenderingException {
-
+    public String renderString(String template, ContentNode node) throws RenderingException {
         Object session = node.getDocument().getAttribute("templateSession");
-        checkNonNull(session, "document attribute 'templateSession'");
+        requireNonNull(session, "document attribute 'templateSession'");
         if (!(session instanceof TemplateSession)) {
-            throw new IllegalStateException(
-                    "document attribute 'templateSession' is not valid");
+            throw new IllegalStateException("document attribute 'templateSession' is not valid");
         }
         // TODO extract page, pages, templateSession
         // and set them as variables
@@ -156,12 +138,11 @@ public class FreemarkerEngine {
      * Render a template to a string.
      *
      * @param template the relative path of the template to render
-     * @param model the model for the template to use
+     * @param model    the model for the template to use
      * @return the rendered output
      * @throws RenderingException if an error occurred
      */
-    public String renderString(String template, Object model)
-            throws RenderingException {
+    public String renderString(String template, Object model) throws RenderingException {
         return renderString(template, model, null);
     }
 
@@ -169,25 +150,21 @@ public class FreemarkerEngine {
      * Render a template to a string.
      *
      * @param template the relative path of the template to render
-     * @param model the model for the template to use
-     * @param session the session to share the global variable across invocations
+     * @param model    the model for the template to use
+     * @param session  the session to share the global variable across invocations
      * @return the rendered output
      * @throws RenderingException if an error occurred
      */
-    public String renderString(String template, Object model, TemplateSession session)
-            throws RenderingException {
-
+    public String renderString(String template, Object model, TemplateSession session) throws RenderingException {
         String templatePath = backend + "/" + template;
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             Template tpl = freemarker.getTemplate(templatePath);
             OutputStreamWriter writer = new OutputStreamWriter(baos);
             LOGGER.debug("Applying template: {}", templatePath);
-            Environment env = tpl.createProcessingEnvironment(model,
-                    writer);
+            Environment env = tpl.createProcessingEnvironment(model, writer);
             if (session != null) {
-                for (Entry<String, TemplateDirectiveModel> directive
-                        : session.getDirectives().entrySet()) {
+                for (Entry<String, TemplateDirectiveModel> directive : session.directives().entrySet()) {
                     env.setVariable(directive.getKey(), directive.getValue());
                 }
             }
@@ -196,87 +173,102 @@ public class FreemarkerEngine {
             env.setTemplateExceptionHandler(TemplateExceptionHandler.RETHROW_HANDLER);
             env.setLogTemplateExceptions(false);
             env.process();
-            return baos.toString(DEFAULT_ENCODING);
+            return baos.toString(StandardCharsets.UTF_8);
         } catch (TemplateNotFoundException ex) {
             LOGGER.warn("Unable to find template: {}", templatePath);
             return "";
         } catch (TemplateException | IOException ex) {
-            throw new RenderingException(
-                    "An error occurred during rendering of " + templatePath, ex);
+            throw new RenderingException("An error occurred during rendering of " + templatePath, ex);
         }
     }
 
     /**
-     * A fluent builder to create {@link FreemarkerEngine} instances.
+     * A builder of {@link FreemarkerEngine}.
      */
-    public static class Builder extends AbstractBuilder<FreemarkerEngine> {
+    @SuppressWarnings("unused")
+    public static final class Builder {
+
+        private final Map<String, String> directives = new HashMap<>();
+        private final Map<String, String> model = new HashMap<>();
 
         /**
-         * Set some custom directives.
+         * Add custom directives.
+         *
          * @param directives the directives to set
-         * @return the {@link Builder} instance
+         * @return this builder
          */
         public Builder directives(Map<String, String> directives) {
-            put(DIRECTIVES_PROP, directives);
+            if (directives != null) {
+                this.directives.putAll(directives);
+            }
             return this;
         }
 
         /**
-         * Set some custom model.
+         * Add some custom model.
+         *
          * @param model the model to set
-         * @return the {@link Builder} instance
+         * @return this builder
          */
         public Builder model(Map<String, String> model) {
-            put(MODEL_PROP, model);
+            if (model != null) {
+                this.model.putAll(model);
+            }
             return this;
         }
 
         /**
-         * Apply the configuration represented by the given {@link Config} node.
-         * @param node a {@link Config} node containing configuration values to apply
-         * @return the {@link Builder} instance
+         * Apply the specified configuration.
+         *
+         * @param config config
+         * @return this builder
          */
-        public Builder config(Config node) {
-            node.get(DIRECTIVES_PROP)
-                    .detach()
-                    .asMap()
-                    .ifPresent(it -> put(DIRECTIVES_PROP, it));
+        public Builder config(Config config) {
+            directives.putAll(config.get("directives")
+                                    .detach()
+                                    .asMap(String.class)
+                                    .orElseGet(Map::of));
 
-            node.get(MODEL_PROP)
-                    .detach()
-                    .asMap()
-                    .ifPresent(it -> put(MODEL_PROP, it));
-
+            model.putAll(config.get("model")
+                               .detach()
+                               .asMap(String.class)
+                               .orElseGet(Map::of));
             return this;
         }
 
-        @Override
+        /**
+         * Build the instance.
+         *
+         * @return new instance
+         */
         public FreemarkerEngine build() {
-            Map<String, String> directives = null;
-            Map<String, String> model = null;
-            for (Entry<String, Object> entry : values()) {
-                String attr = entry.getKey();
-                Object val = entry.getValue();
-                switch (attr) {
-                    case (DIRECTIVES_PROP):
-                        directives = asMap(val, String.class, String.class);
-                        break;
-                    case (MODEL_PROP):
-                        model = asMap(val, String.class, String.class);
-                        break;
-                    default:
-                        throw new IllegalStateException(
-                                "Unkown attribute: " + attr);
-                }
-            }
-            String backendName = Site.THREADLOCAL.get();
-            return new FreemarkerEngine(backendName, directives, model);
+            return new FreemarkerEngine(this);
         }
     }
 
     /**
-     * Create a new {@link Builder} instance.
-     * @return the created builder
+     * Create a new instance from configuration.
+     *
+     * @param config config
+     * @return new instance
+     */
+    public static FreemarkerEngine create(Config config) {
+        return builder().config(config).build();
+    }
+
+    /**
+     * Create a new instance.
+     *
+     * @return new instance
+     */
+    public static FreemarkerEngine create() {
+        return builder().build();
+    }
+
+    /**
+     * Create a new builder.
+     *
+     * @return new builder
      */
     public static Builder builder() {
         return new Builder();

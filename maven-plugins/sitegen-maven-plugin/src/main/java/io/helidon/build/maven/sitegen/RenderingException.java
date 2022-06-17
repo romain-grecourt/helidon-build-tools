@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,25 +17,27 @@
 package io.helidon.build.maven.sitegen;
 
 /**
- * An exception to represents any error occurring as part of site processing.
+ * An exception to represent any error occurring as part of site processing.
  */
 public class RenderingException extends RuntimeException {
 
     /**
-     * Create a new instance of {@link RenderingException}.
-     * @param msg the exception message
+     * Create a new instance.
+     *
+     * @param msg exception message
      */
-    public RenderingException(String msg){
+    @SuppressWarnings("unused")
+    public RenderingException(String msg) {
         super(msg);
     }
 
     /**
-     * Create a new instance of {@link RenderingException}.
+     * Create a new instance.
      *
-     * @param msg the exception message
-     * @param ex the cause
+     * @param msg   exception message
+     * @param cause cause
      */
-    public RenderingException(String msg, Throwable ex) {
-        super(msg, ex);
+    public RenderingException(String msg, Throwable cause) {
+        super(msg, cause);
     }
 }

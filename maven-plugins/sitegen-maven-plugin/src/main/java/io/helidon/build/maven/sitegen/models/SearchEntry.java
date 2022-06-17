@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package io.helidon.build.maven.sitegen;
+package io.helidon.build.maven.sitegen.models;
 
 /**
  * Search index entry model.
@@ -25,14 +25,7 @@ public class SearchEntry {
     private final String text;
     private final String title;
 
-    /**
-     * Create a new search index entry instance.
-     *
-     * @param location the page location
-     * @param text the page text
-     * @param title  the page title
-     */
-    public SearchEntry(String location, String text, String title) {
+    private SearchEntry(String location, String text, String title) {
         this.location = location;
         this.text = text;
         this.title = title;
@@ -43,7 +36,7 @@ public class SearchEntry {
      *
      * @return the location of the page
      */
-    public String getLocation() {
+    public String location() {
         return location;
     }
 
@@ -52,7 +45,7 @@ public class SearchEntry {
      *
      * @return the text of the page
      */
-    public String getText() {
+    public String text() {
         return text;
     }
 
@@ -61,7 +54,19 @@ public class SearchEntry {
      *
      * @return the title of the page
      */
-    public String getTitle() {
+    public String title() {
         return title;
+    }
+
+    /**
+     * Create a new instance
+     *
+     * @param location the page location
+     * @param text     the page text
+     * @param title    the page title
+     * @return new instance
+     */
+    public static SearchEntry create(String location, String text, String title) {
+        return new SearchEntry(location, text, title);
     }
 }

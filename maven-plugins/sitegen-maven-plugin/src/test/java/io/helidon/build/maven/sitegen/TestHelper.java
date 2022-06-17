@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021 Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2022 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,8 @@
 
 package io.helidon.build.maven.sitegen;
 
-import java.io.File;
-import java.io.FileWriter;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,8 +31,7 @@ import freemarker.template.Template;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- *
- * @author rgrecour
+ * Test helper.
  */
 public abstract class TestHelper {
 
@@ -47,9 +45,9 @@ public abstract class TestHelper {
     static String getBasedirPath() {
         String basedirPath = System.getProperty("basedir");
         if (basedirPath == null) {
-            basedirPath = new File("").getAbsolutePath();
+            basedirPath = Path.of("").toAbsolutePath().toString();
         }
-        return basedirPath.replace("\\","/");
+        return basedirPath.replace("\\", "/");
     }
 
     /**
@@ -58,8 +56,8 @@ public abstract class TestHelper {
      * @param path a relative path within the project directory
      * @return the corresponding for the given path
      */
-    public static File getFile(String path) {
-        return new File(getBasedirPath(), path);
+    public static Path getFile(String path) {
+        return Path.of(getBasedirPath(), path);
     }
 
     static void assertString(String expected, String actual, String name) {
@@ -71,7 +69,7 @@ public abstract class TestHelper {
         }
     }
 
-    static void assertList(int expectedSize, List list, String name) {
+    static void assertList(int expectedSize, List<?> list, String name) {
         assertNotNull(list, name);
         assertEquals(expectedSize, list.size(), name + ".size");
         for (int i = 0; i < expectedSize; i++) {
@@ -83,8 +81,7 @@ public abstract class TestHelper {
     static <T> T assertType(Object actual, Class<T> expected, String name) {
         assertNotNull(actual, name);
         assertEquals(actual.getClass(), expected, name);
-        T t = (T) actual;
-        return t;
+        return (T) actual;
     }
 
     /**
@@ -92,35 +89,33 @@ public abstract class TestHelper {
      * The actual file must exist and be identical to the rendered template,
      * otherwise assert errors will be thrown.
      *
-     * @param outputdir the output directory where to render the expected template
+     * @param outputDir   the output directory where to render the expected template
      * @param expectedTpl the template used for comparing the actual file
-     * @param actual the rendered file to be compared
+     * @param actual      the rendered file to be compared
      * @throws Exception if an error occurred
      */
-    public static void assertRendering(File outputdir, File expectedTpl, File actual)
-            throws Exception {
+    public static void assertRendering(Path outputDir, Path expectedTpl, Path actual) throws Exception {
 
-        assertTrue(actual.exists(), actual.getAbsolutePath() + " does not exist");
+        assertTrue(Files.exists(actual), actual.toAbsolutePath() + " does not exist");
 
         // render expected
-        FileTemplateLoader ftl = new FileTemplateLoader(expectedTpl.getParentFile());
+        FileTemplateLoader ftl = new FileTemplateLoader(expectedTpl.getParent().toFile());
         Configuration config = new Configuration(Configuration.VERSION_2_3_23);
         config.setTemplateLoader(ftl);
-        Template template = config.getTemplate(expectedTpl.getName());
-        File expected = new File(outputdir, "expected_" + actual.getName());
-        FileWriter writer = new FileWriter(expected);
+        Template template = config.getTemplate(expectedTpl.getFileName().toString());
+        Path expected = outputDir.resolve("expected_" + actual.getFileName());
         Map<String, Object> model = new HashMap<>();
         model.put("basedir", getBasedirPath());
-        template.process(model, writer);
+        template.process(model, Files.newBufferedWriter(expected));
 
         // diff expected and rendered
-        List<String> expectedLines = Files.readAllLines(expected.toPath());
-        List<String> actualLines = Files.readAllLines(actual.toPath());
+        List<String> expectedLines = Files.readAllLines(expected);
+        List<String> actualLines = Files.readAllLines(actual);
 
         // compare expected and rendered
         Patch<String> patch = DiffUtils.diff(expectedLines, actualLines);
         if (patch.getDeltas().size() > 0) {
-            fail("rendered file " + actual.getAbsolutePath() + " differs from expected: " + patch.toString());
+            fail("rendered file " + actual.toAbsolutePath() + " differs from expected: " + patch);
         }
     }
 }
