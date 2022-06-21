@@ -22,6 +22,8 @@ import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Objects;
 
+import io.helidon.build.maven.sitegen.RenderingException;
+
 import freemarker.ext.beans.BeansWrapper;
 import freemarker.template.TemplateMethodModelEx;
 import freemarker.template.TemplateModel;
@@ -83,7 +85,7 @@ public class SimpleMethodModel implements TemplateMethodModelEx {
                 parameters[i] = null;
             } else {
                 throw new TemplateModelException(String.format(
-                        "Unknown parameter type for method invocation: object=%s, methodName=%s, parameter=%s",
+                        "Unknown parameter type for method invocation: object=%s, method=%s, parameter=%s",
                         object,
                         methodName,
                         arg));
@@ -135,7 +137,7 @@ public class SimpleMethodModel implements TemplateMethodModelEx {
         // throw an exception if no method found
         if (method == null) {
             throw new TemplateModelException(String.format(
-                    "Unable to find method to invoke: object=%s, methodName=%s, parameters=%s",
+                    "Unable to find method to invoke: object=%s, method=%s, parameters=%s",
                     object,
                     methodName,
                     arguments));
@@ -152,6 +154,10 @@ public class SimpleMethodModel implements TemplateMethodModelEx {
                 | IllegalAccessException
                 | IllegalArgumentException
                 | InvocationTargetException ex) {
+            Throwable cause = ex.getCause();
+            if (cause instanceof RenderingException) {
+                throw (RenderingException) cause;
+            }
             throw new TemplateModelException(String.format(
                     "Error during method invocation: object=%s, method=%s",
                     object, methodName),

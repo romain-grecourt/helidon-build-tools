@@ -39,8 +39,8 @@ public interface PageRenderer {
      *
      * @param page     the {@link Page} representing the document
      * @param ctx      the context representing the site processing invocation
-     * @param pagesDir the directory where to generate the rendered pages
+     * @param outputDir the directory where to generate the rendered pages
      * @param ext      the file extension to use for the rendered pages
      */
-    void process(Page page, RenderingContext ctx, Path pagesDir, String ext);
+    void process(Page page, RenderingContext ctx, Path outputDir, String ext);
 }

@@ -16,6 +16,13 @@
 
 package io.helidon.build.maven.sitegen;
 
+import java.util.ArrayDeque;
+import java.util.Arrays;
+import java.util.Deque;
+import java.util.stream.Collectors;
+
+import freemarker.template.TemplateException;
+
 /**
  * An exception to represent any error occurring as part of site processing.
  */
@@ -26,8 +33,7 @@ public class RenderingException extends RuntimeException {
      *
      * @param msg exception message
      */
-    @SuppressWarnings("unused")
-    public RenderingException(String msg) {
+    protected RenderingException(String msg) {
         super(msg);
     }
 
@@ -37,7 +43,48 @@ public class RenderingException extends RuntimeException {
      * @param msg   exception message
      * @param cause cause
      */
-    public RenderingException(String msg, Throwable cause) {
+    protected RenderingException(String msg, Throwable cause) {
         super(msg, cause);
+        setStackTrace(filteredStackTrace(getStackTrace()));
+    }
+
+    /**
+     * Create a new instance.
+     *
+     * @param msg   exception message
+     * @param cause cause
+     * @return new instance
+     */
+    public static RenderingException create(String msg, Throwable cause) {
+        Deque<Throwable> causes = new ArrayDeque<>();
+        while (cause != null) {
+            causes.push(cause);
+            cause = cause.getCause();
+        }
+        while (!causes.isEmpty()) {
+            cause = causes.pop();
+            StackTraceElement[] ste = filteredStackTrace(cause.getStackTrace());
+            if (cause instanceof TemplateException) {
+                cause = new RenderingException(filterMsg(cause.getMessage()));
+            }
+            cause.setStackTrace(ste);
+        }
+        return new RenderingException(msg, cause);
+    }
+
+    private static String filterMsg(String message) {
+        return Arrays.stream(message.split("\\R"))
+                     .limit(2).collect(Collectors.joining(System.lineSeparator()));
+    }
+
+    private static StackTraceElement[] filteredStackTrace(StackTraceElement[] elements) {
+        return Arrays.stream(elements)
+                     .filter(RenderingException::filterStackTrace)
+                     .toArray(StackTraceElement[]::new);
+    }
+
+    private static boolean filterStackTrace(StackTraceElement elt) {
+        return !elt.getClassName().startsWith("org.jruby")
+                && (elt.getFileName() == null || !elt.getFileName().endsWith(".rb"));
     }
 }

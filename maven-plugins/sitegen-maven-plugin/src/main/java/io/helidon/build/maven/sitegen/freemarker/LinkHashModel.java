@@ -29,7 +29,7 @@ import org.asciidoctor.ast.PhraseNode;
 /**
  * Link hash model.
  */
-final class LinkHashModel implements TemplateHashModel {
+public final class LinkHashModel implements TemplateHashModel {
 
     private final ObjectWrapper objectWrapper;
 
@@ -62,6 +62,7 @@ final class LinkHashModel implements TemplateHashModel {
                    .refId((String) nodeAttrs.get("refid"))
                    .fragment((String) nodeAttrs.get("fragment"))
                    .title((String) nodeAttrs.get("title"))
+                   .target(node.getTarget())
                    .window((String) nodeAttrs.get("window"))
                    .type(node.getType())
                    .text(node.getText())

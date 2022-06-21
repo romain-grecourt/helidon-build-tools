@@ -15,7 +15,7 @@
     limitations under the License.
 
 ///////////////////////////////////////////////////////////////////////////////
-
+// suppress inspection "AsciiDocLinkResolve" for whole file
 = Example Manual
 :toc:  left
 :sectnums:
@@ -55,9 +55,9 @@ imagesdir:: {imagesdir}
 
 == Includes
 
-.include::subdir/_b.adoc[]
+.include::sub-dir/_b.adoc[]
 ====
-include::subdir/_b.adoc[]
+include::sub-dir/_b.adoc[]
 ====
 
 WARNING: Includes can be tricky!

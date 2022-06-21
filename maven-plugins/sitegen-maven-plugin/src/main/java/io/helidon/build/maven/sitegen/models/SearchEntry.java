@@ -16,11 +16,13 @@
 
 package io.helidon.build.maven.sitegen.models;
 
+import io.helidon.build.maven.sitegen.Model;
+
 /**
  * Search index entry model.
  */
 @SuppressWarnings("unused")
-public class SearchEntry {
+public class SearchEntry implements Model {
 
     private final String location;
     private final String text;
@@ -57,6 +59,29 @@ public class SearchEntry {
      */
     public String title() {
         return title;
+    }
+
+    @Override
+    public Object get(String attr) {
+        switch (attr) {
+            case ("location"):
+                return location;
+            case ("text"):
+                return text;
+            case ("title"):
+                return title;
+            default:
+                throw new IllegalStateException("Unknown attribute: " + attr);
+        }
+    }
+
+    @Override
+    public String toString() {
+        return "SearchEntry{"
+                + "location='" + location + '\''
+                + ", text='" + text + '\''
+                + ", title='" + title + '\''
+                + '}';
     }
 
     /**

@@ -47,12 +47,12 @@ public final class AsciidocPageRenderer implements PageRenderer {
     }
 
     @Override
-    public void process(Page page, RenderingContext ctx, Path pagesDir, String ext) {
+    public void process(Page page, RenderingContext ctx, Path outputDir, String ext) {
         requireNonNull(page, "page is null!");
         requireNonNull(ctx, "ctx is null!");
         requireValid(ext, "ext is invalid!");
         SiteEngine siteEngine = SiteEngine.get(backendName);
-        Path target = requireDirectory(pagesDir).resolve(page.target()).resolve("." + ext);
+        Path target = requireDirectory(outputDir).resolve(page.target() + "." + ext);
         siteEngine.asciidoc().render(page, ctx, target, Map.of("page", page, "pages", ctx.pages()));
     }
 

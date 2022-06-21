@@ -26,10 +26,10 @@ import io.helidon.build.maven.sitegen.models.StaticAsset;
 
 import org.junit.jupiter.api.Test;
 
-import static io.helidon.build.maven.sitegen.TestHelper.SOURCE_DIR_PREFIX;
-import static io.helidon.build.maven.sitegen.TestHelper.getFile;
+import static io.helidon.build.common.test.utils.TestFiles.targetDir;
 import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.CoreMatchers.is;
 
 /**
  * Tests {@link VuetifyBackend}.
@@ -38,9 +38,9 @@ public class VuetifyBackendTest {
 
     @Test
     public void testVuetify1() throws Exception {
-
-        Path sourceDir = getFile(SOURCE_DIR_PREFIX + "vuetify1");
-        Path outputDir = Path.of("target/vuetify-backend-test/testvuetify1");
+        Path targetDir = targetDir(VuetifyBackendTest.class);
+        Path sourceDir = targetDir.resolve("test-classes/vuetify1");
+        Path outputDir =  targetDir.resolve("vuetify-backend-test/testvuetify2");
 
         Site.builder()
             .page(PageFilter.builder().includes("**/*.adoc"))
@@ -78,23 +78,24 @@ public class VuetifyBackendTest {
         Files.copy(sourceDir.resolve("sunset.jpg"), outputDir.resolve("sunset.jpg"), REPLACE_EXISTING);
 
         Path index = outputDir.resolve("index.html");
-        assertTrue(Files.exists(index));
+        assertThat(Files.exists(index), is(true));
 
         Path config = outputDir.resolve("main/config.js");
-        assertTrue(Files.exists(config));
+        assertThat(Files.exists(config), is(true));
 
         Path home = outputDir.resolve("pages/home.js");
-        assertTrue(Files.exists(home));
+        assertThat(Files.exists(home), is(true));
 
-        assertTrue(Files.readAllLines(home)
+        assertThat(Files.readAllLines(home)
                         .stream()
-                        .anyMatch(line -> line.contains("to an anchor<br>")));
+                        .anyMatch(line -> line.contains("to an anchor<br>")), is(true));
     }
 
     @Test
     public void testVuetify2() {
-        Path sourceDir = getFile(SOURCE_DIR_PREFIX + "vuetify2");
-        Path outputDir = getFile("target/vuetify-backend-test/testvuetify2");
+        Path targetDir = targetDir(VuetifyBackendTest.class);
+        Path sourceDir = targetDir.resolve("test-classes/vuetify2");
+        Path outputDir =  targetDir.resolve("vuetify-backend-test/testvuetify2");
         Site.builder()
             .page(PageFilter.builder().includes("**/*.adoc"))
             .backend(VuetifyBackend.builder().home("home.adoc"))
@@ -106,15 +107,15 @@ public class VuetifyBackendTest {
             .generate(sourceDir, outputDir);
 
         Path index = outputDir.resolve("index.html");
-        assertTrue(Files.exists(index));
+        assertThat(Files.exists(index), is(true));
 
         Path config = outputDir.resolve("main/config.js");
-        assertTrue(Files.exists(config));
+        assertThat(Files.exists(config), is(true));
 
         Path home = outputDir.resolve("pages/home.js");
-        assertTrue(Files.exists(home));
+        assertThat(Files.exists(home), is(true));
 
         Path homeCustom = outputDir.resolve("pages/home_custom.js");
-        assertTrue(Files.exists(homeCustom));
+        assertThat(Files.exists(homeCustom), is(true));
     }
 }

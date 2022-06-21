@@ -27,6 +27,14 @@ public final class PageFilter extends SourcePathFilter {
         super(builder);
     }
 
+    @Override
+    public String toString() {
+        return "PageFilter{"
+                + "includes='" + includes() + "'"
+                + ", excludes='" + excludes() + "'"
+                + '}';
+    }
+
     /**
      * Builder of {@link PageFilter}.
      */

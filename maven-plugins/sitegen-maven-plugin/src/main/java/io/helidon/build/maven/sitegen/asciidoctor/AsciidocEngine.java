@@ -17,6 +17,7 @@
 package io.helidon.build.maven.sitegen.asciidoctor;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -28,7 +29,6 @@ import java.util.function.Supplier;
 
 import io.helidon.build.maven.sitegen.Config;
 import io.helidon.build.maven.sitegen.RenderingContext;
-import io.helidon.build.maven.sitegen.RenderingException;
 import io.helidon.build.maven.sitegen.models.Page;
 
 import org.asciidoctor.Asciidoctor;
@@ -191,6 +191,7 @@ public class AsciidocEngine {
         // basedir needed by asciidoctorj-diagram
         OptionsBuilder optionsBuilder =
                 Options.builder()
+                       .sourcemap(true)
                        .attributes(attrsBuilder.build())
                        .safe(SafeMode.UNSAFE)
                        .headerFooter(false)
@@ -200,7 +201,7 @@ public class AsciidocEngine {
         if (backend != null) {
             optionsBuilder.backend(this.backend);
         }
-        LOGGER.info("rendering {} to {}", source, target);
+        LOGGER.info("rendering {} to {}", sourceDir.relativize(source), outputDir.relativize(target));
         Document document = asciidoctor.loadFile(source.toFile(), optionsBuilder.build());
         document.setAttribute("templateSession", ctx.templateSession(), true);
         String output = document.convert();
@@ -208,7 +209,7 @@ public class AsciidocEngine {
             Files.createDirectories(target.getParent());
             Files.writeString(target, output);
         } catch (IOException ex) {
-            throw new RenderingException(ex.getMessage(), ex);
+            throw new UncheckedIOException(ex);
         }
     }
 
@@ -330,7 +331,7 @@ public class AsciidocEngine {
     /**
      * Create a new instance from configuration.
      *
-     * @param config config
+     * @param config  config
      * @param backend backend name
      * @return new instance
      */

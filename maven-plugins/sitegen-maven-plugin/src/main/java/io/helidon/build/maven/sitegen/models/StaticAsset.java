@@ -26,7 +26,7 @@ import static io.helidon.build.common.Strings.requireValid;
  * Static assets are resources to be scanned in the site source directory
  * and copied in the generated directory.
  */
-public class StaticAsset extends SourcePathFilter {
+public final class StaticAsset extends SourcePathFilter {
 
     private final String target;
 
@@ -53,6 +53,15 @@ public class StaticAsset extends SourcePathFilter {
             default:
                 return super.get(attr);
         }
+    }
+
+    @Override
+    public String toString() {
+        return "StaticAsset{"
+                + "includes='" + includes() + "'"
+                + ", excludes='" + excludes() + "'"
+                + ", target='" + target + '\''
+                + '}';
     }
 
     /**

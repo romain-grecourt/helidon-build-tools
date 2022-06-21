@@ -18,47 +18,47 @@ package io.helidon.build.maven.sitegen.freemarker;
 
 import java.util.Objects;
 
+import io.helidon.build.maven.sitegen.Model;
+
 import freemarker.template.TemplateHashModel;
 import freemarker.template.TemplateModel;
 import freemarker.template.TemplateModelException;
-import org.asciidoctor.jruby.internal.RubyAttributesMapDecorator;
 
 /**
- * A Freemarker template model to resolve {@link org.asciidoctor.ast.ContentNode} attributes.
- * <p>
- * This provides normal freemarker dotted notation access to the map as well
- * as invoking methods.
+ * A Freemarker template model to resolve {@link Model}.
  */
-final class ContentNodeAttributesModel implements TemplateHashModel {
+final class SimpleHashModel implements TemplateHashModel {
 
-    private final RubyAttributesMapDecorator rubyMap;
     private final ObjectWrapper objectWrapper;
+    private final Model model;
 
     /**
      * Create a new instance.
      *
-     * @param objectWrapper the {@link ObjectWrapper} to use wrapping java objects.
-     * @param rubyMap       the {@link RubyAttributesMapDecorator} containing the attributes
+     * @param objectWrapper the object wrapper to use
+     * @param model         model instance
      */
-    ContentNodeAttributesModel(ObjectWrapper objectWrapper, RubyAttributesMapDecorator rubyMap) {
-        this.rubyMap = Objects.requireNonNull(rubyMap);
+    SimpleHashModel(ObjectWrapper objectWrapper, Model model) {
         this.objectWrapper = Objects.requireNonNull(objectWrapper);
+        this.model = Objects.requireNonNull(model);
     }
 
     @Override
     public TemplateModel get(String key) throws TemplateModelException {
-        if (rubyMap.containsKey(key)) {
-            return objectWrapper.wrap(rubyMap.get(key));
-        }
-        // return method model if method name found for key
-        if (SimpleMethodModel.hasMethodWithName(rubyMap, key)) {
-            return new SimpleMethodModel(objectWrapper, rubyMap, key);
-        }
-        return null;
+        return objectWrapper.wrap(model.get(key));
+    }
+
+    /**
+     * Get the wrapped instance.
+     *
+     * @return model
+     */
+    public Model wrapped() {
+        return model;
     }
 
     @Override
     public boolean isEmpty() {
-        return rubyMap.isEmpty();
+        return false;
     }
 }

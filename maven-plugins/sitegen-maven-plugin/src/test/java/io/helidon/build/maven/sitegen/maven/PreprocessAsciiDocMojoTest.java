@@ -22,14 +22,16 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collection;
 import java.util.List;
-import java.util.Set;
 
 import com.github.difflib.DiffUtils;
 import com.github.difflib.algorithm.DiffException;
 
+import static io.helidon.build.common.test.utils.TestFiles.targetDir;
 import static io.helidon.build.maven.sitegen.maven.MavenPluginHelper.mojo;
 import static io.helidon.build.maven.sitegen.maven.AbstractAsciiDocMojo.inputs;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.hamcrest.CoreMatchers.hasItems;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.MatcherAssert.assertThat;
 
 import org.junit.jupiter.api.Test;
 
@@ -38,56 +40,55 @@ import org.junit.jupiter.api.Test;
  */
 public class PreprocessAsciiDocMojoTest {
 
-    private static final Path TEST_ROOT = Paths.get("src/test/resources/testpreprocess");
-    private static final Path INCLUDES_TEST_ROOT = Paths.get("src/test/resources/preprocess-adoc");
+    private static final Path TARGET_DIR = targetDir(PreprocessAsciiDocMojoTest.class);
+    private static final Path TEST_ROOT = TARGET_DIR.resolve("test-classes/preprocess");
 
     @Test
     public void testSimpleIncludes() throws IOException {
-        Collection<Path> expected = Set.of(TEST_ROOT.resolve("a/a.adoc"));
         Collection<Path> matched = inputs(TEST_ROOT,
                 new String[]{"a/*.adoc"},
                 new String[0]);
-        assertEquals(expected, matched);
+        assertThat(matched, hasItems(TEST_ROOT.resolve("a/a.adoc")));
     }
 
     @Test
     public void testDoubleStarInclude() throws IOException {
-        Set<Path> expected = Set.of(
-                TEST_ROOT.resolve("a/a.adoc"),
-                TEST_ROOT.resolve("b/b.adoc"),
-                TEST_ROOT.resolve("b/b1/b1.adoc"),
-                TEST_ROOT.resolve("b/b2/b2.adoc"));
         Collection<Path> matched = inputs(TEST_ROOT,
                 new String[]{"**/*.adoc"},
                 new String[0]);
-        assertEquals(expected, matched);
+        assertThat(matched, hasItems(
+                TEST_ROOT.resolve("a/a.adoc"),
+                TEST_ROOT.resolve("b/b.adoc"),
+                TEST_ROOT.resolve("b/b1/b1.adoc"),
+                TEST_ROOT.resolve("b/b2/b2.adoc")));
     }
 
     @Test
     public void testEmbeddedDoubleStarIncludes() throws IOException {
-        Set<Path> expected = Set.of(TEST_ROOT.resolve("b/b1/b1.adoc"), TEST_ROOT.resolve("b/b2/b2.adoc"));
         Collection<Path> matched = inputs(TEST_ROOT,
                 new String[]{"b/**/*.adoc"},
                 new String[0]);
-        assertEquals(expected, matched);
+        assertThat(matched, hasItems(
+                TEST_ROOT.resolve("b/b1/b1.adoc"),
+                TEST_ROOT.resolve("b/b2/b2.adoc")));
     }
 
     @Test
     public void testSimpleExcludes() throws IOException {
-        Set<Path> expected = Set.of(TEST_ROOT.resolve("a/a.adoc"), TEST_ROOT.resolve("b/b1/b1.adoc"));
         Collection<Path> matched = inputs(TEST_ROOT,
                 new String[]{"**/*.adoc"},
                 new String[]{"b/b2/b2.adoc", "b/b.adoc"});
-        assertEquals(expected, matched);
+        assertThat(matched, hasItems(
+                TEST_ROOT.resolve("a/a.adoc"),
+                TEST_ROOT.resolve("b/b1/b1.adoc")));
     }
 
     @Test
     public void testDoubleStarExclude() throws IOException {
-        Set<Path> expected = Set.of(TEST_ROOT.resolve("a/a.adoc"));
         Collection<Path> matched = inputs(TEST_ROOT,
                 new String[]{"**/*.adoc"},
                 new String[]{"b/**"});
-        assertEquals(expected, matched);
+        assertThat(matched, hasItems(TEST_ROOT.resolve("a/a.adoc")));
     }
 
     @Test
@@ -111,7 +112,7 @@ public class PreprocessAsciiDocMojoTest {
                          String goal,
                          Class<? extends AbstractAsciiDocMojo> mojoClass) throws Exception {
 
-        AbstractAsciiDocMojo mojo = mojo(pomFile, INCLUDES_TEST_ROOT, goal, mojoClass);
+        AbstractAsciiDocMojo mojo = mojo(pomFile, TARGET_DIR.resolve("test-classes"), goal, mojoClass);
 
         mojo.execute();
 
@@ -123,12 +124,11 @@ public class PreprocessAsciiDocMojoTest {
         Path expectedOutputPath = Paths.get(baseDir, "../preprocess-adoc", expectedFile);
         List<String> expectedOutput = Files.readAllLines(expectedOutputPath);
 
-        assertEquals(expectedOutput, mojoOutput, () -> {
-            try {
-                return DiffUtils.diff(expectedOutput, mojoOutput).toString();
-            } catch (DiffException ex) {
-                throw new RuntimeException(ex);
-            }
-        });
+        try {
+            String reason = DiffUtils.diff(expectedOutput, mojoOutput).toString();
+            assertThat(reason, expectedOutput, is(mojoOutput));
+        } catch (DiffException ex) {
+            throw new RuntimeException(ex);
+        }
     }
 }

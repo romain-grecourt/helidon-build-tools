@@ -93,6 +93,16 @@ public class Header implements Model {
         }
     }
 
+    @Override
+    public String toString() {
+        return "Header{"
+                + "favicon=" + favicon
+                + ", stylesheets=" + stylesheets
+                + ", scripts=" + scripts
+                + ", meta=" + meta
+                + '}';
+    }
+
     /**
      * A builder of {@link Header}.
      */

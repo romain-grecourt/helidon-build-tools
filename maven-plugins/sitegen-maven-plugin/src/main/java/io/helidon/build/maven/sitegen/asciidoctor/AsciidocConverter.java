@@ -20,12 +20,15 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Map;
 
+import io.helidon.build.maven.sitegen.RenderingException;
 import io.helidon.build.maven.sitegen.SiteEngine;
 import io.helidon.build.maven.sitegen.freemarker.FreemarkerEngine;
 import io.helidon.build.maven.sitegen.freemarker.TemplateLoader;
 
 import org.asciidoctor.ast.ContentNode;
+import org.asciidoctor.ast.Cursor;
 import org.asciidoctor.ast.PhraseNode;
+import org.asciidoctor.ast.StructuralNode;
 import org.asciidoctor.converter.AbstractConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -80,7 +83,21 @@ public class AsciidocConverter extends AbstractConverter<String> {
                 templateName = node.getNodeName();
             }
             LOGGER.debug("Rendering node: {}", node);
-            return templateEngine.renderString(templateName, node);
+            try {
+                return templateEngine.renderString(templateName, node);
+            } catch (RenderingException ex) {
+                if (ex instanceof RenderingException0) {
+                    // only raise the underlying error
+                    // don't represent the rendering stack
+                    throw ex;
+                }
+                Cursor location = sourceLocation(node);
+                String filename = location != null ? location.getPath() : "?";
+                String lineno = location != null ? String.valueOf(location.getLineNumber()) : "?";
+                throw new RenderingException0(String.format(
+                        "An error occurred during rendering of '%s' at line %s", filename, lineno),
+                        ex);
+            }
         } else {
             return "";
         }
@@ -89,5 +106,24 @@ public class AsciidocConverter extends AbstractConverter<String> {
     @Override
     public void write(String output, OutputStream out) throws IOException {
         out.write(output.getBytes());
+    }
+
+    private static Cursor sourceLocation(ContentNode node) {
+        while (node != null) {
+            if (node instanceof StructuralNode) {
+                Cursor sourceLocation = ((StructuralNode) node).getSourceLocation();
+                if (sourceLocation != null) {
+                    return sourceLocation;
+                }
+            }
+            node = node.getParent();
+        }
+        return null;
+    }
+
+    private static final class RenderingException0 extends RenderingException {
+        private RenderingException0(String msg, Throwable cause) {
+            super(msg, cause);
+        }
     }
 }

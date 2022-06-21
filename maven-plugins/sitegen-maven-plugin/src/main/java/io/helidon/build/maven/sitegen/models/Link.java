@@ -145,15 +145,6 @@ public final class Link implements Model {
         return window;
     }
 
-    /**
-     * The link hash (fragment).
-     *
-     * @return link hash, can be {@code null}
-     */
-    public String hash() {
-        return hash;
-    }
-
     @Override
     public Object get(String attr) {
         switch (attr) {
@@ -293,7 +284,9 @@ public final class Link implements Model {
          * @return this builder
          */
         public Builder title(String title) {
-            this.title = title;
+            if (title != null) {
+                this.title = title;
+            }
             return this;
         }
 
@@ -304,7 +297,9 @@ public final class Link implements Model {
          * @return this builder
          */
         public Builder text(String text) {
-            this.text = text;
+            if (text != null) {
+                this.text = text;
+            }
             return this;
         }
 
@@ -315,7 +310,9 @@ public final class Link implements Model {
          * @return this builder
          */
         public Builder id(String id) {
-            this.id = id;
+            if (id != null) {
+                this.id = id;
+            }
             return this;
         }
 
@@ -326,7 +323,9 @@ public final class Link implements Model {
          * @return this builder
          */
         public Builder window(String window) {
-            this.window = window;
+            if (window != null) {
+                this.window = window;
+            }
             return this;
         }
 

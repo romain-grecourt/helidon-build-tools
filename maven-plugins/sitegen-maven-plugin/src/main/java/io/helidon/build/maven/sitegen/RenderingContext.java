@@ -17,6 +17,7 @@
 package io.helidon.build.maven.sitegen;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.FileVisitor;
 import java.nio.file.Files;
@@ -138,9 +139,10 @@ public class RenderingContext {
                 try {
                     Path targetDir = outputDir.resolve(asset.target());
                     Files.createDirectories(targetDir);
-                    copyResources(sourceDir.resolve(path.asString()), targetDir.resolve(path.asString()));
+                    String pathStr = path.asString(false);
+                    copyResources(sourceDir.resolve(pathStr), targetDir.resolve(pathStr));
                 } catch (IOException ex) {
-                    throw new RenderingException("An error occurred while copying resource: " + path.asString(), ex);
+                    throw new UncheckedIOException(ex);
                 }
             }
         }
@@ -186,7 +188,7 @@ public class RenderingContext {
         }
         Map<String, Page> pages = new HashMap<>();
         for (SourcePath filteredPath : SourcePath.sort(filteredSourcePaths)) {
-            String path = filteredPath.asString();
+            String path = filteredPath.asString(false);
             if (pages.containsKey(path)) {
                 throw new IllegalStateException("Source path " + path + "already included");
             }
@@ -238,9 +240,8 @@ public class RenderingContext {
      *
      * @param resources the path to the resources
      * @param outputDir the target output directory where to copy the files
-     * @throws IOException if an error occurred during processing
      */
-    public static void copyResources(Path resources, Path outputDir) throws IOException {
+    public static void copyResources(Path resources, Path outputDir) {
         try {
             Files.walkFileTree(resources, new FileVisitor<>() {
                 @Override
@@ -272,7 +273,7 @@ public class RenderingContext {
                 }
             });
         } catch (IOException ex) {
-            throw new RenderingException("An error occurred during static resource processing ", ex);
+            throw new UncheckedIOException(ex);
         }
     }
 

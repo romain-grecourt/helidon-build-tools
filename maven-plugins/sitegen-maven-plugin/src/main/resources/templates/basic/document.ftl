@@ -21,4 +21,4 @@
 <h1>${document.doctitle}</h1>
 ${content}
 </body>
-<html>
+</html>

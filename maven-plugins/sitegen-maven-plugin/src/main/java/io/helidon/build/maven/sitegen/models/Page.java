@@ -91,6 +91,16 @@ public class Page implements Model {
         }
     }
 
+    @Override
+    public String toString() {
+        return "Page{"
+                + "source='" + source + '\''
+                + ", sourceExt='" + sourceExt + '\''
+                + ", target='" + target + '\''
+                + ", metadata=" + metadata
+                + '}';
+    }
+
     /**
      * Create a new builder.
      *
@@ -245,6 +255,17 @@ public class Page implements Model {
                 default:
                     throw new IllegalStateException("Unknown attribute: " + attr);
             }
+        }
+
+        @Override
+        public String toString() {
+            return "Metadata{"
+                    + "description='" + description + '\''
+                    + ", keywords='" + keywords + '\''
+                    + ", h1='" + h1 + '\''
+                    + ", title='" + title + '\''
+                    + ", h1Prefix='" + h1Prefix + '\''
+                    + '}';
         }
 
         /**

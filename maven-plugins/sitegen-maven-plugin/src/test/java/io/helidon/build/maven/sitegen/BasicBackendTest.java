@@ -16,61 +16,90 @@
 
 package io.helidon.build.maven.sitegen;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
+import com.github.difflib.DiffUtils;
+import com.github.difflib.patch.Patch;
+import freemarker.cache.FileTemplateLoader;
+import freemarker.template.Configuration;
+import freemarker.template.Template;
 import io.helidon.build.maven.sitegen.models.PageFilter;
 import org.junit.jupiter.api.Test;
 
-import static io.helidon.build.maven.sitegen.TestHelper.SOURCE_DIR_PREFIX;
-import static io.helidon.build.maven.sitegen.TestHelper.assertRendering;
-import static io.helidon.build.maven.sitegen.TestHelper.getFile;
+import static io.helidon.build.common.test.utils.TestFiles.targetDir;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Tests {@link BasicBackend}.
  */
 public class BasicBackendTest {
 
-    private static final Path OUTPUT_DIR = getFile("target/basic-backend-test");
+    private static final Path OUTPUT_DIR = targetDir(BasicBackendTest.class).resolve("basic-backend-test");
 
     @Test
     public void testBasic1() throws Exception {
-        Path sourceDir = getFile(SOURCE_DIR_PREFIX + "basic1");
+        Path sourceDir = targetDir(BasicBackendTest.class).resolve("test-classes/basic1");
 
         Site.builder()
             .page(PageFilter.builder().includes("**/*.adoc").excludes("**/_*"))
             .build()
             .generate(sourceDir, OUTPUT_DIR);
 
-        assertRendering(OUTPUT_DIR,
-                sourceDir.resolve("_expected.ftl"),
-                OUTPUT_DIR.resolve("basic.html"));
+        assertRendering(sourceDir.resolve("_expected.ftl"), OUTPUT_DIR.resolve("basic.html"));
     }
 
     @Test
     public void testBasic2() throws Exception {
-        Path sourceDir = getFile(SOURCE_DIR_PREFIX + "basic2");
+        Path sourceDir = targetDir(BasicBackendTest.class).resolve("test-classes/basic2");
 
         Site.builder()
             .page(PageFilter.builder().includes("**/*.adoc").excludes("**/_*"))
             .build()
             .generate(sourceDir, OUTPUT_DIR);
 
-        assertRendering(OUTPUT_DIR,
-                sourceDir.resolve("_expected.ftl"),
-                OUTPUT_DIR.resolve("example-manual.html"));
+        assertRendering(sourceDir.resolve("_expected.ftl"), OUTPUT_DIR.resolve("example-manual.html"));
     }
 
     @Test
     public void testBasic3() throws Exception {
-        Path sourceDir = getFile(SOURCE_DIR_PREFIX + "basic3");
+        Path sourceDir = targetDir(BasicBackendTest.class).resolve("test-classes/basic3");
 
         Site.builder()
             .page(PageFilter.builder().includes("**/*.adoc").excludes("**/_*"))
             .build()
             .generate(sourceDir, OUTPUT_DIR);
 
-        assertRendering(OUTPUT_DIR,
-                sourceDir.resolve("_expected.ftl"),
-                OUTPUT_DIR.resolve("passthrough.html"));
+        assertRendering(sourceDir.resolve("_expected.ftl"), OUTPUT_DIR.resolve("passthrough.html"));
+    }
+
+    private static void assertRendering(Path expectedTpl, Path actual) throws Exception {
+
+        assertThat(Files.exists(actual), is(true));
+
+        // render expected
+        FileTemplateLoader ftl = new FileTemplateLoader(expectedTpl.getParent().toFile());
+        Configuration config = new Configuration(Configuration.VERSION_2_3_23);
+        config.setTemplateLoader(ftl);
+        Template template = config.getTemplate(expectedTpl.getFileName().toString());
+        Path expected = OUTPUT_DIR.resolve("expected_" + actual.getFileName());
+        Map<String, Object> model = new HashMap<>();
+        model.put("basedir", Path.of("").toAbsolutePath());
+        template.process(model, Files.newBufferedWriter(expected));
+
+        // diff expected and rendered
+        List<String> expectedLines = Files.readAllLines(expected);
+        List<String> actualLines = Files.readAllLines(actual);
+
+        // compare expected and rendered
+        Patch<String> patch = DiffUtils.diff(expectedLines, actualLines);
+        if (patch.getDeltas().size() > 0) {
+            fail("rendered file " + actual.toAbsolutePath() + " differs from expected: " + patch);
+        }
     }
 }

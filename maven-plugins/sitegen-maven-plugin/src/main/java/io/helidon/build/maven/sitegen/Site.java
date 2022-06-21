@@ -17,6 +17,7 @@
 package io.helidon.build.maven.sitegen;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -110,7 +111,7 @@ public class Site {
             Files.createDirectories(outputDir);
             backend.generate(new RenderingContext(this, sourceDir, outputDir));
         } catch (IOException ex) {
-            throw new RenderingException(ex.getMessage(), ex);
+            throw new UncheckedIOException(ex);
         }
     }
 

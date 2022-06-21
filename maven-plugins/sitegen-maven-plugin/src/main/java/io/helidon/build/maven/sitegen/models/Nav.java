@@ -25,8 +25,6 @@ import java.util.function.Supplier;
 
 import io.helidon.build.maven.sitegen.Config;
 
-import static io.helidon.build.common.Strings.requireValid;
-
 /**
  * Navigation tree.
  */
@@ -43,7 +41,7 @@ public final class Nav extends SourcePathFilter {
 
     private Nav(Builder builder) {
         super(builder);
-        this.title = requireValid(builder.title, "title is invalid!");
+        this.title = builder.title;
         this.glyph = builder.glyph;
         this.href = builder.href;
         this.target = builder.target;

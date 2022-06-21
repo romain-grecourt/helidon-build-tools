@@ -823,7 +823,8 @@ public final class FileUtils {
     /**
      * Get a resource as a {@link Path} instance.
      *
-     * @param path the resource path
+     * @param path  the resource path
+     * @param clazz class used to resolve the resource
      * @return Path
      * @throws IllegalArgumentException if the resource path is not found, or if the URI scheme is not supported
      */

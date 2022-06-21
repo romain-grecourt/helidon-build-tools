@@ -17,6 +17,7 @@
 package io.helidon.build.maven.sitegen;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
@@ -121,7 +122,7 @@ public class VuetifyBackend extends Backend {
         try {
             Files.createDirectories(pagesDir);
         } catch (IOException ex) {
-            throw new RenderingException(ex.getMessage(), ex);
+            throw new UncheckedIOException(ex);
         }
 
         // render all pages
@@ -132,7 +133,7 @@ public class VuetifyBackend extends Backend {
 
         TemplateSession session = ctx.templateSession();
 
-        Page home = ctx.pages().get(new SourcePath(this.home).asString());
+        Page home = ctx.pages().get(new SourcePath(this.home).asString(false));
         if (home == null) {
             throw new IllegalStateException("unable to get home page");
         }
@@ -193,12 +194,7 @@ public class VuetifyBackend extends Backend {
         freemarker.renderFile("config", "main/config.js", model, ctx);
 
         // copy vuetify resources
-        try {
-            copyResources(staticFiles, ctx.outputDir());
-        } catch (
-                IOException ex) {
-            throw new RenderingException("An error occurred during static resource processing ", ex);
-        }
+        copyResources(staticFiles, ctx.outputDir());
     }
 
     private Optional<Nav> resolveNav() {

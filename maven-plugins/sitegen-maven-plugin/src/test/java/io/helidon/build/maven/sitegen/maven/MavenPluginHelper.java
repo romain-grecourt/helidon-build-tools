@@ -34,7 +34,10 @@ import org.apache.maven.project.MavenProject;
 @SuppressWarnings({"NewClassNamingConvention", "unused", "UnconstructableJUnitTestCase"})
 public final class MavenPluginHelper extends AbstractMojoTestCase {
 
-    private MavenPluginHelper() {
+    /**
+     * Create a new instance.
+     */
+    public MavenPluginHelper() {
         try {
             this.setUp();
         } catch (Exception ex) {

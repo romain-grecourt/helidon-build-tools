@@ -25,7 +25,7 @@ import static java.util.Objects.requireNonNull;
 /**
  * Configuration for different type of web resources such as css stylesheets or scripts.
  */
-public class WebResource implements Model {
+public final class WebResource implements Model {
 
     private final Location location;
     private final String type;
@@ -63,6 +63,14 @@ public class WebResource implements Model {
             default:
                 throw new IllegalArgumentException("Unknown attribute: " + attr);
         }
+    }
+
+    @Override
+    public String toString() {
+        return "WebResource{"
+                + "location=" + location
+                + ", type='" + type + '\''
+                + '}';
     }
 
     /**

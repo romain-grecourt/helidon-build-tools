@@ -19,6 +19,7 @@ package io.helidon.build.maven.sitegen.freemarker;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -108,7 +109,7 @@ public class FreemarkerEngine {
             Files.createDirectories(target.getParent());
             Files.writeString(target, rendered);
         } catch (IOException ex) {
-            throw new RenderingException("error while writing rendered output to file", ex);
+            throw new UncheckedIOException(ex);
         }
     }
 
@@ -153,12 +154,12 @@ public class FreemarkerEngine {
      * @throws RenderingException if an error occurred
      */
     public String renderString(String template, Object model, TemplateSession session) throws RenderingException {
-        String templatePath = backend + "/" + template;
+        String path = backend + "/" + template;
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            Template tpl = freemarker.getTemplate(templatePath);
+            Template tpl = freemarker.getTemplate(path);
             OutputStreamWriter writer = new OutputStreamWriter(baos);
-            LOGGER.debug("Applying template: {}", templatePath);
+            LOGGER.debug("Applying template: {}", path);
             Environment env = tpl.createProcessingEnvironment(model, writer);
             if (session != null) {
                 for (Entry<String, TemplateDirectiveModel> directive : session.directives().entrySet()) {
@@ -172,10 +173,13 @@ public class FreemarkerEngine {
             env.process();
             return baos.toString(StandardCharsets.UTF_8);
         } catch (TemplateNotFoundException ex) {
-            LOGGER.warn("Unable to find template: {}", templatePath);
+            LOGGER.warn("Unable to find template: {}", path);
             return "";
-        } catch (TemplateException | IOException ex) {
-            throw new RenderingException("An error occurred during rendering of " + templatePath, ex);
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
+        } catch (TemplateException ex) {
+            throw RenderingException.create(String.format(
+                    "An error occurred during rendering of '%s'", path), ex);
         }
     }
 

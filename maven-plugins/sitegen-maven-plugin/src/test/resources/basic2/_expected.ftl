@@ -13,6 +13,8 @@
   See the License for the specific language governing permissions and
   limitations under the License.
  -->
+<#-- @ftlvariable name="basedir" type="java.lang.String" -->
+<#--noinspection HtmlRequiredLangAttribute-->
 <html>
 <head>
 <title>Example Manual</title>
@@ -47,11 +49,11 @@ unsafe
 </dd>
 <dt>docdir</dt>
 <dd>
-${basedir}/src/test/resources/testbasic2
+${basedir}/target/test-classes/basic2
 </dd>
 <dt>docfile</dt>
 <dd>
-${basedir}/src/test/resources/testbasic2/example-manual.adoc
+${basedir}/target/test-classes/basic2/example-manual.adoc
 </dd>
 <dt>imagesdir</dt>
 <dd>
@@ -61,12 +63,12 @@ ${basedir}/src/test/resources/testbasic2/example-manual.adoc
 <h2>Includes</h2>
 <div>
 <span>example:</span>
-<span>include::subdir/_b.adoc[]</span>
-<p>content from <em>src/docs/asciidoc/subdir/_b.adoc</em>.</p>
+<span>include::sub-dir/_b.adoc[]</span>
+<p>content from <em>src/docs/asciidoc/sub-dir/_b.adoc</em>.</p>
 <div>
 <span>example:</span>
 <span>include::_c.adoc[]</span>
-<p>content from <em>src/docs/asciidoc/subdir/c.adoc</em>.</p>
+<p>content from <em>src/docs/asciidoc/sub-dir/c.adoc</em>.</p>
 </div>
 </div>
 <div>
@@ -74,4 +76,4 @@ ${basedir}/src/test/resources/testbasic2/example-manual.adoc
 Includes can be tricky!
 </div>
 </body>
-<html>
+</html>

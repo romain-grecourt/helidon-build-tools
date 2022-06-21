@@ -23,8 +23,8 @@ import io.helidon.build.maven.sitegen.VuetifyBackend;
 
 import org.junit.jupiter.api.Test;
 
+import static io.helidon.build.common.test.utils.TestFiles.targetDir;
 import static io.helidon.build.maven.sitegen.maven.MavenPluginHelper.mojo;
-import static io.helidon.build.maven.sitegen.TestHelper.getFile;
 import static org.hamcrest.CoreMatchers.hasItems;
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.not;
@@ -37,7 +37,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
  */
 public class GenerateMojoTest {
 
-    private static final Path OUTPUT_DIR = getFile("target/generate-mojo");
+    private static final Path OUTPUT_DIR = targetDir(GenerateMojoTest.class).resolve("generate-mojo");
 
     @Test
     public void testBasicBackendConfiguration() throws Exception {

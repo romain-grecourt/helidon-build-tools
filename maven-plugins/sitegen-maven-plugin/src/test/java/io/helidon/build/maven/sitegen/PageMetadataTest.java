@@ -25,8 +25,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.AfterAll;
 
-import static io.helidon.build.maven.sitegen.TestHelper.SOURCE_DIR_PREFIX;
-import static io.helidon.build.maven.sitegen.TestHelper.getFile;
+import static io.helidon.build.common.test.utils.TestFiles.targetDir;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.nullValue;
@@ -38,7 +37,7 @@ import static org.junit.jupiter.api.Assertions.fail;
  */
 class PageMetadataTest {
 
-    private static final Path SOURCE_DIR = getFile(SOURCE_DIR_PREFIX + "metadata");
+    private static final Path SOURCE_DIR = targetDir(PageMetadataTest.class).resolve("test-classes/metadata");
     private static final String BACKEND_NAME = "dummy";
     private static AsciidocPageRenderer pageRenderer;
 

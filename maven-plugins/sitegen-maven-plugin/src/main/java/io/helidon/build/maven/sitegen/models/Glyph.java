@@ -66,6 +66,14 @@ public class Glyph implements Model {
         }
     }
 
+    @Override
+    public String toString() {
+        return "Glyph{"
+                + "type='" + type + '\''
+                + ", value='" + value + '\''
+                + '}';
+    }
+
     /**
      * A builder of {@link Glyph}.
      */

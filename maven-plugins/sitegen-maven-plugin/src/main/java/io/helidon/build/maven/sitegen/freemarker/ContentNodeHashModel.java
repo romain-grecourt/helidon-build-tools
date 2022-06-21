@@ -20,6 +20,8 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Objects;
 
+import io.helidon.build.maven.sitegen.RenderingException;
+
 import freemarker.template.TemplateHashModel;
 import freemarker.template.TemplateModel;
 import freemarker.template.TemplateModelException;
@@ -43,10 +45,8 @@ final class ContentNodeHashModel implements TemplateHashModel {
      * @param node          the node to expose as model
      */
     ContentNodeHashModel(ObjectWrapper objectWrapper, ContentNode node) {
-        Objects.requireNonNull(objectWrapper);
-        this.objectWrapper = objectWrapper;
-        Objects.requireNonNull(node);
-        this.contentNode = node;
+        this.objectWrapper = Objects.requireNonNull(objectWrapper);
+        this.contentNode = Objects.requireNonNull(node);
     }
 
     /**
@@ -90,8 +90,12 @@ final class ContentNodeHashModel implements TemplateHashModel {
                      | SecurityException
                      | IllegalAccessException
                      | IllegalArgumentException ex) {
+                Throwable cause = ex.getCause();
+                if (cause instanceof RenderingException) {
+                    throw (RenderingException) cause;
+                }
                 throw new TemplateModelException(String.format(
-                        "Error during getter invocation: node=%s, methodname=%s",
+                        "Error during getter invocation: node=%s, method=%s",
                         contentNode,
                         getterMethod.getName()),
                         ex);

@@ -30,6 +30,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.github.difflib.DiffUtils;
 import com.github.difflib.algorithm.DiffException;
 
+import static org.hamcrest.CoreMatchers.hasItem;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import org.junit.jupiter.api.Test;
 
@@ -63,18 +66,14 @@ public class IncludePreprocessorTest {
                 "}\n" +
                 "----";
 
-        List<Include> expectedIncludes = new ArrayList<>();
 
         List<String> content = asList(contentText);
-        expectedIncludes.add(new Include(2, 1, 5, asList(includedContentText), "A.java"));
-
         AtomicInteger lineNumber = new AtomicInteger(0);
-        Block sba = Block.consumeBlock(content, lineNumber);
+        Block sba = Block.consumeBlock(asList(contentText), lineNumber);
         List<Include> includes = sba.includes();
 
-        assertEquals(content.size(), lineNumber.get(), "returned line number did not match");
-        assertEquals(expectedIncludes, includes);
-
+        assertThat("returned line number did not match", content.size(), is(lineNumber.get()));
+        assertThat(includes, hasItem(new Include(2, 1, 5, asList(includedContentText), "A.java")));
     }
 
     @Test

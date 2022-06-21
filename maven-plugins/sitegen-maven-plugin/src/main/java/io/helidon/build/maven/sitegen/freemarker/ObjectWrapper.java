@@ -16,6 +16,8 @@
 
 package io.helidon.build.maven.sitegen.freemarker;
 
+import io.helidon.build.maven.sitegen.Model;
+
 import freemarker.template.DefaultObjectWrapper;
 import freemarker.template.TemplateModel;
 import freemarker.template.TemplateModelException;
@@ -54,6 +56,9 @@ final class ObjectWrapper extends DefaultObjectWrapper {
         if (obj instanceof Document) {
             return new SimpleObjectModel(obj);
         }
+        if (obj instanceof Model) {
+            return new SimpleHashModel(this, (Model) obj);
+        }
         return super.wrap(obj);
     }
 
@@ -64,6 +69,9 @@ final class ObjectWrapper extends DefaultObjectWrapper {
         }
         if (model instanceof SimpleObjectModel) {
             return ((SimpleObjectModel) model).wrapped();
+        }
+        if (model instanceof SimpleHashModel) {
+            return ((SimpleHashModel) model).wrapped();
         }
         return super.unwrap(model);
     }
