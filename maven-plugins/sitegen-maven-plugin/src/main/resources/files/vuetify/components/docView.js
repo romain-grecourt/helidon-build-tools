@@ -18,21 +18,8 @@
 
 window.allComponents["docView"] = {
     init: function(){
-        // create a script element
-        const scriptElt = document.createElement("script");
-        scriptElt.id = "doc-view";
-        scriptElt.type = "text/x-template";
-        scriptElt.text =
-        `<v-flex xs12 lg11 class="view">
-            <slot></slot>
-        </v-flex>`;
-
-        // insert it in the document
-        const firstScriptElt = document.getElementsByTagName('script')[0];
-        firstScriptElt.parentNode.insertBefore(scriptElt, firstScriptElt);
-
         Vue.component('docView', {
-            template: '#doc-view'
+            template: `<v-flex xs12 lg11 class="view"><slot></slot></v-flex>`
         });
     }
 };

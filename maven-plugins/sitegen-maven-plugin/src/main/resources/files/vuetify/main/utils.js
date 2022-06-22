@@ -16,6 +16,23 @@
 
 /* global superagent, Vue */
 
+function hue(color) {
+    switch (color) {
+        case 'purple':
+            return 420;
+        case 'darken-3 pink':
+            return 480;
+        case 'indigo':
+            return 370;
+        case 'cyan':
+            return 337;
+        case 'teal':
+            return 315;
+        default:
+            return 0;
+    }
+}
+
 function createPageTemplateElt(id, text){
     if(document.getElementById(id) === null){
         const scriptElt = document.createElement("script");

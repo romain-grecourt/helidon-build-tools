@@ -13,6 +13,6 @@
   See the License for the specific language governing permissions and
   limitations under the License.
  -->
-window.allCustoms["${home.target?remove_beginning("/")?replace("/","-")}"] = {
+window.allCustoms["${home.target?replace("/","-")}"] = {
 ${bindings}
 };

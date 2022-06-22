@@ -44,37 +44,37 @@ public final class Link implements Model {
         switch (builder.type) {
             case ("xref"):
                 if (builder.path != null) {
-                    this.source = builder.path.replace(".html", ".adoc");
+                    source = builder.path.replace("." + builder.backend, ".adoc");
                 } else {
-                    this.source = builder.refId;
+                    source = builder.refId;
                 }
-                if (builder.pages.containsKey("/" + source)) {
-                    this.target = builder.pages.get("/" + source).target();
+                Page page = builder.pages.get(source);
+                if (page != null) {
+                    target = page.target();
                 } else {
-                    this.target = "";
+                    target = null;
                 }
-                this.hash = builder.fragment;
-                if ((hash != null && (this.target == null || this.target.isEmpty()))
-                        || builder.page.target().equals(this.target)) {
-                    this.type = "xref_anchor_self";
-                } else if (hash != null && builder.target != null && !hash.equals(source)) {
-                    this.type = "xref_anchor";
+                hash = builder.fragment;
+                if ((hash != null && target == null) || builder.page.target().equals(target)) {
+                    type = "xref_anchor_self";
+                } else if (hash != null && !hash.equals(source)) {
+                    type = "xref_anchor";
                 } else {
-                    this.type = builder.type;
+                    type = builder.type;
                 }
                 break;
             case ("ref"):
             case ("bibref"):
-                this.hash = null;
-                this.source = null;
-                this.target = builder.path;
-                this.type = builder.type;
+                hash = null;
+                source = null;
+                target = builder.path;
+                type = builder.type;
                 break;
             default:
-                this.type = "?";
-                this.hash = null;
-                this.source = null;
-                this.target = builder.target;
+                type = "?";
+                hash = null;
+                source = null;
+                target = builder.target;
         }
         this.id = builder.id;
         this.text = builder.text;
@@ -172,10 +172,11 @@ public final class Link implements Model {
     /**
      * Create a new builder.
      *
+     * @param backend backend name
      * @return builder
      */
-    public static Builder builder() {
-        return new Builder();
+    public static Builder builder(String backend) {
+        return new Builder(backend);
     }
 
     /**
@@ -194,8 +195,10 @@ public final class Link implements Model {
         private String text = "";
         private String id = "";
         private String window = "_blank";
+        private final String backend;
 
-        private Builder() {
+        private Builder(String backend) {
+            this.backend = backend;
         }
 
         /**

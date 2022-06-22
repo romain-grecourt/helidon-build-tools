@@ -19,6 +19,8 @@ package io.helidon.build.maven.sitegen;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import com.github.difflib.DiffUtils;
+import com.github.difflib.patch.Patch;
 import io.helidon.build.maven.sitegen.asciidoctor.AsciidocEngine;
 import io.helidon.build.maven.sitegen.models.Nav;
 import io.helidon.build.maven.sitegen.models.PageFilter;
@@ -30,6 +32,7 @@ import static io.helidon.build.common.test.utils.TestFiles.targetDir;
 import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.CoreMatchers.is;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Tests {@link VuetifyBackend}.
@@ -72,9 +75,9 @@ public class VuetifyBackendTest {
                                                                       .pathprefix("/lets-code")
                                                                       .item(Nav.builder().includes("lets-code/*.adoc")))
                                                              .item(Nav.builder()
-                                                                      .title("Go home!")
+                                                                      .title("Play time!")
                                                                       .glyph("icon", "home")
-                                                                      .to("home"))))
+                                                                      .to("playtime"))))
                                            .item(Nav.builder()
                                                     .title("Additional Resources"))
                                            .item(Nav.builder()
@@ -89,8 +92,16 @@ public class VuetifyBackendTest {
         Path index = outputDir.resolve("index.html");
         assertThat(Files.exists(index), is(true));
 
-        Path config = outputDir.resolve("main/config.js");
-        assertThat(Files.exists(config), is(true));
+        Path actualConfig = outputDir.resolve("main/config.js");
+        assertThat(Files.exists(actualConfig), is(true));
+
+        // compare expected and rendered config
+        Patch<String> patch = DiffUtils.diff(
+                Files.readAllLines(sourceDir.resolve("expected-config.js")),
+                Files.readAllLines(actualConfig));
+        if (patch.getDeltas().size() > 0) {
+            fail("rendered file " + actualConfig.toAbsolutePath() + " differs from expected: " + patch);
+        }
 
         Path home = outputDir.resolve("pages/home.js");
         assertThat(Files.exists(home), is(true));

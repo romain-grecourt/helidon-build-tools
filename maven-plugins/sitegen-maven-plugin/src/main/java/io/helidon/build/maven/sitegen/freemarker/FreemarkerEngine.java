@@ -166,7 +166,7 @@ public class FreemarkerEngine {
                     env.setVariable(directive.getKey(), directive.getValue());
                 }
             }
-            env.setVariable("helper", new LinkHashModel(OBJECT_WRAPPER));
+            env.setVariable("helper", new LinkHashModel(OBJECT_WRAPPER, backend));
             env.setVariable("passthroughfix", new PassthroughFixDirective());
             env.setTemplateExceptionHandler(TemplateExceptionHandler.RETHROW_HANDLER);
             env.setLogTemplateExceptions(false);

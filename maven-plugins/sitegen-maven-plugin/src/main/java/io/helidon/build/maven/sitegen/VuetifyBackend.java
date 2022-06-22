@@ -30,7 +30,6 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
@@ -48,7 +47,6 @@ import static io.helidon.build.maven.sitegen.RenderingContext.filterPages;
 import static io.helidon.build.maven.sitegen.asciidoctor.AsciidocPageRenderer.ADOC_EXT;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toMap;
-import static java.util.stream.Collectors.toSet;
 
 /**
  * A backend implementation for Vuetify.
@@ -146,7 +144,7 @@ public class VuetifyBackend extends Backend {
 
         // resolve navigation
         Nav resolvedNav;
-        Set<String> navRoutes;
+        List<String> navRoutes;
         if (nav != null) {
             resolvedNav = resolveNav(pages);
             navRoutes = resolvedNav.items()
@@ -156,10 +154,10 @@ public class VuetifyBackend extends Backend {
                                    .flatMap(n -> n.items().isEmpty() ? Stream.of(n) : n.items().stream()) // depth:3
                                    .map(Nav::to)
                                    .filter(Objects::nonNull)
-                                   .collect(toSet());
+                                   .collect(toList());
         } else {
             resolvedNav = null;
-            navRoutes = Set.of();
+            navRoutes = List.of();
         }
 
         Map<String, Page> pagesByRoute = pages.stream()
@@ -167,22 +165,21 @@ public class VuetifyBackend extends Backend {
                                               .collect(toMap(Map.Entry::getKey, Map.Entry::getValue));
 
         // resolve all routes
-        List<String> allRoutes = new ArrayList<>(navRoutes);
-        allRoutes.add(home.target());
-        allRoutes.addAll(pagesByRoute.keySet());
-
-        // TODO navRoutes must follow the declaration order
-        allRoutes = allRoutes.stream()
-                             .sorted()
-                             .distinct()
-                             .collect(toList());
+        List<String> routes = new ArrayList<>();
+        routes.add(home.target());
+        routes.addAll(navRoutes);
+        pagesByRoute.keySet().forEach(r -> {
+            if (!routes.contains(r)) {
+                routes.add(r);
+            }
+        });
 
         Map<String, String> allBindings = session.vueBindings().bindings();
 
         Map<String, Object> model = new HashMap<>();
         model.put("searchEntries", session.searchIndex().entries());
         model.put("navRoutes", navRoutes);
-        model.put("allRoutes", allRoutes);
+        model.put("allRoutes", routes);
         model.put("customLayoutEntries", session.customLayouts().mappings());
         model.put("pages", pagesByRoute);
         model.put("metadata", home.metadata());

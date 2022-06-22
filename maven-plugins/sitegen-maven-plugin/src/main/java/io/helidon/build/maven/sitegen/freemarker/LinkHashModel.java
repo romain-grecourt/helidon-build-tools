@@ -32,14 +32,17 @@ import org.asciidoctor.ast.PhraseNode;
 public final class LinkHashModel implements TemplateHashModel {
 
     private final ObjectWrapper objectWrapper;
+    private final String backend;
 
     /**
      * Create a new instance.
      *
      * @param objectWrapper object wrapper
+     * @param backend       backend name
      */
-    LinkHashModel(ObjectWrapper objectWrapper) {
+    LinkHashModel(ObjectWrapper objectWrapper, String backend) {
         this.objectWrapper = objectWrapper;
+        this.backend = backend;
     }
 
     /**
@@ -55,7 +58,7 @@ public final class LinkHashModel implements TemplateHashModel {
         }
         Map<String, Object> docAttrs = node.getDocument().getAttributes();
         Map<String, Object> nodeAttrs = node.getAttributes();
-        return Link.builder()
+        return Link.builder(backend)
                    .pages((Map<String, Page>) docAttrs.get("pages"))
                    .page((Page) docAttrs.get("page"))
                    .path((String) nodeAttrs.get("path"))
