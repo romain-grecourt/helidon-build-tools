@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 import java.util.ListIterator;
+import java.util.Objects;
 import java.util.function.Supplier;
 
 import io.helidon.build.maven.sitegen.Config;
@@ -33,21 +34,32 @@ public final class Nav extends SourcePathFilter {
 
     private final String title;
     private final Glyph glyph;
+    private final String to;
     private final String href;
     private final String target;
     private final String pathprefix;
     private final List<Nav> items;
-    private final boolean root;
+    private final int depth;
 
     private Nav(Builder builder) {
         super(builder);
         this.title = builder.title;
         this.glyph = builder.glyph;
+        this.to = builder.to;
         this.href = builder.href;
-        this.target = builder.target;
+        this.target = Objects.requireNonNull(builder.target, "target is null!");
         this.pathprefix = builder.pathprefix;
         this.items = builder.items;
-        this.root = builder.parent == null;
+        this.depth = builder.maxDepth;
+    }
+
+    /**
+     * Get the depth.
+     *
+     * @return depth
+     */
+    public int depth() {
+        return depth;
     }
 
     /**
@@ -69,6 +81,15 @@ public final class Nav extends SourcePathFilter {
     }
 
     /**
+     * Get the "to" value.
+     *
+     * @return to value, may be {@code null}
+     */
+    public String to() {
+        return to;
+    }
+
+    /**
      * Get the href value.
      *
      * @return href value, may be {@code null}
@@ -80,7 +101,7 @@ public final class Nav extends SourcePathFilter {
     /**
      * Get the href target.
      *
-     * @return href target, may be {@code null}
+     * @return href target, never {@code null}
      */
     public String target() {
         return target;
@@ -104,15 +125,6 @@ public final class Nav extends SourcePathFilter {
         return items;
     }
 
-    /**
-     * Test if this item is a root node.
-     *
-     * @return {@code true} if root, {@code false} otherwise
-     */
-    public boolean isRoot() {
-        return root;
-    }
-
     @Override
     public Object get(String attr) {
         switch (attr) {
@@ -120,16 +132,18 @@ public final class Nav extends SourcePathFilter {
                 return title;
             case "glyph":
                 return glyph;
+            case "to":
+                return to;
             case "href":
                 return href;
             case "target":
                 return target;
+            case "depth":
+                return depth;
             case "pathprefix":
                 return pathprefix;
             case "items":
                 return items;
-            case "isgroup":
-                return !items.isEmpty();
             case "islink":
                 return href != null;
             default:
@@ -173,14 +187,28 @@ public final class Nav extends SourcePathFilter {
 
         private String title;
         private Glyph glyph;
+        private String to;
         private String href;
         private String target = "_blank";
         private String pathprefix;
         private final List<Nav> items = new ArrayList<>();
         private final Builder parent;
+        private final int depth;
+        private int maxDepth;
 
         private Builder(Builder parent) {
             this.parent = parent;
+            this.depth = parent == null ? 0 : parent.depth + 1;
+            this.maxDepth = depth;
+        }
+
+        /**
+         * Get the max depth.
+         *
+         * @return max depth
+         */
+        public int maxDepth() {
+            return maxDepth;
         }
 
         /**
@@ -190,6 +218,19 @@ public final class Nav extends SourcePathFilter {
          */
         public Builder parent() {
             return parent;
+        }
+
+        /**
+         * Set the max depth.
+         *
+         * @param maxDepth max depth
+         * @return this builder
+         */
+        public Builder maxDepth(int maxDepth) {
+            if (maxDepth > this.maxDepth) {
+                this.maxDepth = maxDepth;
+            }
+            return this;
         }
 
         /**
@@ -243,6 +284,17 @@ public final class Nav extends SourcePathFilter {
         }
 
         /**
+         * Set the "to" value.
+         *
+         * @param to to
+         * @return this builder
+         */
+        public Builder to(String to) {
+            this.to = to;
+            return this;
+        }
+
+        /**
          * Set the href value.
          *
          * @param href href
@@ -260,7 +312,9 @@ public final class Nav extends SourcePathFilter {
          * @return this builder
          */
         public Builder target(String target) {
-            this.target = target;
+            if (target != null) {
+                this.target = target;
+            }
             return this;
         }
 
@@ -338,6 +392,7 @@ public final class Nav extends SourcePathFilter {
                 builder.applyConfig(node);
                 if (builder.parent != null) {
                     builder.parent.item(builder.build());
+                    builder.parent.maxDepth = builder.maxDepth;
                     parentBuilder = builder.parent;
                     builders.pop();
                 }
@@ -349,6 +404,7 @@ public final class Nav extends SourcePathFilter {
         private void applyConfig(Config config) {
             title = config.get("title").asString().orElseThrow(() -> new IllegalArgumentException("title is required"));
             glyph = config.get("glyph").asOptional().map(Glyph::create).orElse(null);
+            to = config.get("to").asString().orElse(null);
             href = config.get("href").asString().orElse(null);
             target = config.get("target").asString().orElse("_blank");
             pathprefix = config.get("pathprefix").asString().orElse(null);

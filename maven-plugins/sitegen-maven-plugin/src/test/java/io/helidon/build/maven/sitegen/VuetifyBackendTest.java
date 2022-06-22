@@ -40,7 +40,7 @@ public class VuetifyBackendTest {
     public void testVuetify1() throws Exception {
         Path targetDir = targetDir(VuetifyBackendTest.class);
         Path sourceDir = targetDir.resolve("test-classes/vuetify1");
-        Path outputDir =  targetDir.resolve("vuetify-backend-test/testvuetify2");
+        Path outputDir = targetDir.resolve("vuetify/testvuetify1");
 
         Site.builder()
             .page(PageFilter.builder().includes("**/*.adoc"))
@@ -52,26 +52,35 @@ public class VuetifyBackendTest {
                                            .title("Pet Project doc")
                                            .glyph("icon", "import_contacts")
                                            .item(Nav.builder()
-                                                    .title("Main documentation")
                                                     .item(Nav.builder()
-                                                             .title("What is it about?")
-                                                             .glyph("icon", "weekend")
-                                                             .pathprefix("/about")
-                                                             .item(Nav.builder().includes("about/*.adoc")))
+                                                             .title("Cool Stuff")
+                                                             .item(Nav.builder()
+                                                                      .title("What is it about?")
+                                                                      .glyph("icon", "weekend")
+                                                                      .pathprefix("/about")
+                                                                      .item(Nav.builder().includes("about/*.adoc")))
+                                                             .item(Nav.builder()
+                                                                      .title("Getting started")
+                                                                      .glyph("icon", "play_circle_outline")
+                                                                      .pathprefix("/getting-started")
+                                                                      .item(Nav.builder().includes("getting-started/*.adoc"))))
                                                     .item(Nav.builder()
-                                                             .title("Getting started")
-                                                             .glyph("icon", "play_circle_outline")
-                                                             .pathprefix("/getting-started")
-                                                             .item(Nav.builder().includes("getting-started/*.adoc")))
-                                                    .item(Nav.builder()
-                                                             .title("Let's code!")
-                                                             .glyph("icon", "code")
-                                                             .pathprefix("/lets-code")
-                                                             .item(Nav.builder().includes("lets-code/*.adoc")))
-                                                    .item(Nav.builder()
-                                                             .title("Javadocs")
-                                                             .glyph("icon", "info")
-                                                             .href("https://docs.oracle.com/javase/8/docs/api/")))))
+                                                             .title("Boring Stuff")
+                                                             .item(Nav.builder()
+                                                                      .title("Let's code!")
+                                                                      .glyph("icon", "code")
+                                                                      .pathprefix("/lets-code")
+                                                                      .item(Nav.builder().includes("lets-code/*.adoc")))
+                                                             .item(Nav.builder()
+                                                                      .title("Go home!")
+                                                                      .glyph("icon", "home")
+                                                                      .to("home"))))
+                                           .item(Nav.builder()
+                                                    .title("Additional Resources"))
+                                           .item(Nav.builder()
+                                                    .title("Javadocs")
+                                                    .glyph("icon", "info")
+                                                    .href("https://docs.oracle.com/javase/8/docs/api/"))))
             .build()
             .generate(sourceDir, outputDir);
 
@@ -95,7 +104,7 @@ public class VuetifyBackendTest {
     public void testVuetify2() {
         Path targetDir = targetDir(VuetifyBackendTest.class);
         Path sourceDir = targetDir.resolve("test-classes/vuetify2");
-        Path outputDir =  targetDir.resolve("vuetify-backend-test/testvuetify2");
+        Path outputDir = targetDir.resolve("vuetify/testvuetify2");
         Site.builder()
             .page(PageFilter.builder().includes("**/*.adoc"))
             .backend(VuetifyBackend.builder().home("home.adoc"))

@@ -23,16 +23,16 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Deque;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
-import java.util.Optional;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import io.helidon.build.common.SourcePath;
 import io.helidon.build.maven.sitegen.asciidoctor.AsciidocPageRenderer;
@@ -44,7 +44,11 @@ import io.helidon.build.maven.sitegen.models.Page;
 import static io.helidon.build.common.FileUtils.resourceAsPath;
 import static io.helidon.build.common.Strings.requireValid;
 import static io.helidon.build.maven.sitegen.RenderingContext.copyResources;
+import static io.helidon.build.maven.sitegen.RenderingContext.filterPages;
 import static io.helidon.build.maven.sitegen.asciidoctor.AsciidocPageRenderer.ADOC_EXT;
+import static java.util.stream.Collectors.toList;
+import static java.util.stream.Collectors.toMap;
+import static java.util.stream.Collectors.toSet;
 
 /**
  * A backend implementation for Vuetify.
@@ -138,32 +142,51 @@ public class VuetifyBackend extends Backend {
             throw new IllegalStateException("unable to get home page");
         }
 
-        // resolve navigation routes
-        Set<String> navRoutes = resolveNav()
-                .stream()
-                .flatMap(n -> n.items().stream()) // categories
-                .flatMap(n -> n.items().stream()) // groups
-                .flatMap(n -> n.items().stream()) // subgroups
-                .flatMap(n -> Optional.ofNullable(n.href()).stream())
-                .map(ctx::pageForRoute)
-                .map(Page::source)
-                .collect(Collectors.toSet());
+        Collection<Page> pages = ctx.pages().values();
+
+        // resolve navigation
+        Nav resolvedNav;
+        Set<String> navRoutes;
+        if (nav != null) {
+            resolvedNav = resolveNav(pages);
+            navRoutes = resolvedNav.items()
+                                   .stream()
+                                   .flatMap(n -> n.items().isEmpty() ? Stream.of(n) : n.items().stream()) // depth:1
+                                   .flatMap(n -> n.items().isEmpty() ? Stream.of(n) : n.items().stream()) // depth:2
+                                   .flatMap(n -> n.items().isEmpty() ? Stream.of(n) : n.items().stream()) // depth:3
+                                   .map(Nav::to)
+                                   .filter(Objects::nonNull)
+                                   .collect(toSet());
+        } else {
+            resolvedNav = null;
+            navRoutes = Set.of();
+        }
+
+        Map<String, Page> pagesByRoute = pages.stream()
+                                              .map(p -> Map.entry(p.target(), p))
+                                              .collect(toMap(Map.Entry::getKey, Map.Entry::getValue));
 
         // resolve all routes
-        Set<String> allRoutes = new HashSet<>(navRoutes);
-        allRoutes.add(home.source());
-        allRoutes.addAll(ctx.pages().keySet());
+        List<String> allRoutes = new ArrayList<>(navRoutes);
+        allRoutes.add(home.target());
+        allRoutes.addAll(pagesByRoute.keySet());
+
+        // TODO navRoutes must follow the declaration order
+        allRoutes = allRoutes.stream()
+                             .sorted()
+                             .distinct()
+                             .collect(toList());
 
         Map<String, String> allBindings = session.vueBindings().bindings();
 
         Map<String, Object> model = new HashMap<>();
         model.put("searchEntries", session.searchIndex().entries());
-        model.put("navRouteEntries", navRoutes);
-        model.put("routeEntries", allRoutes);
+        model.put("navRoutes", navRoutes);
+        model.put("allRoutes", allRoutes);
         model.put("customLayoutEntries", session.customLayouts().mappings());
-        model.put("pages", ctx.pages());
+        model.put("pages", pagesByRoute);
         model.put("metadata", home.metadata());
-        model.put("navigation", nav);
+        model.put("nav", resolvedNav);
         model.put("header", ctx.site().header());
         model.put("theme", theme);
         model.put("home", home);
@@ -173,7 +196,7 @@ public class VuetifyBackend extends Backend {
         FreemarkerEngine freemarker = ctx.site().engine().freemarker();
 
         // custom bindings
-        for (Page page : ctx.pages().values()) {
+        for (Page page : pages) {
             String bindings = allBindings.get(page.source());
             if (bindings != null) {
                 Map<String, Object> bindingsModel = new HashMap<>(model);
@@ -197,10 +220,7 @@ public class VuetifyBackend extends Backend {
         copyResources(staticFiles, ctx.outputDir());
     }
 
-    private Optional<Nav> resolveNav() {
-        if (nav == null) {
-            return Optional.empty();
-        }
+    private Nav resolveNav(Collection<Page> pages) {
         Deque<Nav.Builder> builders = new ArrayDeque<>();
         Deque<Nav> stack = new ArrayDeque<>();
         stack.push(nav);
@@ -220,22 +240,36 @@ public class VuetifyBackend extends Backend {
                 }
             } else {
                 // leaf-node, or 2nd tree-node pass
-                builder.title(node.title())
-                       .href(node.href())
-                       .pathprefix(node.pathprefix())
-                       .includes(node.includes())
-                       .excludes(node.excludes())
-                       .glyph(node.glyph());
                 Nav.Builder nextParent = builder.parent();
+                List<Nav.Builder> itemBuilders = new ArrayList<>();
+                if (node.includes().isEmpty()) {
+                    itemBuilders.add(builder.title(node.title())
+                                            .to(node.to())
+                                            .href(node.href())
+                                            .pathprefix(node.pathprefix())
+                                            .includes(node.includes())
+                                            .excludes(node.excludes())
+                                            .glyph(node.glyph()));
+                } else {
+                    // resolve item
+                    for (Page page : filterPages(pages, node.includes(), node.excludes())) {
+                        itemBuilders.add(Nav.builder(nextParent)
+                                            .title(page.metadata().title())
+                                            .to(page.target()));
+                    }
+                }
                 if (nextParent != null) {
-                    nextParent.item(builder.build());
+                    for (Nav.Builder itemBuilder : itemBuilders) {
+                        nextParent.item(itemBuilder.build());
+                        nextParent.maxDepth(itemBuilder.maxDepth());
+                    }
                     parent = nextParent;
                     builders.pop();
                 }
                 stack.pop();
             }
         }
-        return Optional.of(builders.pop().build());
+        return builders.pop().build();
     }
 
     /**

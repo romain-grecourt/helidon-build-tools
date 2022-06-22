@@ -139,7 +139,6 @@ class ConfigTest {
         assertThat(nav.glyph(), is(not(nullValue())));
         assertThat(nav.glyph().type(), is("icon"));
         assertThat(nav.glyph().value(), is("import_contacts"));
-        assertThat(nav.isRoot(), is(true));
         assertThat(nav.items().size(), is(3));
         stack.push(nav);
 

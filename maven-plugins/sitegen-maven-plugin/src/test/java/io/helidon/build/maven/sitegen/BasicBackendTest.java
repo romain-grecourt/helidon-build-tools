@@ -40,7 +40,7 @@ import static org.junit.jupiter.api.Assertions.fail;
  */
 public class BasicBackendTest {
 
-    private static final Path OUTPUT_DIR = targetDir(BasicBackendTest.class).resolve("basic-backend-test");
+    private static final Path OUTPUT_DIR = targetDir(BasicBackendTest.class).resolve("basic");
 
     @Test
     public void testBasic1() throws Exception {

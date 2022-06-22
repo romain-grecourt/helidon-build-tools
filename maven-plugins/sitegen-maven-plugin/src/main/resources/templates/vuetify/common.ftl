@@ -25,12 +25,12 @@
 <#case "xref_anchor">
 <#-- link to an anchor on a different page -->
 <#--noinspection HtmlUnknownTag-->
-<router-link :to="{path: '${link.target}', hash: '#${link.hash}'}"><#nested></router-link>
+<router-link :to="{path: '/${link.target}', hash: '#${link.hash}'}"><#nested></router-link>
 <#break>
 <#case "xref">
 <#-- link to a page -->
 <#--noinspection HtmlUnknownTag-->
-<router-link to="${link.target}"><#nested></router-link>
+<router-link to="/${link.target}"><#nested></router-link>
 <#break>
 <#case "ref">
 <#-- link to an external page -->

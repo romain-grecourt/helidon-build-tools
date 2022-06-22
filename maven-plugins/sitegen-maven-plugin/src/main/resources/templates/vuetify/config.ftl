@@ -15,7 +15,7 @@
  -->
 function createConfig() {
     return {
-        home: "${home.target?remove_beginning("/")}",
+        home: "${home.target}",
 <#if releases?? && (releases?size > 0)>
         release: "${releases[0]?js_string}",
         releases: [
@@ -39,20 +39,20 @@ function createConfig() {
             success: '${theme.success!"#4CAF50"}',
             warning: '${theme.warning!"#FFC107"}'
         },
-        navTitle: <#if navigation??>'${navigation.title?js_string}'<#else>null</#if>,
-        navIcon: <#if navigation?? && navigation.glyph?? && navigation.glyph.type == "icon">'${navigation.glyph.value}'<#else>null</#if>,
-        navLogo: <#if navigation?? && navigation.glyph?? && navigation.glyph.type == "image">'${navigation.glyph.value}'<#else>null</#if>
+        navTitle: <#if nav??>'${nav.title?js_string}'<#else>null</#if>,
+        navIcon: <#if nav?? && nav.glyph?? && nav.glyph.type == "icon">'${nav.glyph.value}'<#else>null</#if>,
+        navLogo: <#if nav?? && nav.glyph?? && nav.glyph.type == "image">'${nav.glyph.value}'<#else>null</#if>
     };
 }
 
 function createRoutes(){
     return [
-<#list routeEntries as source>
+<#list allRoutes as source>
 <#assign page = pages[source] />
-<#assign pageId = page.target?remove_beginning("/")?replace("/","-") />
+<#assign pageId = page.target?replace("/","-") />
 <#assign pageBindings = bindings[source]?has_content />
         {
-            path: '${page.target}',
+            path: '/${page.target}',
             meta: {
                 h1: '${page.metadata.h1?js_string}',
                 title: '${page.metadata.title?js_string}',
@@ -60,9 +60,9 @@ function createRoutes(){
                 description: <#if page.metadata.description??>'${page.metadata.description?js_string}'<#else>null</#if>,
                 keywords: <#if page.metadata.keywords??>'${page.metadata.keywords?js_string}'<#else>null</#if>,
                 customLayout: <#if customLayoutEntries[source]??>'${customLayoutEntries[source]}'<#else>null</#if>,
-                hasNav: <#if navRouteEntries?seq_contains(source)>true<#else>false</#if>
+                hasNav: <#if navRoutes?seq_contains(source)>true<#else>false</#if>
             },
-            component: loadPage('${pageId}', '${page.target}', {}<#if pageBindings>, '${page.target?remove_beginning("/")}_custom.js'</#if>)
+            component: loadPage('${pageId}', '${page.target}', {}<#if pageBindings>, '${page.target}_custom.js'</#if>)
         },
 </#list>
         {
@@ -73,74 +73,41 @@ function createRoutes(){
         }
     ];
 }
-
+<#macro idt i>${i}<#nested></#macro>
+<#macro render_nav elt, i, has_next>
+    <@idt i=i>{</@idt><#lt>
+    <#if elt.items?size = 0 && !elt.to?? && !elt.href??>
+        <#-- just a header, not a group nor a link-->
+        <@idt i=i + "    ">header: '${elt.title?js_string}'</@idt><#lt>
+    <#else>
+        <@idt i=i + "    ">title: <#if elt.title??>'${elt.title?js_string}'<#else>null</#if>,</@idt><#lt>
+        <#if elt.items?size != 0>
+            <#-- group -->
+            <@idt i=i + "    ">pathprefix: <#if elt.pathprefix??>'${elt.pathprefix}'<#else>null</#if>,</@idt><#lt>
+            <@idt i=i + "    ">depth: ${elt.depth},</@idt><#lt>
+            <@idt i=i + "    ">items: [</@idt><#lt>
+            <#list elt.items as it>
+                <@render_nav elt=it has_next=it?has_next i=i + "        "/><#lt>
+            </#list>
+            <@idt i=i + "    ">],</@idt><#lt>
+        <#elseif elt.href??>
+            <#-- external link -->
+            <@idt i=i + "    ">href: '${elt.href}',</@idt><#lt>
+            <@idt i=i + "    ">target: '${elt.target}',</@idt><#lt>
+        <#elseif elt.to??>
+            <#-- internal link -->
+            <@idt i=i + "    ">to: '/${elt.to}',</@idt><#lt>
+        </#if>
+        <@idt i=i + "    ">action: <#if elt.glyph??>'${elt.glyph.value}'<#else>null</#if></@idt><#lt>
+    </#if>
+    <@idt i=i>}<#if has_next>,</#if></@idt><#lt>
+</#macro>
 function createNav(){
     return [
-<#if navigation??>
-        {
-            groups: [
-<#list navigation.items as navitem>
-<#if navitem.isgroup && navitem.pathprefix??>
-                {
-                    title: '${navitem.title?js_string}',
-                    group: '${navitem.pathprefix}',
-                    items: [
-<#list navitem.items as groupitem>
-                        {
-                            title: '${groupitem.title?js_string}',
-                            action: <#if groupitem.glyph??>'${groupitem.glyph.value}'<#else>null</#if>,
-<#if groupitem.islink>
-                            href: '${groupitem.href}',
-                            target: '${groupitem.target}',
-<#elseif groupitem.isgroup>
-                            group: <#if groupitem.pathprefix??>'${groupitem.pathprefix}'<#else>null</#if>,
-                            items: [
-<#list groupitem.items as subgroupitem>
-<#if subgroupitem.islink>
-                                { href: '${subgroupitem.href}', title: '${subgroupitem.title?js_string}' }<#sep>,</#sep>
-</#if>
-</#list>
-                            ]
-</#if>
-                        }<#if groupitem?has_next>,</#if>
-</#list>
-                    ]
-                }<#if navitem?has_next>,</#if>
-</#if>
-</#list>
-            ]
-        }
-<#list navigation.items as navitem>
-<#if navitem.isgroup && !navitem.pathprefix??>
-        ,{ header: '${navitem.title?js_string}' },
-<#list navitem.items as groupitem>
-        {
-            title: '${groupitem.title?js_string}',
-            action: <#if groupitem.glyph??>'${groupitem.glyph.value}'<#else>null</#if>,
-<#if groupitem.islink>
-            href: '${groupitem.href}',
-            target: '${groupitem.target}',
-<#elseif groupitem.isgroup>
-            group: <#if groupitem.pathprefix??>'${groupitem.pathprefix}'<#else>null</#if>,
-            items: [
-<#list groupitem.items as subgroupitem>
-<#if subgroupitem.islink>
-                { href: '${subgroupitem.href}', title: '${subgroupitem.title?js_string}' }<#sep>,</#sep>
-</#if>
-</#list>
-            ]
-</#if>
-        }<#if navitem?has_next || groupitem?has_next>,</#if>
-</#list>
-<#elseif navitem.islink>
-        {
-            title: '${navitem.title?js_string}',
-            action: <#if navitem.glyph??>'${navitem.glyph}'<#else>null</#if>,
-            href: '${navitem.href}',
-            target: '${navitem.target}'
-        }<#if navitem?has_next>,</#if>
-</#if>
-</#list>
-</#if>
+  <#if nav??>
+      <#list nav.items as it>
+          <@render_nav elt=it has_next=it?has_next i="        "/><#lt>
+      </#list>
+  </#if>
     ];
 }
