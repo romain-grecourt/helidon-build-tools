@@ -19,6 +19,7 @@
 = Contributing
 :description: Contributing to Pet project
 :keywords: keyword1, keyword2, keyword3
+:imagesdir: ../images
 
 == icon:home[] How to contribute
 

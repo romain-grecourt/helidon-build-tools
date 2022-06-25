@@ -21,7 +21,7 @@
 <#if title??><div class="block-title"><span>${title}</span></div></#if>
 <v-card>
 <v-card-text class="overflow-y-hidden" <#if attributes.align??>style="text-align:${attributes.align}"</#if>>
-<img src="${imageUri(attributes.target)}" ${image_attr} />
+<img src="${helper.imageUri(this, attributes.target)}" ${image_attr} />
 </v-card-text>
 </v-card>
 <#if attributes.role??></div></div></#if>

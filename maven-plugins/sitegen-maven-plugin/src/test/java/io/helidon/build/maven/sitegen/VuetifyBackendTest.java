@@ -16,20 +16,24 @@
 
 package io.helidon.build.maven.sitegen;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
 import com.github.difflib.DiffUtils;
+import com.github.difflib.algorithm.DiffException;
 import com.github.difflib.patch.Patch;
 import io.helidon.build.maven.sitegen.asciidoctor.AsciidocEngine;
+import io.helidon.build.maven.sitegen.models.Header;
 import io.helidon.build.maven.sitegen.models.Nav;
 import io.helidon.build.maven.sitegen.models.PageFilter;
 import io.helidon.build.maven.sitegen.models.StaticAsset;
 
+import io.helidon.build.maven.sitegen.models.WebResource;
+import io.helidon.build.maven.sitegen.models.WebResource.Location;
 import org.junit.jupiter.api.Test;
 
 import static io.helidon.build.common.test.utils.TestFiles.targetDir;
-import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.CoreMatchers.is;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -47,7 +51,9 @@ public class VuetifyBackendTest {
 
         Site.builder()
             .page(PageFilter.builder().includes("**/*.adoc"))
-            .asset(StaticAsset.builder().includes("sunset.jpg").target("images"))
+            .asset(StaticAsset.builder().includes("images/sunset.jpg").target("/"))
+            .asset(StaticAsset.builder().includes("css/*.css").target("/"))
+            .header(Header.builder().stylesheet(WebResource.builder().location(Location.Type.PATH, "css/styles.css")))
             .backend(VuetifyBackend.builder()
                                    .home("home.adoc")
                                    .releases("1.0")
@@ -87,21 +93,12 @@ public class VuetifyBackendTest {
             .build()
             .generate(sourceDir, outputDir);
 
-        Files.copy(sourceDir.resolve("sunset.jpg"), outputDir.resolve("sunset.jpg"), REPLACE_EXISTING);
-
         Path index = outputDir.resolve("index.html");
         assertThat(Files.exists(index), is(true));
 
         Path actualConfig = outputDir.resolve("main/config.js");
         assertThat(Files.exists(actualConfig), is(true));
-
-        // compare expected and rendered config
-        Patch<String> patch = DiffUtils.diff(
-                Files.readAllLines(sourceDir.resolve("expected-config.js")),
-                Files.readAllLines(actualConfig));
-        if (patch.getDeltas().size() > 0) {
-            fail("rendered file " + actualConfig.toAbsolutePath() + " differs from expected: " + patch);
-        }
+        assertRendering(actualConfig, sourceDir.resolve("expected-config"));
 
         Path home = outputDir.resolve("pages/home.js");
         assertThat(Files.exists(home), is(true));
@@ -137,5 +134,14 @@ public class VuetifyBackendTest {
 
         Path homeCustom = outputDir.resolve("pages/home_custom.js");
         assertThat(Files.exists(homeCustom), is(true));
+    }
+
+    private static void assertRendering(Path actual, Path expected) throws IOException, DiffException {
+        Patch<String> patch = DiffUtils.diff(
+                Files.readAllLines(expected),
+                Files.readAllLines(actual));
+        if (patch.getDeltas().size() > 0) {
+            fail("rendered file " + actual.toAbsolutePath() + " differs from expected: " + patch);
+        }
     }
 }

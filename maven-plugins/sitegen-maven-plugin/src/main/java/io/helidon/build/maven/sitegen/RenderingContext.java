@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 
 import io.helidon.build.common.SourcePath;
+import io.helidon.build.common.VirtualFileSystem;
 import io.helidon.build.maven.sitegen.freemarker.TemplateSession;
 import io.helidon.build.maven.sitegen.models.Page;
 import io.helidon.build.maven.sitegen.models.PageFilter;
@@ -57,14 +58,36 @@ public class RenderingContext {
     private final Path sourceDir;
     private final Path outputDir;
     private final List<SourcePath> sourcePaths;
+    private final Map<String, String> assets;
+    private final List<String> resolvedAssets;
 
+    /**
+     * Create a new instance.
+     *
+     * @param site      site
+     * @param sourceDir source directory
+     * @param outputDir output directory
+     */
+    @SuppressWarnings("resource")
     RenderingContext(Site site, Path sourceDir, Path outputDir) {
         this.site = requireNonNull(site, "site is null!");
         this.sourceDir = requireDirectory(sourceDir);
-        this.outputDir = requireNonNull(outputDir, "outputDir is null!");
+        requireNonNull(outputDir, "outputDir is null!");
+        this.outputDir = VirtualFileSystem.create(outputDir).getPath("/");
         this.templateSession = TemplateSession.create();
         this.sourcePaths = SourcePath.scan(this.sourceDir);
         this.pages = createPages(sourcePaths, site.pages(), sourceDir, site.backend());
+        this.assets = new HashMap<>();
+        this.resolvedAssets = new ArrayList<>();
+        for (StaticAsset asset : site.assets()) {
+            for (SourcePath path : asset.resolve(sourcePaths)) {
+                String source = path.asString(false);
+                String target = asset.target();
+                assets.put(source, target);
+                Path targetPath = this.outputDir.resolve(target).resolve(source).normalize();
+                resolvedAssets.add(targetPath.toString());
+            }
+        }
     }
 
     /**
@@ -130,20 +153,63 @@ public class RenderingContext {
     }
 
     /**
+     * Resolve a page with a relative path within the context of a document.
+     *
+     * @param page the document
+     * @param path the path to resolve
+     * @return resolved page or {@code null} if not found
+     */
+    public Page resolvePage(Page page, String path) {
+        Path resolvedPath = resolvePath(page, path);
+        String key = sourceDir.relativize(resolvedPath).toString();
+        return pages.get(key);
+    }
+
+    /**
+     * Resolve a relative path within the context of a document.
+     *
+     * @param page page
+     * @param path the path to resolve
+     * @return resolved path
+     */
+    public Path resolvePath(Page page, String path) {
+        Path pageDir = pageDir(page.source());
+        return pageDir.resolve(path).normalize();
+    }
+
+    /**
+     * Resolve the page directory for the given document path.
+     *
+     * @param path document path
+     * @return parent of the resolved path
+     */
+    public Path pageDir(String path) {
+        Path pageSource = sourceDir.resolve(path);
+        return pageSource.getParent().normalize();
+    }
+
+    /**
+     * Get the resolved static assets.
+     *
+     * @return map of assets, key is the asset path, value is the target directory
+     */
+    public List<String> resolvedAssets() {
+        return resolvedAssets;
+    }
+
+    /**
      * Copy the scanned static assets in the output directory.
      */
     public void copyStaticAssets() {
-        for (StaticAsset asset : site.assets()) {
-            List<SourcePath> filteredPaths = SourcePath.filter(sourcePaths, asset.includes(), asset.excludes());
-            for (SourcePath path : filteredPaths) {
-                try {
-                    Path targetDir = outputDir.resolve(asset.target());
-                    Files.createDirectories(targetDir);
-                    String pathStr = path.asString(false);
-                    copyResources(sourceDir.resolve(pathStr), targetDir.resolve(pathStr));
-                } catch (IOException ex) {
-                    throw new UncheckedIOException(ex);
-                }
+        for (Map.Entry<String, String> asset : assets.entrySet()) {
+            try {
+                String source = asset.getKey();
+                String target = asset.getValue();
+                Path targetDir = outputDir.resolve(target);
+                Files.createDirectories(targetDir);
+                copyResources(sourceDir.resolve(source), targetDir.resolve(source));
+            } catch (IOException ex) {
+                throw new UncheckedIOException(ex);
             }
         }
     }
@@ -155,6 +221,7 @@ public class RenderingContext {
      * @param ext      the file extension to use for the rendered files
      */
     public void processPages(Path pagesDir, String ext) {
+        // TODO sort pages to render them in a predictable order
         for (Page page : pages.values()) {
             PageRenderer renderer = site.backend().renderer(page.sourceExt());
             renderer.process(page, this, pagesDir, ext);
@@ -183,7 +250,7 @@ public class RenderingContext {
         } else {
             filteredSourcePaths = new ArrayList<>();
             for (SourcePathFilter filter : filters) {
-                filteredSourcePaths.addAll(SourcePath.filter(paths, filter.includes(), filter.excludes()));
+                filteredSourcePaths.addAll(filter.resolve(paths));
             }
         }
         Map<String, Page> pages = new HashMap<>();
@@ -193,8 +260,7 @@ public class RenderingContext {
                 throw new IllegalStateException("Source path " + path + "already included");
             }
             String ext = fileExt(path);
-            Page.Metadata metadata = backend.renderer(ext)
-                                            .readMetadata(sourceDir.resolve(path));
+            Page.Metadata metadata = backend.renderer(ext).readMetadata(sourceDir.resolve(path));
             pages.put(path, Page.builder()
                                 .source(path)
                                 .ext(ext)

@@ -1,6 +1,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 
-    Copyright (c) 2018, 2022 Oracle and/or its affiliates.
+    Copyright (c) 2022 Oracle and/or its affiliates.
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -15,13 +15,74 @@
     limitations under the License.
 
 ///////////////////////////////////////////////////////////////////////////////
+= B
+:doctitle: b
 
-= Pet project
-:doctitle: A pet project
-:description: A wonderful project about nothing at all
-:keywords: keyword1, keyword2, keyword3
+Top.
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
+ +
 
-Welcome to my pet project about stuff. See xref:about/01_intro.adoc[documentation]
-
-Here is a <<about/01_intro.adoc#another-section,link>> to an anchor +
-on another page
+[[bottom]]
+Bottom

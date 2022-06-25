@@ -18,15 +18,23 @@ package io.helidon.build.maven.sitegen.asciidoctor;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.Map;
+import java.util.Objects;
 
+import io.helidon.build.maven.sitegen.RenderingContext;
 import io.helidon.build.maven.sitegen.RenderingException;
+import io.helidon.build.maven.sitegen.Site;
 import io.helidon.build.maven.sitegen.SiteEngine;
 import io.helidon.build.maven.sitegen.freemarker.FreemarkerEngine;
 import io.helidon.build.maven.sitegen.freemarker.TemplateLoader;
+import io.helidon.build.maven.sitegen.models.Page;
 
 import org.asciidoctor.ast.ContentNode;
 import org.asciidoctor.ast.Cursor;
+import org.asciidoctor.ast.Document;
 import org.asciidoctor.ast.PhraseNode;
 import org.asciidoctor.ast.StructuralNode;
 import org.asciidoctor.converter.AbstractConverter;
@@ -45,6 +53,11 @@ public class AsciidocConverter extends AbstractConverter<String> {
     private static final Logger LOGGER = LoggerFactory.getLogger(AsciidocConverter.class);
 
     private final FreemarkerEngine templateEngine;
+    private final Site site;
+    private final Deque<String> frames = new ArrayDeque<>();
+    private volatile RenderingContext ctx;
+    private volatile Page page;
+    private volatile Document document;
 
     /**
      * Create a new instance of {@link AsciidocConverter}.
@@ -54,52 +67,58 @@ public class AsciidocConverter extends AbstractConverter<String> {
      */
     public AsciidocConverter(String backend, Map<String, Object> opts) {
         super(backend, opts);
-        templateEngine = SiteEngine.get(backend).freemarker();
+        SiteEngine siteEngine = SiteEngine.get(backend);
+        templateEngine = siteEngine.freemarker();
+        site = siteEngine.site();
+        siteEngine.asciidoc().converter(this);
     }
 
     @Override
     public String convert(ContentNode node, String transform, Map<Object, Object> opts) {
-        if (node != null && node.getNodeName() != null) {
-            String templateName;
-            if (node.equals(node.getDocument())) {
-                templateName = "document";
-            } else if (node.isBlock()) {
-                templateName = "block_" + node.getNodeName();
-            } else {
-                // detect phrase node for generated block links
-                if (node.getNodeName().equals("inline_anchor")
-                        && BLOCK_LINK_TEXT.equals(((PhraseNode) node).getText())) {
+        try {
+            ctx = Objects.requireNonNull(site.ctx(), "ctx is null!");
+            document = node.getDocument();
+            page = (Page) Objects.requireNonNull(document.getAttribute("page"), "page is null!");
+            frames.push(sourceLocation(node));
+            return convert(node);
+        } finally {
+            frames.pop();
+        }
+    }
 
-                    // store the link model as an attribute in the corresponding
-                    // block
-                    node.getParent()
-                        .getParent()
-                        .getAttributes()
-                        .put("_link", node);
-                    // the template for the block is responsible for rendering
-                    // the link, discard the output
-                    return "";
-                }
-                templateName = node.getNodeName();
-            }
-            LOGGER.debug("Rendering node: {}", node);
-            try {
-                return templateEngine.renderString(templateName, node);
-            } catch (RenderingException ex) {
-                if (ex instanceof RenderingException0) {
-                    // only raise the underlying error
-                    // don't represent the rendering stack
-                    throw ex;
-                }
-                Cursor location = sourceLocation(node);
-                String filename = location != null ? location.getPath() : "?";
-                String lineno = location != null ? String.valueOf(location.getLineNumber()) : "?";
-                throw new RenderingException0(String.format(
-                        "An error occurred during rendering of '%s' at line %s", filename, lineno),
-                        ex);
-            }
-        } else {
+    private String convert(ContentNode node) {
+        if (node == null || node.getNodeName() == null) {
             return "";
+        }
+        String templateName;
+        if (node.equals(document)) {
+            templateName = "document";
+        } else if (node.isBlock()) {
+            templateName = "block_" + node.getNodeName();
+        } else {
+            // detect phrase node for generated block links
+            if (node.getNodeName().equals("inline_anchor")
+                    && BLOCK_LINK_TEXT.equals(((PhraseNode) node).getText())) {
+
+                // store the link model as an attribute in the corresponding block
+                node.getParent()
+                    .getParent()
+                    .getAttributes()
+                    .put("_link", node);
+                // the template for the block is responsible for rendering
+                // the link, discard the output
+                return "";
+            }
+            templateName = node.getNodeName();
+        }
+        LOGGER.debug("Rendering node: {}", node);
+        try {
+            return templateEngine.renderString(templateName, node);
+        } catch (RenderingException ex) {
+            if (ex instanceof AsciidocRenderingException) {
+                throw ex;
+            }
+            throw new AsciidocRenderingException(ex.getMessage(), frames, ex);
         }
     }
 
@@ -108,7 +127,26 @@ public class AsciidocConverter extends AbstractConverter<String> {
         out.write(output.getBytes());
     }
 
-    private static Cursor sourceLocation(ContentNode node) {
+    /**
+     * Get the frames.
+     *
+     * @return frames
+     */
+    Deque<String> frames() {
+        return frames;
+    }
+
+    private String sourceLocation(ContentNode node) {
+        Cursor location = cursor(node);
+        if (location == null) {
+            return "at ?:?";
+        }
+        Path sourcePath = ctx.resolvePath(page, location.getPath());
+        String source = ctx.sourceDir().relativize(sourcePath).toString();
+        return String.format("at %s:%s", source, location.getLineNumber());
+    }
+
+    private static Cursor cursor(ContentNode node) {
         while (node != null) {
             if (node instanceof StructuralNode) {
                 Cursor sourceLocation = ((StructuralNode) node).getSourceLocation();
@@ -121,9 +159,4 @@ public class AsciidocConverter extends AbstractConverter<String> {
         return null;
     }
 
-    private static final class RenderingException0 extends RenderingException {
-        private RenderingException0(String msg, Throwable cause) {
-            super(msg, cause);
-        }
-    }
 }

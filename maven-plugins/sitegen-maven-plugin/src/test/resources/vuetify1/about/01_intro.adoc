@@ -35,14 +35,14 @@ Pet Project is about nothing and everything, like every other pet project :)
 [icon=code]
 --
 Pet Project is like every other cool project on the block, it makes all promises
- you want to see. It's cool, it's flashy and it will solve everything.
+ you want to see. It's cool, it's flashy, and it will solve everything.
 --
 
 [CARD]
 .Lightening Fast
 [icon=flash_on]
 --
-Of course we are fast as hell! Otherwise why would we claim it ? Duh! Speed is
+Of course, we are fast as hell! Otherwise, why would we claim it ? Duh! Speed is
  relative of course to your experience. When in doubt consult with Gandalf, he
  knows better.
 --
@@ -67,11 +67,11 @@ Innovation is key to success, however it does not come without cost. This is a
 
 [CARD]
 .A world full of plugins!
-[icon=extension,link=about/02_contributing.adoc]
+[icon=extension,link=02_contributing.adoc]
 --
 Plugins plugins plugins! Ship an empty shell for free and give the illusion of
  cost free software, and then make them PAY! Well, Gandalf did not say that for
- once, but he would not give me any tips for this card so it just came up like
+ once, but he would not give me any tips for this card, so it just came up like
  that.
 --
 
@@ -106,7 +106,7 @@ Now is the time to think of all the doors that just opened to you. Which one is
 ====
 
 [[another-section]]
-== An another section
+== Another section
 
 Hey Welcome to the other section :)
 

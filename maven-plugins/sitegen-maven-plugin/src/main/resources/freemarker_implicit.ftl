@@ -54,7 +54,7 @@
 [#-- @ftlvariable name="header.stylesheets" type="java.util.List<io.helidon.build.maven.sitegen.models.WebResource>" file="templates/vuetify/index.ftl" --]
 [#-- @ftlvariable name="stylesheet.location" type="String" --]
 [#-- @ftlvariable name="searchEntries" type="java.util.List<io.helidon.build.maven.sitegen.models.SearchEntry>" --]
-[#-- @ftlvariable name="helper" type="io.helidon.build.maven.sitegen.freemarker.LinkHashModel" --]
+[#-- @ftlvariable name="helper" type="io.helidon.build.maven.sitegen.freemarker.HelperHashModel" --]
 [#-- @ftlvariable name="id" type="String" --]
 [#-- @ftlvariable name="document" type="org.asciidoctor.ast.Document" --]
 [#-- @ftlvariable name="body" type="java.util.List<org.asciidoctor.ast.Row>" file="templates/vuetify/block_table.ftl" --]

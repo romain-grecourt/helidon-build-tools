@@ -53,7 +53,7 @@ public final class AsciidocPageRenderer implements PageRenderer {
         requireValid(ext, "ext is invalid!");
         SiteEngine siteEngine = SiteEngine.get(backendName);
         Path target = requireDirectory(outputDir).resolve(page.target() + "." + ext);
-        siteEngine.asciidoc().render(page, ctx, target, Map.of("page", page, "pages", ctx.pages()));
+        siteEngine.asciidoc().render(page, ctx, target);
     }
 
     @Override

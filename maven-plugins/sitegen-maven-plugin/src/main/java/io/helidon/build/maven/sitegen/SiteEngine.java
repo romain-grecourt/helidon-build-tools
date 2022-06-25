@@ -25,6 +25,7 @@ import io.helidon.build.maven.sitegen.asciidoctor.AsciidocEngine;
 import io.helidon.build.maven.sitegen.freemarker.FreemarkerEngine;
 
 import static io.helidon.build.common.Strings.requireValid;
+import static java.util.Objects.requireNonNull;
 
 /**
  * Configuration of {@link FreemarkerEngine} and {@link AsciidocEngine}.
@@ -35,12 +36,24 @@ public final class SiteEngine {
 
     private final AsciidocEngine asciidoc;
     private final FreemarkerEngine freemarker;
+    private final Site site;
 
     private SiteEngine(Builder builder) {
+        String backend = requireNonNull(builder.backend, "backend is null!");
+        site = requireNonNull(builder.site, "site is null!");
         freemarker = Optional.ofNullable(builder.freemarker)
-                             .orElseGet(() -> FreemarkerEngine.create(builder.backend));
+                             .orElseGet(() -> FreemarkerEngine.create(backend));
         asciidoc = Optional.ofNullable(builder.asciidoc)
-                           .orElseGet(() -> AsciidocEngine.create(builder.backend));
+                           .orElseGet(() -> AsciidocEngine.create(backend));
+    }
+
+    /**
+     * Get the site.
+     *
+     * @return site, never {@code null}
+     */
+    public Site site() {
+        return site;
     }
 
     /**
@@ -102,10 +115,29 @@ public final class SiteEngine {
 
         private FreemarkerEngine freemarker;
         private AsciidocEngine asciidoc;
-        private final String backend;
+        private String backend;
+        private Site site;
 
-        private Builder(String backend) {
+        /**
+         * Set the site.
+         *
+         * @param site site
+         * @return this builder
+         */
+        public Builder site(Site site) {
+            this.site = site;
+            return this;
+        }
+
+        /**
+         * Set the backend name.
+         *
+         * @param backend backend name
+         * @return this builder
+         */
+        public Builder backend(String backend) {
             this.backend = backend;
+            return this;
         }
 
         /**
@@ -202,6 +234,6 @@ public final class SiteEngine {
      * @return new builder
      */
     public static Builder builder(String backend) {
-        return new Builder(backend);
+        return new Builder().backend(backend);
     }
 }

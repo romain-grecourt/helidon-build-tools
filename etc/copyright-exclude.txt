@@ -36,3 +36,5 @@ HELIDON_THIRD_PARTY_LICENSES.xml
 /common/common/src/test/resources/vfs/
 /cli/common/src/test/resources/latest-files
 freemarker-implicit.ftl
+expected
+expected-config

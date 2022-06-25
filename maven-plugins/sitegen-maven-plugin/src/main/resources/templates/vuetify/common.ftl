@@ -20,28 +20,28 @@
 <#case "xref_anchor_self">
 <#-- link to an anchor on the same page -->
 <#--noinspection HtmlUnknownTag-->
-<router-link to="#${link.hash}" @click.native="this.scrollFix('#${link.hash}')"><#nested></router-link>
+<router-link to="#${link.hash}" @click.native="this.scrollFix('#${link.hash}')"<#if link.rel??> rel="${link.rel}"</#if><#if link.role??> class="${link.role}"</#if>><#nested></router-link>
 <#break>
 <#case "xref_anchor">
 <#-- link to an anchor on a different page -->
 <#--noinspection HtmlUnknownTag-->
-<router-link :to="{path: '/${link.target}', hash: '#${link.hash}'}"><#nested></router-link>
+<router-link :to="{path: '/${link.target}', hash: '#${link.hash}'}"<#if link.rel??> rel="${link.rel}"</#if><#if link.role??> class="${link.role}"</#if>><#nested></router-link>
 <#break>
 <#case "xref">
 <#-- link to a page -->
 <#--noinspection HtmlUnknownTag-->
-<router-link to="/${link.target}"><#nested></router-link>
+<router-link to="/${link.target}"<#if link.rel??> rel="${link.rel}"</#if><#if link.role??> class="${link.role}"</#if>><#nested></router-link>
 <#break>
 <#case "ref">
 <#-- link to an external page -->
-<a href="${source}"><#nested></a>
+<a href="${link.source}"<#if link.rel??> rel="${link.rel}"</#if><#if link.role??> class="${link.role}"</#if>><#nested></a>
 <#break>
 <#case "bibref">
 <#-- anchor -->
-<a id="${source}"><#nested></a>
+<a id="${link.source}"<#if link.rel??> rel="${link.rel}"</#if><#if link.role??> class="${link.role}"</#if>><#nested></a>
 <#break>
 <#default>
-<a id="${link.id}" title="${link.title}" target="${link.window}" href="${link.target}"><#nested></a>
+<a<#if link.title??> title="${link.title}"</#if><#if link.window??> target="${link.window}"</#if> href="${link.target}"<#if link.rel??> rel="${link.rel}"</#if><#if link.role??> class="${link.role}"</#if>><#nested></a>
 </#switch>
 </#if>
 </#macro>

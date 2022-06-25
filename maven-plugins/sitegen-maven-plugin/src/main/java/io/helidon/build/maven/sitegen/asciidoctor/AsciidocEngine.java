@@ -21,14 +21,15 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 
+import io.helidon.build.common.VirtualFileSystem;
 import io.helidon.build.maven.sitegen.Config;
 import io.helidon.build.maven.sitegen.RenderingContext;
+import io.helidon.build.maven.sitegen.asciidoctor.AsciidocLogHandler.AsciidocLoggedException;
 import io.helidon.build.maven.sitegen.models.Page;
 
 import org.asciidoctor.Asciidoctor;
@@ -38,6 +39,7 @@ import org.asciidoctor.Options;
 import org.asciidoctor.OptionsBuilder;
 import org.asciidoctor.SafeMode;
 import org.asciidoctor.ast.Document;
+import org.asciidoctor.log.LogHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.bridge.SLF4JBridgeHandler;
@@ -57,6 +59,7 @@ public class AsciidocEngine {
     public static final String DEFAULT_IMAGESDIR = "./images";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AsciidocEngine.class);
+    private static final LogHandler LOG_HANDLER = new AsciidocLogHandler();
     private static volatile Asciidoctor asciidoctorInstance = null;
 
     private final String backend;
@@ -64,6 +67,7 @@ public class AsciidocEngine {
     private final Map<String, Object> attributes;
     private final String imagesdir;
     private final Asciidoctor asciidoctor;
+    private volatile AsciidocConverter converter;
 
     private AsciidocEngine(Builder builder) {
         SLF4JBridgeHandler.removeHandlersForRootLogger();
@@ -74,9 +78,20 @@ public class AsciidocEngine {
         this.imagesdir = builder.imagesDir;
         if (asciidoctorInstance == null) {
             asciidoctorInstance = Asciidoctor.Factory.create();
+            AsciidocLogHandler.setup();
+            asciidoctorInstance.registerLogHandler(LOG_HANDLER);
         }
         this.asciidoctor = asciidoctorInstance;
         AsciidocExtensionRegistry.create(backend).register(asciidoctor);
+    }
+
+    /**
+     * Set the converter.
+     *
+     * @param converter converter
+     */
+    void converter(AsciidocConverter converter) {
+        this.converter = converter;
     }
 
     /**
@@ -145,20 +160,17 @@ public class AsciidocEngine {
     /**
      * Render the document represented by the given {@link Page} instance.
      *
-     * @param page            the {@link Page} instance representing the document to render
-     * @param ctx             the context representing this site processing invocation
-     * @param target          the file to create as a result of the rendering
-     * @param extraAttributes extra asciidoctor attributes, can be {@code null}
+     * @param page   the {@link Page} instance representing the document to render
+     * @param ctx    the context representing this site processing invocation
+     * @param target the file to create as a result of the rendering
      */
     @SuppressWarnings("GrazieInspection")
-    public void render(Page page, RenderingContext ctx, Path target, Map<String, Object> extraAttributes) {
+    public void render(Page page, RenderingContext ctx, Path target) {
         requireNonNull(page, "page is null!");
         requireNonNull(ctx, "ctx is null!");
 
         asciidoctor.requireLibraries(libraries);
-        if (extraAttributes == null) {
-            extraAttributes = Collections.emptyMap();
-        }
+        Map<String, Object> extraAttributes = Map.of("ctx", ctx, "page", page);
 
         Path outputDir = ctx.outputDir();
         Path sourceDir = ctx.sourceDir();
@@ -181,7 +193,7 @@ public class AsciidocEngine {
 
         // set outdir attribute to relative to outputDir from source
         // needed by asciidoctorj-diagram
-        String outDir = relativePath(source, outputDir);
+        String outDir = relativePath(source, VirtualFileSystem.unwrap(outputDir));
         attrsBuilder.attribute("outdir", outDir);
 
         // set options
@@ -201,13 +213,20 @@ public class AsciidocEngine {
         if (backend != null) {
             optionsBuilder.backend(this.backend);
         }
-        LOGGER.info("rendering {} to {}", sourceDir.relativize(source), outputDir.relativize(target));
+        String sourcePath = sourceDir.relativize(source).toString();
+        LOGGER.info("rendering {} to {}", sourcePath, outputDir.relativize(target));
         Document document = asciidoctor.loadFile(source.toFile(), optionsBuilder.build());
         document.setAttribute("templateSession", ctx.templateSession(), true);
-        String output = document.convert();
         try {
+            String output = document.convert();
             Files.createDirectories(target.getParent());
             Files.writeString(target, output);
+        } catch (AsciidocLoggedException ex) {
+            List<String> frames = new ArrayList<>(converter != null ? converter.frames() : List.of());
+            if (frames.isEmpty()) {
+                frames.add(sourcePath + ":0");
+            }
+            throw new AsciidocRenderingException(ex.getMessage(), frames, ex);
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }

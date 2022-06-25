@@ -20,5 +20,5 @@
 <#if attributes.alt??><#assign image_attr = image_attr + "alt=\"" + attributes.alt + "\""></#if>
 <#if attributes.width??><#assign image_attr = image_attr + "width=\"" + attributes.width + "\""></#if>
 <#if attributes.heigh??><#assign image_attr = image_attr + "heigh=\"" + attributes.height + "\""></#if>
-<img src="${imageUri(target)}" ${image_attr} />
+<img src="${helper.imageUri(this, target)}" ${image_attr} />
 </#if>

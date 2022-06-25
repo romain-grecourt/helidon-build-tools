@@ -166,7 +166,7 @@ public class FreemarkerEngine {
                     env.setVariable(directive.getKey(), directive.getValue());
                 }
             }
-            env.setVariable("helper", new LinkHashModel(OBJECT_WRAPPER, backend));
+            env.setVariable("helper", new HelperHashModel(OBJECT_WRAPPER));
             env.setVariable("passthroughfix", new PassthroughFixDirective());
             env.setTemplateExceptionHandler(TemplateExceptionHandler.RETHROW_HANDLER);
             env.setLogTemplateExceptions(false);
@@ -178,8 +178,18 @@ public class FreemarkerEngine {
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         } catch (TemplateException ex) {
-            throw RenderingException.create(String.format(
-                    "An error occurred during rendering of '%s'", path), ex);
+            throw new FreemarkerRenderingException(path, ex);
+        }
+    }
+
+    /**
+     * Freemarker rendering exception.
+     */
+    public static final class FreemarkerRenderingException extends RenderingException {
+
+        FreemarkerRenderingException(String template, Throwable cause) {
+            super(String.format("An error occurred while rendering '%s'", template),
+                    RenderingException.cause(cause));
         }
     }
 

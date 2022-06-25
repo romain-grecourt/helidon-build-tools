@@ -66,9 +66,9 @@ public class CardBlockProcessor extends BlockProcessor {
             String linkPhrase;
             String linkType = (String) attributes.get("link-type");
             if (linkType == null || linkType.equals("xref")) {
-                linkPhrase = "<<" + link + "," + BLOCK_LINK_TEXT + ">>";
+                linkPhrase = String.format("xref:%s[%s]", link, BLOCK_LINK_TEXT);
             } else if (linkType.equals("url")) {
-                linkPhrase = "link:" + link + "[" + BLOCK_LINK_TEXT + "]";
+                linkPhrase = String.format("link:%s[%s]", link, BLOCK_LINK_TEXT);
             } else {
                 linkPhrase = null;
                 LOGGER.warning(link);

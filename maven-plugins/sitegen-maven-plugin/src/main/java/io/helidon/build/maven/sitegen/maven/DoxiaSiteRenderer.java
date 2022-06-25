@@ -115,7 +115,7 @@ public class DoxiaSiteRenderer extends DefaultSiteRenderer {
         try {
             site.generate(siteDir, outputDir);
         } catch (RenderingException ex) {
-            throw new RendererException(ex.getMessage(), ex);
+            throw new RendererException("Rendering error", ex);
         }
     }
 

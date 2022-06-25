@@ -16,6 +16,8 @@
 
 package io.helidon.build.maven.sitegen.models;
 
+import java.util.function.Supplier;
+
 import io.helidon.build.maven.sitegen.Config;
 import io.helidon.build.maven.sitegen.Model;
 
@@ -57,7 +59,7 @@ public final class WebResource implements Model {
     public Object get(String attr) {
         switch (attr) {
             case ("location"):
-                return location;
+                return location.value;
             case ("type"):
                 return type;
             default:
@@ -76,7 +78,7 @@ public final class WebResource implements Model {
     /**
      * A builder of {@link WebResource}.
      */
-    public static class Builder {
+    public static class Builder implements Supplier<WebResource> {
 
         private Location location;
         private String type;
@@ -125,6 +127,11 @@ public final class WebResource implements Model {
             type = config.get("type").asString().orElse(null);
             location = Location.create(config);
             return this;
+        }
+
+        @Override
+        public WebResource get() {
+            return build();
         }
 
         /**

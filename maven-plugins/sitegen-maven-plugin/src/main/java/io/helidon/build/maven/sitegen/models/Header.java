@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import io.helidon.build.maven.sitegen.Config;
 import io.helidon.build.maven.sitegen.Model;
@@ -107,7 +108,7 @@ public class Header implements Model {
      * A builder of {@link Header}.
      */
     @SuppressWarnings("unused")
-    public static class Builder {
+    public static class Builder implements Supplier<Header> {
 
         private WebResource favicon;
         private final List<WebResource> stylesheets = new ArrayList<>();
@@ -126,14 +127,27 @@ public class Header implements Model {
         }
 
         /**
-         * Add stylesheets.
+         * Add a stylesheet.
          *
-         * @param stylesheets stylesheets
+         * @param stylesheet stylesheet
          * @return this builder
          */
-        public Builder stylesheets(List<WebResource> stylesheets) {
-            if (stylesheets != null) {
-                this.stylesheets.addAll(stylesheets);
+        public Builder stylesheet(WebResource stylesheet) {
+            if (stylesheet != null) {
+                this.stylesheets.add(stylesheet);
+            }
+            return this;
+        }
+
+        /**
+         * Add a stylesheet.
+         *
+         * @param stylesheet stylesheet supplier
+         * @return this builder
+         */
+        public Builder stylesheet(Supplier<WebResource> stylesheet) {
+            if (stylesheet != null) {
+                this.stylesheets.add(stylesheet.get());
             }
             return this;
         }
@@ -141,12 +155,26 @@ public class Header implements Model {
         /**
          * Add the scripts.
          *
-         * @param scripts scripts
+         * @param script script
          * @return this builder
          */
-        public Builder scripts(List<WebResource> scripts) {
-            if (scripts != null) {
-                this.scripts.addAll(scripts);
+        public Builder scripts(WebResource script) {
+            if (script != null) {
+                this.scripts.add(script);
+            }
+            return this;
+        }
+
+
+        /**
+         * Add the scripts.
+         *
+         * @param script script supplier
+         * @return this builder
+         */
+        public Builder scripts(Supplier<WebResource> script) {
+            if (script != null) {
+                this.scripts.add(script.get());
             }
             return this;
         }
@@ -194,6 +222,11 @@ public class Header implements Model {
                               .asMap(String.class)
                               .orElseGet(Map::of));
             return this;
+        }
+
+        @Override
+        public Header get() {
+            return build();
         }
 
         /**

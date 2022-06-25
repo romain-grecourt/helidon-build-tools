@@ -92,7 +92,7 @@ public class GenerateMojo extends AbstractMojo {
 
             site.generate(siteSourceDirectory.toPath(), siteOutputDirectory.toPath());
         } catch (RenderingException ex) {
-            throw new MojoExecutionException(ex.getMessage(), ex);
+            throw new MojoExecutionException("Rendering error", ex);
         }
     }
 

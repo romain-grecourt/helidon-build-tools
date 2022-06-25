@@ -15,10 +15,13 @@
  */
 package io.helidon.build.maven.sitegen.models;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 import io.helidon.build.maven.sitegen.Model;
+import io.helidon.build.maven.sitegen.RenderingContext;
+import io.helidon.build.maven.sitegen.RenderingException;
 
 import static java.util.Objects.requireNonNull;
 
@@ -36,26 +39,30 @@ public final class Link implements Model {
     private final String window;
     private final String id;
     private final String type;
+    private final String role;
+    private final String rel;
 
     private Link(Builder builder) {
-        requireNonNull(builder.pages, "pages is null");
         requireNonNull(builder.page, "page is null");
         requireNonNull(builder.type, "type is null");
         switch (builder.type) {
             case ("xref"):
                 if (builder.path != null) {
                     source = builder.path.replace("." + builder.backend, ".adoc");
-                } else {
-                    source = builder.refId;
-                }
-                Page page = builder.pages.get(source);
-                if (page != null) {
+                    Page page = builder.ctx.resolvePage(builder.page, source);
+                    if (page == null) {
+                        throw new RenderingException(String.format(
+                                "Unresolved cross-reference: %s, document: %s",
+                                source,
+                                builder.page.source()));
+                    }
                     target = page.target();
                 } else {
+                    source = builder.refId;
                     target = null;
                 }
                 hash = builder.fragment;
-                if ((hash != null && target == null) || builder.page.target().equals(target)) {
+                if (hash != null && (target == null || builder.page.target().equals(target))) {
                     type = "xref_anchor_self";
                 } else if (hash != null && !hash.equals(source)) {
                     type = "xref_anchor";
@@ -76,10 +83,34 @@ public final class Link implements Model {
                 source = null;
                 target = builder.target;
         }
+        if (!builder.options.isEmpty()) {
+            this.rel = String.join(" ", builder.options);
+        } else {
+            this.rel = null;
+        }
+        this.role = builder.role;
         this.id = builder.id;
         this.text = builder.text;
         this.title = builder.title;
         this.window = builder.window;
+    }
+
+    /**
+     * Get the rel attribute.
+     *
+     * @return rel
+     */
+    public String rel() {
+        return rel;
+    }
+
+    /**
+     * Get the role attribute.
+     *
+     * @return role
+     */
+    public String role() {
+        return role;
     }
 
     /**
@@ -164,6 +195,10 @@ public final class Link implements Model {
                 return id;
             case "window":
                 return window;
+            case "rel":
+                return rel;
+            case "role":
+                return role;
             default:
                 throw new IllegalArgumentException("Unknown attribute: " + attr);
         }
@@ -172,11 +207,11 @@ public final class Link implements Model {
     /**
      * Create a new builder.
      *
-     * @param backend backend name
+     * @param ctx ctx
      * @return builder
      */
-    public static Builder builder(String backend) {
-        return new Builder(backend);
+    public static Builder builder(RenderingContext ctx) {
+        return new Builder(ctx);
     }
 
     /**
@@ -184,34 +219,24 @@ public final class Link implements Model {
      */
     public static final class Builder {
 
-        private final Map<String, Page> pages = new HashMap<>();
         private Page page;
         private String type;
         private String path;
         private String refId;
         private String fragment;
         private String target;
-        private String title = "";
-        private String text = "";
-        private String id = "";
+        private String title;
+        private String text;
+        private String id;
         private String window = "_blank";
+        private String role;
+        private final List<String> options = new ArrayList<>();
+        private final RenderingContext ctx;
         private final String backend;
 
-        private Builder(String backend) {
-            this.backend = backend;
-        }
-
-        /**
-         * Add pages.
-         *
-         * @param pages pages
-         * @return this builder
-         */
-        public Builder pages(Map<String, Page> pages) {
-            if (pages != null) {
-                this.pages.putAll(pages);
-            }
-            return this;
+        private Builder(RenderingContext ctx) {
+            this.ctx = Objects.requireNonNull(ctx, "ctx is null!");
+            backend = ctx.site().backend().name();
         }
 
         /**
@@ -222,6 +247,30 @@ public final class Link implements Model {
          */
         public Builder page(Page page) {
             this.page = page;
+            return this;
+        }
+
+        /**
+         * Add options.
+         *
+         * @param options options
+         * @return this builder
+         */
+        public Builder options(List<String> options) {
+            if (options != null) {
+                this.options.addAll(options);
+            }
+            return this;
+        }
+
+        /**
+         * Set the role.
+         *
+         * @param role role
+         * @return this builder
+         */
+        public Builder role(String role) {
+            this.role = role;
             return this;
         }
 

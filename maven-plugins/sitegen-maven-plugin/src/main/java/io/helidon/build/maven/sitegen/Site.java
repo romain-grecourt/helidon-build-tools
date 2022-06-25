@@ -41,12 +41,15 @@ public class Site {
     private final Header header;
     private final List<PageFilter> pages;
     private final Backend backend;
+    private volatile RenderingContext ctx;
 
     private Site(Builder builder) {
         backend = Optional.ofNullable(builder.backend)
                           .orElseGet(BasicBackend::create);
         engine = Optional.ofNullable(builder.engine)
-                         .orElseGet(() -> SiteEngine.create(backend.name()));
+                         .orElseGet(() -> SiteEngine.builder(backend.name()))
+                         .site(this)
+                         .build();
         header = Optional.ofNullable(builder.header)
                          .orElseGet(Header::create);
         this.assets = builder.assets;
@@ -100,6 +103,14 @@ public class Site {
     }
 
     /**
+     * Get the rendering context.
+     * @return ctx
+     */
+    public RenderingContext ctx() {
+        return ctx;
+    }
+
+    /**
      * Triggers rendering of the site.
      *
      * @param sourceDir the source directory containing the site documents
@@ -109,7 +120,8 @@ public class Site {
     public void generate(Path sourceDir, Path outputDir) throws RenderingException {
         try {
             Files.createDirectories(outputDir);
-            backend.generate(new RenderingContext(this, sourceDir, outputDir));
+            ctx = new RenderingContext(this, sourceDir, outputDir);
+            backend.generate(ctx);
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }
@@ -122,7 +134,7 @@ public class Site {
     public static class Builder {
 
         private Backend backend;
-        private SiteEngine engine;
+        private SiteEngine.Builder engine;
         private Header header;
         private final List<StaticAsset> assets = new ArrayList<>();
         private final List<PageFilter> pages = new ArrayList<>();
@@ -150,10 +162,10 @@ public class Site {
                             .map(BackendProvider::get)
                             .orElseGet(BasicBackend::create);
 
-            engine = config.get("engine")
-                           .asOptional()
-                           .map(c -> SiteEngine.create(backend.name(), c))
-                           .orElse(null);
+            engine = SiteEngine.builder(backend.name());
+            config.get("engine")
+                  .asOptional()
+                  .ifPresent(c -> engine.config(c));
 
             config.get("assets")
                   .asNodeList()
@@ -220,19 +232,8 @@ public class Site {
          * @param engine the site engine to use
          * @return this builder
          */
-        public Builder engine(SiteEngine engine) {
+        public Builder engine(SiteEngine.Builder engine) {
             this.engine = engine;
-            return this;
-        }
-
-        /**
-         * Set the site engine.
-         *
-         * @param supplier site engine builder
-         * @return this builder
-         */
-        public Builder engine(Supplier<SiteEngine> supplier) {
-            this.engine = supplier.get();
             return this;
         }
 
@@ -340,6 +341,16 @@ public class Site {
      */
     public static Site create(Config config) {
         return builder().config(config).build();
+    }
+
+    /**
+     * Create a new instance.
+     *
+     * @param backend backend
+     * @return new instance
+     */
+    public static Site create(Backend backend) {
+        return builder().backend(backend).build();
     }
 
     /**

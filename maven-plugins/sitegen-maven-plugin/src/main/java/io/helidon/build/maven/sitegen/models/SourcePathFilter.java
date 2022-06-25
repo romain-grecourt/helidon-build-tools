@@ -61,6 +61,16 @@ public abstract class SourcePathFilter implements Model {
         return excludes;
     }
 
+    /**
+     * Resolve this filter.
+     *
+     * @param paths input paths
+     * @return filtered paths
+     */
+    public List<SourcePath> resolve(List<SourcePath> paths) {
+        return SourcePath.filter(paths, includes, excludes);
+    }
+
     @Override
     public Object get(String attr) {
         switch (attr) {

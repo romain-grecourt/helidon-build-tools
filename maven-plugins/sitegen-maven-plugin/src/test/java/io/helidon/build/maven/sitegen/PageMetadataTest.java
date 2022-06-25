@@ -17,6 +17,7 @@
 package io.helidon.build.maven.sitegen;
 
 import java.nio.file.Path;
+import java.util.Map;
 
 import io.helidon.build.maven.sitegen.models.Page.Metadata;
 import io.helidon.build.maven.sitegen.asciidoctor.AsciidocPageRenderer;
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.AfterAll;
 
 import static io.helidon.build.common.test.utils.TestFiles.targetDir;
 
+import static io.helidon.build.maven.sitegen.asciidoctor.AsciidocPageRenderer.ADOC_EXT;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -39,12 +41,13 @@ class PageMetadataTest {
 
     private static final Path SOURCE_DIR = targetDir(PageMetadataTest.class).resolve("test-classes/metadata");
     private static final String BACKEND_NAME = "dummy";
-    private static AsciidocPageRenderer pageRenderer;
+    private static final DummyBackend BACKEND = new DummyBackend();
+    private static AsciidocPageRenderer PAGE_RENDERER = AsciidocPageRenderer.create(BACKEND_NAME);
 
     @BeforeAll
     public static void init() {
-        SiteEngine.register(BACKEND_NAME, SiteEngine.create(BACKEND_NAME));
-        pageRenderer = AsciidocPageRenderer.create(BACKEND_NAME);
+        Site.create(BACKEND);
+        PAGE_RENDERER = AsciidocPageRenderer.create(BACKEND_NAME);
     }
 
     @AfterAll
@@ -111,6 +114,22 @@ class PageMetadataTest {
     }
 
     private static Metadata readMetadata(String filename) {
-        return pageRenderer.readMetadata(SOURCE_DIR.resolve(filename));
+        return PAGE_RENDERER.readMetadata(SOURCE_DIR.resolve(filename));
+    }
+
+    private static class DummyBackend extends Backend {
+
+        DummyBackend() {
+            super(BACKEND_NAME);
+        }
+
+        @Override
+        public void generate(RenderingContext ctx) {
+        }
+
+        @Override
+        public Map<String, PageRenderer> renderers() {
+            return Map.of(ADOC_EXT, PAGE_RENDERER);
+        }
     }
 }

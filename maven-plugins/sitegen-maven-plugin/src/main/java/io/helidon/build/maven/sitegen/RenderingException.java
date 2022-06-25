@@ -28,13 +28,27 @@ import freemarker.template.TemplateException;
  */
 public class RenderingException extends RuntimeException {
 
+    private RenderingException(String msg, boolean filterStackTrace) {
+        super(msg);
+        if (filterStackTrace) {
+            setStackTrace(filteredStackTrace(getStackTrace()));
+        }
+    }
+
+    private RenderingException(String msg, Throwable cause, boolean filterStackTrace) {
+        super(msg, cause);
+        if (filterStackTrace) {
+            setStackTrace(filteredStackTrace(getStackTrace()));
+        }
+    }
+
     /**
      * Create a new instance.
      *
      * @param msg exception message
      */
-    protected RenderingException(String msg) {
-        super(msg);
+    public RenderingException(String msg) {
+        this(msg, true);
     }
 
     /**
@@ -44,32 +58,37 @@ public class RenderingException extends RuntimeException {
      * @param cause cause
      */
     protected RenderingException(String msg, Throwable cause) {
-        super(msg, cause);
-        setStackTrace(filteredStackTrace(getStackTrace()));
+        this(msg, cause, true);
     }
 
     /**
-     * Create a new instance.
+     * Cleanup a cause.
      *
-     * @param msg   exception message
      * @param cause cause
      * @return new instance
      */
-    public static RenderingException create(String msg, Throwable cause) {
+    public static Throwable cause(Throwable cause) {
         Deque<Throwable> causes = new ArrayDeque<>();
         while (cause != null) {
             causes.push(cause);
             cause = cause.getCause();
         }
+        cause = null;
         while (!causes.isEmpty()) {
-            cause = causes.pop();
-            StackTraceElement[] ste = filteredStackTrace(cause.getStackTrace());
-            if (cause instanceof TemplateException) {
-                cause = new RenderingException(filterMsg(cause.getMessage()));
+            Throwable ex = causes.pop();
+            StackTraceElement[] ste = filteredStackTrace(ex.getStackTrace());
+            if (ex instanceof TemplateException) {
+                String msg = filterMsg(ex.getMessage());
+                if (cause != null) {
+                    ex = new RenderingException(msg, cause, false);
+                } else {
+                    ex = new RenderingException(msg, false);
+                }
             }
-            cause.setStackTrace(ste);
+            ex.setStackTrace(ste);
+            cause = ex;
         }
-        return new RenderingException(msg, cause);
+        return cause;
     }
 
     private static String filterMsg(String message) {
