@@ -220,17 +220,17 @@ function createNav(){
         {
             title: null,
             pathprefix: null,
-            depth: 4,
+            depth: 3,
             items: [
                 {
                     title: 'Cool Stuff',
                     pathprefix: null,
-                    depth: 4,
+                    depth: 3,
                     items: [
                         {
                             title: 'What is it about?',
                             pathprefix: '/about',
-                            depth: 4,
+                            depth: 3,
                             items: [
                                 {
                                     title: 'Introduction',
@@ -268,7 +268,7 @@ function createNav(){
                         {
                             title: 'Getting started',
                             pathprefix: '/getting-started',
-                            depth: 4,
+                            depth: 3,
                             items: [
                                 {
                                     title: 'The pre-requisites',
@@ -289,12 +289,12 @@ function createNav(){
                 {
                     title: 'Boring Stuff',
                     pathprefix: null,
-                    depth: 4,
+                    depth: 3,
                     items: [
                         {
                             title: 'Let\'s code!',
                             pathprefix: '/lets-code',
-                            depth: 4,
+                            depth: 3,
                             items: [
                                 {
                                     title: 'Let\'s code some Javascript',

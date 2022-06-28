@@ -226,6 +226,7 @@ public final class Nav extends SourcePathFilter {
          * @param maxDepth max depth
          * @return this builder
          */
+        @SuppressWarnings("UnusedReturnValue")
         public Builder maxDepth(int maxDepth) {
             if (maxDepth > this.maxDepth) {
                 this.maxDepth = maxDepth;
@@ -373,20 +374,14 @@ public final class Nav extends SourcePathFilter {
                 Builder builder = builders.peek();
                 List<Config> items = node.get("items").asNodeList().orElseGet(List::of);
                 if (node.containsKey("title") && !items.isEmpty() && builder != parentBuilder) {
-                    boolean traversing = false;
                     ListIterator<Config> it = items.listIterator(items.size());
                     while (it.hasPrevious()) {
                         Config item = it.previous();
-                        if (item.containsKey("title")) {
-                            traversing = true;
-                            stack.push(item);
-                            builders.push(new Builder(builder));
-                        }
+                        stack.push(item);
+                        builders.push(new Builder(builder));
                     }
-                    if (traversing) {
-                        // 1st tree-node pass, or no nested items
-                        continue;
-                    }
+                    // 1st tree-node pass, or no nested items
+                    continue;
                 }
                 // leaf-node, or 2nd tree-node pass
                 builder.applyConfig(node);
@@ -408,10 +403,7 @@ public final class Nav extends SourcePathFilter {
             href = config.get("href").asString().orElse(null);
             target = config.get("target").asString().orElse("_blank");
             pathprefix = config.get("pathprefix").asString().orElse(null);
-            config.get("items")
-                  .asNodeList()
-                  .orElseGet(List::of)
-                  .forEach(super::config);
+            super.config(config);
         }
 
         /**

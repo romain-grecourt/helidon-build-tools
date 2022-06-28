@@ -26,25 +26,22 @@ items:
         glyph:
           type: "icon"
           value: "weekend"
-        items:
-          - includes:
-              - "**/about*.adoc"
+        includes:
+          - "**/about*.adoc"
       - title: "Getting Started"
         pathprefix: "/getting-started"
         glyph:
           type: "icon"
           value: "weekend"
-        items:
-          - excludes:
-              - "**/start*.adoc"
+        excludes:
+          - "**/start*.adoc"
       - title: "Let's code"
         pathprefix: "/lets-code"
         glyph:
           type: "icon"
           value: "weekend"
-        items:
-          - includes:
-              - "**/*.adoc"
+        includes:
+          - "**/*.adoc"
   - title: "Extra Resources"
     items:
       - title: "Google"

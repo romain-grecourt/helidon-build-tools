@@ -237,30 +237,24 @@ public class VuetifyBackend extends Backend {
                 }
             } else {
                 // leaf-node, or 2nd tree-node pass
-                Nav.Builder nextParent = builder.parent();
-                List<Nav.Builder> itemBuilders = new ArrayList<>();
-                if (node.includes().isEmpty()) {
-                    itemBuilders.add(builder.title(node.title())
-                                            .to(node.to())
-                                            .href(node.href())
-                                            .pathprefix(node.pathprefix())
-                                            .includes(node.includes())
-                                            .excludes(node.excludes())
-                                            .glyph(node.glyph()));
-                } else {
-                    // resolve item
-                    for (Page page : filterPages(pages, node.includes(), node.excludes())) {
-                        itemBuilders.add(Nav.builder(nextParent)
+                Nav.Builder nodeBuilder = builder.title(node.title())
+                                                 .to(node.to())
+                                                 .href(node.href())
+                                                 .pathprefix(node.pathprefix())
+                                                 .glyph(node.glyph());
+                // resolve item
+                List<String> includes = node.includes();
+                if (!includes.isEmpty()) {
+                    for (Page page : filterPages(pages, includes, node.excludes())) {
+                        nodeBuilder.item(Nav.builder(nodeBuilder)
                                             .title(page.metadata().title())
                                             .to(page.target()));
                     }
                 }
-                if (nextParent != null) {
-                    for (Nav.Builder itemBuilder : itemBuilders) {
-                        nextParent.item(itemBuilder.build());
-                        nextParent.maxDepth(itemBuilder.maxDepth());
-                    }
-                    parent = nextParent;
+                Nav.Builder nodeParent = builder.parent();
+                if (nodeParent != null) {
+                    parent = nodeParent.maxDepth(nodeBuilder.maxDepth())
+                                       .item(nodeBuilder);
                     builders.pop();
                 }
                 stack.pop();
