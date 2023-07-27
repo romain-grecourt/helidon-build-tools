@@ -19,7 +19,7 @@ on: [ pull_request, push, workflow_dispatch ]
 
 env:
   JAVA_VERSION: '17'
-  JAVA_DISTRO: 'temurin'
+  JAVA_DISTRO: 'oracle'
   GRAALVM_VERSION: '21.3.0'
   MAVEN_ARGS: |
     -B --fail-at-end
@@ -97,6 +97,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
+        # TODO npm cache use runner_os as part of the cache key and hash of package-lock.json
         with:
           run: |
             mvn ${MAVEN_ARGS} \
