@@ -266,7 +266,7 @@ jobs:
         includes:
           - os: ubuntu-20.04
             platform: linux-amd64
-          - os: windows-latest
+          - os: windows-2022
             platform: windows-amd64
           - os: macos-12
             platform: darwin-amd64
@@ -309,7 +309,7 @@ jobs:
             -am -pl cli/impl \
             -DskipTests \
             -Pnative-image,!toolchain \
-            -DfinalName=helidon-${{ matrix.platform }}
+            -DfinalName=helidon-${{ matrix.platform }} \
             package
         shell: bash
       - name: Archive native cli
