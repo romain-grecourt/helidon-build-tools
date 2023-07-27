@@ -90,7 +90,7 @@ jobs:
               -DskipTests \
               -Pspotbugs \
               verify
-  javadocs:
+  javadoc:
     needs: build
     timeout-minutes: 15
     runs-on: ubuntu-20.04
@@ -101,8 +101,19 @@ jobs:
           run: |
             mvn ${MAVEN_ARGS} -T 8 \
               -DskipTests \
-              -Pjavadocs \
+              -Pjavadoc \
               package
+  tests:
+    needs: build
+    timeout-minutes: 15
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/common
+        with:
+          run: |
+            mvn ${MAVEN_ARGS} -T 8 \
+              verify
   vscode-extension:
     needs: build
     timeout-minutes: 15
@@ -131,6 +142,7 @@ jobs:
           - os: macos-12
             exe-name: helidon-darwin-amd64
     runs-on: ${{ matrix.os }}
+    name: cli-${{ runner.os }}
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
@@ -145,7 +157,3 @@ jobs:
               package
           artifact-name: helidon-cli
           artifact-path: cli/impl/target/${{ matrix.exe-name }}*
-
-# TODO:
-#  - javadoc
-#  - tests
