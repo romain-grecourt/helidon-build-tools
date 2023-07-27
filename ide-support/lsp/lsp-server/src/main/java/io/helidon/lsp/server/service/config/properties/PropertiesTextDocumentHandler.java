@@ -16,15 +16,9 @@
 
 package io.helidon.lsp.server.service.config.properties;
 
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
@@ -156,13 +150,4 @@ public class PropertiesTextDocumentHandler implements TextDocumentHandler {
         }
         return null;
     }
-
-    private Properties loadPropertiesFile(String fileUri) throws IOException, URISyntaxException {
-        InputStream input = new FileInputStream(new URI(fileUri).getPath());
-        Properties properties = new Properties();
-        properties.load(input);
-        input.close();
-        return properties;
-    }
-
 }

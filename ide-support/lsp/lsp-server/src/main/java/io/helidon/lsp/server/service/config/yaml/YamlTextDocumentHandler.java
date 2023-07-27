@@ -232,13 +232,16 @@ public class YamlTextDocumentHandler implements TextDocumentHandler {
     }
 
     private int startListElementLine(CompletionDetails completionDetails) {
-        int parentLine =
-                completionDetails.parentLineResultEntry == null ? -1 : completionDetails.parentLineResultEntry.getKey().line();
+        String pattern = null;
+        int parentLine = -1;
         int currentLine = completionDetails.position.getLine();
         int startListElementLine = -1;
-        String pattern = String.format("^\\s{%s,}-.*", completionDetails.parentLineResultEntry.getKey().indent());
+        if (completionDetails.parentLineResultEntry != null) {
+            parentLine = completionDetails.parentLineResultEntry.getKey().line();
+            pattern = String.format("^\\s{%s,}-.*", completionDetails.parentLineResultEntry.getKey().indent());
+        }
         for (int i = currentLine; i > parentLine; i--) {
-            if (completionDetails.fileContent.get(i).matches(pattern)) {
+            if (pattern != null && completionDetails.fileContent.get(i).matches(pattern)) {
                 startListElementLine = i;
                 break;
             }
@@ -248,9 +251,10 @@ public class YamlTextDocumentHandler implements TextDocumentHandler {
 
     private int endListElementLine(CompletionDetails completionDetails) {
         int currentLine = completionDetails.position.getLine();
-        String pattern = String.format("^\\s{%s,}-.*", completionDetails.parentLineResultEntry.getKey().indent());
+        String pattern = null;
         LineResult nextElement = null;
         if (completionDetails.parentLineResultEntry != null) {
+            pattern = String.format("^\\s{%s,}-.*", completionDetails.parentLineResultEntry.getKey().indent());
             Iterator<LineResult> keyIterator = completionDetails.yamlFileResult.keySet().iterator();
             while (keyIterator.hasNext()) {
                 LineResult current = keyIterator.next();
@@ -267,7 +271,7 @@ public class YamlTextDocumentHandler implements TextDocumentHandler {
         }
         int endListElementLine = currentLine;
         for (int i = currentLine + 1; i < completionDetails.fileContent.size(); i++) {
-            if (completionDetails.fileContent.get(i).matches(pattern)) {
+            if (pattern != null && completionDetails.fileContent.get(i).matches(pattern)) {
                 endListElementLine = i;
                 break;
             }
@@ -314,18 +318,14 @@ public class YamlTextDocumentHandler implements TextDocumentHandler {
         result.parentLineResultEntry = parentLineResultEntry;
         result.parentConfig = configMetadataForFile.get(parentLineResultEntry.getValue());
         if (currentKey(result) != null) {
-            String path = yamlFileResult.entrySet().stream()
-                                        .filter(entry -> entry.getKey().line() == position.getLine())
-                                        .map(Map.Entry::getValue)
-                                        .findFirst()
-                                        .orElse(null);
-            if (path != null) {
-                result.proposedMetadata = configMetadataForFile
-                        .entrySet()
-                        .stream()
-                        .filter((entry) -> entry.getKey().equals(path))
-                        .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-            }
+            yamlFileResult.entrySet().stream()
+                    .filter(entry -> entry.getKey().line() == position.getLine())
+                    .map(Map.Entry::getValue)
+                    .findFirst().ifPresent(path -> result.proposedMetadata = configMetadataForFile
+                            .entrySet()
+                            .stream()
+                            .filter((entry) -> entry.getKey().equals(path))
+                            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
         } else {
             result.proposedMetadata = configMetadataForFile
                     .entrySet()

@@ -40,19 +40,21 @@ readonly SCRIPT_PATH
 WS_DIR=$(cd $(dirname -- "${SCRIPT_PATH}") ; cd ../.. ; pwd -P)
 readonly WS_DIR
 
-RESULT_FILE=$(mktemp -t XXXcopyright-result)
-readonly RESULT_FILE
+readonly LOG_FILE=$(mktemp -t XXXcopyright-log)
 
-die(){ echo "${1}" ; exit 1 ;}
+readonly RESULT_FILE=$(mktemp -t XXXcopyright-result)
+
+die() { echo "${1}" ; exit 1 ;}
 
 # shellcheck disable=SC2086
-mvn ${MAVEN_ARGS} -q org.glassfish.copyright:glassfish-copyright-maven-plugin:copyright \
-    -f "${WS_DIR}"/pom.xml \
-    -Dcopyright.exclude="${WS_DIR}"/etc/copyright-exclude.txt \
-    -Dcopyright.template="${WS_DIR}"/etc/copyright.txt \
-    -Dcopyright.scm="git" \
-    -Pvscode \
-    > "${RESULT_FILE}" || die "Error running the Maven command"
+mvn ${MAVEN_ARGS} \
+        -f ${WS_DIR}/pom.xml \
+        -Dhelidon.enforcer.output.file="${RESULT_FILE}" \
+        -Dhelidon.enforcer.rules=copyright \
+        -Dhelidon.enforcer.failOnError=false \
+        -Pcopyright \
+        -N \
+        validate > ${LOG_FILE} 2>&1 || (cat ${LOG_FILE} ; exit 1)
 
-grep -i "copyright" "${RESULT_FILE}" \
+grep "^\[ERROR\]" "${RESULT_FILE}" \
     && die "COPYRIGHT ERROR" || echo "COPYRIGHT OK"

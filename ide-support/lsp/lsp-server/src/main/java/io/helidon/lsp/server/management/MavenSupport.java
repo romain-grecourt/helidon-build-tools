@@ -37,7 +37,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import io.helidon.build.common.maven.MavenCommand;
@@ -121,7 +120,7 @@ public class MavenSupport {
                 try (
                         Socket clientSocket = serverSocket.accept();
                         BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream(), UTF_8))) {
-                    result = GSON.fromJson(in, new TypeToken<Set<Dependency>>() {}.getType());
+                    result = GSON.fromJson(in, new TypeToken<Set<Dependency>>() { }.getType());
                 } catch (IOException e) {
                     throw new UncheckedIOException(e);
                 }
@@ -135,7 +134,7 @@ public class MavenSupport {
         } catch (Exception e) {
             String message = "Error when executing the maven command - " + goal
                     + System.lineSeparator()
-                    + output.content().stream().collect(Collectors.joining());
+                    + String.join("", output.content());
             LanguageClientLogUtil.logMessage(message, e);
         }
         LOGGER.log(Level.FINEST, "getDependencies() for pom file {0} took {1} seconds",
@@ -232,7 +231,7 @@ public class MavenSupport {
         private final List<String> content = new ArrayList<>();
 
         MavenPrintStream() {
-            super(new ByteArrayOutputStream());
+            super(new ByteArrayOutputStream(), false, UTF_8);
         }
 
         @Override

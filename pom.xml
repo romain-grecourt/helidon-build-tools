@@ -984,34 +984,28 @@
             <build>
                 <plugins>
                     <plugin>
-                        <groupId>org.glassfish.copyright</groupId>
-                        <artifactId>glassfish-copyright-maven-plugin</artifactId>
+                        <groupId>io.helidon.build-tools</groupId>
+                        <artifactId>helidon-enforcer-plugin</artifactId>
+                        <version>3.0.5</version>
+                        <configuration>
+                            <rules>
+                                <rule>copyright</rule>
+                            </rules>
+                            <copyrightConfig>
+                                <failOnError>true</failOnError>
+                                <!--suppress UnresolvedMavenProperty -->
+                                <templateFile>${top.parent.basedir}/etc/copyright.txt</templateFile>
+                                <!--suppress UnresolvedMavenProperty -->
+                                <excludeFile>${top.parent.basedir}/etc/copyright-exclude.txt</excludeFile>
+                            </copyrightConfig>
+                        </configuration>
                         <executions>
                             <execution>
-                                <id>print-copyright</id>
-                                <goals>
-                                    <goal>copyright</goal>
-                                </goals>
+                                <id>helidon-enforcer</id>
                                 <phase>validate</phase>
-                                <configuration>
-                                    <!--suppress UnresolvedMavenProperty -->
-                                    <templateFile>${top.parent.basedir}/etc/copyright.txt</templateFile>
-                                    <!--suppress UnresolvedMavenProperty -->
-                                    <excludeFile>${top.parent.basedir}/etc/copyright-exclude.txt</excludeFile>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <id>check-copyright</id>
                                 <goals>
                                     <goal>check</goal>
                                 </goals>
-                                <phase>validate</phase>
-                                <configuration>
-                                    <!--suppress UnresolvedMavenProperty -->
-                                    <templateFile>${top.parent.basedir}/etc/copyright.txt</templateFile>
-                                    <!--suppress UnresolvedMavenProperty -->
-                                    <excludeFile>${top.parent.basedir}/etc/copyright-exclude.txt</excludeFile>
-                                </configuration>
                             </execution>
                         </executions>
                     </plugin>

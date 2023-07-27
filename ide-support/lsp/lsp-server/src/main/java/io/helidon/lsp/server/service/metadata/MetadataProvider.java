@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
-import java.util.logging.Logger;
 
 import javax.json.Json;
 import javax.json.JsonArray;
@@ -37,9 +36,8 @@ import javax.json.JsonValue;
  */
 public class MetadataProvider {
 
-    private static MetadataProvider instance = new MetadataProvider();
+    private static final MetadataProvider INSTANCE = new MetadataProvider();
 
-    private static final Logger LOGGER = Logger.getLogger(MetadataProvider.class.getName());
     private static final String HELIDON_PROPERTIES_FILE = "META-INF/helidon/config-metadata.json";
 
     private MetadataProvider() {
@@ -51,7 +49,7 @@ public class MetadataProvider {
      * @return instance of the class.
      */
     public static MetadataProvider instance() {
-        return instance;
+        return INSTANCE;
     }
 
     /**
@@ -62,13 +60,15 @@ public class MetadataProvider {
      * @throws IOException IOException
      */
     public List<ConfiguredType> readMetadata(String jarFilePath) throws IOException {
-        JarFile jarFile = new JarFile(jarFilePath);
-        JarEntry configEntry = jarFile.getJarEntry(HELIDON_PROPERTIES_FILE);
-        if (configEntry != null) {
-            InputStream is = jarFile.getInputStream(configEntry);
-            JsonReaderFactory readerFactory = Json.createReaderFactory(Map.of());
-            JsonReader reader = readerFactory.createReader(is, StandardCharsets.UTF_8);
-            return processMetadataJson(reader.readArray());
+        try (JarFile jarFile = new JarFile(jarFilePath)) {
+            JarEntry configEntry = jarFile.getJarEntry(HELIDON_PROPERTIES_FILE);
+            if (configEntry != null) {
+                try (InputStream is = jarFile.getInputStream(configEntry)) {
+                    JsonReaderFactory readerFactory = Json.createReaderFactory(Map.of());
+                    JsonReader reader = readerFactory.createReader(is, StandardCharsets.UTF_8);
+                    return processMetadataJson(reader.readArray());
+                }
+            }
         }
         return List.of();
     }

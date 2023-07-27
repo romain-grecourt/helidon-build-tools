@@ -38,8 +38,9 @@ import io.helidon.lsp.server.util.LanguageClientLogUtil;
  */
 public class ContentManager {
 
-    private static final ContentManager INSTANCE = new ContentManager();
     private static final Logger LOGGER = Logger.getLogger(ContentManager.class.getName());
+    private static final ContentManager INSTANCE = new ContentManager();
+
     private final Map<String, String> fileToTmpMap = new HashMap<>();
     private final ReentrantLock lock = new ReentrantLock();
 
@@ -72,18 +73,18 @@ public class ContentManager {
      *
      * @param fileName file name.
      * @return content of the file.
-     * @throws IOException
-     * @throws URISyntaxException
+     * @throws IOException if an IO error occurs
+     * @throws URISyntaxException if a URI error occurs
      */
     public List<String> read(String fileName) throws IOException, URISyntaxException {
-        lock.lock();  // block until condition holds
         LOGGER.finest("read() started with thread " + Thread.currentThread().getName());
         try {
+            lock.lock();  // block until condition holds
             String tempFile = tempFile(fileName);
             return FileUtils.readAllLines(new URI(tempFile));
         } finally {
-            LOGGER.finest("read() finished with thread " + Thread.currentThread().getName());
             lock.unlock();
+            LOGGER.finest("read() finished with thread " + Thread.currentThread().getName());
         }
     }
 
@@ -94,17 +95,17 @@ public class ContentManager {
      * @return true if file was registered.
      */
     public boolean register(String fileName) {
-        lock.lock();  // block until condition holds
-        LOGGER.finest("register() started with thread " + Thread.currentThread().getName());
         try {
+            lock.lock();  // block until condition holds
+            LOGGER.finest("register() started with thread " + Thread.currentThread().getName());
             if (fileName == null) {
                 return false;
             }
             String tempFile = tempFile(fileName);
             return !tempFile.equals(fileName);
         } finally {
-            LOGGER.finest("register() finished with thread " + Thread.currentThread().getName());
             lock.unlock();
+            LOGGER.finest("register() finished with thread " + Thread.currentThread().getName());
         }
     }
 
@@ -137,13 +138,13 @@ public class ContentManager {
      * @param fileName file name.
      * @param content  content of the file.
      * @param options  OpenOption for the file.
-     * @throws IOException
-     * @throws URISyntaxException
+     * @throws IOException if an IO error occurs
+     * @throws URISyntaxException if a URI error occurs
      */
     public void write(String fileName, List<String> content, OpenOption... options) throws IOException, URISyntaxException {
-        lock.lock();  // block until condition holds
-        LOGGER.finest("write() started with thread " + Thread.currentThread().getName());
         try {
+            lock.lock();  // block until condition holds
+            LOGGER.finest("write() started with thread " + Thread.currentThread().getName());
             String tempFile = tempFile(fileName);
             if (fileName.equals(tempFile)) {
                 //temp file was nor created
@@ -152,8 +153,8 @@ public class ContentManager {
             //rewrite the content of the file
             Files.write(Path.of(new URI(tempFile)), content, options);
         } finally {
-            LOGGER.finest("write() finished with thread " + Thread.currentThread().getName());
             lock.unlock();
+            LOGGER.finest("write() finished with thread " + Thread.currentThread().getName());
         }
     }
 }
