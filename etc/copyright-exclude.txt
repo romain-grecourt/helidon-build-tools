@@ -40,3 +40,4 @@ freemarker-implicit.ftl
 expected
 expected-config
 .helidon
+.keep

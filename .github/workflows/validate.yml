@@ -86,7 +86,7 @@ jobs:
       - uses: ./.github/actions/common
         with:
           run: |
-            mvn ${MAVEN_ARGS} -T 8 \
+            mvn ${MAVEN_ARGS} \
               -DskipTests \
               -Pspotbugs \
               verify
@@ -97,7 +97,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
-        # TODO npm cache use runner_os as part of the cache key and hash of package-lock.json
         with:
           run: |
             mvn ${MAVEN_ARGS} \
