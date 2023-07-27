@@ -26,6 +26,7 @@ import java.io.PrintStream;
 import java.io.UncheckedIOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -46,6 +47,8 @@ import io.helidon.lsp.server.util.LanguageClientLogUtil;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
  * Support operations with maven.
@@ -118,7 +121,7 @@ public class MavenSupport {
                 Set<Dependency> result;
                 try (
                         Socket clientSocket = serverSocket.accept();
-                        BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()))) {
+                        BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream(), UTF_8))) {
                     result = GSON.fromJson(in, new TypeToken<Set<Dependency>>() {}.getType());
                 } catch (IOException e) {
                     throw new UncheckedIOException(e);

@@ -25,9 +25,9 @@ inputs:
     required: false
     default: 'true'
   build-cache:
-    description: 'Wether to cache the Maven build (fast-forward)'
+    description: 'Wether to cache the Maven build (read-only, read-write)'
     required: false
-    default: 'true'
+    default: 'read-only'
   run:
     description: 'The bash command to run'
     required: true
@@ -78,9 +78,19 @@ runs:
         key: local-maven-${{ hashFiles('**/pom.xml') }}
         restore-keys: |
           local-maven-
-    - name: Build cache
-      if: ${{ inputs.build-cache == 'true' }}
+    - name: Build cache (read-write)
+      if: ${{ inputs.build-cache == 'read-write' }}
       uses: actions/cache@v3
+      with:
+        path: ./target/build-cache.tar
+        enableCrossOsArchive: true
+        key: build-cache-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: |
+          build-cache-${{ github.run_id }}-
+          build-cache-
+    - name: Build cache (read-only)
+      if: ${{ inputs.build-cache == 'read-only' }}
+      uses: actions/cache/restore@v3
       with:
         path: ./target/build-cache.tar
         enableCrossOsArchive: true
