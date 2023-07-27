@@ -91,7 +91,7 @@ jobs:
             mvn ${MAVEN_ARGS} \
               -am -pl ide-support/vscode-extension \
               -DskipTests \
-              -Pide-support \
+              -Pvscode-extension \
               install
   cli:
     needs: build
@@ -120,4 +120,4 @@ jobs:
               -DfinalName=${{ matrix.exe }} \
               package
           artifact-name: helidon-cli
-          artifact-path: ${{ matrix.exe }}
+          artifact-path: cli/impl/target/${{ matrix.exe }}

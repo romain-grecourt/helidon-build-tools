@@ -215,6 +215,7 @@
         <module>linker</module>
         <module>licensing</module>
         <module>dev-loop</module>
+        <module>ide-support</module>
     </modules>
 
     <build>
@@ -915,12 +916,6 @@
     </dependencyManagement>
 
     <profiles>
-        <profile>
-            <id>ide-support</id>
-            <modules>
-                <module>ide-support</module>
-            </modules>
-        </profile>
         <profile>
             <id>javadoc</id>
             <build>

@@ -176,7 +176,7 @@ release_build(){
     # Perform local deployment
     # shellcheck disable=SC2086
     mvn ${MAVEN_ARGS} clean deploy \
-        -Prelease,ide-support \
+        -Prelease \
         -DskipTests \
         -DskipRemoteStaging=true
 
