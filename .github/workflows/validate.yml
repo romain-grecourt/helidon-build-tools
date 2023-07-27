@@ -34,6 +34,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  copyright:
+    timeout-minutes: 10
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/common
+        with:
+          run: etc/scripts/copyright.sh
+  checkstyle:
+    timeout-minutes: 10
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/common
+        with:
+          run: etc/scripts/checkstyle.sh
+  shellcheck:
+    timeout-minutes: 10
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/common
+        with:
+          run: etc/scripts/shellcheck.sh
   build:
     timeout-minutes: 30
     runs-on: ubuntu-20.04
@@ -44,20 +70,6 @@ jobs:
           run: mvn ${MAVEN_ARGS} -T 8 install -DskipTests
           artifact-name: helidon-cli
           artifact-path: cli/impl/target/helidon.zip
-  check:
-    strategy:
-      matrix:
-        check: [ copyright, checkstyle, shellcheck ]
-    id: ${{ matrix.check }}
-    timeout-minutes: 10
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/common
-        with:
-          run: etc/scripts/${{ matrix.check }}.sh
   spotbugs:
     needs: build
     timeout-minutes: 30
