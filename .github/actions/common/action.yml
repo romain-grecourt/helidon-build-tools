@@ -89,7 +89,7 @@ runs:
           build-cache-${{ github.run_id }}-
           build-cache-
     - name: Exec
-      run: ${{ input.run }}
+      run: ${{ inputs.run }}
       shell: bash
     - name: Archive test results
       # https://github.com/actions/upload-artifact/issues/240
