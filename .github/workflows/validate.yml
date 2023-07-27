@@ -113,7 +113,7 @@ jobs:
           - os: ubuntu-20.04
             exe: helidon-linux-amd64
           - os: windows-2022
-            exe: helidon-windows-amd64.exe
+            exe: helidon-windows-amd64
           - os: macos-12
             exe: helidon-darwin-amd64
     runs-on: ${{ matrix.os }}
@@ -130,4 +130,4 @@ jobs:
               -DfinalName=${{ matrix.exe }} \
               package
           artifact-name: helidon-cli
-          artifact-path: cli/impl/target/${{ matrix.exe }}
+          artifact-path: cli/impl/target/${{ matrix.exe }}*
