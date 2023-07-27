@@ -1,0 +1,112 @@
+#
+# Copyright (c) 2023 Oracle and/or its affiliates.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: 'Common Exec'
+description: 'Common steps to execute a build command'
+inputs:
+  native-image:
+    description: 'Wether to setup GraalVM native-image'
+    required: false
+    default: 'false'
+  maven-cache:
+    description: 'Wether to cache the Maven local repository'
+    required: false
+    default: 'true'
+  build-cache:
+    description: 'Wether to cache the Maven build (fast-forward)'
+    required: false
+    default: 'true'
+  run:
+    description: 'The bash command to run'
+    required: true
+  artifact-name:
+    description: 'Name of the artifact to create'
+    required: false
+    default: ''
+  artifact-path:
+    description: 'Path of the files to include in the artifact'
+    required: false
+    default: ''
+  archive-test-result:
+    description: 'Wether to archive test results (excluded on windows)'
+    required: false
+    default: 'false'
+runs:
+  using: "composite"
+  steps:
+    - if: ${{ runner.os == 'Windows' }}
+      name: Use GNU tar
+      shell: cmd
+      run: |
+        echo "Adding GNU tar to PATH"
+        echo C:\Program Files\Git\usr\bin>>"%GITHUB_PATH%"
+    - name: Set up GraalVM
+      if: ${{ inputs.native-image == 'true' }}
+      uses: graalvm/setup-graalvm@v1
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        version: ${{ env.GRAALVM_VERSION }}
+        distribution: 'graalvm'
+        components: 'native-image'
+        check-for-updates: 'false'
+        set-java-home: 'false'
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Set up JDK
+      uses: actions/setup-java@v3.6.0
+      with:
+        distribution: ${{ env.JAVA_DISTRO }}
+        java-version: ${{ env.JAVA_VERSION }}
+    - name: Cache local Maven repository
+      if: ${{ inputs.maven-cache == 'true' }}
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.m2/repository/**
+          !~/.m2/repository/io/helidon/build-tools
+        enableCrossOsArchive: true
+        key: local-maven-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          local-maven-
+    - name: Build cache
+      if: ${{ inputs.build-cache == 'true' }}
+      uses: actions/cache@v3
+      with:
+        path: ./target/build-cache.tar
+        enableCrossOsArchive: true
+        key: build-cache-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: |
+          build-cache-${{ github.run_id }}-
+          build-cache-
+    - name: Exec
+      run: ${{ input.run }}
+      shell: bash
+    - name: Archive test results
+      # https://github.com/actions/upload-artifact/issues/240
+      if: ${{ archive-test-result == 'true' && matrix.os != 'windows-latest' && always()}}
+      uses: actions/upload-artifact@v3.1.2
+      with:
+        if-no-files-found: 'ignore'
+        name: test-results
+        path: |
+          **/target/surefire-reports/*.txt
+          **/target/failsafe-reports/*.txt
+          **/target/it/**/*.log
+    - name: Archive artifacts
+      if: ${{ inputs.artifact-name != '' && inputs.artifact-path != '' }}
+      uses: actions/upload-artifact@v3.1.2
+      with:
+        if-no-files-found: 'ignore'
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.artifact-path }}

@@ -39,224 +39,48 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
-      - name: Set up JDK
-        uses: actions/setup-java@v3.6.0
+      - uses: ./.github/actions/common
         with:
-          distribution: ${{ env.JAVA_DISTRO }}
-          java-version: ${{ env.JAVA_VERSION }}
-      - name: Cache local Maven repository
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.m2/repository/**
-            !~/.m2/repository/io/helidon/build-tools
-          enableCrossOsArchive: true
-          key: local-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            local-maven-
-      - name: Build cache
-        uses: actions/cache@v3
-        with:
-          path: ./target/build-cache.tar
-          enableCrossOsArchive: true
-          key: build-cache-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            build-cache-${{ github.run_id }}-
-            build-cache-
-      - name: Maven build
-        shell: bash
-        run: |
-          mvn ${MAVEN_ARGS} -T 8 install -DskipTests
-      - name: Archive generic cli
-        uses: actions/upload-artifact@v3.1.2
-        with:
-          name: helidon-cli
-          path: |
-            cli/impl/target/helidon.zip
-  copyright:
-    timeout-minutes: 30
+          run: mvn ${MAVEN_ARGS} -T 8 install -DskipTests
+          artifact-name: helidon-cli
+          artifact-path: cli/impl/target/helidon.zip
+  check:
+    strategy:
+      matrix:
+        check: [ copyright, checkstyle, shellcheck ]
+    id: ${{ matrix.check }}
+    timeout-minutes: 10
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-      - uses: actions/setup-java@v3.6.0
+      - uses: ./.github/actions/common
         with:
-          distribution: ${{ env.JAVA_DISTRO }}
-          java-version: ${{ env.JAVA_VERSION }}
-      - uses: actions/cache@v3
-        with:
-          path: |
-            ~/.m2/repository/**
-            !~/.m2/repository/io/helidon/build-tools
-          enableCrossOsArchive: true
-          key: local-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            local-maven-
-      - name: Copyright
-        run: etc/scripts/copyright.sh
-  checkstyle:
-    timeout-minutes: 30
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-java@v3.6.0
-        with:
-          distribution: ${{ env.JAVA_DISTRO }}
-          java-version: ${{ env.JAVA_VERSION }}
-      - uses: actions/cache@v3
-        with:
-          path: |
-            ~/.m2/repository/**
-            !~/.m2/repository/io/helidon
-          enableCrossOsArchive: true
-          key: local-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            local-maven-
-      - name: Checkstyle
-        run: etc/scripts/checkstyle.sh
-  shellcheck:
-    timeout-minutes: 30
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Run ShellCheck
-        run: etc/scripts/shellcheck.sh
+          run: etc/scripts/${{ matrix.check }}.sh
   spotbugs:
     needs: build
     timeout-minutes: 30
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-java@v3.6.0
+      - uses: ./.github/actions/common
         with:
-          distribution: ${{ env.JAVA_DISTRO }}
-          java-version: ${{ env.JAVA_VERSION }}
-      - name: Cache local Maven repository
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.m2/repository/**
-            !~/.m2/repository/io/helidon/build-tools
-          enableCrossOsArchive: true
-          key: local-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            local-maven-
-      - name: Build cache
-        uses: actions/cache/restore@v3
-        with:
-          path: ./target/build-cache.tar
-          key: build-cache-${{ github.run_id }}-${{ github.run_attempt }}
-      - name: Spotbugs
-        shell: bash
-        run: |
-          mvn ${MAVEN_ARGS} -T 8 -DskipTests -Pspotbugs verify
-#  build0:
-#    timeout-minutes: 30
-#    strategy:
-#      matrix:
-#        os: [ ubuntu-20.04, windows-2022 ]
-#    runs-on: ${{ matrix.os }}
-#    steps:
-#      - if: ${{ runner.os == 'Windows' }}
-#        name: Use GNU tar
-#        shell: cmd
-#        run: |
-#          echo "Adding GNU tar to PATH"
-#          echo C:\Program Files\Git\usr\bin>>"%GITHUB_PATH%"
-#      - uses: actions/checkout@v3
-#      - name: Set up JDK
-#        uses: actions/setup-java@v3.6.0
-#        with:
-#          distribution: ${{ env.JAVA_DISTRO }}
-#          java-version: ${{ env.JAVA_VERSION }}
-#      - name: Cache local Maven repository
-#        uses: actions/cache@v3
-#        with:
-#          path: |
-#            ~/.m2/repository/**
-#            !~/.m2/repository/io/helidon/build-tools
-#          enableCrossOsArchive: true
-#          key: local-maven-${{ hashFiles('**/pom.xml') }}
-#          restore-keys: |
-#            local-maven-
-#      - name: Maven build
-#        run: |
-#          mvn ${MAVEN_ARGS} install
-#        shell: bash
-#      - name: Archive test results
-#        uses: actions/upload-artifact@v3.1.2
-#        # https://github.com/actions/upload-artifact/issues/240
-#        if: ${{ runner.os != 'Windows' && always() }}
-#        with:
-#          name: test-results
-#          path: |
-#            **/target/surefire-reports/*.txt
-#            **/target/it/**/*.log
-#      - name: Archive generic cli
-#        uses: actions/upload-artifact@v3.1.2
-#        if: ${{ runner.os == 'Linux' && always() }}
-#        with:
-#          name: cli-generic
-#          path: |
-#            cli/impl/target/helidon.zip
+          run: mvn ${MAVEN_ARGS} -T 8 -DskipTests -Pspotbugs verify
   vscode-extension:
     needs: build
     timeout-minutes: 30
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
-      - name: Set up JDK
-        uses: actions/setup-java@v3.6.0
+      - uses: ./.github/actions/common
         with:
-          distribution: ${{ env.JAVA_DISTRO }}
-          java-version: ${{ env.JAVA_VERSION }}
-      - name: Cache local Maven repository
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.m2/repository/**
-            !~/.m2/repository/io/helidon/build-tools
-          enableCrossOsArchive: true
-          key: local-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            local-maven-
-      - name: Cache node modules
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.npm
-            ./**/node_modules/**
-          key: node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            node-
-      - name: Build cache
-        uses: actions/cache/restore@v3
-        with:
-          path: ./target/build-cache.tar
-          key: build-cache-${{ github.run_id }}-${{ github.run_attempt }}
-      - name: Maven build
-        run: |
-          mvn ${MAVEN_ARGS} \
-            -am -pl ide-support/vscode-extension \
-            -Pide-support \
-            -DskipTests \
-            install
-        shell: bash
-      - name: Archive logs
-        uses: actions/upload-artifact@v3.1.2
-        if: ${{ always() }}
-        with:
-          name: npm-logs
-          if-no-files-found: 'ignore'
-          path: |
-            ~/.npm/_logs/*
-      - name: Archive VSCode extension
-        uses: actions/upload-artifact@v3.1.2
-        with:
-          name: helidon-vscode
-          path: |
-            ide-support/vscode-extension/target/vscode-helidon.vsix
+          run: |
+            mvn ${MAVEN_ARGS} \
+              -am -pl ide-support/vscode-extension \
+              -DskipTests \
+              -Pide-support \
+              install
   cli:
     needs: build
     timeout-minutes: 30
@@ -265,57 +89,23 @@ jobs:
         os: [ ubuntu-20.04, windows-2022, macos-12 ]
         include:
           - os: ubuntu-20.04
-            platform: linux-amd64
+            exe: helidon-linux-amd64
           - os: windows-2022
-            platform: windows-amd64
+            exe: helidon-windows-amd64.exe
           - os: macos-12
-            platform: darwin-amd64
+            exe: helidon-darwin-amd64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
-      - name: Set up GraalVM
-        uses: graalvm/setup-graalvm@v1
+      - uses: ./.github/actions/common
         with:
-          java-version: ${{ env.JAVA_VERSION }}
-          version: ${{ env.GRAALVM_VERSION }}
-          distribution: 'graalvm'
-          components: 'native-image'
-          check-for-updates: 'false'
-          set-java-home: 'false'
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Set up JDK
-        uses: actions/setup-java@v3.6.0
-        with:
-          distribution: ${{ env.JAVA_DISTRO }}
-          java-version: ${{ env.JAVA_VERSION }}
-      - name: Cache local Maven repository
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.m2/repository/**
-            !~/.m2/repository/io/helidon/build-tools
-          enableCrossOsArchive: true
-          key: local-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            local-maven-
-      - name: Build cache
-        uses: actions/cache/restore@v3
-        with:
-          path: ./target/build-cache.tar
-          key: build-cache-${{ github.run_id }}-${{ github.run_attempt }}
-      - name: Build native cli
-        run: |
-          mvn ${MAVEN_ARGS} \
-            -am -pl cli/impl \
-            -DskipTests \
-            -Pnative-image,!toolchain \
-            -DfinalName=helidon-${{ matrix.platform }} \
-            package
-        shell: bash
-      - name: Archive native cli
-        uses: actions/upload-artifact@v3.1.2
-        with:
-          name: helidon-cli
-          path: |
-            cli/impl/target/helidon
-            cli/impl/target/helidon.exe
+          native-image: true
+          run: |
+            mvn ${MAVEN_ARGS} \
+              -am -pl cli/impl \
+              -DskipTests \
+              -Pnative-image,!toolchain \
+              -DfinalName=${{ matrix.exe }} \
+              package
+          artifact-name: helidon-cli
+          artifact-path: ${{ matrix.exe }}
