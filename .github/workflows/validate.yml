@@ -68,6 +68,7 @@ jobs:
       - uses: ./.github/actions/common
         with:
           build-cache: read-write
+          maven-cache: read-write
           run: |
             mvn ${MAVEN_ARGS} -T 8 \
               -DskipTests \
