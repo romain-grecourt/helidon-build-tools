@@ -51,27 +51,28 @@ jobs:
             ~/.m2/repository/**
             !~/.m2/repository/io/helidon/build-tools
           enableCrossOsArchive: true
-          key: local-maven-${{ hashFiles('**/pom.xml') }}-${{ github.job }}
+          key: local-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
-            local-maven-${{ hashFiles('**/pom.xml') }}
             local-maven-
       - name: Build cache
         uses: actions/cache@v3
         with:
           path: ./target/build-cache.tar
           enableCrossOsArchive: true
-          key: build-cache-${{ github.run_id }}-${{ github.run_number }}
+          key: build-cache-${{ github.run_id }}-${{ github.job }}
           restore-keys: |
+            build-cache-${{ github.run_id }}-
             build-cache-
       - name: Maven build
+        shell: bash
         run: |
           mvn ${MAVEN_ARGS} -T 8 install -DskipTests
-        shell: bash
       - name: Archive generic cli
         uses: actions/upload-artifact@v3.1.2
-        if: ${{ runner.os == 'Linux' && always() }}
+        if: ${{ always() }}
         with:
           name: cli-generic
+          if-no-files-found: 'ignore'
           path: |
             cli/impl/target/helidon.zip
 #  copyright:
@@ -91,9 +92,8 @@ jobs:
 #            ~/.m2/repository/**
 #            !~/.m2/repository/io/helidon/build-tools
 #          enableCrossOsArchive: true
-#          key: local-maven-${{ hashFiles('**/pom.xml') }}-${{ github.job }}
+#          key: local-maven-${{ hashFiles('**/pom.xml') }}
 #          restore-keys: |
-#            local-maven-${{ hashFiles('**/pom.xml') }}
 #            local-maven-
 #      - name: Copyright
 #        run: etc/scripts/copyright.sh
@@ -112,9 +112,8 @@ jobs:
 #            ~/.m2/repository/**
 #            !~/.m2/repository/io/helidon
 #          enableCrossOsArchive: true
-#          key: local-maven-${{ hashFiles('**/pom.xml') }}-${{ github.job }}
+#          key: local-maven-${{ hashFiles('**/pom.xml') }}
 #          restore-keys: |
-#            local-maven-${{ hashFiles('**/pom.xml') }}
 #            local-maven-
 #      - name: Checkstyle
 #        run: etc/scripts/checkstyle.sh
@@ -142,19 +141,16 @@ jobs:
             ~/.m2/repository/**
             !~/.m2/repository/io/helidon/build-tools
           enableCrossOsArchive: true
-          key: local-maven-${{ hashFiles('**/pom.xml') }}-${{ github.job }}
+          key: local-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
-            local-maven-${{ hashFiles('**/pom.xml') }}
             local-maven-
       - name: Build cache
-        uses: actions/cache@v3
+        uses: actions/cache/restore@v3
         with:
           path: ./target/build-cache.tar
-          enableCrossOsArchive: true
-          key: build-cache-${{ github.run_id }}-${{ github.run_number }}
-          restore-keys: |
-            build-cache-
+          key: build-cache-${{ github.run_id }}-${{ github.job }}
       - name: Spotbugs
+        shell: bash
         run: |
           mvn ${MAVEN_ARGS} -T 8 -DskipTests -Pspotbugs verify -Dspotbugs.skip=true
 #  build0:
@@ -183,9 +179,8 @@ jobs:
 #            ~/.m2/repository/**
 #            !~/.m2/repository/io/helidon/build-tools
 #          enableCrossOsArchive: true
-#          key: local-maven-${{ hashFiles('**/pom.xml') }}-${{ github.job }}
+#          key: local-maven-${{ hashFiles('**/pom.xml') }}
 #          restore-keys: |
-#            local-maven-${{ hashFiles('**/pom.xml') }}
 #            local-maven-
 #      - name: Maven build
 #        run: |
@@ -224,9 +219,8 @@ jobs:
 #            ~/.m2/repository/**
 #            !~/.m2/repository/io/helidon/build-tools
 #          enableCrossOsArchive: true
-#          key: local-maven-${{ hashFiles('**/pom.xml') }}-${{ github.job }}
+#          key: local-maven-${{ hashFiles('**/pom.xml') }}
 #          restore-keys: |
-#            local-maven-${{ hashFiles('**/pom.xml') }}
 #            local-maven-
 #      - name: Cache node modules
 #        uses: actions/cache@v3
@@ -297,9 +291,8 @@ jobs:
 #            ~/.m2/repository/**
 #            !~/.m2/repository/io/helidon/build-tools
 #          enableCrossOsArchive: true
-#          key: local-maven-${{ hashFiles('**/pom.xml') }}-${{ github.job }}
+#          key: local-maven-${{ hashFiles('**/pom.xml') }}
 #          restore-keys: |
-#            local-maven-${{ hashFiles('**/pom.xml') }}
 #            local-maven-
 #      - name: Build native cli
 #        run: |
