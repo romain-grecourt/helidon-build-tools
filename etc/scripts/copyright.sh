@@ -40,11 +40,11 @@ readonly SCRIPT_PATH
 WS_DIR=$(cd $(dirname -- "${SCRIPT_PATH}") ; cd ../.. ; pwd -P)
 readonly WS_DIR
 
-readonly LOG_FILE
 LOG_FILE=$(mktemp -t XXXcopyright-log)
+readonly LOG_FILE
 
-readonly RESULT_FILE
 RESULT_FILE=$(mktemp -t XXXcopyright-result)
+readonly RESULT_FILE
 
 die() { echo "${1}" ; exit 1 ;}
 
