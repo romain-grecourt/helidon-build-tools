@@ -39,7 +39,7 @@ inputs:
     description: 'Path of the files to include in the artifact'
     required: false
     default: ''
-  archive-test-result:
+  archive-test-results:
     description: 'Wether to archive test results (excluded on windows)'
     required: false
     default: 'false'
@@ -93,7 +93,7 @@ runs:
       shell: bash
     - name: Archive test results
       # https://github.com/actions/upload-artifact/issues/240
-      if: ${{ archive-test-result == 'true' && matrix.os != 'windows-latest' && always()}}
+      if: ${{ inputs.archive-test-results == 'true' && matrix.os != 'windows-latest' && always() }}
       uses: actions/upload-artifact@v3.1.2
       with:
         if-no-files-found: 'ignore'
