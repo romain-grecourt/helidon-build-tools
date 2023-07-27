@@ -111,11 +111,11 @@ jobs:
         os: [ ubuntu-20.04, windows-2022, macos-12 ]
         include:
           - os: ubuntu-20.04
-            exe: helidon-linux-amd64
+            exe-name: helidon-linux-amd64
           - os: windows-2022
-            exe: helidon-windows-amd64
+            exe-name: helidon-windows-amd64
           - os: macos-12
-            exe: helidon-darwin-amd64
+            exe-name: helidon-darwin-amd64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
@@ -127,7 +127,7 @@ jobs:
               -am -pl cli/impl \
               -DskipTests \
               -Pnative-image,!toolchain \
-              -DfinalName=${{ matrix.exe }} \
+              -DfinalName=${{ matrix.exe-name }} \
               package
           artifact-name: helidon-cli
-          artifact-path: cli/impl/target/${{ matrix.exe }}*
+          artifact-path: cli/impl/target/${{ matrix.exe-name }}*
