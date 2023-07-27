@@ -175,6 +175,7 @@
                             <goal>jar</goal>
                         </goals>
                         <configuration combine.self="override">
+                            <outputDirectory>${project.build.directory}/libs</outputDirectory>
                             <classifier>cli</classifier>
                             <archive>
                                 <manifest>
@@ -227,7 +228,6 @@
                         </goals>
                         <configuration>
                             <appendAssemblyId>false</appendAssemblyId>
-                            <outputDirectory>${project.build.directory}/distribution</outputDirectory>
                             <descriptors>
                                 <descriptor>src/main/assembly/distribution.xml</descriptor>
                             </descriptors>
@@ -291,7 +291,9 @@
                                         <argument>--install-exit-handlers</argument>
                                         <argument>--no-fallback</argument>
                                         <argument>-cp</argument>
-                                        <argument>${build.dir}${file.separator}${finalName}.jar${path.separator}${build.dir}${file.separator}libs${file.separator}*${path.separator}${build.dir}${file.separator}native</argument>
+                                        <argument>
+                                            ${build.dir}${file.separator}${finalName}.jar${path.separator}${build.dir}${file.separator}libs${file.separator}*${path.separator}${build.dir}${file.separator}native
+                                        </argument>
                                         <argument>${mainClass}</argument>
                                     </arguments>
                                 </configuration>

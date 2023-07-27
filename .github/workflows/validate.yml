@@ -1,12 +1,32 @@
+#
+# Copyright (c) 2023 Oracle and/or its affiliates.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 name: "Validate PR"
 
-on: [pull_request, push, workflow_dispatch]
+on: [ pull_request, push, workflow_dispatch ]
 
 env:
   JAVA_VERSION: '17'
   JAVA_DISTRO: 'temurin'
-  HELIDON_PIPELINES: 'true'
-  MAVEN_HTTP_ARGS: '-Dmaven.wagon.httpconnectionManager.ttlSeconds=60 -Dmaven.wagon.http.retryHandler.count=3'
+  GRAALVM_VERSION: '21.3.0'
+  MAVEN_ARGS: |
+    -B --fail-at-end
+    -Dmaven.test.failure.ignore=false
+    -Dmaven.wagon.httpconnectionManager.ttlSeconds=60
+    -Dmaven.wagon.http.retryHandler.count=3
+    -Djdk.toolchain.version=${JAVA_VERSION}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -20,12 +40,19 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-      - name: Set up JDK 17
-        uses: actions/setup-java@v3.6.0
+      - uses: actions/setup-java@v3.6.0
         with:
           distribution: ${{ env.JAVA_DISTRO }}
           java-version: ${{ env.JAVA_VERSION }}
-          cache: maven
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.m2/repository/**
+            !~/.m2/repository/io/helidon/build-tools
+          enableCrossOsArchive: true
+          key: maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            maven-
       - name: Copyright
         run: etc/scripts/copyright.sh
   checkstyle:
@@ -33,54 +60,148 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
-      - name: Set up JDK 17
-        uses: actions/setup-java@v3.6.0
+      - uses: actions/setup-java@v3.6.0
         with:
           distribution: ${{ env.JAVA_DISTRO }}
           java-version: ${{ env.JAVA_VERSION }}
-          cache: maven
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.m2/repository/**
+            !~/.m2/repository/io/helidon
+          enableCrossOsArchive: true
+          key: maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            maven-
       - name: Checkstyle
         run: etc/scripts/checkstyle.sh
+  shellcheck:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run ShellCheck
+        run: etc/scripts/shellcheck.sh
   spotbugs:
     timeout-minutes: 30
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
-      - name: Set up JDK 17
-        uses: actions/setup-java@v3.6.0
+      - uses: actions/setup-java@v3.6.0
         with:
           distribution: ${{ env.JAVA_DISTRO }}
           java-version: ${{ env.JAVA_VERSION }}
-          cache: maven
+      - name: Cache Maven repository
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.m2/repository/**
+            !~/.m2/repository/io/helidon/build-tools
+          enableCrossOsArchive: true
+          key: maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            maven-
       - name: Spotbugs
         run: etc/scripts/spotbugs.sh
   build:
-    timeout-minutes: 60
+    timeout-minutes: 30
     strategy:
       matrix:
-        os: [ ubuntu-20.04, windows-latest ]
-        include:
-          - os: ubuntu-20.04
-            build_script: etc/scripts/github-build.sh
-          - os: windows-latest
-            build_script: etc/scripts/build.bat
+        os: [ ubuntu-20.04, windows-2022 ]
     runs-on: ${{ matrix.os }}
     steps:
+      - if: ${{ runner.os == 'Windows' }}
+        name: Use GNU tar
+        shell: cmd
+        run: |
+          echo "Adding GNU tar to PATH"
+          echo C:\Program Files\Git\usr\bin>>"%GITHUB_PATH%"
       - uses: actions/checkout@v3
-      - name: Set up JDK 17
+      - name: Set up JDK
         uses: actions/setup-java@v3.6.0
         with:
           distribution: ${{ env.JAVA_DISTRO }}
           java-version: ${{ env.JAVA_VERSION }}
-          cache: maven
+      - name: Cache Maven repository
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.m2/repository/**
+            !~/.m2/repository/io/helidon/build-tools
+          enableCrossOsArchive: true
+          key: maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            maven-
       - name: Maven build
-        run: ${{ matrix.build_script }}
+        run: |
+          mvn ${MAVEN_ARGS} install
+        shell: bash
       - name: Archive test results
         uses: actions/upload-artifact@v3.1.2
-        #https://github.com/actions/upload-artifact/issues/240
-        if: ${{ matrix.os != 'windows-latest' && always() }}
+        # https://github.com/actions/upload-artifact/issues/240
+        if: ${{ runner.os != 'Windows' && always() }}
         with:
           name: test-results
+          path: |
+            **/target/surefire-reports/*.txt
+            **/target/it/**/*.log
+      - name: Archive generic cli
+        uses: actions/upload-artifact@v3.1.2
+        if: ${{ runner.os == 'Linux' && always() }}
+        with:
+          name: cli-generic
+          path: |
+            cli/impl/target/helidon.zip
+  vscode-extension:
+    timeout-minutes: 30
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up JDK
+        uses: actions/setup-java@v3.6.0
+        with:
+          distribution: ${{ env.JAVA_DISTRO }}
+          java-version: ${{ env.JAVA_VERSION }}
+      - name: Cache Maven repository
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.m2/repository/**
+            !~/.m2/repository/io/helidon/build-tools
+          enableCrossOsArchive: true
+          key: maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            maven-
+      - name: Cache node modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.npm
+            ./**/node_modules/**
+          key: node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            node-
+      - name: Maven build
+        run: |
+          mvn ${MAVEN_ARGS} \
+            -am -pl ide-support/vscode-extension \
+            -Pide-support \
+            -Dsurefire.includes="io/helidon/lsp/**" \
+            install
+        shell: bash
+      - name: Archive logs
+        uses: actions/upload-artifact@v3.1.2
+        if: ${{ always() }}
+        with:
+          name: npm-logs
+          if-no-files-found: 'ignore'
+          path: |
+            ~/.npm/_logs/*
+      - name: Archive test results
+        uses: actions/upload-artifact@v3.1.2
+        with:
+          name: test-results
+          if-no-files-found: 'ignore'
           path: |
             **/target/surefire-reports/*.txt
             **/target/it/**/*.log
@@ -90,10 +211,51 @@ jobs:
           name: helidon-vscode
           path: |
             ide-support/vscode-extension/target/vscode-helidon.vsix
-  shellcheck:
-    name: shellcheck
-    runs-on: ubuntu-latest
+  cli:
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        os: [ ubuntu-20.04, windows-2022, macos-12 ]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
-      - name: Run ShellCheck
-        run: etc/scripts/shellcheck.sh
+      - name: Set up GraalVM
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          version: ${{ env.GRAALVM_VERSION }}
+          distribution: 'graalvm'
+          components: 'native-image'
+          check-for-updates: 'false'
+          set-java-home: 'false'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up JDK
+        uses: actions/setup-java@v3.6.0
+        with:
+          distribution: ${{ env.JAVA_DISTRO }}
+          java-version: ${{ env.JAVA_VERSION }}
+      - name: Cache Maven repository
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.m2/repository/**
+            !~/.m2/repository/io/helidon/build-tools
+          enableCrossOsArchive: true
+          key: maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            maven-
+      - name: Build native cli
+        run: |
+          mvn ${MAVEN_ARGS} \
+            -am -pl cli/impl \
+            -DskipTests \
+            -Pnative-image,!toolchain \
+            package
+        shell: bash
+      - name: Archive native cli
+        uses: actions/upload-artifact@v3.1.2
+        with:
+          name: cli-${{ runner.os }}
+          path: |
+            cli/impl/target/helidon
+            cli/impl/target/helidon.exe

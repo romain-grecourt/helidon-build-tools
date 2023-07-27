@@ -80,8 +80,8 @@ public class FunctionalUtils {
     static void downloadFileFromUrl(Path destination, URL url) {
         try (InputStream is = NetworkConnection.builder()
                 .url(url)
-                .connectTimeout(100*60*1000)
-                .readTimeout(100*60*1000)
+                .connectTimeout(100 * 60 * 1000)
+                .readTimeout(100 * 60 * 1000)
                 .open();
              OutputStream os = Files.newOutputStream(destination)) {
             is.transferTo(os);
@@ -150,7 +150,7 @@ public class FunctionalUtils {
         if (version != null) {
             return version;
         } else {
-            throw new IllegalStateException(String.format("System property %s is not set",  key));
+            throw new IllegalStateException(String.format("System property %s is not set", key));
         }
     }
 

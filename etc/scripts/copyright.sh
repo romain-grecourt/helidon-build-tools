@@ -43,18 +43,16 @@ readonly WS_DIR
 RESULT_FILE=$(mktemp -t XXXcopyright-result)
 readonly RESULT_FILE
 
-# shellcheck disable=SC1091
-source "${WS_DIR}"/etc/scripts/pipeline-env.sh
-
 die(){ echo "${1}" ; exit 1 ;}
 
 # shellcheck disable=SC2086
 mvn ${MAVEN_ARGS} -q org.glassfish.copyright:glassfish-copyright-maven-plugin:copyright \
-        -Dcopyright.exclude="${WS_DIR}"/etc/copyright-exclude.txt \
-        -Dcopyright.template="${WS_DIR}"/etc/copyright.txt \
-        -Dcopyright.scm="git" \
-        -Pide-support \
-        > "${RESULT_FILE}" || die "Error running the Maven command"
+    -f "${WS_DIR}"/pom.xml \
+    -Dcopyright.exclude="${WS_DIR}"/etc/copyright-exclude.txt \
+    -Dcopyright.template="${WS_DIR}"/etc/copyright.txt \
+    -Dcopyright.scm="git" \
+    -Pide-support \
+    > "${RESULT_FILE}" || die "Error running the Maven command"
 
 grep -i "copyright" "${RESULT_FILE}" \
     && die "COPYRIGHT ERROR" || echo "COPYRIGHT OK"

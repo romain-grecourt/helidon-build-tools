@@ -174,12 +174,12 @@ public class CliMavenTest {
         Path mavenBinDir = mavenDirectory.resolve("apache-maven-3.8.2/bin");
         generateBareSe(workDir, "runCliMavenPluginJansiIssue" + pluginVersion);
         try {
-             ProcessMonitor monitor = MavenCommand.builder()
+            ProcessMonitor monitor = MavenCommand.builder()
                     .executable(mavenBinDir.resolve(FunctionalUtils.getMvnExecutable(mavenBinDir)))
                     .directory(workDir.resolve("bare-se"))
                     .stdOut(new PrintStream(stream))
                     .stdErr(new PrintStream(stream))
-                     .addArgument("-B")
+                    .addArgument("-B")
                     .addArgument("-Ddev.appJvmArgs=-Dserver.port=" + port)
                     .addArgument("io.helidon.build-tools:helidon-cli-maven-plugin:" + pluginVersion + ":dev")
                     .build()
@@ -304,7 +304,7 @@ public class CliMavenTest {
         assertThat(e.getMessage(), containsString("BUILD FAILURE"));
     }
 
-    void generateBareSe(Path wd,  String artifactId) {
+    void generateBareSe(Path wd, String artifactId) {
         FileUtils.requireDirectory(wd);
         assertThat(FileUtils.list(wd).size(), is(1));
         Helidon.execute(

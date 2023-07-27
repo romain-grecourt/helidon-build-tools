@@ -60,7 +60,7 @@ public class CliFunctionalV2Test {
     @BeforeAll
     static void setup() throws IOException {
         setMavenLocalRepoUrl();
-        Path input = Files.createTempFile("input","txt");
+        Path input = Files.createTempFile("input", "txt");
         Path executableDir = Path.of(getProperty("helidon.executable.directory"));
         workDir = Files.createTempDirectory("generated");
         inputFile = Files.writeString(input, "\n\n\n").toFile();
@@ -141,7 +141,7 @@ public class CliFunctionalV2Test {
     @Test
     @EnabledOnOs(OS.LINUX)
     void interactiveTestShellScript() {
-        String output =  cliProcessBuilder()
+        String output = cliProcessBuilder()
                 .workDirectory(workDir)
                 .input(inputFile)
                 .executable(helidonShell)
@@ -154,7 +154,7 @@ public class CliFunctionalV2Test {
     @Test
     @EnabledOnOs(OS.WINDOWS)
     void interactiveTestBatScript() {
-        String output =  cliProcessBuilder()
+        String output = cliProcessBuilder()
                 .workDirectory(workDir)
                 .input(inputFile)
                 .executable(helidonBatch)
