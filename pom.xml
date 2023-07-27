@@ -1097,7 +1097,7 @@
                                 <exclude>.git/**</exclude>
                                 <exclude>.github/**</exclude>>
                                 <exclude>etc/**</exclude>
-                                <exclude>*/vscode-extension/**</exclude>
+                                <exclude>**/vscode-extension/**</exclude>
                             </projectFilesExcludes>
                             <enableChecksums>true</enableChecksums>
                             <includeAllChecksums>true</includeAllChecksums>
