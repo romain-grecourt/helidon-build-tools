@@ -1127,6 +1127,8 @@
                         <configuration>
                             <projectFilesExcludes>
                                 <exclude>.git/**</exclude>
+                                <exclude>.github/**</exclude>>
+                                <exclude>etc/**</exclude>
                             </projectFilesExcludes>
                             <buildFilesExcludes>
                                 <exclude>classes/io/grpc/**/*.class</exclude>
