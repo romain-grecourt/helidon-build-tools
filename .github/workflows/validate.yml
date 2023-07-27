@@ -35,7 +35,7 @@ concurrency:
 
 jobs:
   copyright:
-    timeout-minutes: 10
+    timeout-minutes: 5
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
@@ -45,7 +45,7 @@ jobs:
         with:
           run: etc/scripts/copyright.sh
   checkstyle:
-    timeout-minutes: 10
+    timeout-minutes: 5
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
@@ -53,7 +53,7 @@ jobs:
         with:
           run: etc/scripts/checkstyle.sh
   shellcheck:
-    timeout-minutes: 10
+    timeout-minutes: 5
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
@@ -61,27 +61,36 @@ jobs:
         with:
           run: etc/scripts/shellcheck.sh
   build:
-    timeout-minutes: 30
+    timeout-minutes: 15
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
         with:
-          run: mvn ${MAVEN_ARGS} -T 8 install -DskipTests
+          run: |
+            mvn ${MAVEN_ARGS} -T 8 \
+              -DskipTests \
+              -Dnpm.skip=true \
+              -Pvscode \
+              install
           artifact-name: helidon-cli
           artifact-path: cli/impl/target/helidon.zip
   spotbugs:
     needs: build
-    timeout-minutes: 30
+    timeout-minutes: 15
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
         with:
-          run: mvn ${MAVEN_ARGS} -T 8 -DskipTests -Pspotbugs verify
+          run: |
+            mvn ${MAVEN_ARGS} -T 8 \
+              -DskipTests \
+              -Pspotbugs \
+              verify
   vscode-extension:
     needs: build
-    timeout-minutes: 30
+    timeout-minutes: 15
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
@@ -91,11 +100,11 @@ jobs:
             mvn ${MAVEN_ARGS} \
               -am -pl ide-support/vscode-extension \
               -DskipTests \
-              -Pvscode-extension \
+              -Pvscode \
               install
   cli:
     needs: build
-    timeout-minutes: 30
+    timeout-minutes: 15
     strategy:
       matrix:
         os: [ ubuntu-20.04, windows-2022, macos-12 ]
