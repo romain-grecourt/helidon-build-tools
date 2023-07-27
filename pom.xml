@@ -397,6 +397,7 @@
                         <!--suppress UnresolvedMavenProperty -->
                         <excludeFilterFile>${spotbugs.exclude}</excludeFilterFile>
                         <xmlOutput>true</xmlOutput>
+                        <fork>false</fork>
                         <plugins>
                             <plugin>
                                 <groupId>com.h3xstream.findsecbugs</groupId>
