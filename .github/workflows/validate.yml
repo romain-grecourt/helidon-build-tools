@@ -132,3 +132,7 @@ jobs:
               package
           artifact-name: helidon-cli
           artifact-path: cli/impl/target/${{ matrix.exe-name }}*
+
+# TODO:
+#  - javadoc
+#  - tests
