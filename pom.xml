@@ -1037,6 +1037,7 @@
                         <artifactId>maven-invoker-plugin</artifactId>
                         <configuration>
                             <environmentVariables>
+                                <!--suppress LongLine -->
                                 <MAVEN_DEBUG_OPTS>-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:8001</MAVEN_DEBUG_OPTS>
                             </environmentVariables>
                         </configuration>
@@ -1110,6 +1111,32 @@
                                 </goals>
                             </execution>
                         </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>cache</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>io.helidon.build-tools</groupId>
+                        <artifactId>helidon-build-cache-maven-plugin</artifactId>
+                        <version>3.0.5</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <projectFilesExcludes>
+                                <exclude>.git/**</exclude>
+                            </projectFilesExcludes>
+                            <buildFilesExcludes>
+                                <exclude>classes/io/grpc/**/*.class</exclude>
+                            </buildFilesExcludes>
+                            <enableChecksums>true</enableChecksums>
+                            <includeAllChecksums>true</includeAllChecksums>
+                            <archiveFile>${project.build.directory}/build-cache.tar</archiveFile>
+                            <loadArchive>true</loadArchive>
+                            <createArchive>true</createArchive>
+                        </configuration>
                     </plugin>
                 </plugins>
             </build>
