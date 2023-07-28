@@ -71,8 +71,6 @@ jobs:
           run: |
             mvn ${MAVEN_ARGS} -T 8 \
               -DskipTests \
-              -Dnpm.skip=true \
-              -Pvscode \
               install
           artifact-name: helidon-cli
           artifact-path: cli/impl/target/helidon.zip
@@ -103,10 +101,28 @@ jobs:
               -DskipTests \
               -Pjavadoc \
               package
-  tests:
+  tests-matrix:
     needs: build
-    timeout-minutes: 15
+    timeout-minutes: 5
     runs-on: ubuntu-20.04
+    outputs:
+      matrix: ${{ steps.tests-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v3
+      - id: tests-matrix
+        uses: ./.github/actions/tests-matrix
+        with:
+          test-groups: |
+            {
+              "cli": [ "cli/**", "devloop/**" ]
+            }
+  tests:
+    needs: tests-matrix
+    timeout-minutes: 15
+    strategy:
+      matrix: ${{ fromJSON(needs.tests-matrix.outputs.matrix) }}
+    runs-on: ubuntu-20.04
+    name: tests/${{ matrix.test-group }}
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
@@ -115,6 +131,7 @@ jobs:
           archive-test-results: true
           run: |
             mvn ${MAVEN_ARGS} \
+              -am -pl ${{ matrix.test-modules }} \
               verify
   vscode-extension:
     needs: build
@@ -136,7 +153,6 @@ jobs:
     timeout-minutes: 15
     strategy:
       matrix:
-        os: [ ubuntu-20.04, windows-2022, macos-12 ]
         include:
           - os: ubuntu-20.04
             platform: linux-amd64

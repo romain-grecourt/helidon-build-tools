@@ -1,0 +1,50 @@
+#
+# Copyright (c) 2023 Oracle and/or its affiliates.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+name: 'Tests Matrix'
+description: |
+  Generates a matrix to run Maven tests.
+  Takes a map (JSON) of test group names to glob expressions.
+  Glob expressions are expanded into a Maven project list E.g. -pl dir1,di2
+  A 'misc' test group is always added to represent everything else (by negating all the resolved modules).
+inputs:
+  test-groups:
+    description: |
+      JSON object that describes the test groups. E.g.
+      {
+        "group1": [ "dir1/**", "dir2/**" ],
+        "group2": [ "dir3/**" ]
+      }
+    required: false
+    default: 'false'
+outputs:
+  matrix:
+    value: ${{ steps.exec-tests-matrix.outputs.matrix }}
+    description: |
+      E.g.
+      includes:
+        - test-group: group1
+          test-modules: -pl dir1,dir2,dir2a
+        - test-group: group2
+          test-modules: -pl dir3,dir3a
+        - test-group: misc
+          test-modules: -pl !dir1,!dir2,!dir2a,!dir3,!dir3a
+runs:
+  using: "composite"
+  steps:
+    - id: exec-tests-matrix
+      run: |
+        ./.github/actions/tests-matrix/tests-matrix.sh >> "${GITHUB_OUTPUT}"
