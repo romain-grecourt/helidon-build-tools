@@ -32,7 +32,7 @@ inputs:
     default: 'false'
 outputs:
   matrix:
-    value: ${{ steps.0.outputs.matrix }}
+    value: ${{ steps.split.outputs.matrix }}
     description: |
       E.g.
       includes:
@@ -45,6 +45,6 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - id: 0
+    - id: split
       shell: bash
       run: ./.github/actions/split/split.sh >> "${GITHUB_OUTPUT}"

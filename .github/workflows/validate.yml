@@ -106,10 +106,10 @@ jobs:
     timeout-minutes: 5
     runs-on: ubuntu-20.04
     outputs:
-      matrix: ${{ steps.0.outputs.matrix }}
+      matrix: ${{ steps.split.outputs.matrix }}
     steps:
       - uses: actions/checkout@v3
-      - id: 0
+      - id: split
         uses: ./.github/actions/split
         with:
           groups: |
