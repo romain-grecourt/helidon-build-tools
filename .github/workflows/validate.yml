@@ -19,6 +19,8 @@ on: [ pull_request, push, workflow_dispatch ]
 
 env:
   LINUX_LABEL: ubuntu-20.04
+  WINDOWS_LABEL: windows-2022
+  MACOS_LABEL: macos-12
   JAVA_VERSION: 17
   JAVA_DISTRO: oracle
   GRAALVM_VERSION: 21.3.0
