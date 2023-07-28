@@ -52,7 +52,7 @@ list_modules() {
 }
 
 #
-# Print a JSON object for a test group
+# Print a JSON object for a group
 #
 # args: group prefix expr...
 #
@@ -62,13 +62,13 @@ print_group() {
   shift
   echo -ne '
   {
-      "test-group": "'"${group}"'",
-      "test-modules": "'"$(list_modules "${@}")"'"
+      "group": "'"${group}"'",
+      "modules": "'"$(list_modules "${@}")"'"
   }'
 }
 
 #
-# Print comma separated JSON object for the test groups.
+# Print comma separated JSON object for the groups.
 # Always add a 'misc' at the end that matches everything else
 #
 # arg1: JSON object E.g. '{ "group1": [ "dir1/**", "dir2/**" ], "group2": [ "dir3/**" ] }'
@@ -92,7 +92,7 @@ print_groups() {
 #
 # arg1: JSON object E.g. '{ "group1": [ "dir1/**", "dir2/**" ], "group2": [ "dir3/**" ] }'
 #
-tests_matrix() {
+matrix() {
  echo "matrix=$(echo '{
    "include": [
       '"$(print_groups "${@}")"'
@@ -100,4 +100,4 @@ tests_matrix() {
  }' | jq -c)"
 }
 
-tests_matrix "${@}"
+matrix "${@}"

@@ -14,16 +14,16 @@
 # limitations under the License.
 #
 
-name: 'Tests Matrix'
+name: 'Split'
 description: |
-  Generates a matrix to run Maven tests.
-  Takes a map (JSON) of test group names to glob expressions.
-  Glob expressions are expanded into a Maven project list E.g. -pl dir1,di2
-  A 'misc' test group is always added to represent everything else (by negating all the resolved modules).
+  Generates a matrix to split a Maven reactor into a comma separated directory list (E.g. 'dir1,dir2').
+  Takes a map (JSON) of group names to glob expressions.
+  Glob expressions are expanded to Maven module directories and converted to comma separated lists.
+  A 'misc' group is always added to represent everything else by negating all the resolved modules (E.g. '!dir1,!dir2')
 inputs:
-  test-groups:
+  groups:
     description: |
-      JSON object that describes the test groups. E.g.
+      JSON object that describes the groups. E.g.
       {
         "group1": [ "dir1/**", "dir2/**" ],
         "group2": [ "dir3/**" ]
@@ -32,19 +32,19 @@ inputs:
     default: 'false'
 outputs:
   matrix:
-    value: ${{ steps.exec-tests-matrix.outputs.matrix }}
+    value: ${{ steps.0.outputs.matrix }}
     description: |
       E.g.
       includes:
-        - test-group: group1
-          test-modules: -pl dir1,dir2,dir2a
-        - test-group: group2
-          test-modules: -pl dir3,dir3a
-        - test-group: misc
-          test-modules: -pl !dir1,!dir2,!dir2a,!dir3,!dir3a
+        - group: group1
+          modules: dir1,dir2,dir2a
+        - group: group2
+          modules: dir3,dir3a
+        - group: misc
+          modules: !dir1,!dir2,!dir2a,!dir3,!dir3a
 runs:
   using: "composite"
   steps:
-    - id: exec-tests-matrix
-      run: |
-        ./.github/actions/tests-matrix/tests-matrix.sh >> "${GITHUB_OUTPUT}"
+    - id: 0
+      shell: bash
+      run: ./.github/actions/split/split.sh >> "${GITHUB_OUTPUT}"

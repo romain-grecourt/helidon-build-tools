@@ -101,28 +101,28 @@ jobs:
               -DskipTests \
               -Pjavadoc \
               package
-  tests-matrix:
+  split-tests:
     needs: build
     timeout-minutes: 5
     runs-on: ubuntu-20.04
     outputs:
-      matrix: ${{ steps.tests-matrix.outputs.matrix }}
+      matrix: ${{ steps.0.outputs.matrix }}
     steps:
       - uses: actions/checkout@v3
-      - id: tests-matrix
-        uses: ./.github/actions/tests-matrix
+      - id: 0
+        uses: ./.github/actions/split
         with:
-          test-groups: |
+          groups: |
             {
               "cli": [ "cli/**", "devloop/**" ]
             }
   tests:
-    needs: tests-matrix
+    needs: split-tests
     timeout-minutes: 15
     strategy:
-      matrix: ${{ fromJSON(needs.tests-matrix.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.split-tests.outputs.matrix) }}
     runs-on: ubuntu-20.04
-    name: tests/${{ matrix.test-group }}
+    name: tests/${{ matrix.group }}
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
@@ -131,7 +131,7 @@ jobs:
           archive-test-results: true
           run: |
             mvn ${MAVEN_ARGS} \
-              -am -pl ${{ matrix.test-modules }} \
+              -am -pl ${{ matrix.modules }} \
               verify
   vscode-extension:
     needs: build
