@@ -105,6 +105,7 @@
 
         <surefire.argLine>-Xmx1024m -Dfile.encoding=UTF-8</surefire.argLine>
         <surefire.coverage.argLine/>
+        <surefire.redirectTestOutputToFile>true</surefire.redirectTestOutputToFile>
 
         <failsafe.argLine>-Xmx1024m -Dfile.encoding=UTF-8</failsafe.argLine>
         <failsafe.coverage.argLine/>
@@ -274,7 +275,7 @@
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>${version.plugin.surefire}</version>
                     <configuration>
-                        <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                        <redirectTestOutputToFile>${surefire.redirectTestOutputToFile}</redirectTestOutputToFile>
                         <!-- DO NOT override argLine instead use surefire.argLine -->
                         <argLine>${surefire.argLine} ${surefire.coverage.argLine}</argLine>
                         <trimStackTrace>false</trimStackTrace>
