@@ -1102,8 +1102,6 @@
                             <buildFilesExcludes>
                                 <exclude>**/target/it/projects/**</exclude>
                             </buildFilesExcludes>
-                            <enableChecksums>true</enableChecksums>
-                            <includeAllChecksums>true</includeAllChecksums>
                             <archiveFile>${project.build.directory}/build-cache.tar</archiveFile>
                         </configuration>
                     </plugin>

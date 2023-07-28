@@ -101,7 +101,6 @@ runs:
         key: build-cache-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
           build-cache-${{ github.run_id }}-
-          build-cache-
     - name: Build cache (read-only)
       if: ${{ inputs.build-cache == 'read-only' }}
       uses: actions/cache/restore@v3
@@ -111,10 +110,12 @@ runs:
         key: build-cache-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
           build-cache-${{ github.run_id }}-
-          build-cache-
     - name: Exec
       run: ${{ inputs.run }}
       env:
+        # Enable build-cache-maven-plugin only if 'inputs.build-cache' has a valid value
+        # Create a cache archive only if 'inputs.build-cache' is 'read-write'
+        # Always disable checksums as the cache archive is unique to the workflow run
         MAVEN_ARGS: |
           ${{ env.MAVEN_ARGS }}
           ${{ contains(inputs.build-cache, 'read-') && '-Pcache' || '-P!cache' }}
@@ -123,7 +124,7 @@ runs:
       shell: bash
     - name: Archive test results
       # https://github.com/actions/upload-artifact/issues/240
-      if: ${{ inputs.archive-test-results == 'true' && matrix.os != 'windows-latest' && always() }}
+      if: ${{ inputs.archive-test-results == 'true' && runner.os != 'Windows' && always() }}
       uses: actions/upload-artifact@v3.1.2
       with:
         if-no-files-found: 'ignore'
