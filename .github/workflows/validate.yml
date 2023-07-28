@@ -124,7 +124,7 @@ jobs:
         with:
           run: |
             mvn ${MAVEN_ARGS} \
-              -am -pl ide-support/vscode-extension \
+              -pl ide-support/vscode-extension \
               -DskipTests \
               -Pvscode \
               install
@@ -151,7 +151,7 @@ jobs:
           run: |
             # build the executable
             mvn ${MAVEN_ARGS} \
-              -am -pl cli/impl \
+              -pl cli/impl \
               -DskipTests \
               -Pnative-image,!toolchain \
               -Dnative.image.name=helidon-${{ matrix.platform }} \
