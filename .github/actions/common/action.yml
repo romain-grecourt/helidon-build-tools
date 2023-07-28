@@ -112,6 +112,10 @@ runs:
           build-cache-
     - name: Exec
       run: ${{ inputs.run }}
+      env:
+        MAVEN_ARGS: |
+          ${{ env.MAVEN_ARGS }}
+          -Dcache.createArchive=${{ inputs.build-cache == 'read-write' && 'true' || 'false' }}
       shell: bash
     - name: Archive test results
       # https://github.com/actions/upload-artifact/issues/240

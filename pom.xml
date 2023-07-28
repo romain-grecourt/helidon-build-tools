@@ -1086,6 +1086,9 @@
         </profile>
         <profile>
             <id>cache</id>
+            <properties>
+                <cache.createArchive>false</cache.createArchive>
+            </properties>
             <build>
                 <plugins>
                     <plugin>
@@ -1100,11 +1103,14 @@
                                 <exclude>etc/**</exclude>
                                 <exclude>**/vscode-extension/**</exclude>
                             </projectFilesExcludes>
+                            <buildFilesExcludes>
+                                <exclude>**/target/it/projects/**</exclude>
+                            </buildFilesExcludes>
                             <enableChecksums>true</enableChecksums>
                             <includeAllChecksums>true</includeAllChecksums>
                             <archiveFile>${project.build.directory}/build-cache.tar</archiveFile>
                             <loadArchive>true</loadArchive>
-                            <createArchive>true</createArchive>
+                            <createArchive>${cache.createArchive}</createArchive>
                         </configuration>
                     </plugin>
                 </plugins>

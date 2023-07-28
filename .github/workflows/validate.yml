@@ -111,6 +111,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
         with:
+          archive-test-results: true
           run: |
             mvn ${MAVEN_ARGS} -T 8 \
               verify
@@ -162,7 +163,7 @@ jobs:
               -am -pl cli/tests/functional \
               -Pnative-image \
               -Dnative.image.name=helidon-${{ matrix.platform }} \
-              -Dtest=CliFunctionalV2Test#*Native*
+              -Dtest=CliFunctionalV2Test#*Native* \
               test
           artifact-name: helidon-cli
           artifact-path: cli/impl/target/helidon-${{ matrix.platform }}*
