@@ -1095,8 +1095,7 @@
                         <extensions>true</extensions>
                         <configuration>
                             <projectFilesExcludes>
-                                <exclude>.git/**</exclude>
-                                <exclude>.github/**</exclude>>
+                                <exclude>.*/**</exclude>
                                 <exclude>etc/**</exclude>
                                 <exclude>**/vscode-extension/**</exclude>
                             </projectFilesExcludes>

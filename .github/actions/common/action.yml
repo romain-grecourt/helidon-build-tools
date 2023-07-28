@@ -53,6 +53,8 @@ runs:
       run: |
         echo "Adding GNU tar to PATH"
         echo C:\Program Files\Git\usr\bin>>"%GITHUB_PATH%"
+        git config --global core.autocrlf false
+        git config --global core.eol lf
     - name: Set up GraalVM
       if: ${{ inputs.native-image == 'true' }}
       uses: graalvm/setup-graalvm@v1
