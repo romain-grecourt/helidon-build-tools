@@ -18,9 +18,7 @@ name: "Validate PR"
 on: [ pull_request, push, workflow_dispatch ]
 
 env:
-  LINUX_LABEL: ubuntu-20.04
-  WINDOWS_LABEL: windows-2022
-  MACOS_LABEL: macos-12
+  LINUX_RUNNER: ubuntu-20.04
   JAVA_VERSION: 17
   JAVA_DISTRO: oracle
   GRAALVM_VERSION: 21.3.0
@@ -39,7 +37,7 @@ concurrency:
 jobs:
   copyright:
     timeout-minutes: 5
-    runs-on: ${{ env.LINUX_LABEL }}
+    runs-on: ${{ env.LINUX_RUNNER }}
     steps:
       - uses: actions/checkout@v3
         with:
@@ -49,7 +47,7 @@ jobs:
           run: etc/scripts/copyright.sh
   checkstyle:
     timeout-minutes: 5
-    runs-on: ${{ env.LINUX_LABEL }}
+    runs-on: ${{ env.LINUX_RUNNER }}
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
@@ -57,7 +55,7 @@ jobs:
           run: etc/scripts/checkstyle.sh
   shellcheck:
     timeout-minutes: 5
-    runs-on: ${{ env.LINUX_LABEL }}
+    runs-on: ${{ env.LINUX_RUNNER }}
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
@@ -65,7 +63,7 @@ jobs:
           run: etc/scripts/shellcheck.sh
   build:
     timeout-minutes: 15
-    runs-on: ${{ env.LINUX_LABEL }}
+    runs-on: ${{ env.LINUX_RUNNER }}
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
@@ -83,7 +81,7 @@ jobs:
   spotbugs:
     needs: build
     timeout-minutes: 15
-    runs-on: ${{ env.LINUX_LABEL }}
+    runs-on: ${{ env.LINUX_RUNNER }}
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
@@ -96,7 +94,7 @@ jobs:
   javadoc:
     needs: build
     timeout-minutes: 15
-    runs-on: ${{ env.LINUX_LABEL }}
+    runs-on: ${{ env.LINUX_RUNNER }}
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
@@ -109,7 +107,7 @@ jobs:
   tests:
     needs: build
     timeout-minutes: 15
-    runs-on: ${{ env.LINUX_LABEL }}
+    runs-on: ${{ env.LINUX_RUNNER }}
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
@@ -120,7 +118,7 @@ jobs:
   vscode-extension:
     needs: build
     timeout-minutes: 15
-    runs-on: ${{ env.LINUX_LABEL }}
+    runs-on: ${{ env.LINUX_RUNNER }}
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
@@ -136,7 +134,7 @@ jobs:
     timeout-minutes: 15
     strategy:
       matrix:
-        os: ${{ fromJSON("[ ${{ env.LINUX_LABEL }}, ${{ env.WINDOWS_LABEL }}, ${{ env.MACOS_LABEL }} ]") }}
+        os: [ ubuntu-20.04, windows-2022, macos-12 ]
         include:
           - os: ubuntu-20.04
             native-image-name: helidon-linux-amd64
