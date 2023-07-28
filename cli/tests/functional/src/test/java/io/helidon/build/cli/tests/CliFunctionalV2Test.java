@@ -33,6 +33,7 @@ import io.helidon.build.cli.impl.Helidon;
 import io.helidon.build.common.ProcessMonitor;
 import io.helidon.build.common.SourcePath;
 import io.helidon.build.common.Strings;
+import io.helidon.build.common.ansi.AnsiTextStyle;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -256,7 +257,6 @@ public class CliFunctionalV2Test {
                 .addArg("artifactId", artifactId)
                 .addArg("package", "custom.pack.name")
                 .addArg("version", FunctionalUtils.CLI_VERSION)
-                .addOption("plain")
                 .workDirectory(workDir)
                 .init();
     }
@@ -356,7 +356,8 @@ public class CliFunctionalV2Test {
 
         public String start(long timeout, TimeUnit unit) {
             try {
-                return start().waitForCompletion(timeout, unit).output();
+                String output = start().waitForCompletion(timeout, unit).output();
+                return AnsiTextStyle.strip(output);
             } catch (ProcessMonitor.ProcessTimeoutException toe) {
                 throw new RuntimeException("Execution timeout", toe);
             } catch (ProcessMonitor.ProcessFailedException | InterruptedException e) {
