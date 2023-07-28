@@ -125,7 +125,7 @@ runs:
           **/target/failsafe-reports/*.txt
           **/target/it/**/*.log
     - name: Archive artifacts
-      if: ${{ inputs.artifact-name != '' && inputs.artifact-path != '' }}
+      if: ${{ inputs.artifact-name != '' && inputs.artifact-path != ''  && always() }}
       uses: actions/upload-artifact@v3.1.2
       with:
         if-no-files-found: 'ignore'
