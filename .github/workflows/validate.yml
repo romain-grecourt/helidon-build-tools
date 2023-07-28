@@ -114,7 +114,7 @@ jobs:
           build-cache: read-only
           archive-test-results: true
           run: |
-            mvn ${MAVEN_ARGS} -T 8 \
+            mvn ${MAVEN_ARGS} \
               verify
   vscode-extension:
     needs: build
@@ -152,6 +152,9 @@ jobs:
         with:
           build-cache: read-only
           native-image: true
+          archive-test-results: true
+          artifact-name: helidon-cli
+          artifact-path: cli/impl/target/helidon-${{ matrix.platform }}*
           run: |
             # build the executable
             mvn ${MAVEN_ARGS} \
@@ -168,5 +171,3 @@ jobs:
               -Dnative.image.name=helidon-${{ matrix.platform }} \
               -Dtest=CliFunctionalV2Test#*Native* \
               test
-          artifact-name: helidon-cli
-          artifact-path: cli/impl/target/helidon-${{ matrix.platform }}*
