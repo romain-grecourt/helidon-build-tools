@@ -47,4 +47,5 @@ runs:
   steps:
     - id: split
       shell: bash
-      run: ./.github/actions/split/split.sh >> "${GITHUB_OUTPUT}"
+      run: |
+        bash -ex ./.github/actions/split/split.sh >> "${GITHUB_OUTPUT}"

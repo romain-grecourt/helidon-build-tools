@@ -106,10 +106,10 @@ jobs:
     timeout-minutes: 5
     runs-on: ubuntu-20.04
     outputs:
-      matrix: ${{ steps.split.outputs.matrix }}
+      matrix: ${{ steps.split-tests.outputs.matrix }}
     steps:
       - uses: actions/checkout@v3
-      - id: split
+      - id: split-tests
         uses: ./.github/actions/split
         with:
           groups: |
@@ -181,6 +181,7 @@ jobs:
               package
 
             # smoke test
+            # TODO make it a separate job to make it re-runnable
             mvn ${MAVEN_ARGS} \
               -pl .,cli/tests/functional \
               -Pnative-image \

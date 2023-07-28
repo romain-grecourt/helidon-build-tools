@@ -95,9 +95,9 @@ print_groups() {
 matrix() {
  echo "matrix=$(echo '{
    "include": [
-      '"$(print_groups "${@}")"'
+      '"$(print_groups "${1}")"'
     ]
  }' | jq -c)"
 }
 
-matrix "${@}"
+matrix "${1}"
