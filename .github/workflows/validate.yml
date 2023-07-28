@@ -114,7 +114,7 @@ jobs:
         with:
           groups: |
             {
-              "cli": [ "cli/**", "devloop/**" ]
+              "cli": [ "cli/**", "dev-loop/**" ]
             }
   tests:
     needs: split-tests
