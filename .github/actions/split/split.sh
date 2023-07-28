@@ -40,7 +40,9 @@ list_modules() {
   prefix="${1}"
   shift
   files=()
+  printf "## resolving module expressions: %s\n" "${@}" >&2
   for exp in "${@}" ; do
+    printf "## resolving module expression: %s\n" "${exp}" >&2
     for i in ${exp}/pom.xml ; do
       if [[ ! "${i}" =~ "src/" ]] ; then
         files+=("${prefix}${i%%/pom.xml}")
@@ -48,6 +50,7 @@ list_modules() {
     done
   done
   IFS=","
+  printf "## resolved modules for expression: %s\n" "${@}" "${files[*]}" >&2
   echo "${files[*]}"
 }
 
@@ -78,11 +81,13 @@ print_groups() {
   all_modules=()
   for group in $(jq -r 'keys | .[]' <<< "${1}") ; do
     readarray -t modules <<< "$(jq -r --arg a "${group}" '. | to_entries[] | select (.key == $a).value[]' <<< "${1}")"
+    printf "## modules for group %s: %s\n" "${group}" "${modules[@]}" >&2
     print_group "${group}" "" "${modules[@]}"
     echo -ne ","
     all_modules+=("${modules[@]}")
   done
   if [ ${#all_modules[@]} -gt 0 ] ; then
+      printf "## modules for group misc: %s\n" "${all_modules[@]}" >&2
       print_group "misc" "!" "${all_modules[@]}"
   fi
 }
@@ -100,4 +105,5 @@ matrix() {
  }' | jq -c)"
 }
 
+printf "## Generating matrix, JSON: %s\n" "${1}" >&2
 matrix "${1}"
