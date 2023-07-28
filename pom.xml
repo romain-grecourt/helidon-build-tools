@@ -1086,9 +1086,6 @@
         </profile>
         <profile>
             <id>cache</id>
-            <properties>
-                <cache.createArchive>false</cache.createArchive>
-            </properties>
             <build>
                 <plugins>
                     <plugin>
@@ -1109,8 +1106,6 @@
                             <enableChecksums>true</enableChecksums>
                             <includeAllChecksums>true</includeAllChecksums>
                             <archiveFile>${project.build.directory}/build-cache.tar</archiveFile>
-                            <loadArchive>true</loadArchive>
-                            <createArchive>${cache.createArchive}</createArchive>
                         </configuration>
                     </plugin>
                 </plugins>

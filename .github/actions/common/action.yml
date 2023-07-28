@@ -115,6 +115,8 @@ runs:
       env:
         MAVEN_ARGS: |
           ${{ env.MAVEN_ARGS }}
+          ${{ inputs.build-cache != '' && '-Pcache' || '-P!cache' }}
+          -Dcache.loadArchive=${{ contains(inputs.build-cache, 'read-') && 'true' || 'false' }}
           -Dcache.createArchive=${{ inputs.build-cache == 'read-write' && 'true' || 'false' }}
       shell: bash
     - name: Archive test results

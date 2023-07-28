@@ -27,7 +27,6 @@ env:
     -Dmaven.wagon.httpconnectionManager.ttlSeconds=60
     -Dmaven.wagon.http.retryHandler.count=3
     -Djdk.toolchain.version=${JAVA_VERSION}
-    -Pcache
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -160,7 +159,7 @@ jobs:
 
             # smoke test
             mvn ${MAVEN_ARGS} \
-              -am -pl cli/tests/functional \
+              -pl cli/tests/functional \
               -Pnative-image \
               -Dnative.image.name=helidon-${{ matrix.platform }} \
               -Dtest=CliFunctionalV2Test#*Native* \
