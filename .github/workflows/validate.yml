@@ -18,7 +18,6 @@ name: "Validate PR"
 on: [ pull_request, push, workflow_dispatch ]
 
 env:
-  LINUX_RUNNER: ubuntu-20.04
   JAVA_VERSION: 17
   JAVA_DISTRO: oracle
   GRAALVM_VERSION: 21.3.0
@@ -37,7 +36,7 @@ concurrency:
 jobs:
   copyright:
     timeout-minutes: 5
-    runs-on: ${{ env.LINUX_RUNNER }}
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
         with:
@@ -47,7 +46,7 @@ jobs:
           run: etc/scripts/copyright.sh
   checkstyle:
     timeout-minutes: 5
-    runs-on: ${{ env.LINUX_RUNNER }}
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
@@ -55,7 +54,7 @@ jobs:
           run: etc/scripts/checkstyle.sh
   shellcheck:
     timeout-minutes: 5
-    runs-on: ${{ env.LINUX_RUNNER }}
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
@@ -63,7 +62,7 @@ jobs:
           run: etc/scripts/shellcheck.sh
   build:
     timeout-minutes: 15
-    runs-on: ${{ env.LINUX_RUNNER }}
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
@@ -81,7 +80,7 @@ jobs:
   spotbugs:
     needs: build
     timeout-minutes: 15
-    runs-on: ${{ env.LINUX_RUNNER }}
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
@@ -94,7 +93,7 @@ jobs:
   javadoc:
     needs: build
     timeout-minutes: 15
-    runs-on: ${{ env.LINUX_RUNNER }}
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
@@ -107,7 +106,7 @@ jobs:
   tests:
     needs: build
     timeout-minutes: 15
-    runs-on: ${{ env.LINUX_RUNNER }}
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
@@ -118,7 +117,7 @@ jobs:
   vscode-extension:
     needs: build
     timeout-minutes: 15
-    runs-on: ${{ env.LINUX_RUNNER }}
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
@@ -137,13 +136,13 @@ jobs:
         os: [ ubuntu-20.04, windows-2022, macos-12 ]
         include:
           - os: ubuntu-20.04
-            native-image-name: helidon-linux-amd64
+            platform: linux-amd64
           - os: windows-2022
-            native-image-name: helidon-windows-amd64
+            platform: windows-amd64
           - os: macos-12
-            native-image-name: helidon-darwin-amd64
+            platform: darwin-amd64
     runs-on: ${{ matrix.os }}
-    name: cli-${{ matrix.os }}
+    name: cli/${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
@@ -155,15 +154,15 @@ jobs:
               -am -pl cli/impl \
               -DskipTests \
               -Pnative-image,!toolchain \
-              -Dnative.image.name=${{ matrix.native-image-name }} \
+              -Dnative.image.name=helidon-${{ matrix.platform }} \
               package
 
             # smoke test
             mvn ${MAVEN_ARGS} \
               -am -pl cli/tests/functional \
               -Pnative-image \
-              -Dnative.image.name=${{ matrix.native-image-name }} \
+              -Dnative.image.name=helidon-${{ matrix.platform }} \
               -Dtest=CliFunctionalV2Test#*Native*
               test
           artifact-name: helidon-cli
-          artifact-path: cli/impl/target/${{ matrix.exe-name }}*
+          artifact-path: cli/impl/target/helidon-${{ matrix.platform }}*
