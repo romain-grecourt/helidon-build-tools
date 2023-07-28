@@ -97,6 +97,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
         with:
+          build-cache: read
           run: |
             mvn ${MAVEN_ARGS} -T 8 \
               -DskipTests \
@@ -110,6 +111,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
         with:
+          build-cache: read
           archive-test-results: true
           run: |
             mvn ${MAVEN_ARGS} -T 8 \
@@ -122,6 +124,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
         with:
+          build-cache: read
           run: |
             mvn ${MAVEN_ARGS} \
               -pl .,ide-support/vscode-extension \
@@ -147,6 +150,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/common
         with:
+          build-cache: read
           native-image: true
           run: |
             # build the executable

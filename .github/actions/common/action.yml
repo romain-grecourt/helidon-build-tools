@@ -28,7 +28,7 @@ inputs:
   build-cache:
     description: 'Wether to cache the Maven build (read-only, read-write)'
     required: false
-    default: 'read-only'
+    default: ''
   run:
     description: 'The bash command to run'
     required: true
