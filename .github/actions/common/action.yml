@@ -139,6 +139,13 @@ runs:
         key: build-cache-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
           build-cache-${{ github.run_id }}-
+    - name: Populate Maven cache
+      if: ${{ inputs.maven-cache == 'read-write' }}
+      run: |
+        mvn ${MAVEN_ARGS} -T 8 \
+          -Dmaven.repo.local=${{ github.workspace }}/.m2/repository \
+          dependency:go-offline
+      shell: bash
     - name: Exec
       env:
         # Use a local repository in the workspace to get portable caches
