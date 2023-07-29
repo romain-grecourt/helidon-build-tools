@@ -47,7 +47,7 @@ list_modules() {
   for exp in "${@}" ; do
     printf "## Resolving module expression: %s\n" "${exp}" >&2
     for i in ${exp}/pom.xml ; do
-      if [ -f ${i} ] && [[ ! "${i}" =~ "src/" ]] ; then
+      if [ -f "${i}" ] && [[ ! "${i}" =~ "src/" ]] ; then
         files+=("${prefix}${i%%/pom.xml}")
       fi
     done
