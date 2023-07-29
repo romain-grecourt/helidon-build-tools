@@ -29,6 +29,9 @@ trap on_error ERR
 shopt -s globstar
 shopt -s extglob
 
+ERROR_FILE=$(mktemp -t XXXgroups)
+readonly ERROR_FILE
+
 #
 # Expand the given glob expressions to match directories with pom.xml files.
 # Exclude directories that are nested under 'src'
@@ -40,17 +43,22 @@ list_modules() {
   prefix="${1}"
   shift
   files=()
-  printf "## resolving module expressions: %s\n" "${@}" >&2
+  printf "## Resolving module expressions: %s\n" "${*}" >&2
   for exp in "${@}" ; do
-    printf "## resolving module expression: %s\n" "${exp}" >&2
+    printf "## Resolving module expression: %s\n" "${exp}" >&2
     for i in ${exp}/pom.xml ; do
-      if [[ ! "${i}" =~ "src/" ]] ; then
+      if [ -f ${i} ] && [[ ! "${i}" =~ "src/" ]] ; then
         files+=("${prefix}${i%%/pom.xml}")
       fi
     done
   done
+  if [ ${#files[*]} -eq 0 ] ; then
+    printf "## ERROR: Unresolved expressions: %s\n" "${*}" >&2
+    echo "${@}" >> "${ERROR_FILE}"
+    return 1
+  fi
   IFS=","
-  printf "## resolved modules for expression: %s\n" "${@}" "${files[*]}" >&2
+  printf "## Resolved modules for expressions: %s\n" "${*}" "${files[*]}" >&2
   echo "${files[*]}"
 }
 
@@ -81,13 +89,13 @@ print_groups() {
   all_modules=()
   for group in $(jq -r 'keys | .[]' <<< "${1}") ; do
     readarray -t modules <<< "$(jq -r --arg a "${group}" '. | to_entries[] | select (.key == $a).value[]' <<< "${1}")"
-    printf "## modules for group %s: %s\n" "${group}" "${modules[*]}" >&2
+    printf "## Resolving group: %s, expressions: %s\n" "${group}" "${modules[*]}" >&2
     print_group "${group}" "" "${modules[@]}"
     echo -ne ","
     all_modules+=("${modules[@]}")
   done
   if [ ${#all_modules[@]} -gt 0 ] ; then
-      printf "## modules for group misc: %s\n" "${all_modules[2]}" >&2
+      printf "## Resolving group: misc, expressions: %s\n" "${all_modules[2]}" >&2
       print_group "misc" "!" "${all_modules[@]}"
   fi
 }
@@ -97,22 +105,29 @@ print_groups() {
 #
 # arg1: JSON object E.g. '{ "group1": [ "dir1/**", "dir2/**" ], "group2": [ "dir3/**" ] }'
 #
-matrix() {
-  local json
+main() {
+  local json errors
+
+  printf "## Processing JSON: %s\n" "${1}" >&2
   json="$(echo '{
     "include": [
        '"$(print_groups "${1}")"'
      ]
   }' | jq)"
 
+  readarray -t errors < "${ERROR_FILE}"
+  if [ ${#errors[*]} -ne 0 ] ; then
+    printf "## ERROR: Unresolved expressions: %s\n" "${errors[*]}" >&2
+    exit 1
+  fi
+
   printf "## Generated JSON matrix: \n%s\n" "${json}" >&2
   echo "matrix=$(jq -c <<< "${json}")"
 }
 
 if [ ${#@} -lt 0 ] ; then
-    error "usage $(basename "${0}") JSON" >&2
+    error "Usage $(basename "${0}") JSON" >&2
     exit 1
 fi
 
-printf "## Generating matrix, JSON: %s\n" "${1}" >&2
-matrix "${1}"
+main "${1}"
