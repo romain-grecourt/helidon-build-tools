@@ -94,9 +94,10 @@ public class MavenSupport {
      *
      * @param pomPath Path to the pom file.
      * @param timeout time in milliseconds to wait for maven command execution.
+     * @param argument optional argument to pass to the maven command, may be {@code null}
      * @return Set that contains information about the dependencies.
      */
-    public Set<Dependency> dependencies(String pomPath, int timeout) {
+    public Set<Dependency> dependencies(String pomPath, int timeout, String argument) {
         if (!isMavenInstalled) {
             LOGGER.log(Level.WARNING, "It is not possible to get Helidon dependencies from the maven repository. Maven is not "
                     + "installed.");
@@ -107,6 +108,7 @@ public class MavenSupport {
         try (ServerSocket serverSocket = new ServerSocket(0)) {
             MavenCommand.builder()
                     .addArgument(goal)
+                    .addOptionalArgument(argument)
                     .addArgument("-Dport=" + serverSocket.getLocalPort())
                     .directory(new File(pomPath).getParentFile())
                     .verbose(false)
@@ -173,7 +175,7 @@ public class MavenSupport {
      * @return Set that contains information about the dependencies.
      */
     public Set<Dependency> dependencies(String pomPath) {
-        return dependencies(pomPath, DEFAULT_TIMEOUT);
+        return dependencies(pomPath, DEFAULT_TIMEOUT, null);
     }
 
     /**
