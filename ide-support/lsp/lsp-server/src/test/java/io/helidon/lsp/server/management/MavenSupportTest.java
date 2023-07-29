@@ -29,11 +29,11 @@ import static org.hamcrest.Matchers.is;
 
 class MavenSupportTest {
 
-    private static final String MAVEN_ARGS;
+    private static final String LOCAL_REPO_ARG;
 
     static {
         String localRepository = System.getProperty("localRepository");
-        MAVEN_ARGS = localRepository != null ? "-Dmaven.repo.local=" + localRepository : null;
+        LOCAL_REPO_ARG = localRepository != null ? "-Dmaven.repo.local=" + localRepository : null;
     }
 
     @Test
@@ -67,7 +67,8 @@ class MavenSupportTest {
     @Test
     public void getDependenciesTest() throws URISyntaxException {
         String pomForFile = getCurrentPom();
-        Set<io.helidon.lsp.common.Dependency> dependencies = MavenSupport.instance().dependencies(pomForFile, 10000, MAVEN_ARGS);
+        Set<io.helidon.lsp.common.Dependency> dependencies = MavenSupport.instance().dependencies(pomForFile, 10000,
+                                                                                                  LOCAL_REPO_ARG);
         assertThat(dependencies.isEmpty(), is(false));
     }
 

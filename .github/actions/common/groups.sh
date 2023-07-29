@@ -105,5 +105,10 @@ matrix() {
  }' | jq -c)"
 }
 
+if [ ${#@} -lt 0 ] ; then
+    error "usage $(basename "${0}") JSON" >&2
+    exit 1
+fi
+
 printf "## Generating matrix, JSON: %s\n" "${1}" >&2
 matrix "${1}"
