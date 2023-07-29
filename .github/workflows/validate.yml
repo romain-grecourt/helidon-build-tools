@@ -98,6 +98,7 @@ jobs:
           run: |
             mvn ${MAVEN_ARGS} \
               -pl ${{ matrix.modules }} \
+              -Pbuild-cache
               verify
   spotbugs:
     needs: build
@@ -180,6 +181,6 @@ jobs:
               -pl cli/tests/functional \
               -Pnative-image \
               -Dnative.image.name=helidon-${{ matrix.platform }} \
-              -Dsurefire.reportNameSuffix=${{ matrix.platform }} \
+              -Dsurefire.reportNameSuffix=native-image-${{ matrix.platform }} \
               -Dtest=CliFunctionalV2Test#*Native* \
               test
