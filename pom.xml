@@ -1085,7 +1085,7 @@
             </build>
         </profile>
         <profile>
-            <id>cache</id>
+            <id>build-cache</id>
             <build>
                 <plugins>
                     <plugin>
@@ -1099,10 +1099,6 @@
                                 <exclude>etc/**</exclude>
                                 <exclude>**/vscode-extension/**</exclude>
                             </projectFilesExcludes>
-                            <buildFilesExcludes>
-                                <exclude>**/target/it/projects/**</exclude>
-                            </buildFilesExcludes>
-                            <archiveFile>${project.build.directory}/build-cache.tar</archiveFile>
                         </configuration>
                     </plugin>
                 </plugins>

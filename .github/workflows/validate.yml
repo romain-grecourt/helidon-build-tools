@@ -62,18 +62,43 @@ jobs:
   build:
     timeout-minutes: 15
     runs-on: ubuntu-20.04
+    outputs:
+      test-matrix: ${{ steps.build.outputs.test-matrix }}
     steps:
       - uses: actions/checkout@v3
-      - uses: ./.github/actions/common
+      - id: build
+        uses: ./.github/actions/common
         with:
           build-cache: read-write
           maven-cache: read-write
           run: |
             mvn ${MAVEN_ARGS} -T 8 \
               -DskipTests \
+              -Pbuild-cache \
               install
           artifact-name: helidon-cli
           artifact-path: cli/impl/target/helidon.zip
+          test-groups: |
+            {
+              "cli": [ "cli/**", "dev-loop/**" ]
+            }
+  tests:
+    needs: build
+    timeout-minutes: 15
+    strategy:
+      matrix: ${{ fromJSON(needs.build.outputs.test-matrix) }}
+    runs-on: ubuntu-20.04
+    name: tests/${{ matrix.group }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/common
+        with:
+          build-cache: read-only
+          archive-test-results: true
+          run: |
+            mvn ${MAVEN_ARGS} \
+              -pl ${{ matrix.modules }} \
+              verify
   spotbugs:
     needs: build
     timeout-minutes: 15
@@ -85,7 +110,7 @@ jobs:
           run: |
             mvn ${MAVEN_ARGS} -T 8 \
               -DskipTests \
-              -Pspotbugs \
+              -Pspotbugs,build-cache \
               verify
   javadoc:
     needs: build
@@ -99,40 +124,8 @@ jobs:
           run: |
             mvn ${MAVEN_ARGS} -T 8 \
               -DskipTests \
-              -Pjavadoc \
+              -Pjavadoc,build-cache \
               package
-  split-tests:
-    needs: build
-    timeout-minutes: 5
-    runs-on: ubuntu-20.04
-    outputs:
-      matrix: ${{ steps.split-tests.outputs.matrix }}
-    steps:
-      - uses: actions/checkout@v3
-      - id: split-tests
-        uses: ./.github/actions/split
-        with:
-          groups: |
-            {
-              "cli": [ "cli/**", "dev-loop/**" ]
-            }
-  tests:
-    needs: split-tests
-    timeout-minutes: 15
-    strategy:
-      matrix: ${{ fromJSON(needs.split-tests.outputs.matrix) }}
-    runs-on: ubuntu-20.04
-    name: tests/${{ matrix.group }}
-    steps:
-      - uses: actions/checkout@v3
-      - uses: ./.github/actions/common
-        with:
-          build-cache: read-only
-          archive-test-results: true
-          run: |
-            mvn ${MAVEN_ARGS} \
-              -am -pl ${{ matrix.modules }} \
-              verify
   vscode-extension:
     needs: build
     timeout-minutes: 15
@@ -144,7 +137,7 @@ jobs:
           build-cache: read-only
           run: |
             mvn ${MAVEN_ARGS} \
-              -am -pl ide-support/vscode-extension \
+              -pl ide-support/vscode-extension \
               -DskipTests \
               -Pvscode \
               install
@@ -174,7 +167,7 @@ jobs:
           run: |
             # build the executable
             mvn ${MAVEN_ARGS} \
-              -am -pl cli/impl \
+              -pl cli/impl \
               -DskipTests \
               -Pnative-image,!toolchain \
               -Dnative.image.name=helidon-${{ matrix.platform }} \
@@ -183,7 +176,7 @@ jobs:
             # smoke test
             # TODO make it a separate job to make it re-runnable
             mvn ${MAVEN_ARGS} \
-              -pl .,cli/tests/functional \
+              -pl cli/tests/functional \
               -Pnative-image \
               -Dnative.image.name=helidon-${{ matrix.platform }} \
               -Dsurefire.reportNameSuffix=${{ matrix.platform }} \

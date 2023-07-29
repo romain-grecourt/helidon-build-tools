@@ -14,36 +14,60 @@
 # limitations under the License.
 #
 
-name: 'Common Exec'
-description: 'Common steps to execute a build command'
+name: 'Common Job Steps'
+description: A composite action that abstracts the common steps needed to implement a job
 inputs:
   native-image:
-    description: 'Wether to setup GraalVM native-image'
+    description: Wether to setup GraalVM native-image
     required: false
     default: 'false'
   maven-cache:
-    description: 'Wether to cache the Maven local repository (read-only, read-write)'
+    description: Wether to cache the Maven local repository (read-only or read-write)
     required: false
     default: 'read-only'
   build-cache:
-    description: 'Wether to cache the Maven build (read-only, read-write)'
+    description:  Wether to cache the Maven build (read-only or read-write)
     required: false
     default: ''
   run:
-    description: 'The bash command to run'
+    description: The bash command to run
     required: true
   artifact-name:
-    description: 'Name of the artifact to create'
+    description: Name of the artifact to create
     required: false
     default: ''
   artifact-path:
-    description: 'Path of the files to include in the artifact'
+    description: Path of the files to include in the artifact
     required: false
     default: ''
   archive-test-results:
-    description: 'Wether to archive test results (excluded on windows)'
+    description: Wether to archive test results (excluded on windows)
     required: false
     default: 'false'
+  test-groups:
+    description: |
+      Map (JSON) of group names to glob expressions to use for the test-matrix output.
+      Glob expressions are expanded to Maven module directories and converted to comma separated lists.
+      A 'misc' group is always added to represent everything else by negating all the resolved modules (E.g. '!dir1,!dir2').
+      E.g.
+      {
+        "group1": [ "dir1/**", "dir2/**" ],
+        "group2": [ "dir3/**" ]
+      }
+    required: false
+    default: ''
+outputs:
+  test-matrix:
+    value: ${{ steps.test-groups.outputs.matrix }}
+    description: |
+      E.g.
+      includes:
+        - group: group1
+          modules: dir1,dir2,dir2a
+        - group: group2
+          modules: dir3,dir3a
+        - group: misc
+          modules: !dir1,!dir2,!dir2a,!dir3,!dir3a
 runs:
   using: "composite"
   steps:
@@ -96,7 +120,9 @@ runs:
       if: ${{ inputs.build-cache == 'read-write' }}
       uses: actions/cache@v3
       with:
-        path: ./target/build-cache.tar
+        path: |
+          ./**/target/**
+          ~/.m2/repository/io/helidon/build-tools/**
         enableCrossOsArchive: true
         key: build-cache-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
@@ -105,22 +131,18 @@ runs:
       if: ${{ inputs.build-cache == 'read-only' }}
       uses: actions/cache/restore@v3
       with:
-        path: ./target/build-cache.tar
+        path: |
+          ./**/target/**
+          ~/.m2/repository/io/helidon/build-tools/**
         enableCrossOsArchive: true
         key: build-cache-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
           build-cache-${{ github.run_id }}-
     - name: Exec
       run: ${{ inputs.run }}
-      env:
-        # Enable build-cache-maven-plugin only if 'inputs.build-cache' has a valid value
-        # Create a cache archive only if 'inputs.build-cache' is 'read-write'
-        # Always disable checksums as the cache archive is unique to the workflow run
-        MAVEN_ARGS: |
-          ${{ env.MAVEN_ARGS }}
-          ${{ contains(inputs.build-cache, 'read-') && '-Pcache' || '-P!cache' }}
-          -Dcache.loadArchive=${{ contains(inputs.build-cache, 'read-') && 'true' || 'false' }}
-          -Dcache.createArchive=${{ inputs.build-cache == 'read-write' && 'true' || 'false' }}
+      shell: bash
+    - id: test-groups
+      run: ./.github/actions/common/groups.sh '${{ inputs.test-groups }}' >> "${GITHUB_OUTPUT}"
       shell: bash
     - name: Archive test results
       # https://github.com/actions/upload-artifact/issues/240
