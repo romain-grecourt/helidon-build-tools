@@ -44,7 +44,7 @@ inputs:
     description: Wether to archive test results (excluded on windows)
     required: false
     default: 'false'
-  test-groups:
+  test-matrix:
     description: |
       Map (JSON) of group names to glob expressions to use for the test-matrix output.
       Glob expressions are expanded to Maven module directories and converted to comma separated lists.
@@ -58,7 +58,7 @@ inputs:
     default: ''
 outputs:
   test-matrix:
-    value: ${{ steps.test-groups.outputs.matrix }}
+    value: ${{ steps.test-matrix.outputs.matrix }}
     description: |
       E.g.
       includes:
@@ -154,9 +154,9 @@ runs:
           -Dmaven.repo.local=${{ github.workspace }}/.m2/repository
       run: ${{ inputs.run }}
       shell: bash
-    - id: test-groups
-      if: ${{ inputs.test-groups != '' }}
-      run: ./.github/actions/common/groups.sh '${{ inputs.test-groups }}' >> "${GITHUB_OUTPUT}"
+    - id: test-matrix
+      if: ${{ inputs.test-matrix != '' }}
+      run: ./.github/actions/common/groups.sh '${{ inputs.test-matrix }}' >> "${GITHUB_OUTPUT}"
       shell: bash
     - name: Archive test results
       # https://github.com/actions/upload-artifact/issues/240

@@ -87,11 +87,10 @@ print_group() {
 print_groups() {
   local modules all_modules
   all_modules=()
-  for group in $(jq -r 'keys | .[]' <<< "${1}") ; do
-    readarray -t modules <<< "$(jq -r --arg a "${group}" '. | to_entries[] | select (.key == $a).value[]' <<< "${1}")"
+  for group in $(jq -r '.groups // [] | keys | .[]' <<< "${1}") ; do
+    readarray -t modules <<< "$(jq -r --arg a "${group}" '.groups | to_entries[] | select (.key == $a).value[]' <<< "${1}")"
     printf "## Resolving group: %s, expressions: %s\n" "${group}" "${modules[*]}" >&2
     print_group "${group}" "" "${modules[@]}"
-    echo -ne ","
     all_modules+=("${modules[@]}")
   done
   if [ ${#all_modules[@]} -gt 0 ] ; then
@@ -101,19 +100,25 @@ print_groups() {
 }
 
 #
+# Merge two JSON arrays
+#
+# arg1: first array
+# arg2: second array
+#
+merge_arrays() {
+  jq '.[]' <<< "$(printf "%s\n%s" "${1}" "${2}")" | jq -s
+}
+
+#
 # Generate the 'matrix' output
 #
 # arg1: JSON object E.g. '{ "group1": [ "dir1/**", "dir2/**" ], "group2": [ "dir3/**" ] }'
 #
 main() {
-  local json errors
+  local groups extra merged_include matrix errors
 
-  printf "## Processing JSON: %s\n" "${1}" >&2
-  json="$(echo '{
-    "include": [
-       '"$(print_groups "${1}")"'
-     ]
-  }' | jq)"
+  printf "## Processing JSON: \n%s\n" "$(jq <<< "${1}")" >&2
+  groups="$(print_groups "${1}" | jq -s)"
 
   readarray -t errors < "${ERROR_FILE}"
   if [ ${#errors[*]} -ne 0 ] ; then
@@ -121,8 +126,17 @@ main() {
     exit 1
   fi
 
-  printf "## Generated JSON matrix: \n%s\n" "${json}" >&2
-  echo "matrix=$(jq -c <<< "${json}")"
+  printf "## Groups JSON matrix: \n%s\n" "$(jq <<< "${groups}")" >&2
+
+  extra="$(jq '.include // []' <<< "${1}")"
+  printf "## Extra JSON matrix: \n%s\n" "${extra}" >&2
+
+  merged_include="$(merge_arrays "${groups}" "${extra}")"
+  printf "## Final JSON matrix: \n%s\n" "${merged_include}" >&2
+
+  matrix="$(jq <<< '{ "include": '"${merged_include}"' }')"
+
+  echo "matrix=$(jq -c <<< "${matrix}")"
 }
 
 if [ ${#@} -lt 0 ] ; then

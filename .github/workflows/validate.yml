@@ -71,19 +71,25 @@ jobs:
         with:
           build-cache: read-write
           maven-cache: read-write
+          artifact-name: helidon-cli
+          artifact-path: cli/impl/target/helidon.zip
           run: |
             mvn ${MAVEN_ARGS} -T 8 \
               -DskipTests \
               -Pbuild-cache \
               install
-          artifact-name: helidon-cli
-          artifact-path: cli/impl/target/helidon.zip
-          test-groups: |
+          test-matrix: |
             {
-              "cli": [ "cli/**!(test)", "maven-plugins/*cli*" ],
-              "cli-functional": [ "cli/tests/**" ],
-              "archetype": [ "archetype/**", "maven-plugins/*archetype*" ],
-              "linker": [ "linker/**" ]
+              "include": [
+                { "os": "ubuntu-20.04", "platform": "linux" },
+                { "os": "windows-2022", "platform": "windows" }
+              ],
+              "groups": {
+                "cli": [ "cli/**!(test)", "maven-plugins/*cli*" ],
+                "cli-functional": [ "cli/tests/**" ],
+                "archetype": [ "archetype/**", "maven-plugins/*archetype*" ],
+                "linker": [ "linker/**" ]
+              }
             }
   tests:
     needs: build
