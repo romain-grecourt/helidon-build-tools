@@ -81,13 +81,13 @@ print_groups() {
   all_modules=()
   for group in $(jq -r 'keys | .[]' <<< "${1}") ; do
     readarray -t modules <<< "$(jq -r --arg a "${group}" '. | to_entries[] | select (.key == $a).value[]' <<< "${1}")"
-    printf "## modules for group %s: %s\n" "${group}" "${modules[@]}" >&2
+    printf "## modules for group %s: %s\n" "${group}" "${modules[*]}" >&2
     print_group "${group}" "" "${modules[@]}"
     echo -ne ","
     all_modules+=("${modules[@]}")
   done
   if [ ${#all_modules[@]} -gt 0 ] ; then
-      printf "## modules for group misc: %s\n" "${all_modules[@]}" >&2
+      printf "## modules for group misc: %s\n" "${all_modules[2]}" >&2
       print_group "misc" "!" "${all_modules[@]}"
   fi
 }
@@ -98,11 +98,15 @@ print_groups() {
 # arg1: JSON object E.g. '{ "group1": [ "dir1/**", "dir2/**" ], "group2": [ "dir3/**" ] }'
 #
 matrix() {
- echo "matrix=$(echo '{
-   "include": [
-      '"$(print_groups "${1}")"'
-    ]
- }' | jq -c)"
+  local json
+  json="$(echo '{
+    "include": [
+       '"$(print_groups "${1}")"'
+     ]
+  }' | jq)"
+
+  printf "## Generated JSON matrix: \n%s\n" "${json}" >&2
+  echo "matrix=$(jq -c <<< "${json}")"
 }
 
 if [ ${#@} -lt 0 ] ; then

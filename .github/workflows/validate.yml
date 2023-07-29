@@ -80,7 +80,10 @@ jobs:
           artifact-path: cli/impl/target/helidon.zip
           test-groups: |
             {
-              "cli": [ "cli/**", "dev-loop/**" ]
+              "cli": [ "cli/**!(test)", "maven-plugins/*cli*" ],
+              "cli-functional": [ "cli/tests/**" ],
+              "archetype": [ "archetype/**", "maven-plugins/*archetype*" ],
+              "linker": [ "linker/**" ]
             }
   tests:
     needs: build
