@@ -96,52 +96,59 @@ runs:
         java-version: ${{ env.JAVA_VERSION }}
     - name: Cache local Maven repository (read-write)
       if: ${{ inputs.maven-cache == 'read-write' }}
-      uses: actions/cache@v3
+      uses: actions/cache@v3.3.1
       with:
         path: |
-          ~/.m2/repository/**
-          !~/.m2/repository/io/helidon/build-tools
+          .m2/repository/**
+          !.m2/repository/io/helidon/build-tools
         enableCrossOsArchive: true
         key: local-maven-${{ hashFiles('**/pom.xml') }}
         restore-keys: |
           local-maven-
     - name: Cache local Maven repository (read-only)
       if: ${{ inputs.maven-cache == 'read-only' }}
-      uses: actions/cache/restore@v3
+      uses: actions/cache/restore@v3.3.1
       with:
         path: |
-          ~/.m2/repository/**
-          !~/.m2/repository/io/helidon/build-tools
+          .m2/repository/**
+          !.m2/repository/io/helidon/build-tools
         enableCrossOsArchive: true
         key: local-maven-${{ hashFiles('**/pom.xml') }}
         restore-keys: |
           local-maven-
     - name: Build cache (read-write)
       if: ${{ inputs.build-cache == 'read-write' }}
-      uses: actions/cache@v3
+      uses: actions/cache@v3.3.1
       with:
         path: |
           ./**/target/**
-          ~/.m2/repository/io/helidon/build-tools/**
+          .m2/repository/io/helidon/build-tools/**
         enableCrossOsArchive: true
         key: build-cache-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
           build-cache-${{ github.run_id }}-
     - name: Build cache (read-only)
       if: ${{ inputs.build-cache == 'read-only' }}
-      uses: actions/cache/restore@v3
+      uses: actions/cache/restore@v3.3.1
       with:
         path: |
           ./**/target/**
-          ~/.m2/repository/io/helidon/build-tools/**
+          .m2/repository/io/helidon/build-tools/**
         enableCrossOsArchive: true
+        fail-on-cache-miss: true
         key: build-cache-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: |
           build-cache-${{ github.run_id }}-
     - name: Exec
+      env:
+        # Use a local repository in the workspace to get portable caches
+        MAVEN_ARGS: |
+          ${{ env.MAVEN_ARGS}
+          -Dmaven.repo.local=${PWD}/.m2/repository
       run: ${{ inputs.run }}
       shell: bash
     - id: test-groups
+      if: ${{ inputs.test-groups != '' }}
       run: ./.github/actions/common/groups.sh '${{ inputs.test-groups }}' >> "${GITHUB_OUTPUT}"
       shell: bash
     - name: Archive test results
