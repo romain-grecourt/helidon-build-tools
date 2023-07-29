@@ -81,7 +81,7 @@ jobs:
           test-matrix: |
             {
               "os": [ "ubuntu-20.04", "windows-2022" ],
-              "group": [ "cli", "cli-functional", "archetype", "linker" ],
+              "group": [ "cli", "cli-functional", "archetype", "linker", "misc" ],
               "include": [
                 { "os": "ubuntu-20.04", "platform": "linux" },
                 { "os": "windows-2022", "platform": "windows" }
