@@ -46,13 +46,24 @@ inputs:
     default: 'false'
   test-matrix:
     description: |
-      Map (JSON) of group names to glob expressions to use for the test-matrix output.
-      Glob expressions are expanded to Maven module directories and converted to comma separated lists.
+      A JSON matrix with a "group" dimension, and a "groups" object to resolve Maven modules
+      from glob expressions.
+
+      The resolved modules are added in the include objects with a param "module".
       A 'misc' group is always added to represent everything else by negating all the resolved modules (E.g. '!dir1,!dir2').
+
       E.g.
       {
-        "group1": [ "dir1/**", "dir2/**" ],
-        "group2": [ "dir3/**" ]
+        "os": [ "ubuntu-20.04", "windows-2022" ],
+        "group": [ "group1", "group2", "misc" ],
+        "include": [
+          { "os": "ubuntu-20.04", "platform": "linux" },
+          { "os": "windows-2022", "platform": "windows" }
+        ]
+        "groups":  {
+          "group1": [ "dir1/**", "dir2/**" ],
+          "group2": [ "dir3/**" ]
+        }
       }
     required: false
     default: ''
@@ -61,6 +72,7 @@ outputs:
     value: ${{ steps.test-matrix.outputs.matrix }}
     description: |
       E.g.
+      groups: [ group1, group2 ]
       includes:
         - group: group1
           modules: dir1,dir2,dir2a
@@ -156,7 +168,7 @@ runs:
       shell: bash
     - id: test-matrix
       if: ${{ inputs.test-matrix != '' }}
-      run: ./.github/actions/common/groups.sh '${{ inputs.test-matrix }}' >> "${GITHUB_OUTPUT}"
+      run: ./.github/actions/common/matrix.sh '${{ inputs.test-matrix }}' >> "${GITHUB_OUTPUT}"
       shell: bash
     - name: Archive test results
       # https://github.com/actions/upload-artifact/issues/240

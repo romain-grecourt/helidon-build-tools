@@ -29,8 +29,47 @@ trap on_error ERR
 shopt -s globstar
 shopt -s extglob
 
-ERROR_FILE=$(mktemp -t XXXgroups)
+ERROR_FILE=$(mktemp -t XXXmatrix)
 readonly ERROR_FILE
+
+#
+# Merge two JSON arrays.
+#
+# arg1: first array
+# arg2: second array
+#
+json_merge_arrays() {
+  jq '.[]' <<< "$(printf "%s\n%s" "${1}" "${2}")" | jq -s
+}
+
+#
+# Merge two JSON objects.
+#
+# arg1: first object
+# arg2: second object
+#
+json_merge_objects() {
+  jq -s '.[0] * .[1]' <<< "$(printf "%s\n%s" "${1}" "${2}")"
+}
+
+#
+# Get the value for a key in a JSON object.
+#
+# arg1: key
+# arg2: JSON object
+#
+json_map_get() {
+  jq -r --arg a "${1}" 'to_entries[] | select (.key == $a).value[]' <<< "${2}"
+}
+
+#
+# Get the keys in a JSON object.
+#
+# arg1: JSON object
+#
+json_keys() {
+  jq -r 'keys | .[]' <<< "${1}"
+}
 
 #
 # Expand the given glob expressions to match directories with pom.xml files.
@@ -79,16 +118,17 @@ print_group() {
 }
 
 #
-# Print comma separated JSON object for the groups.
+# Print JSON objects for the groups.
 # Always add a 'misc' at the end that matches everything else
 #
 # arg1: JSON object E.g. '{ "group1": [ "dir1/**", "dir2/**" ], "group2": [ "dir3/**" ] }'
 #
 print_groups() {
-  local modules all_modules
+  local groups modules all_modules
   all_modules=()
-  for group in $(jq -r '.groups // [] | keys | .[]' <<< "${1}") ; do
-    readarray -t modules <<< "$(jq -r --arg a "${group}" '.groups | to_entries[] | select (.key == $a).value[]' <<< "${1}")"
+  groups="$(jq '.groups // []' <<< "${1}")"
+  for group in $(json_keys "${groups}") ; do
+    readarray -t modules <<< "$(json_map_get "${group}" "${groups}")"
     printf "## Resolving group: %s, expressions: %s\n" "${group}" "${modules[*]}" >&2
     print_group "${group}" "" "${modules[@]}"
     all_modules+=("${modules[@]}")
@@ -100,22 +140,12 @@ print_groups() {
 }
 
 #
-# Merge two JSON arrays
-#
-# arg1: first array
-# arg2: second array
-#
-merge_arrays() {
-  jq '.[]' <<< "$(printf "%s\n%s" "${1}" "${2}")" | jq -s
-}
-
-#
 # Generate the 'matrix' output
 #
 # arg1: JSON object E.g. '{ "group1": [ "dir1/**", "dir2/**" ], "group2": [ "dir3/**" ] }'
 #
 main() {
-  local groups extra merged_include matrix errors
+  local groups extra_include merged_include include matrix errors
 
   printf "## Processing JSON: \n%s\n" "$(jq <<< "${1}")" >&2
   groups="$(print_groups "${1}" | jq -s)"
@@ -126,15 +156,17 @@ main() {
     exit 1
   fi
 
-  printf "## Groups JSON matrix: \n%s\n" "$(jq <<< "${groups}")" >&2
+  printf "## Resolved groups JSON: \n%s\n" "$(jq <<< "${groups}")" >&2
 
-  extra="$(jq '.include // []' <<< "${1}")"
-  printf "## Extra JSON matrix: \n%s\n" "${extra}" >&2
+  extra_include="$(jq '.include // []' <<< "${1}")"
+  extra_matrix="$(jq 'del(.groups, .include)' <<< "${1}")"
+  printf "## Additional include JSON: \n%s\n" "${extra_include}" >&2
+  printf "## Additional matrix JSON: \n%s\n" "${extra_matrix}" >&2
 
-  merged_include="$(merge_arrays "${groups}" "${extra}")"
-  printf "## Final JSON matrix: \n%s\n" "${merged_include}" >&2
-
-  matrix="$(jq <<< '{ "include": '"${merged_include}"' }')"
+  merged_include="$(json_merge_arrays "${groups}" "${extra_include}")"
+  include="$(jq <<< '{ "include": '"${merged_include}"' }')"
+  matrix="$(json_merge_objects "${include}" "${extra_matrix}")"
+  printf "## Final matrix JSON: \n%s\n" "${matrix}" >&2
 
   echo "matrix=$(jq -c <<< "${matrix}")"
 }
