@@ -143,7 +143,7 @@ runs:
       env:
         # Use a local repository in the workspace to get portable caches
         MAVEN_ARGS: |
-          ${{ env.MAVEN_ARGS}
+          ${{ env.MAVEN_ARGS }}
           -Dmaven.repo.local=${PWD}/.m2/repository
       run: ${{ inputs.run }}
       shell: bash
