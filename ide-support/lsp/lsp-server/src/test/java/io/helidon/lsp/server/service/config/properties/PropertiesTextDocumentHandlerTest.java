@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ public class PropertiesTextDocumentHandlerTest extends CompletionTestBase {
     private final PropertiesTextDocumentHandler handler = PropertiesTextDocumentHandler.instance();
 
     @BeforeEach
-    public void before() throws URISyntaxException, IOException {
+    public void before() throws URISyntaxException {
         super.before();
         handler.propertiesService(propertiesService);
     }

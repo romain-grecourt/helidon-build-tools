@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2023 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
 import java.net.URISyntaxException;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -36,7 +35,7 @@ class YamlTextDocumentHandlerTest extends CompletionTestBase {
     private final YamlTextDocumentHandler handler = YamlTextDocumentHandler.instance();
 
     @BeforeEach
-    public void before() throws URISyntaxException, IOException {
+    public void before() throws URISyntaxException {
         super.before();
         handler.propertiesService(propertiesService);
     }
@@ -127,7 +126,7 @@ class YamlTextDocumentHandlerTest extends CompletionTestBase {
     }
 
     @Test
-    public void testCompletionIncorrectConfig() throws URISyntaxException, IOException {
+    public void testCompletionIncorrectConfig() throws URISyntaxException {
         List<CompletionItem> completion = completionItems(new Position(19, 0), "test-incorrect-config.yaml");
         assertThat(completion.size(), is(2));
 

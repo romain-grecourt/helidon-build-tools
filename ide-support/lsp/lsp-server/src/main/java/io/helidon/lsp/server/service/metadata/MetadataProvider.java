@@ -17,6 +17,7 @@ package io.helidon.lsp.server.service.metadata;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedList;
 import java.util.List;
@@ -57,9 +58,8 @@ public class MetadataProvider {
      *
      * @param jarFilePath path to the helidon jar file.
      * @return list of configured types.
-     * @throws IOException IOException
      */
-    public List<ConfiguredType> readMetadata(String jarFilePath) throws IOException {
+    public List<ConfiguredType> readMetadata(String jarFilePath) {
         try (JarFile jarFile = new JarFile(jarFilePath)) {
             JarEntry configEntry = jarFile.getJarEntry(HELIDON_PROPERTIES_FILE);
             if (configEntry != null) {
@@ -69,6 +69,8 @@ public class MetadataProvider {
                     return processMetadataJson(reader.readArray());
                 }
             }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
         return List.of();
     }
