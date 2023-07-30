@@ -41,7 +41,7 @@ class YamlTextDocumentHandlerTest extends CompletionTestBase {
     }
 
     @Test
-    void testCompletionLabels() throws URISyntaxException {
+    void testCompletionLabels() {
         List<CompletionItem> completion = completionItems(new Position(19, 4), "test-config.yaml");
         assertThat(completion.size(), is(6));
         assertThat(completion.stream().anyMatch(item -> item.getLabel().equals("virtual-enforced")), is(true));
@@ -74,7 +74,7 @@ class YamlTextDocumentHandlerTest extends CompletionTestBase {
     }
 
     @Test
-    public void testCompletionForAllowedValues() throws URISyntaxException {
+    public void testCompletionForAllowedValues() {
         List<CompletionItem> completion = completionItems(new Position(34, 19), "test-config.yaml");
         assertThat(completion.size(), is(3));
         assertThat(completion.stream()
@@ -84,7 +84,7 @@ class YamlTextDocumentHandlerTest extends CompletionTestBase {
     }
 
     @Test
-    public void testInsertText() throws URISyntaxException {
+    public void testInsertText() {
         List<CompletionItem> completion = completionItems(new Position(25, 4), "test-config.yaml");
         CompletionItem completionItem = completion.stream().filter(item -> item.getLabel().equals("host")).findFirst()
                                                   .orElse(null);
@@ -115,7 +115,7 @@ class YamlTextDocumentHandlerTest extends CompletionTestBase {
     }
 
     @Test
-    public void testAllowedValues() throws URISyntaxException {
+    public void testAllowedValues() {
         List<CompletionItem> completion = completionItems(new Position(44, 6), "test-config.yaml");
         CompletionItem completionItem = completionItemByLabel("client-auth", completion);
         assertThat(completion.size(), is(6));//7-1
@@ -126,7 +126,7 @@ class YamlTextDocumentHandlerTest extends CompletionTestBase {
     }
 
     @Test
-    public void testCompletionIncorrectConfig() throws URISyntaxException {
+    public void testCompletionIncorrectConfig() {
         List<CompletionItem> completion = completionItems(new Position(19, 0), "test-incorrect-config.yaml");
         assertThat(completion.size(), is(2));
 

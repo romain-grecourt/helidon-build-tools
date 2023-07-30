@@ -71,16 +71,16 @@ public class ContentManager {
     /**
      * Read content of the file.
      *
-     * @param fileName file name.
+     * @param fileUri file name.
      * @return content of the file.
      * @throws IOException if an IO error occurs
      * @throws URISyntaxException if a URI error occurs
      */
-    public List<String> read(String fileName) throws IOException, URISyntaxException {
+    public List<String> read(String fileUri) throws IOException, URISyntaxException {
         LOGGER.finest("read() started with thread " + Thread.currentThread().getName());
         try {
             lock.lock();  // block until condition holds
-            String tempFile = tempFile(fileName);
+            String tempFile = tempFile(fileUri);
             return FileUtils.readAllLines(new URI(tempFile));
         } finally {
             lock.unlock();
@@ -109,23 +109,24 @@ public class ContentManager {
         }
     }
 
-    private String tempFile(String fileName) {
-        String tempFile = fileToTmpMap.computeIfAbsent(fileName, this::createNewTempFile);
+    private String tempFile(String fileUri) {
+        String tempFile = fileToTmpMap.computeIfAbsent(fileUri, this::createNewTempFile);
         if (tempFile == null) {
-            return fileName;
+            return fileUri;
         }
         return tempFile;
     }
 
-    private String createNewTempFile(String fileName) {
+    private String createNewTempFile(String fileUri) {
         try {
-            Path tmp = Files.createTempFile(filesFolder, "", Path.of(fileName).getFileName().toString());
+            String fileName = fileUri.substring(fileUri.lastIndexOf('/') + 1);
+            Path tmp = Files.createTempFile(filesFolder, "", fileName);
             tmp.toFile().deleteOnExit();
-            List<String> content = FileUtils.readAllLines(new URI(fileName));
+            List<String> content = FileUtils.readAllLines(new URI(fileUri));
             Files.write(tmp, content);
             return tmp.toUri().toString();
         } catch (URISyntaxException | IOException e) {
-            String message = String.format("Cannot create temp file for %s. Exception - %s", fileName, e.getMessage());
+            String message = String.format("Cannot create temp file for %s. Exception - %s", fileUri, e.getMessage());
             LOGGER.log(Level.SEVERE, message);
             LanguageClientLogUtil.logMessage(message, e);
             return null;
