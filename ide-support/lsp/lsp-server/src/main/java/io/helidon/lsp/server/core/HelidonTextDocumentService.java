@@ -259,7 +259,7 @@ public class HelidonTextDocumentService implements TextDocumentService {
             try {
                 //fill the cache
                 configService.metadataForFile(docUri);
-            } catch (URISyntaxException e) {
+            } catch (RuntimeException e) {
                 String message = "Exception while opening the file " + docUri;
                 LOGGER.log(Level.SEVERE, message, e);
                 LanguageClientLogUtil.logMessage(message, e);
@@ -269,10 +269,8 @@ public class HelidonTextDocumentService implements TextDocumentService {
 
     @Override
     public void didChange(DidChangeTextDocumentParams didChangeTextDocumentParams) {
-        LOGGER.log(
-                Level.FINEST,
-                () -> "change the file " + didChangeTextDocumentParams.getTextDocument().getUri()
-        );
+        LOGGER.log(Level.FINEST,
+                () -> "change the file " + didChangeTextDocumentParams.getTextDocument().getUri());
         String docUri = didChangeTextDocumentParams.getTextDocument().getUri();
 
         try {

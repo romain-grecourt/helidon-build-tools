@@ -159,11 +159,14 @@ public class ConfigurationPropertiesService {
      *
      * @param uri project file
      * @return Helidon configuration properties
-     * @throws URISyntaxException URISyntaxException
      */
-    public Map<String, ConfigMetadata> metadataForFile(String uri) throws URISyntaxException {
-        Path pom = MavenSupport.resolvePom(FileUtils.pathOf(new URI(uri)));
-        return pom != null ? metadataForPom(pom) : Map.of();
+    public Map<String, ConfigMetadata> metadataForFile(String uri) {
+        try {
+            Path pom = MavenSupport.resolvePom(FileUtils.pathOf(new URI(uri)));
+            return pom != null ? metadataForPom(pom) : Map.of();
+        } catch (URISyntaxException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private void processType(ConfiguredType configuredType,

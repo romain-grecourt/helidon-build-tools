@@ -55,6 +55,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
+import static io.helidon.build.common.FileUtils.pathOf;
 import static org.mockito.ArgumentMatchers.any;
 
 @ExtendWith(MockitoExtension.class)
@@ -68,7 +69,7 @@ public abstract class CompletionTestBase {
     @Spy
     protected MetadataProvider provider = MetadataProvider.instance();
 
-    public void before() throws URISyntaxException {
+    public void before() {
         Map<String, ConfigMetadata> stringConfigMetadataMap = metadataForFile();
         Mockito.when(propertiesService.metadataForFile(any())).thenReturn(stringConfigMetadataMap);
     }
@@ -81,14 +82,14 @@ public abstract class CompletionTestBase {
 
     protected List<CompletionItem> completionItems(Position position,
                                                    String fileName,
-                                                   TextDocumentHandler handler) throws URISyntaxException {
+                                                   TextDocumentHandler handler) {
 
         URL resource = getClass().getClassLoader().getResource(fileName);
         if (resource == null) {
             throw new IllegalArgumentException("Resource not found: " + fileName);
         }
         CompletionParams completionParams = new CompletionParams(
-                new TextDocumentIdentifier(FileUtils.pathOf(resource).toString()), position);
+                new TextDocumentIdentifier(pathOf(resource).toUri().toString()), position);
         return handler.completion(completionParams);
     }
 
@@ -116,7 +117,7 @@ public abstract class CompletionTestBase {
         if (resource == null) {
             throw new IllegalStateException("Resource not found: metadata");
         }
-        try (Stream<Path> paths = Files.list(FileUtils.pathOf(resource))) {
+        try (Stream<Path> paths = Files.list(pathOf(resource))) {
             return paths.filter(file -> file.getFileName().toString().endsWith(".json"))
                     .map(file -> new Dependency(null, null, null, null, null, file.toString()))
                     .collect(Collectors.toSet());

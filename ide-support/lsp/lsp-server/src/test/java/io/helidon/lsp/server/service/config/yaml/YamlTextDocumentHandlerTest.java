@@ -35,7 +35,7 @@ class YamlTextDocumentHandlerTest extends CompletionTestBase {
     private final YamlTextDocumentHandler handler = YamlTextDocumentHandler.instance();
 
     @BeforeEach
-    public void before() throws URISyntaxException {
+    public void before() {
         super.before();
         handler.propertiesService(propertiesService);
     }
@@ -100,7 +100,7 @@ class YamlTextDocumentHandlerTest extends CompletionTestBase {
     }
 
     @Test
-    public void testDefaultValues() throws URISyntaxException {
+    public void testDefaultValues() {
         List<CompletionItem> completion = completionItems(new Position(19, 2), "test-config.yaml");
         CompletionItem completionItem = completionItemByLabel("default-authorization-provider", completion);
         assertThat(completionItem.getDocumentation().getLeft().contains("Default value"), is(false));
@@ -134,7 +134,7 @@ class YamlTextDocumentHandlerTest extends CompletionTestBase {
         assertThat(completion.size(), is(0));
     }
 
-    private List<CompletionItem> completionItems(Position position, String fileName) throws URISyntaxException {
+    private List<CompletionItem> completionItems(Position position, String fileName) {
         return completionItems(position, fileName, handler);
     }
 }
