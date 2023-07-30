@@ -88,7 +88,7 @@ public abstract class CompletionTestBase {
             throw new IllegalArgumentException("Resource not found: " + fileName);
         }
         CompletionParams completionParams = new CompletionParams(
-                new TextDocumentIdentifier(resource.toURI().toString()), position);
+                new TextDocumentIdentifier(FileUtils.pathOf(resource).toString()), position);
         return handler.completion(completionParams);
     }
 
