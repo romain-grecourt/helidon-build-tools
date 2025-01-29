@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2025 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,10 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.helidon.build.common;
 
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
@@ -30,6 +30,11 @@ import static org.hamcrest.Matchers.is;
  */
 @SuppressWarnings("unchecked")
 class PermutationsTest {
+
+    @Test
+    void testEmpty() {
+        assertThat(Permutations.of(List.of()), is(List.of(List.of())));
+    }
 
     @Test
     void testPermutations() {
@@ -122,5 +127,18 @@ class PermutationsTest {
     void testListPermutationsEmptyElement() {
         assertThat(Permutations.ofList(List.of(List.of(), List.of("dark", "light"), List.of("red"))),
                 contains(List.of("dark", "red"), List.of("light", "red")));
+    }
+
+    @Test
+    void testMapPermutations() {
+        List<List<Map<String, String>>> computed = Permutations.ofList(List.of(
+                List.of(Map.of("foo", "foo1"), Map.of("foo", "foo2")),
+                List.of(Map.of("bar", "bar1"), Map.of("bar", "bar2"))));
+
+        assertThat(Lists.map(computed, Maps::merge), is(List.of(
+                Map.of("foo", "foo1", "bar", "bar1"),
+                Map.of("foo", "foo2", "bar", "bar1"),
+                Map.of("foo", "foo1", "bar", "bar2"),
+                Map.of("foo", "foo2", "bar", "bar2"))));
     }
 }

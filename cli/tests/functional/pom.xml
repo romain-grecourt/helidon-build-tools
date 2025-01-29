@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 
-    Copyright (c) 2022, 2024 Oracle and/or its affiliates.
+    Copyright (c) 2022, 2025 Oracle and/or its affiliates.
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -30,10 +30,6 @@
     <groupId>io.helidon.build-tools.cli.tests.functional</groupId>
     <artifactId>helidon-cli-functional</artifactId>
     <name>Helidon Command Line Interface Functional Tests</name>
-
-    <properties>
-        <version.lib.helidon>2.5.1</version.lib.helidon>
-    </properties>
 
     <dependencies>
         <dependency>
@@ -78,12 +74,6 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>io.helidon.webclient</groupId>
-            <artifactId>helidon-webclient</artifactId>
-            <version>${version.lib.helidon}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>io.helidon.build-tools.common</groupId>
             <artifactId>helidon-build-common-test-utils</artifactId>
             <version>${project.version}</version>
@@ -100,6 +90,7 @@
                     <systemPropertyVariables>
                         <cli.version>${project.version}</cli.version>
                         <helidon.executable.directory>${project.basedir}/../../impl</helidon.executable.directory>
+                        <java.util.logging.config.file>${project.build.testOutputDirectory}/logging.properties</java.util.logging.config.file>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

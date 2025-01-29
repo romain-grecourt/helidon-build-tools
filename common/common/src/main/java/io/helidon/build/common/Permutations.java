@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2025 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,9 @@
 
 package io.helidon.build.common;
 
+import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -59,10 +61,10 @@ public final class Permutations {
         @Override
         public boolean hasNext() {
             // all elements are represented as distinct bits
-            // when a bit is set, it is included in the current permutation
+            // when a bit is set; it is included in the current permutation
             // a list without a bit set has been cycled through, start-over with the first element
             if (started && bitSet.isEmpty()) {
-                // all permutations are completed when there is zero bit set
+                // all permutations are completed when there are no bit set
                 return false;
             }
             if (permutation != null) {
@@ -78,7 +80,7 @@ public final class Permutations {
                     continue;
                 }
                 int pos = bitSet.nextSetBit(offset);
-                // position relative to element
+                // position relative to the element
                 int rPos = pos - offset;
                 if (rPos < 0 || rPos >= size) {
                     // out of bound, start over
@@ -93,8 +95,8 @@ public final class Permutations {
                     // clear the current bit
                     bitSet.clear(pos);
                     if (pos - offset + 1 < size) {
-                        // if next pos is within bound, set its bit
-                        // otherwise, there is no bit set for this element
+                        // if the next pos is within bound, set its bit
+                        // otherwise; there is no bit set for this element
                         bitSet.set(pos + 1);
                     }
                 }
@@ -138,26 +140,28 @@ public final class Permutations {
     /**
      * Compute the non-repetitive permutations of the given elements.
      *
-     * @param list elements for which to compute the permutations
+     * @param elements collection for which to compute the permutations
      * @param <T>  element type
-     * @return list of permutations
-     * @throws UnsupportedOperationException if the list size is greater or equal to 64
+     * @return elements of permutations
+     * @throws UnsupportedOperationException if the collection size is greater or equal to 64
      */
-    public static <T> List<List<T>> of(List<T> list) {
-        if (list.size() >= 64) {
-            throw new UnsupportedOperationException("list size >= 64");
+    public static <T> List<List<T>> of(Collection<T> elements) {
+        if (elements.size() >= 64) {
+            throw new UnsupportedOperationException("size >= 64");
         }
-        int size = list.size();
-        long len = 1L << size; // 2 ^ length
-        List<List<T>> permutations = new LinkedList<>();
+        int size = elements.size();
+        long len = (1L << size) - 1; // 2 ^ length
+        List<List<T>> permutations = new ArrayList<>(size);
         permutations.add(List.of());
-        for (long p = 1; p < len; p++) {
-            List<T> permutation = new LinkedList<>();
-            // the permutation number (p) is a binary mask to filter the item to include
-            for (int i = 0; i < size; i++) {
+        for (long p = 1; p <= len; p++) {
+            List<T> permutation = new ArrayList<>();
+            Iterator<T> it = elements.iterator();
+            for (int i = 0; it.hasNext(); i++) {
+                T e = it.next();
+                // the permutation number (p) is a binary mask to filter the item to include
                 if ((1L << i & p) > 0) {
                     // if the current index bitset is included in the mask
-                    permutation.add(list.get(i));
+                    permutation.add(e);
                 }
             }
             permutations.add(permutation);

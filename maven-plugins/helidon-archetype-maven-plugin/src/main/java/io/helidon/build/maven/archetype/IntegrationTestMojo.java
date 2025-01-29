@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2025 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,8 +26,11 @@ import java.io.UncheckedIOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -37,16 +40,16 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import io.helidon.build.archetype.engine.v2.ArchetypeEngineV2;
-import io.helidon.build.archetype.engine.v2.BatchInputResolver;
-import io.helidon.build.archetype.engine.v2.ScriptLoader;
-import io.helidon.build.archetype.engine.v2.ast.Script;
-import io.helidon.build.archetype.engine.v2.util.InputPermutations;
+import io.helidon.build.archetype.engine.v2.Expression;
+import io.helidon.build.archetype.engine.v2.InputPermutations;
+import io.helidon.build.archetype.engine.v2.Node;
+import io.helidon.build.archetype.engine.v2.Script;
 import io.helidon.build.common.Lists;
 import io.helidon.build.common.Maps;
 import io.helidon.build.common.ansi.AnsiConsoleInstaller;
+import io.helidon.build.common.xml.XMLElement;
 import io.helidon.build.maven.archetype.config.Validation;
 
 import org.apache.maven.RepositoryUtils;
@@ -184,28 +187,10 @@ public class IntegrationTestMojo extends AbstractMojo {
     private Map<String, String> externalDefaults;
 
     /**
-     * Input filters to use when computing permutations.
-     */
-    @Parameter(property = "archetype.test.inputFilters")
-    private List<String> inputFilters;
-
-    /**
-     * File that contains input filters to use when computing permutations.
-     */
-    @Parameter(property = "archetype.test.inputFiltersFile")
-    private File inputFiltersFile;
-
-    /**
-     * Permutation filters to filter computed permutations.
-     */
-    @Parameter(property = "archetype.test.permutationFilters")
-    private List<String> permutationFilters;
-
-    /**
      * File that contains filters to filter computed permutations.
      */
-    @Parameter(property = "archetype.test.permutationFiltersFile")
-    private File permutationFiltersFile;
+    @Parameter(property = "archetype.test.permutationFilters")
+    private File permutationFilters;
 
     /**
      * Whether to generate input permutations.
@@ -318,20 +303,12 @@ public class IntegrationTestMojo extends AbstractMojo {
 
     private List<Map<String, String>> permutations(Path archetypeFile) {
         try (FileSystem fileSystem = newFileSystem(archetypeFile, this.getClass().getClassLoader())) {
-            Script script = ScriptLoader.load(fileSystem.getPath("main.xml"));
-            InputPermutations.Builder builder = InputPermutations.builder()
-                    .script(script)
+            Node script = Script.load(fileSystem.getPath("main.xml"));
+            return new InputPermutations(script)
                     .externalValues(externalValues)
                     .externalDefaults(externalDefaults)
-                    .inputFilters(inputFilters)
-                    .permutationFilters(permutationFilters);
-            if (inputFiltersFile != null) {
-                builder.inputFilters(filtersFromFile(inputFiltersFile));
-            }
-            if (permutationFiltersFile != null) {
-                builder.permutationFilters(filtersFromFile(permutationFiltersFile));
-            }
-            return builder.build().compute();
+                    .filter(permutationFilters())
+                    .compute();
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }
@@ -370,7 +347,7 @@ public class IntegrationTestMojo extends AbstractMojo {
         } else {
             List<Integer> indices = Arrays.stream(permutation.split(","))
                     .map(Integer::valueOf)
-                    .collect(Collectors.toList());
+                    .toList();
             Iterator<Map<String, String>> it = permutations.iterator();
             for (int i = 1; it.hasNext(); i++) {
                 Map<String, String> next = it.next();
@@ -451,10 +428,12 @@ public class IntegrationTestMojo extends AbstractMojo {
         log.info(Bold.apply(label) + ":" + (empty ? Italic.apply(" [none]") : ""));
         if (!empty) {
             log.info("");
-            inputs.forEach((key, value) -> {
-                String padding = padding(" ", maxKeyWidth, key);
-                log.info("    " + Cyan.apply(key) + padding + SEP + BoldBlue.apply(value));
-            });
+            inputs.entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .forEach(entry -> {
+                        String padding = padding(" ", maxKeyWidth, entry.getKey());
+                        log.info("    " + Cyan.apply(entry.getKey()) + padding + SEP + BoldBlue.apply(entry.getValue()));
+                    });
         }
     }
 
@@ -477,9 +456,9 @@ public class IntegrationTestMojo extends AbstractMojo {
             FileSystem fileSystem = newFileSystem(archetypeFile, this.getClass().getClassLoader());
             ArchetypeEngineV2 engine = ArchetypeEngineV2.builder()
                     .fileSystem(fileSystem)
-                    .inputResolver(new BatchInputResolver())
+                    .batch(true)
                     .externalValues(Maps.fromProperties(props))
-                    .directorySupplier(n -> outputDir)
+                    .output(() -> outputDir)
                     .build();
             engine.generate();
         } catch (IOException ex) {
@@ -558,7 +537,13 @@ public class IntegrationTestMojo extends AbstractMojo {
         try {
             InvocationResult result = invoker.execute(request);
             getLog().info("Post-archetype-generation invoker exit code: " + result.getExitCode());
-            Validator.validateProject(basedir, validations);
+
+            // validate projects
+            if (validations != null) {
+                for (Validation validation : validations) {
+                    validation.validate(basedir);
+                }
+            }
             if (result.getExitCode() != 0) {
                 throw new MojoExecutionException("Execution failure: exit code = " + result.getExitCode(),
                         result.getExecutionException());
@@ -582,11 +567,21 @@ public class IntegrationTestMojo extends AbstractMojo {
         return logger;
     }
 
-    private static Collection<String> filtersFromFile(File file) {
-        Properties props = new Properties();
-        try (InputStream is = Files.newInputStream(file.toPath())) {
-            props.load(is);
-            return Maps.fromProperties(props).values();
+    private Collection<Collection<Expression>> permutationFilters() {
+        if (permutationFilters == null) {
+            return List.of();
+        }
+        try (InputStream is = Files.newInputStream(permutationFilters.toPath())) {
+            List<Collection<Expression>> excludes = new ArrayList<>();
+            XMLElement root = XMLElement.parse(is);
+            for (XMLElement elt : root.traverse(it -> it.name().equals("exclude"))) {
+                Deque<Expression> exclude = new ArrayDeque<>();
+                for (XMLElement n = elt; elt.parent() != null; elt = elt.parent()) {
+                    exclude.push(Expression.create(n.attribute("if")));
+                }
+                excludes.add(exclude);
+            }
+            return excludes;
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }

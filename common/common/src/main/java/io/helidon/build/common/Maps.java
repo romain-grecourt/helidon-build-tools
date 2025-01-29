@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2025 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@ package io.helidon.build.common;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -89,25 +88,6 @@ public class Maps {
     }
 
     /**
-     * Sort the given map by values.
-     *
-     * @param map map
-     * @param cmp comparator
-     * @param <K> key type
-     * @param <V> value type
-     * @return sorted map
-     */
-    public static <K, V> Map<K, V> sortByValue(Map<K, V> map, Comparator<V> cmp) {
-        List<Entry<K, V>> list = new ArrayList<>(map.entrySet());
-        list.sort(Entry.comparingByValue(cmp));
-        Map<K, V> result = new LinkedHashMap<>();
-        for (Entry<K, V> entry : list) {
-            result.put(entry.getKey(), entry.getValue());
-        }
-        return result;
-    }
-
-    /**
      * Map the given map values.
      *
      * @param map    input map
@@ -160,6 +140,22 @@ public class Maps {
      *
      * @param map    input map
      * @param filter key predicate
+     * @param <K>    key type
+     * @param <V>    value type
+     * @return new map
+     */
+    public static <K, V> Map<K, V> filterKey(Map<K, V> map, Predicate<K> filter) {
+        return map.entrySet()
+                .stream()
+                .filter(e -> filter.test(e.getKey()))
+                .collect(toMap(Entry::getKey, Entry::getValue));
+    }
+
+    /**
+     * Filter the given map.
+     *
+     * @param map    input map
+     * @param filter entry predicate
      * @param <K>    key type
      * @param <V>    value type
      * @return new map
@@ -398,7 +394,7 @@ public class Maps {
      * @param <V>           value type
      * @return map
      */
-    public static <K, V> Map<K, V> merge(List<Map<K, V>> maps, BinaryOperator<V> mergeFunction) {
+    public static <K, V> Map<K, V> merge(Collection<Map<K, V>> maps, BinaryOperator<V> mergeFunction) {
         return Maps.fromEntries(Lists.flatMap(maps, Map::entrySet), mergeFunction);
     }
 
@@ -410,15 +406,19 @@ public class Maps {
      * @param <V>  value type
      * @return map
      */
-    public static <K, V> Map<K, V> merge(List<Map<K, V>> maps) {
-        return Maps.fromEntries(Lists.flatMap(maps, Map::entrySet));
+    public static <K, V> Map<K, V> merge(Collection<Map<K, V>> maps) {
+        Map<K, V> merged = new LinkedHashMap<>();
+        for (Map<K, V> map : maps) {
+            merged.putAll(map);
+        }
+        return merged;
     }
 
     /**
      * Compute non-existing keys in a map.
      *
      * @param map      map to update
-     * @param mappings map of key to mapping functions
+     * @param mappings map of keys to mapping functions
      * @param <K>      key type
      * @param <V>      value type
      * @return map
@@ -432,9 +432,9 @@ public class Maps {
      * Map and filter the given map where values are lists.
      *
      * @param map         input map
-     * @param keyFilter   filter for keys in input map
-     * @param keyMapper   mapping function for keys in input map
-     * @param valueMapper mapping function for values in lists that represent values in input map
+     * @param keyFilter   filter for keys
+     * @param keyMapper   mapping function for keys
+     * @param valueMapper mapping function for values in lists that represent values
      * @param <T>         origin key type
      * @param <U>         origin value type
      * @param <K>         mapped key type
@@ -457,7 +457,7 @@ public class Maps {
      * Get a value from the given map or throw an exception.
      *
      * @param map             map
-     * @param key             key to lookup in the map
+     * @param key             key to look up in the map
      * @param exceptionMapper exception mapper
      * @param <K>             key type
      * @param <V>             value type
@@ -473,5 +473,73 @@ public class Maps {
             throw exceptionMapper.apply(key);
         }
         return v;
+    }
+
+    /**
+     * Test map equality using a predicate.
+     *
+     * @param map1      map
+     * @param map2      map
+     * @param predicate predicate
+     * @param <K>       key type
+     * @param <V>       value type
+     * @return {@code true} if equal, {@code false} otherwise
+     */
+    public static <K, V> boolean equals(Map<K, V> map1, Map<K, V> map2, BiPredicate<V, V> predicate) {
+        try {
+            if (map1 == map2) {
+                return true;
+            }
+            if (map1.size() != map2.size()) {
+                return false;
+            }
+            for (Map.Entry<K, V> e : map1.entrySet()) {
+                K key = e.getKey();
+                V value = e.getValue();
+                if (value == null) {
+                    if (!(map1.get(key) == null && map2.containsKey(key))) {
+                        return false;
+                    }
+                } else {
+                    V v2 = map2.get(key);
+                    if (v2 == null || !predicate.test(value, v2)) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        } catch (ClassCastException unused) {
+            return false;
+        }
+    }
+
+    /**
+     * Test if the given value is contained in the map by comparing hashCode.
+     *
+     * @param map   map
+     * @param value value
+     * @param <V>   value type
+     * @return {@code true} if found, {@code false} otherwise
+     */
+    public static <V> boolean containsHashValue(Map<?, V> map, V value) {
+        for (V v : map.values()) {
+            if (v.hashCode() == Objects.hashCode(value)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Get the sorted keys for the given map.
+     *
+     * @param map map
+     * @param <K> key type
+     * @return keys sorted using the default comparator
+     */
+    public static <K> List<K> sortedKeys(Map<K, ?> map) {
+        return map.keySet().stream()
+                .sorted()
+                .collect(Collectors.toList());
     }
 }
