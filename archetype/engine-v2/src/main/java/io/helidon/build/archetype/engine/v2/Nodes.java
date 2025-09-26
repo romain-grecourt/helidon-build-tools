@@ -19,13 +19,11 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.ListIterator;
-import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import io.helidon.build.archetype.engine.v2.Node.Kind;
-import io.helidon.build.common.Maps;
 
 /**
  * {@link Node} utility methods.
@@ -920,18 +918,5 @@ public class Nodes {
             }
         }
         return -1;
-    }
-
-    /**
-     * Compute the hash code for a node.
-     *
-     * @param node node
-     * @return hash
-     */
-    public static int hash(Node node) {
-        return Objects.hash(
-                node.kind(),
-                Maps.mapValue(node.attributes(), v -> Value.toString(v)),
-                Value.toString(node.value()));
     }
 }

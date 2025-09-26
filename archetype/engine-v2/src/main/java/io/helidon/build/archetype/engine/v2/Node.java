@@ -152,6 +152,19 @@ public interface Node {
     }
 
     /**
+     * Get the wrapper.
+     *
+     * @return Node
+     */
+    default Node wrapped() {
+        Node parent = parent();
+        if (parent != null && parent.kind() == Kind.CONDITION) {
+            return parent;
+        }
+        return this;
+    }
+
+    /**
      * Set the parent.
      *
      * @param parent parent
@@ -181,7 +194,6 @@ public interface Node {
      * @return this node
      */
     Node value(Value<?> value);
-
 
     /**
      * Get the node id.
@@ -384,15 +396,17 @@ public interface Node {
      * Replace this node with the given node.
      *
      * @param node node
+     * @return replacement Node
      */
-    void replace(Node node);
+    Node replace(Node node);
 
     /**
      * Replace this node with the given nodes.
      *
      * @param nodes nodes
+     * @return this node
      */
-    void replace(List<Node> nodes);
+    Node replace(List<Node> nodes);
 
     /**
      * Traverse this node.
@@ -1145,7 +1159,7 @@ public interface Node {
         }
 
         @Override
-        public void replace(Node node) {
+        public Node replace(Node node) {
             if (parent != null) {
                 Nodes.parent(node, parent);
                 List<Node> siblings = parent.children();
@@ -1156,10 +1170,11 @@ public interface Node {
                     siblings.add(node);
                 }
             }
+            return node;
         }
 
         @Override
-        public void replace(List<Node> nodes) {
+        public Node replace(List<Node> nodes) {
             if (parent != null) {
                 List<Node> siblings = parent.children();
                 int index = siblings.indexOf(this);
@@ -1175,6 +1190,7 @@ public interface Node {
                 }
                 nodes.clear();
             }
+            return this;
         }
 
         @Override
@@ -1372,12 +1388,12 @@ public interface Node {
         }
 
         @Override
-        public void replace(Node node) {
+        public Node replace(Node node) {
             throw new UnsupportedOperationException("Node is read-only");
         }
 
         @Override
-        public void replace(List<Node> nodes) {
+        public Node replace(List<Node> nodes) {
             throw new UnsupportedOperationException("Node is read-only");
         }
 

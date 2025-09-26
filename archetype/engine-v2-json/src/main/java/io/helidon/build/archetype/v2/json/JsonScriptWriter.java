@@ -105,7 +105,6 @@ public class JsonScriptWriter implements Script.Writer {
                     }
                     node.attributes().forEach((k, v) -> {
                         if (k.equals("default") && node.kind() == Kind.INPUT_BOOLEAN) {
-                            // TODO attributes should be pre-typed
                             write(k, v.asBoolean());
                         } else {
                             write(k, v);

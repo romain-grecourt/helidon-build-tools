@@ -73,7 +73,7 @@ class XMLScriptWriterTest {
     @Test
     void testValidations() {
         Node script = script(validations(validation("validation1", regex("^foo"))));
-        assertThat(toXml(script), is(normalizeXml("writer/validations.xml")));
+        assertThat(write(script), is(normalizeXml("writer/validations.xml")));
     }
 
     @Test
@@ -85,7 +85,7 @@ class XMLScriptWriterTest {
                         variableText("variable-text1", "value1"),
                         variableText("variable-text2", ""),
                         variableList("variable-list1", List.of("value1"))));
-        assertThat(toXml(script), is(normalizeXml("writer/variables.xml")));
+        assertThat(write(script), is(normalizeXml("writer/variables.xml")));
     }
 
     @Test
@@ -96,7 +96,7 @@ class XMLScriptWriterTest {
                         presetEnum("preset-enum1", "value1"),
                         presetText("preset-text1", "value1"),
                         presetList("preset-list1", List.of("value1"))));
-        assertThat(toXml(script), is(normalizeXml("writer/presets.xml")));
+        assertThat(write(script), is(normalizeXml("writer/presets.xml")));
     }
 
     @Test
@@ -104,7 +104,7 @@ class XMLScriptWriterTest {
         Node block = script();
         block.script().methods().put("method1", method("method1",
                 output(model(modelList("model-list1", modelValue("value1"))))));
-        assertThat(toXml(block), is(normalizeXml("writer/methods.xml")));
+        assertThat(write(block), is(normalizeXml("writer/methods.xml")));
     }
 
     @Test
@@ -119,7 +119,7 @@ class XMLScriptWriterTest {
                         files("files",
                                 includes(include("foo/**")),
                                 excludes(exclude("bar/**")))));
-        assertThat(toXml(script), is(normalizeXml("writer/resources.xml")));
+        assertThat(write(script), is(normalizeXml("writer/resources.xml")));
     }
 
     @Test
@@ -135,7 +135,7 @@ class XMLScriptWriterTest {
                                 inputText("text1")
                                         .attribute("name", "Text1")
                                         .attribute("default", "Default1"))));
-        assertThat(toXml(script), is(normalizeXml("writer/inputs.xml")));
+        assertThat(write(script), is(normalizeXml("writer/inputs.xml")));
     }
 
     @Test
@@ -145,10 +145,10 @@ class XMLScriptWriterTest {
                         modelList("list1", modelValue("value1")),
                         modelMap("map1", modelValue("key2", "value2")),
                         modelValue("key3", "value3"))));
-        assertThat(toXml(script), is(normalizeXml("writer/model.xml")));
+        assertThat(write(script), is(normalizeXml("writer/model.xml")));
     }
 
-    static String toXml(Node node) {
+    static String write(Node node) {
         StringWriter buf = new StringWriter();
         try (XMLScriptWriter writer = new XMLScriptWriter(buf, true)) {
             writer.writeScript(node);

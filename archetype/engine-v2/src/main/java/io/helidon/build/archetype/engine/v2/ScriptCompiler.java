@@ -64,6 +64,8 @@ import io.helidon.build.common.Variations;
 import io.helidon.build.common.logging.Log;
 import io.helidon.build.common.logging.LogLevel;
 
+import static io.helidon.build.archetype.engine.v2.Expression.FALSE;
+import static io.helidon.build.archetype.engine.v2.Expression.TRUE;
 import static io.helidon.build.archetype.engine.v2.Nodes.optionIndex;
 import static io.helidon.build.archetype.engine.v2.Nodes.options;
 import static io.helidon.build.common.Checksum.md5;
@@ -397,7 +399,7 @@ public class ScriptCompiler {
                 String ref = scope.key(variable);
 
                 // expression that represents where the reference is defined
-                Expression refExpr0 = refMap.getOrDefault(ref, Expression.FALSE);
+                Expression refExpr0 = refMap.getOrDefault(ref, FALSE);
 
                 // "relativize" the expression within the block
                 Expression refExpr1 = blockExpr.relativize(refExpr0);
@@ -405,7 +407,7 @@ public class ScriptCompiler {
                 // inline values
                 Expression refExpr2 = inline(node, refExpr1);
 
-                if (refExpr2 != Expression.TRUE) {
+                if (refExpr2 != TRUE) {
                     resolved = false;
                     errors.add(String.format("%s %s: '%s'",
                             node.location(),
@@ -552,11 +554,11 @@ public class ScriptCompiler {
             if (node.id() > n.id()) {
                 // "relativize" the expression within the block
                 Expression refExpr = blockExpr.relativize(expression(n));
-                if (refExpr == Expression.TRUE) {
+                if (refExpr == TRUE) {
                     if (node0 == null || n.id() > node0.id()) {
                         node0 = n;
                     }
-                } else if (refExpr != Expression.FALSE) {
+                } else if (refExpr != FALSE) {
                     if (node0 != null && n.id() > node0.id()) {
                         node0 = null;
                     }
@@ -628,7 +630,7 @@ public class ScriptCompiler {
     }
 
     private Expression expression(Node node, Function<Node, String> key) {
-        Expression expr = Expression.TRUE;
+        Expression expr = TRUE;
         for (Node n = node; n != null; n = n.parent()) {
             switch (n.kind()) {
                 case CONDITION:
@@ -780,14 +782,14 @@ public class ScriptCompiler {
                 case CONDITION:
                     scopes.put(node, scope.key());
                     Expression expr = inline(node, node.expression());
-                    if (expr != Expression.FALSE) {
+                    if (expr != FALSE) {
                         node.expression(expr);
                         refs.put(node, Map.copyOf(currentRefs));
                         return true;
                     }
                     // condition is always false
                     // skip traversal and prune (postVisit)
-                    node.expression(Expression.FALSE);
+                    node.expression(FALSE);
                     return false;
                 case INPUT_TEXT:
                 case INPUT_BOOLEAN:
@@ -797,7 +799,7 @@ public class ScriptCompiler {
                     scopes.put(node, scope.key());
                     refTypes.putIfAbsent(scope.key(), node.kind().valueType());
                     currentRefs.compute(scope.key(), (k, v) -> expression(node.parent()).or(v).reduce());
-                    if (inline(node, expression(node)) == Expression.FALSE) {
+                    if (inline(node, expression(node)) == FALSE) {
                         return false;
                     }
                     break;
@@ -835,14 +837,14 @@ public class ScriptCompiler {
                     }
                     break;
                 case CONDITION:
-                    if (node.expression() == Expression.FALSE) {
+                    if (node.expression() == FALSE) {
                         remove(node);
                     }
                     break;
                 case INPUT_BOOLEAN:
                 case INPUT_TEXT:
                     expr = inline(node, expression(node));
-                    if (expr == Expression.FALSE) {
+                    if (expr == FALSE) {
                         remove(node);
                         node.ancestor(Kind.STEP::equals).ifPresent(modifiedSteps::add);
                     }
@@ -851,7 +853,7 @@ public class ScriptCompiler {
                 case INPUT_LIST:
                 case INPUT_ENUM:
                     expr = inline(node, expression(node));
-                    if (expr == Expression.FALSE || node.children().isEmpty()) {
+                    if (expr == FALSE || node.children().isEmpty()) {
                         remove(node);
                         node.ancestor(Kind.STEP::equals).ifPresent(modifiedSteps::add);
                     }
@@ -859,7 +861,7 @@ public class ScriptCompiler {
                     break;
                 case INPUT_OPTION:
                     expr = inline(node, expression(node));
-                    if (expr == Expression.FALSE) {
+                    if (expr == FALSE) {
                         remove(node);
                     }
                     break;
@@ -1076,7 +1078,7 @@ public class ScriptCompiler {
                     }
                     fileOps.computeIfAbsent(node.attribute("id").getString(), k -> new HashMap<>())
                             .compute(ops, (k, v) -> {
-                                Expression expr = v != null ? v : Expression.FALSE;
+                                Expression expr = v != null ? v : FALSE;
                                 return expr.or(normalize(expression(node), scope(node)));
                             });
                     break;
@@ -1157,7 +1159,7 @@ public class ScriptCompiler {
                     case EXCLUDE:
                         Map<String, Expression> map = n.kind() == Kind.INCLUDE ? includes : excludes;
                         map.compute(n.value().getString(), (k, v) -> {
-                            Expression expr = v == null ? Expression.TRUE : v;
+                            Expression expr = v == null ? TRUE : v;
                             if (n.parent().kind() == Kind.CONDITION) {
                                 expr = expr.and(normalize(n.parent().expression(), scope));
                             }
@@ -1172,7 +1174,7 @@ public class ScriptCompiler {
             for (SourcePath file : SourcePath.scan(directory)) {
 
                 // filter manually to collect expressions
-                Expression filterExpr = Expression.FALSE;
+                Expression filterExpr = FALSE;
                 for (Expression v : Maps.filterKey(includes, file::matches).values()) {
                     filterExpr = filterExpr.or(v);
                 }
@@ -1181,7 +1183,7 @@ public class ScriptCompiler {
                 }
 
                 Expression blobExpr = normalize(expression(node), scope).and(filterExpr).reduce();
-                if (includes.isEmpty() || blobExpr != Expression.FALSE) {
+                if (includes.isEmpty() || blobExpr != FALSE) {
                     String source = file.asString(false);
                     Path path = directory.resolve(source);
 
@@ -1251,7 +1253,7 @@ public class ScriptCompiler {
                 Node directive = func.apply("blobs", ids);
                 Node includes = Nodes.includes();
                 for (FileObject f : group) {
-                    if (f.expression != Expression.FALSE) {
+                    if (f.expression != FALSE) {
                         includes.append(Nodes.include(f.checksum).wrap(f.expression));
                     }
                 }
@@ -1276,10 +1278,7 @@ public class ScriptCompiler {
         List<Node> renderModels() {
             List<Node> nodes = new ArrayList<>();
             for (Node node : sourceNode.traverse(Kind::isModel)) {
-                Node parent = node.parent();
-                if (parent != null && parent.kind() == Kind.CONDITION) {
-                    parent = parent.parent();
-                }
+                Node parent = node.wrapped().parent();
                 if (parent != null && parent.kind() == Kind.MODEL) {
                     Path basedir = workDirs.get(node.ancestor(Kind.OUTPUT::equals).orElseThrow());
                     if (basedir == null) {
@@ -1287,7 +1286,7 @@ public class ScriptCompiler {
                     }
                     Scope scope = scope(node);
                     Expression expr = normalize(expression(node), scope).reduce();
-                    if (expr != Expression.FALSE) {
+                    if (expr != FALSE) {
                         Node copy = node.deepCopy();
                         for (Node n : copy.traverse(Kind.MODEL_VALUE::equals)) {
                             Node p = n.parent();
@@ -1456,11 +1455,11 @@ public class ScriptCompiler {
                 String key = scope.key(ref);
 
                 // expressions that represent all cases where the reference is defined
-                Expression refExpr = snapshot.getOrDefault(key, Expression.FALSE);
+                Expression refExpr = snapshot.getOrDefault(key, FALSE);
 
                 // substitute parent expression
                 Expression refExpr1 = blockExpr.relativize(refExpr);
-                if (refExpr1 == Expression.TRUE) {
+                if (refExpr1 == TRUE) {
                     // resolved
                     continue;
                 }
@@ -1490,7 +1489,7 @@ public class ScriptCompiler {
         public boolean visit(Node node) {
             if (node.kind() == Kind.STEP) {
                 String name = node.attribute("name").getString();
-                steps.computeIfAbsent(name, k -> new ArrayList<>()).add(node);
+                steps.computeIfAbsent(name, k -> new ArrayList<>()).add(node.wrapped());
                 return false;
             }
             return true;
@@ -1499,24 +1498,73 @@ public class ScriptCompiler {
         @Override
         public void postVisit(Node node) {
             if (node.kind() == Kind.SCRIPT) {
+                // merge steps
                 for (List<Node> steps : steps.values()) {
-                    List<List<Node>> groups = Lists.groupingBy(steps, step -> Lists.map(step.collect(), Nodes::hash));
-                    for (List<Node> group : groups) {
-                        Node first = null;
-                        for (Node step : group) {
-                            if (first == null) {
-                                first = step;
-                            } else {
-                                Node p = first.parent();
-                                if (p.kind() == Kind.CONDITION) {
-                                    p.expression(p.expression().or(expression(step)));
-                                }
-                                step.remove();
-                            }
+                    Node first = null;
+                    for (Node step : steps) {
+                        if (first == null) {
+                            first = step;
+                        } else {
+                            Node n1 = first.unwrap();
+                            Node n2 = step.unwrap();
+                            Expression e1 = expression(n1, ScriptCompiler.this::scopeId);
+                            Expression e2 = expression(n2, ScriptCompiler.this::scopeId);
+                            Expression expr = e1 == TRUE ? e2 : e2 == TRUE ? e1 : e1.or(e2).reduce();
+                            Node merged = merge(n1, n2, e1, e2, expr);
+                            first = first.replace(merged.unwrap().wrap(expr));
+                            step.remove();
                         }
                     }
                 }
             }
+        }
+
+        Node merge(Node n1, Node n2, Expression e0, Expression e1, Expression e2) {
+            Node node = n1.copy();
+            List<Node> l1 = n1.children();
+            List<Node> l2 = n2.children();
+            Expression n1e = n1.wrapped().expression();
+            Expression n2e = n2.wrapped().expression();
+            Expression expr = e0.relativize(expr)n1e == TRUE ? n2e : n2e == TRUE ? n1e : n1e.or(n2e).reduce();
+            BitSet b1 = new BitSet();
+            BitSet b2 = new BitSet();
+            for (int i = 0; i < l1.size() || i < l2.size(); i++) {
+                if (i < l1.size() && !b1.get(i)) {
+                    b1.set(i);
+                    node.append(merge(l1.get(i).unwrap(), l2, expr, e1, e2, b2));
+                }
+                if (i < l2.size() && !b2.get(i)) {
+                    b2.set(i);
+                    node.append(merge(l2.get(i).unwrap(), l1, expr, e2, e1, b1));
+                }
+            }
+            return node.wrap(e0.relativize(expr));
+        }
+
+        Node merge(Node node, List<Node> nodes, Expression e1, Expression e2, Expression e0, BitSet bits) {
+            int index = find(node, nodes, bits);
+            if (index >= 0) {
+                bits.set(index);
+                Node found = nodes.get(index).unwrap();
+                Expression n1e = e1.and(node.wrapped().expression()).reduce();
+                Expression n2e = e2.and(found.wrapped().expression()).reduce();
+                Expression ne = n1e == TRUE ? n2e : n2e == TRUE ? n1e : n1e.or(n2e).reduce();
+                return merge(node, found, n1e, n2e, ne);
+            } else {
+                Expression expr = node.wrapped().expression();
+                Expression ne = expr == TRUE ? e1 : expr;
+                return node.deepCopy().wrap(e0.relativize(ne));
+            }
+        }
+
+        int find(Node node, List<Node> nodes, BitSet bits) {
+            for (int i = bits.nextClearBit(0); i < nodes.size(); i = bits.nextClearBit(i + 1)) {
+                Node n = nodes.get(i);
+                if (n.unwrap().equals(node.unwrap())) {
+                    return i;
+                }
+            }
+            return -1;
         }
     }
 
@@ -1969,7 +2017,7 @@ public class ScriptCompiler {
 
         static FileOps combine(List<FileOps> list) {
             List<FileOp> ops = new ArrayList<>();
-            Expression expr = Expression.TRUE;
+            Expression expr = TRUE;
             for (FileOps e : list) {
                 ops.addAll(e.ops);
                 expr = expr.and(e.expression);

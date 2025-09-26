@@ -228,7 +228,17 @@ class ScriptCompilerTest {
         assertThat(normalizeXml(outputDir.resolve("main.xml")), is(normalizeXml("compiler/expected/variables3.xml")));
     }
 
-    // TODO test normalized variables
+    @Test
+    void testNormalizedExpressions() {
+        Path outputDir = compile("compiler/normalized-expr", "main.xml");
+        assertThat(normalizeXml(outputDir.resolve("main.xml")), is(normalizeXml("compiler/expected/normalized-expr.xml")));
+    }
+
+    @Test
+    void testMerge1() {
+        Path outputDir = compile("compiler/merge1", "main.xml");
+        assertThat(normalizeXml(outputDir.resolve("main.xml")), is(normalizeXml("compiler/expected/merge1.xml")));
+    }
 
     @Test
     void testNormalizedExpressions() {

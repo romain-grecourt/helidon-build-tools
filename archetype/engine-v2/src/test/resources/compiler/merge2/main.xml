@@ -1,0 +1,906 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Copyright (c) 2025 Oracle and/or its affiliates.
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
+<archetype-script xmlns="https://helidon.io/archetype/2.0"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
+
+    <step name="Helidon Flavor" optional="true">
+        <inputs>
+            <enum id="flavor" name="Select a Flavor" default="se" global="true" optional="true">
+                <option name="Helidon SE" description="Programmatic, lean &amp; fast" value="se">
+                    <step name="Application Type" optional="true">
+                        <inputs>
+                            <enum id="app-type"
+                                    name="Select an Application Type"
+                                    default="quickstart"
+                                    global="true"
+                                    optional="true">
+                                <option name="Quickstart"
+                                        description="Sample Helidon Nima project that includes multiple REST operations"
+                                        value="quickstart">
+                                    <step name="Media Support" optional="true">
+                                        <inputs>
+                                            <list id="media" name="Select Media Support" default="json" optional="true">
+                                                <option name="JSON"
+                                                        description="Handle 'application/json' payloads"
+                                                        value="json">
+                                                    <inputs>
+                                                        <enum id="json-lib"
+                                                                name="Select a JSON library"
+                                                                default="${default-json-lib}"
+                                                                optional="true">
+                                                            <option name="JSON-P"
+                                                                    description="Jakarta JSON Processing"
+                                                                    value="jsonp"/>
+                                                            <option name="Jackson"
+                                                                    description="Popular JSON library"
+                                                                    value="jackson"/>
+                                                            <option name="JSON-B" description="Jakarta JSON Binding"
+                                                                    value="jsonb"/>
+                                                        </enum>
+                                                    </inputs>
+                                                </option>
+                                            </list>
+                                        </inputs>
+                                    </step>
+                                    <step name="Observability"
+                                            optional="true">
+                                        <inputs>
+                                            <boolean id="metrics"
+                                                    name="Metrics"
+                                                    description="Collect application metrics"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <boolean id="builtin"
+                                                            name="Built-in Metrics"
+                                                            description="Expose common metrics"
+                                                            default="true"
+                                                            optional="true"/>
+                                                </inputs>
+                                            </boolean>
+                                            <boolean id="health"
+                                                    name="Health Checks"
+                                                    description="Monitor your application’s health"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <boolean id="builtin"
+                                                            name="Built-in Health Checks"
+                                                            description="Report common health check statuses"
+                                                            default="true"
+                                                            optional="true"/>
+                                                </inputs>
+                                            </boolean>
+                                        </inputs>
+                                    </step>
+                                    <step name="Packaging and Deployment"
+                                            optional="true">
+                                        <inputs>
+                                            <boolean id="docker"
+                                                    name="Docker support"
+                                                    description="Add a Dockerfile to your project"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <boolean id="native-image"
+                                                            name="GraalVM Native Image Support"
+                                                            description="Add a native-image capable Dockerfile to your project"
+                                                            default="false"
+                                                            optional="true"/>
+                                                    <boolean id="jlink-image"
+                                                            name="JLink Support"
+                                                            description="Add a JLink capable Dockerfile to your project"
+                                                            default="false"
+                                                            optional="true"/>
+                                                </inputs>
+                                            </boolean>
+                                            <boolean id="k8s"
+                                                    name="Kubernetes Support"
+                                                    description="Add Kubernetes manifests to your project"
+                                                    default="false"
+                                                    optional="true"/>
+                                        </inputs>
+                                    </step>
+                                </option>
+                                <option name="Database"
+                                        description="Helidon SE application that uses a database with the DB Client API"
+                                        value="database">
+                                    <step name="Media Support" optional="true">
+                                        <inputs>
+                                            <list id="media" name="Select Media Support" default="json" optional="true">
+                                                <option name="JSON"
+                                                        description="Handle 'application/json' payloads"
+                                                        value="json">
+                                                    <inputs>
+                                                        <enum id="json-lib"
+                                                                name="Select a JSON library"
+                                                                default="${default-json-lib}"
+                                                                optional="true">
+                                                            <option name="JSON-P"
+                                                                    description="Jakarta JSON Processing"
+                                                                    value="jsonp"/>
+                                                            <option name="Jackson"
+                                                                    description="Popular JSON library"
+                                                                    value="jackson"/>
+                                                            <option name="JSON-B" description="Jakarta JSON Binding"
+                                                                    value="jsonb"/>
+                                                        </enum>
+                                                    </inputs>
+                                                </option>
+                                            </list>
+                                        </inputs>
+                                    </step>
+                                    <step name="Database"
+                                            optional="true">
+                                        <inputs>
+                                            <boolean id="db"
+                                                    name="Database Support"
+                                                    description="Manage data in your application"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <enum id="server" name="Select a Database Server" default="h2" optional="true">
+                                                        <option name="H2" description="In-memory relational database" value="h2"/>
+                                                        <option name="MySQL" description="Relational database" value="mysql"/>
+                                                        <option name="Oracle DB"
+                                                                description="Multi-model database"
+                                                                value="oracledb"/>
+                                                        <option name="MongoDB"
+                                                                description="NoSQL / Document database"
+                                                                value="mongodb"/>
+                                                    </enum>
+                                                </inputs>
+                                            </boolean>
+                                        </inputs>
+                                    </step>
+                                    <step name="Observability"
+                                            optional="true">
+                                        <inputs>
+                                            <boolean id="metrics"
+                                                    name="Metrics"
+                                                    description="Collect application metrics"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <boolean id="builtin"
+                                                            name="Built-in Metrics"
+                                                            description="Expose common metrics"
+                                                            default="true"
+                                                            optional="true"/>
+                                                </inputs>
+                                            </boolean>
+                                            <boolean id="health"
+                                                    name="Health Checks"
+                                                    description="Monitor your application’s health"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <boolean id="builtin"
+                                                            name="Built-in Health Checks"
+                                                            description="Report common health check statuses"
+                                                            default="true"
+                                                            optional="true"/>
+                                                </inputs>
+                                            </boolean>
+                                        </inputs>
+                                    </step>
+                                    <step name="Packaging and Deployment"
+                                            optional="true">
+                                        <inputs>
+                                            <boolean id="docker"
+                                                    name="Docker support"
+                                                    description="Add a Dockerfile to your project"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <boolean id="native-image"
+                                                            name="GraalVM Native Image Support"
+                                                            description="Add a native-image capable Dockerfile to your project"
+                                                            default="false"
+                                                            optional="true"/>
+                                                    <boolean id="jlink-image"
+                                                            name="JLink Support"
+                                                            description="Add a JLink capable Dockerfile to your project"
+                                                            default="false"
+                                                            optional="true"/>
+                                                </inputs>
+                                            </boolean>
+                                            <boolean id="k8s"
+                                                    name="Kubernetes Support"
+                                                    description="Add Kubernetes manifests to your project"
+                                                    default="false"
+                                                    optional="true"/>
+                                        </inputs>
+                                    </step>
+                                </option>
+                                <option name="Custom" description="Custom Helidon SE project" value="custom">
+                                    <step name="Media Support" optional="true">
+                                        <inputs>
+                                            <list id="media" name="Select Media Support" default="json" optional="true">
+                                                <option name="JSON"
+                                                        description="Handle 'application/json' payloads"
+                                                        value="json">
+                                                    <inputs>
+                                                        <enum id="json-lib"
+                                                                name="Select a JSON library"
+                                                                default="${default-json-lib}"
+                                                                optional="true">
+                                                            <option name="JSON-P"
+                                                                    description="Jakarta JSON Processing"
+                                                                    value="jsonp"/>
+                                                            <option name="Jackson"
+                                                                    description="Popular JSON library"
+                                                                    value="jackson"/>
+                                                            <option name="JSON-B" description="Jakarta JSON Binding"
+                                                                    value="jsonb"/>
+                                                        </enum>
+                                                    </inputs>
+                                                </option>
+                                                <option name="MultiPart"
+                                                        description="Handle 'multipart/form-data' payloads"
+                                                        value="multipart"/>
+                                            </list>
+                                        </inputs>
+                                    </step>
+                                    <step name="Security"
+                                            optional="true">
+                                        <inputs>
+                                            <boolean id="security"
+                                                    name="Secure Application"
+                                                    description="Authentication and authorization"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <list id="atn" name="Select Authentication Providers" optional="true">
+                                                        <option name="OIDC" description="OpenID Connect" value="oidc"/>
+                                                        <option name="JWT" description="JSON Web Token" value="jwt"/>
+                                                        <option name="Google Login" description="Google identity" value="google"/>
+                                                        <option name="HTTP Signature"
+                                                                description="Service to service authentication"
+                                                                value="http-signature"/>
+                                                    </list>
+                                                    <list id="atz" name="Select Authorization Providers" optional="true">
+                                                        <option name="ABAC"
+                                                                description="Attribute Based Access Control"
+                                                                value="abac"/>
+                                                    </list>
+                                                </inputs>
+                                            </boolean>
+                                        </inputs>
+                                    </step>
+                                    <step name="Database"
+                                            optional="true">
+                                        <inputs>
+                                            <boolean id="db"
+                                                    name="Database Support"
+                                                    description="Manage data in your application"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <enum id="server" name="Select a Database Server" default="h2" optional="true">
+                                                        <option name="H2" description="In-memory relational database" value="h2"/>
+                                                        <option name="MySQL" description="Relational database" value="mysql"/>
+                                                        <option name="Oracle DB"
+                                                                description="Multi-model database"
+                                                                value="oracledb"/>
+                                                        <option name="MongoDB"
+                                                                description="NoSQL / Document database"
+                                                                value="mongodb"/>
+                                                    </enum>
+                                                </inputs>
+                                            </boolean>
+                                        </inputs>
+                                    </step>
+                                    <step name="Extra"
+                                            optional="true">
+                                        <inputs>
+                                            <list id="extra" name="Select Additional Components" optional="true">
+                                                <option name="WebClient" description="HTTP client" value="webclient"/>
+                                                <option name="Fault Tolerance"
+                                                        description="System for building resilient applications"
+                                                        value="fault-tolerance"/>
+                                                <option name="CORS"
+                                                        description="Cross-Origin Resource Sharing utilities"
+                                                        value="cors"/>
+                                                <option name="Coherence" description="Cache data with coherence" value="coherence"/>
+                                            </list>
+                                        </inputs>
+                                    </step>
+                                    <step name="Observability"
+                                            optional="true">
+                                        <inputs>
+                                            <boolean id="metrics"
+                                                    name="Metrics"
+                                                    description="Collect application metrics"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <boolean id="builtin"
+                                                            name="Built-in Metrics"
+                                                            description="Expose common metrics"
+                                                            default="true"
+                                                            optional="true"/>
+                                                </inputs>
+                                            </boolean>
+                                            <boolean id="health"
+                                                    name="Health Checks"
+                                                    description="Monitor your application’s health"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <boolean id="builtin"
+                                                            name="Built-in Health Checks"
+                                                            description="Report common health check statuses"
+                                                            default="true"
+                                                            optional="true"/>
+                                                </inputs>
+                                            </boolean>
+                                            <boolean id="tracing"
+                                                    name="Tracing"
+                                                    description="Distributed tracing system"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <enum id="provider"
+                                                            name="Select a Tracing Provider"
+                                                            default="jaeger"
+                                                            optional="true">
+                                                        <option name="Jaeger"
+                                                                description="Send traces to a Jaeger backend"
+                                                                value="jaeger"/>
+                                                        <option name="Zipkin"
+                                                                description="Send traces to a Zipkin backend"
+                                                                value="zipkin"/>
+                                                    </enum>
+                                                </inputs>
+                                            </boolean>
+                                        </inputs>
+                                    </step>
+                                    <step name="Packaging and Deployment"
+                                            optional="true">
+                                        <inputs>
+                                            <boolean id="docker"
+                                                    name="Docker support"
+                                                    description="Add a Dockerfile to your project"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <boolean id="native-image"
+                                                            name="GraalVM Native Image Support"
+                                                            description="Add a native-image capable Dockerfile to your project"
+                                                            default="false"
+                                                            optional="true"/>
+                                                    <boolean id="jlink-image"
+                                                            name="JLink Support"
+                                                            description="Add a JLink capable Dockerfile to your project"
+                                                            default="false"
+                                                            optional="true"/>
+                                                </inputs>
+                                            </boolean>
+                                            <boolean id="k8s"
+                                                    name="Kubernetes Support"
+                                                    description="Add Kubernetes manifests to your project"
+                                                    default="false"
+                                                    optional="true"/>
+                                            <boolean id="jpms"
+                                                    name="Module support (JPMS)"
+                                                    description="Add a module-info to your project"
+                                                    default="false"
+                                                    optional="true"/>
+                                        </inputs>
+                                    </step>
+                                </option>
+                            </enum>
+                        </inputs>
+                    </step>
+                </option>
+                <option name="Helidon MP"
+                        description="Declarative, MicroProfile compliant"
+                        value="mp">
+                    <step name="Application Type" optional="true">
+                        <inputs>
+                            <enum id="app-type"
+                                    name="Select an Application Type"
+                                    default="quickstart"
+                                    global="true"
+                                    optional="true">
+                                <option name="Quickstart"
+                                        description="Sample Helidon MP project that includes multiple REST operations"
+                                        value="quickstart">
+                                    <step name="Media Support"
+                                            optional="true">
+                                        <inputs>
+                                            <list id="media" name="Select Media Support" default="json" optional="true">
+                                                <option name="JSON"
+                                                        description="Handle &apos;application/json&apos; payloads"
+                                                        value="json">
+                                                    <inputs>
+                                                        <enum id="json-lib"
+                                                                name="Select a JSON library"
+                                                                default="${default-json-lib}"
+                                                                optional="true">
+                                                            <option name="Jackson"
+                                                                    description="Popular JSON library"
+                                                                    value="jackson"/>
+                                                            <option name="JSON-B" description="Jakarta JSON Binding"
+                                                                    value="jsonb"/>
+                                                        </enum>
+                                                    </inputs>
+                                                </option>
+                                            </list>
+                                        </inputs>
+                                    </step>
+                                    <step name="Observability"
+                                            optional="true">
+                                        <inputs>
+                                            <boolean id="metrics"
+                                                    name="Metrics"
+                                                    description="Collect application metrics"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <enum id="provider"
+                                                            name="Select a Metrics Provider"
+                                                            default="microprofile"
+                                                            optional="true">
+                                                        <option name="MicroProfile"
+                                                                description="Expose metrics using the MicroProfile API"
+                                                                value="microprofile"/>
+                                                    </enum>
+                                                    <boolean id="builtin"
+                                                            name="Built-in Metrics"
+                                                            description="Expose common metrics"
+                                                            default="true"
+                                                            optional="true"/>
+                                                </inputs>
+                                            </boolean>
+                                            <boolean id="health"
+                                                    name="Health Checks"
+                                                    description="Monitor your application’s health"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <boolean id="builtin"
+                                                            name="Built-in Health Checks"
+                                                            description="Report common health check statuses"
+                                                            default="true"
+                                                            optional="true"/>
+                                                </inputs>
+                                            </boolean>
+                                        </inputs>
+                                    </step>
+                                    <step name="Packaging and Deployment"
+                                            optional="true">
+                                        <inputs>
+                                            <boolean id="docker"
+                                                    name="Docker support"
+                                                    description="Add a Dockerfile to your project"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <boolean id="native-image"
+                                                            name="GraalVM Native Image Support"
+                                                            description="Add a native-image capable Dockerfile to your project"
+                                                            default="false"
+                                                            optional="true"/>
+                                                    <boolean id="jlink-image"
+                                                            name="JLink Support"
+                                                            description="Add a JLink capable Dockerfile to your project"
+                                                            default="false"
+                                                            optional="true"/>
+                                                </inputs>
+                                            </boolean>
+                                            <boolean id="k8s"
+                                                    name="Kubernetes Support"
+                                                    description="Add Kubernetes manifests to your project"
+                                                    default="false"
+                                                    optional="true"/>
+                                        </inputs>
+                                    </step>
+                                </option>
+                                <option name="Database"
+                                        description="Helidon MP application that uses a database with JPA"
+                                        value="database">
+                                    <step name="Media Support"
+                                            optional="true">
+                                        <inputs>
+                                            <list id="media" name="Select Media Support" default="json" optional="true">
+                                                <option name="JSON"
+                                                        description="Handle &apos;application/json&apos; payloads"
+                                                        value="json">
+                                                    <inputs>
+                                                        <enum id="json-lib"
+                                                                name="Select a JSON library"
+                                                                default="${default-json-lib}"
+                                                                optional="true">
+                                                            <option name="Jackson"
+                                                                    description="Popular JSON library"
+                                                                    value="jackson"/>
+                                                            <option name="JSON-B" description="Jakarta JSON Binding"
+                                                                    value="jsonb"/>
+                                                        </enum>
+                                                    </inputs>
+                                                </option>
+                                            </list>
+                                        </inputs>
+                                    </step>
+                                    <step name="Database"
+                                            optional="true">
+                                        <inputs>
+                                            <boolean id="db"
+                                                    name="Database Support"
+                                                    description="Manage data in your application"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <enum id="jpa-impl"
+                                                            name="Select a JPA Implementation"
+                                                            default="hibernate"
+                                                            optional="true">
+                                                        <option name="Hibernate"
+                                                                description="Hibernate Object Relational Mapping"
+                                                                value="hibernate"/>
+                                                        <option name="EclipseLink"
+                                                                description="Eclipse Persistence Services"
+                                                                value="eclipselink"/>
+                                                    </enum>
+                                                    <enum id="cp"
+                                                            name="Select a Connection Pool"
+                                                            default="hikaricp"
+                                                            optional="true">
+                                                        <option name="HikariCP"
+                                                                description="&quot;zero overhead&quot; JDBC connection pool"
+                                                                value="hikaricp"/>
+                                                        <option name="UCP" description="Universal Connection Pool" value="ucp"/>
+                                                    </enum>
+                                                    <enum id="server" name="Select a Database Server" default="h2" optional="true">
+                                                        <option name="H2" description="In-memory relational database" value="h2"/>
+                                                        <option name="MySQL" description="Relational database" value="mysql"/>
+                                                        <option name="Oracle DB"
+                                                                description="Multi-model database"
+                                                                value="oracledb"/>
+                                                    </enum>
+                                                    <boolean id="auto-ddl"
+                                                            name="Auto DDL"
+                                                            description="Automatic schema initialization"
+                                                            optional="true"/>
+                                                    <text id="pu-name" name="Persistence Unit Name" default="pu1" optional="true"/>
+                                                    <text id="ds-name" name="Datasource Name" default="ds1" optional="true"/>
+                                                </inputs>
+                                            </boolean>
+                                        </inputs>
+                                    </step>
+                                    <step name="Observability"
+                                            optional="true">
+                                        <inputs>
+                                            <boolean id="metrics"
+                                                    name="Metrics"
+                                                    description="Collect application metrics"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <enum id="provider"
+                                                            name="Select a Metrics Provider"
+                                                            default="microprofile"
+                                                            optional="true">
+                                                        <option name="MicroProfile"
+                                                                description="Expose metrics using the MicroProfile API"
+                                                                value="microprofile"/>
+                                                    </enum>
+                                                    <boolean id="builtin"
+                                                            name="Built-in Metrics"
+                                                            description="Expose common metrics"
+                                                            default="true"
+                                                            optional="true"/>
+                                                </inputs>
+                                            </boolean>
+                                            <boolean id="health"
+                                                    name="Health Checks"
+                                                    description="Monitor your application’s health"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <boolean id="builtin"
+                                                            name="Built-in Health Checks"
+                                                            description="Report common health check statuses"
+                                                            default="true"
+                                                            optional="true"/>
+                                                </inputs>
+                                            </boolean>
+                                        </inputs>
+                                    </step>
+                                    <step name="Packaging and Deployment"
+                                            optional="true">
+                                        <inputs>
+                                            <boolean id="docker"
+                                                    name="Docker support"
+                                                    description="Add a Dockerfile to your project"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <boolean id="native-image"
+                                                            name="GraalVM Native Image Support"
+                                                            description="Add a native-image capable Dockerfile to your project"
+                                                            default="false"
+                                                            optional="true"/>
+                                                    <boolean id="jlink-image"
+                                                            name="JLink Support"
+                                                            description="Add a JLink capable Dockerfile to your project"
+                                                            default="false"
+                                                            optional="true"/>
+                                                </inputs>
+                                            </boolean>
+                                            <boolean id="k8s"
+                                                    name="Kubernetes Support"
+                                                    description="Add Kubernetes manifests to your project"
+                                                    default="false"
+                                                    optional="true"/>
+                                        </inputs>
+                                    </step>
+                                </option>
+                                <option name="Custom" description="Custom Helidon MP project" value="custom">
+                                    <step name="Media Support"
+                                            optional="true">
+                                        <inputs>
+                                            <list id="media" name="Select Media Support" default="json" optional="true">
+                                                <option name="JSON"
+                                                        description="Handle &apos;application/json&apos; payloads"
+                                                        value="json">
+                                                    <inputs>
+                                                        <enum id="json-lib"
+                                                                name="Select a JSON library"
+                                                                default="${default-json-lib}"
+                                                                optional="true">
+                                                            <option name="Jackson"
+                                                                    description="Popular JSON library"
+                                                                    value="jackson"/>
+                                                            <option name="JSON-B" description="Jakarta JSON Binding"
+                                                                    value="jsonb"/>
+                                                        </enum>
+                                                    </inputs>
+                                                </option>
+                                                <option name="MultiPart"
+                                                        description="Handle &apos;multipart/form-data&apos; payloads"
+                                                        value="multipart"/>
+                                            </list>
+                                        </inputs>
+                                    </step>
+                                    <step name="Security"
+                                            optional="true">
+                                        <inputs>
+                                            <boolean id="security"
+                                                    name="Secure Application"
+                                                    description="Authentication and authorization"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <list id="atn" name="Select Authentication Providers" optional="true">
+                                                        <option name="OIDC" description="OpenID Connect" value="oidc"/>
+                                                        <option name="JWT" description="JSON Web Token" value="jwt"/>
+                                                        <option name="Google Login" description="Google identity" value="google"/>
+                                                        <option name="HTTP Signature"
+                                                                description="Service to service authentication"
+                                                                value="http-signature"/>
+                                                    </list>
+                                                    <list id="atz" name="Select Authorization Providers" optional="true">
+                                                        <option name="ABAC"
+                                                                description="Attribute Based Access Control"
+                                                                value="abac"/>
+                                                    </list>
+                                                </inputs>
+                                            </boolean>
+                                        </inputs>
+                                    </step>
+                                    <step name="Database"
+                                            optional="true">
+                                        <inputs>
+                                            <boolean id="db"
+                                                    name="Database Support"
+                                                    description="Manage data in your application"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <enum id="jpa-impl"
+                                                            name="Select a JPA Implementation"
+                                                            default="hibernate"
+                                                            optional="true">
+                                                        <option name="Hibernate"
+                                                                description="Hibernate Object Relational Mapping"
+                                                                value="hibernate"/>
+                                                        <option name="EclipseLink"
+                                                                description="Eclipse Persistence Services"
+                                                                value="eclipselink"/>
+                                                    </enum>
+                                                    <enum id="cp"
+                                                            name="Select a Connection Pool"
+                                                            default="hikaricp"
+                                                            optional="true">
+                                                        <option name="HikariCP"
+                                                                description="&quot;zero overhead&quot; JDBC connection pool"
+                                                                value="hikaricp"/>
+                                                        <option name="UCP" description="Universal Connection Pool" value="ucp"/>
+                                                    </enum>
+                                                    <enum id="server" name="Select a Database Server" default="h2" optional="true">
+                                                        <option name="H2" description="In-memory relational database" value="h2"/>
+                                                        <option name="MySQL" description="Relational database" value="mysql"/>
+                                                        <option name="Oracle DB"
+                                                                description="Multi-model database"
+                                                                value="oracledb"/>
+                                                    </enum>
+                                                    <boolean id="auto-ddl"
+                                                            name="Auto DDL"
+                                                            description="Automatic schema initialization"
+                                                            optional="true"/>
+                                                    <text id="pu-name" name="Persistence Unit Name" default="pu1" optional="true"/>
+                                                    <text id="ds-name" name="Datasource Name" default="ds1" optional="true"/>
+                                                </inputs>
+                                            </boolean>
+                                        </inputs>
+                                    </step>
+                                    <step name="Extra"
+                                            optional="true">
+                                        <inputs>
+                                            <list id="extra" name="Select Additional Components" optional="true">
+                                                <option name="Fault Tolerance"
+                                                        description="System for building resilient applications"
+                                                        value="fault-tolerance"/>
+                                                <option name="CORS"
+                                                        description="Cross-Origin Resource Sharing utilities"
+                                                        value="cors"/>
+                                                <option name="Coherence" description="Cache data with coherence" value="coherence"/>
+                                            </list>
+                                        </inputs>
+                                    </step>
+                                    <step name="Observability"
+                                            optional="true">
+                                        <inputs>
+                                            <boolean id="metrics"
+                                                    name="Metrics"
+                                                    description="Collect application metrics"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <enum id="provider"
+                                                            name="Select a Metrics Provider"
+                                                            default="microprofile"
+                                                            optional="true">
+                                                        <option name="MicroProfile"
+                                                                description="Expose metrics using the MicroProfile API"
+                                                                value="microprofile"/>
+                                                        <option name="Micrometer"
+                                                                description="Expose metrics using the Micrometer API"
+                                                                value="micrometer"/>
+                                                    </enum>
+                                                    <boolean id="builtin"
+                                                            name="Built-in Metrics"
+                                                            description="Expose common metrics"
+                                                            default="true"
+                                                            optional="true"/>
+                                                </inputs>
+                                            </boolean>
+                                            <boolean id="health"
+                                                    name="Health Checks"
+                                                    description="Monitor your application’s health"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <boolean id="builtin"
+                                                            name="Built-in Health Checks"
+                                                            description="Report common health check statuses"
+                                                            default="true"
+                                                            optional="true"/>
+                                                </inputs>
+                                            </boolean>
+                                            <boolean id="tracing"
+                                                    name="Tracing"
+                                                    description="Distributed tracing system"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <enum id="provider"
+                                                            name="Select a Tracing Provider"
+                                                            default="jaeger"
+                                                            optional="true">
+                                                        <option name="Jaeger"
+                                                                description="Send traces to a Jaeger backend"
+                                                                value="jaeger"/>
+                                                        <option name="Zipkin"
+                                                                description="Send traces to a Zipkin backend"
+                                                                value="zipkin"/>
+                                                    </enum>
+                                                </inputs>
+                                            </boolean>
+                                        </inputs>
+                                    </step>
+                                    <step name="Packaging and Deployment"
+                                            optional="true">
+                                        <inputs>
+                                            <boolean id="docker"
+                                                    name="Docker support"
+                                                    description="Add a Dockerfile to your project"
+                                                    default="false"
+                                                    optional="true">
+                                                <inputs>
+                                                    <boolean id="native-image"
+                                                            name="GraalVM Native Image Support"
+                                                            description="Add a native-image capable Dockerfile to your project"
+                                                            default="false"
+                                                            optional="true"/>
+                                                    <boolean id="jlink-image"
+                                                            name="JLink Support"
+                                                            description="Add a JLink capable Dockerfile to your project"
+                                                            default="false"
+                                                            optional="true"/>
+                                                </inputs>
+                                            </boolean>
+                                            <boolean id="k8s"
+                                                    name="Kubernetes Support"
+                                                    description="Add Kubernetes manifests to your project"
+                                                    default="false"
+                                                    optional="true"/>
+                                            <boolean id="jpms"
+                                                    name="Module support (JPMS)"
+                                                    description="Add a module-info to your project"
+                                                    default="false"
+                                                    optional="true"/>
+                                        </inputs>
+                                    </step>
+                                </option>
+                                <option name="OCI"
+                                        description="Helidon MP application that integrates with Oracle Cloud Infrastructure"
+                                        value="oci">
+                                    <step name="Packaging and Deployment"
+                                            optional="true">
+                                        <inputs>
+                                            <boolean id="docker"
+                                                    name="Docker support"
+                                                    description="Add a Dockerfile to your project"
+                                                    default="false"
+                                                    optional="true"/>
+                                            <boolean id="k8s"
+                                                    name="Kubernetes Support"
+                                                    description="Add Kubernetes manifests to your project"
+                                                    default="false"
+                                                    optional="true"/>
+                                        </inputs>
+                                    </step>
+                                </option>
+                            </enum>
+                        </inputs>
+                    </step>
+                </option>
+            </enum>
+        </inputs>
+    </step>
+    <step name="Customize Project" optional="true">
+        <inputs>
+            <enum id="build-system" name="Select a Build System" default="maven" optional="true">
+                <option name="Apache Maven" value="maven"/>
+            </enum>
+            <text id="groupId" name="Project groupId" optional="true" default="com.examples"/>
+            <text id="artifactId" name="Project artifactId" optional="true" default="myproject"/>
+            <text id="version" name="Project version" optional="true" default="1.0-SNAPSHOT"/>
+            <text id="package"
+                    name="Java package name"
+                    optional="true"
+                    default="com.example.myproject"/>
+        </inputs>
+    </step>
+</archetype-script>
