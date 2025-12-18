@@ -15,7 +15,7 @@
  */
 package io.helidon.build.cli.impl;
 
-import io.helidon.build.cli.common.ImageInfo;
+import io.helidon.build.cli.common.NativeImageInfo;
 import io.helidon.build.cli.harness.CommandLineInterface;
 import io.helidon.build.cli.harness.CommandRunner;
 
@@ -69,7 +69,7 @@ public final class Helidon {
      */
     private static void execute(String[] args, boolean embedded) {
 
-        if (ImageInfo.inImageRuntimeCode()) {
+        if (NativeImageInfo.inImageRuntimeCode()) {
             // Register a signal handler for Ctrl-C that calls System.exit in order to trigger
             // the shutdown hooks
             Signal.handle(new Signal("INT"), sig -> System.exit(0));

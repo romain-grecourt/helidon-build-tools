@@ -18,12 +18,12 @@ package io.helidon.build.cli.common;
 /**
  * Native image information.
  */
-public class ImageInfo {
+public class NativeImageInfo {
 
     private static final String PROPERTY_IMAGE_CODE_KEY = "org.graalvm.nativeimage.imagecode";
     private static final String PROPERTY_IMAGE_CODE_RUNTIME_VALUE = "runtime";
 
-    private ImageInfo() {
+    private NativeImageInfo() {
     }
 
     /**

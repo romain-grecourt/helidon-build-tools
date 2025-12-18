@@ -26,7 +26,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import io.helidon.build.cli.common.ImageInfo;
+import io.helidon.build.cli.common.NativeImageInfo;
 import io.helidon.build.cli.plugin.Plugin;
 import io.helidon.build.common.JavaProcessBuilder;
 import io.helidon.build.common.ProcessMonitor;
@@ -131,7 +131,7 @@ public class Plugins {
                                int maxWaitSeconds,
                                PrintStream stdOut) throws PluginFailed {
 
-        if (FORK || ImageInfo.inImageRuntimeCode()) {
+        if (FORK || NativeImageInfo.inImageRuntimeCode()) {
             spawned(pluginName, pluginArgs, maxWaitSeconds, stdOut);
         } else {
             embedded(pluginName, pluginArgs, stdOut);
