@@ -33,7 +33,7 @@ public final class BitSets {
      * @return {@code true} if all bits are set
      */
     public static boolean containsAll(BitSet bs1, BitSet bs2) {
-        return and(copyOf(bs1), bs2).equals(bs1);
+        return and(bs1, bs2).equals(bs1);
     }
 
     /**
@@ -80,8 +80,9 @@ public final class BitSets {
      * @return BitSet
      */
     public static BitSet or(BitSet bs1, BitSet bs2) {
-        bs1.or(bs2);
-        return bs1;
+        BitSet copy = copyOf(bs1);
+        copy.or(bs2);
+        return copy;
     }
 
     /**
@@ -92,8 +93,9 @@ public final class BitSets {
      * @return BitSet
      */
     public static BitSet and(BitSet bs1, BitSet bs2) {
-        bs1.and(bs2);
-        return bs1;
+        BitSet copy = copyOf(bs1);
+        copy.and(bs2);
+        return copy;
     }
 
     /**
@@ -104,7 +106,8 @@ public final class BitSets {
      * @return BitSet
      */
     public static BitSet andNot(BitSet bs1, BitSet bs2) {
-        bs1.andNot(bs2);
-        return bs1;
+        BitSet copy = copyOf(bs1);
+        copy.andNot(bs2);
+        return copy;
     }
 }

@@ -1714,7 +1714,7 @@ public class ScriptCompiler {
                     } else {
                         for (BitSet row1 : table.rows) {
                             for (BitSet row2 : filtered) {
-                                computed.add(BitSets.or(BitSets.copyOf(row1), row2));
+                                computed.add(BitSets.or(row1, row2));
                             }
                         }
                     }

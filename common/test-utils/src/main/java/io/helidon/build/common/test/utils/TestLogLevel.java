@@ -21,7 +21,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 
 /**
- * Utility that checks the the debug log level for tests.
+ * Utility that checks the debug log level for tests.
  */
 public abstract class TestLogLevel {
 

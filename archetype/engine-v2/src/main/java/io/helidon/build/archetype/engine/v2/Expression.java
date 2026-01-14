@@ -376,7 +376,7 @@ public final class Expression implements Comparable<Expression> {
         }
 
         BitSet minterms = BitSets.copyOf(m1);
-        BitSet shared = BitSets.and(BitSets.copyOf(m1), m2);
+        BitSet shared = BitSets.and(m1, m2);
 
         int offset = vars.size() - sharedVars.size();
         int mask = -1 << offset;
@@ -488,7 +488,7 @@ public final class Expression implements Comparable<Expression> {
                             if (term1.mark == term2.mark) {
                                 int delta = term1.bits ^ term2.bits;
                                 if (Integer.bitCount(delta) == 1) {
-                                    BitSet ids = BitSets.or(BitSets.copyOf(term1.ids), term2.ids); // merge the ids
+                                    BitSet ids = BitSets.or(term1.ids, term2.ids); // merge the ids
                                     if (!tmp.contains(ids)) { // add once
                                         int mark = delta | term1.mark | term2.mark; // merge the marks
                                         int bits = (term1.bits | term2.bits) & ~mark; // merge the bits (exclude the marks)
@@ -529,9 +529,9 @@ public final class Expression implements Comparable<Expression> {
         BitSet duplicates = new BitSet();
         for (Term term : table.terms) {
             if (term.ids.intersects(essentials)) {
-                duplicates.or(BitSets.and(BitSets.copyOf(term.ids), essentials)); // record used terms
+                duplicates.or(BitSets.and(term.ids, essentials)); // record used terms
                 essentials.andNot(duplicates); // remove duplicates from essentials
-                essentials.or(BitSets.andNot(BitSets.copyOf(term.ids), duplicates)); // record unused terms
+                essentials.or(BitSets.andNot(term.ids, duplicates)); // record unused terms
             } else {
                 essentials.or(term.ids);
             }
