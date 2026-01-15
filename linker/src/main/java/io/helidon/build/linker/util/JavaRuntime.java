@@ -24,6 +24,7 @@ import java.lang.module.ModuleFinder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -35,6 +36,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 import io.helidon.build.common.FileUtils;
+import io.helidon.build.common.LazyValue;
 import io.helidon.build.common.OSType;
 import io.helidon.build.linker.Application;
 import io.helidon.build.linker.Jar;
@@ -56,7 +58,7 @@ import static java.util.Objects.requireNonNull;
  */
 public final class JavaRuntime implements ResourceContainer {
     private static final OSType OS = OSType.currentOS();
-    private static final AtomicReference<Path> CURRENT_JAVA_HOME_DIR = new AtomicReference<>();
+    private static final LazyValue<Path> CURRENT_JAVA_HOME_DIR = new LazyValue<>(() -> Paths.get(javaHome()));
     private static final String JMODS_DIR = "jmods";
     private static final String JMOD_SUFFIX = ".jmod";
     private static final String JAVA_BASE_JMOD = "java.base.jmod";
@@ -79,31 +81,22 @@ public final class JavaRuntime implements ResourceContainer {
     private static final String OPEN_JDK_DEB = "Debian based OpenJDK distributions provide *.jmod files only in the "
                                                + "\"openjdk-*-jdk-headless\" packages.";
     private static final Map<String, String> OPEN_JDK_LINUX_PACKAGING = Map.of("yum", OPEN_JDK_RPM,
-                                                                               "apt", OPEN_JDK_DEB,
-                                                                               "apt-get", OPEN_JDK_DEB,
-                                                                               "dpkg", OPEN_JDK_DEB,
-                                                                               "aptitude", OPEN_JDK_DEB);
+            "apt", OPEN_JDK_DEB,
+            "apt-get", OPEN_JDK_DEB,
+            "dpkg", OPEN_JDK_DEB,
+            "aptitude", OPEN_JDK_DEB);
     private final Path javaHome;
     private final Runtime.Version version;
     private final boolean isJdk;
     private final Path jmodsDir;
     private final Map<String, Jar> modules;
 
-    private static Path currentJavaHomeDir() {
-        Path result = CURRENT_JAVA_HOME_DIR.get();
-        if (result == null) {
-            result = Paths.get(javaHome());
-            CURRENT_JAVA_HOME_DIR.set(result);
-        }
-        return result;
-    }
-
     /**
      * Ensures a valid JRI directory path, deleting if required.
      *
-     * @param jriDirectory The JRI directory. May be {@code null}.
-     * @param mainJar The main jar, used to create a name if {@code jriDirectory} not provided.
-     * May not be {@code null}.
+     * @param jriDirectory    The JRI directory. May be {@code null}.
+     * @param mainJar         The main jar, used to create a name if {@code jriDirectory} not provided.
+     *                        May not be {@code null}.
      * @param replaceExisting {@code true} if the directory can be deleted if already present.
      * @return The directory.
      */
@@ -125,21 +118,6 @@ public final class JavaRuntime implements ResourceContainer {
             }
         }
         return jriDirectory;
-    }
-
-    /**
-     * Asserts that the given directory points to a valid Java Runtime.
-     *
-     * @param jriDirectory The directory.
-     * @return The normalized, absolute directory path.
-     * @throws IllegalArgumentException If the directory is not a valid JRI.
-     */
-    public static Path assertJri(Path jriDirectory) {
-        final Path result = requireDirectory(jriDirectory);
-        if (!isValidJri(jriDirectory)) {
-            throw new IllegalArgumentException(String.format(INVALID_JRI, jriDirectory));
-        }
-        return result;
     }
 
     /**
@@ -173,70 +151,21 @@ public final class JavaRuntime implements ResourceContainer {
     /**
      * Returns a new {@code JavaRuntime} for this JVM.
      *
-     * @param assertJdk {@code} true if the result must be a valid JDK.
      * @return The new instance.
      * @throws IllegalArgumentException If this JVM is not a valid JDK.
      */
-    public static JavaRuntime current(boolean assertJdk) {
-        final Path currentJavaHome = currentJavaHomeDir();
-        final Path jriDir = assertJdk ? assertJdk(currentJavaHome) : assertJri(currentJavaHome);
-        return new JavaRuntime(jriDir, null, assertJdk);
+    public static JavaRuntime current() {
+        return new JavaRuntime();
     }
 
-    /**
-     * Returns a new {@code JavaRuntime} for the given directory, asserting that it is a valid JDK.
-     *
-     * @param jdkDirectory The directory.
-     * @return The new instance.
-     * @throws IllegalArgumentException If this JVM is not a valid JDK.
-     */
-    public static JavaRuntime jdk(Path jdkDirectory) {
-        return new JavaRuntime(assertJdk(jdkDirectory), null, true);
-    }
-
-    /**
-     * Returns a new {@code JavaRuntime} for the given directory, asserting that it is a valid JDK.
-     *
-     * @param jdkDirectory The directory.
-     * @param version The runtime version of the given JDK. Computed if {@code null}.
-     * @return The new instance.
-     * @throws IllegalArgumentException If this JVM is not a valid JDK.
-     */
-    public static JavaRuntime jdk(Path jdkDirectory, Runtime.Version version) {
-        return new JavaRuntime(assertJdk(jdkDirectory), version, true);
-    }
-
-    /**
-     * Returns a new {@code JavaRuntime} for the given directory.
-     *
-     * @param jriDirectory The directory.
-     * @param version The runtime version of the given JRI. If {@code null}, the version is computed if {@code jmod}
-     * files are present otherwise an exception is thrown.
-     * @return The new instance.
-     * @throws IllegalArgumentException If this JVM is not a valid JRI or the runtime version cannot be computed.
-     */
-    public static JavaRuntime jri(Path jriDirectory, Runtime.Version version) {
-        final Path jriDir = assertJri(jriDirectory);
-        final boolean isJdk = isValidJdk(jriDir);
-        return new JavaRuntime(jriDir, version, isJdk);
-    }
-
-    private JavaRuntime(Path javaHome, Runtime.Version version, boolean isJdk) {
+    private JavaRuntime() {
         this.javaHome = requireDirectory(javaHome);
         this.jmodsDir = javaHome.resolve(JMODS_DIR);
-        if (isJdk) {
-            final List<Path> jmodFiles = listFiles(jmodsDir, fileName -> fileName.endsWith(JMOD_SUFFIX));
-            this.version = isCurrent() ? Runtime.version() : findVersion();
-            this.modules = jmodFiles.stream()
-                                    .filter(file -> !Constants.EXCLUDED_MODULES.contains(moduleNameOf(file)))
-                                    .collect(Collectors.toMap(JavaRuntime::moduleNameOf, jmod -> Jar.open(jmod, this.version)));
-        } else if (version == null) {
-            throw new IllegalArgumentException("Version required in a Java Runtime without 'jmods' dir: " + javaHome);
-        } else {
-            this.version = version;
-            this.modules = Map.of();
-        }
-        this.isJdk = isJdk;
+        final List<Path> jmodFiles = listFiles(jmodsDir, fileName -> fileName.endsWith(JMOD_SUFFIX));
+        this.version = Runtime.version();
+        this.modules = jmodFiles.stream()
+                .filter(file -> !Constants.EXCLUDED_MODULES.contains(moduleNameOf(file)))
+                .collect(Collectors.toMap(JavaRuntime::moduleNameOf, jmod -> Jar.open(jmod, this.version)));
     }
 
     /**
@@ -269,7 +198,7 @@ public final class JavaRuntime implements ResourceContainer {
     @Override
     public boolean containsResource(String resourcePath) {
         final String path = resourcePath.endsWith(".class") ? JMOD_CLASSES_PREFIX + resourcePath : resourcePath;
-        return modules.values().stream().anyMatch(jar -> jar.containsResource(path));
+        return systemResources.get().contains(path);
     }
 
     /**
@@ -315,22 +244,6 @@ public final class JavaRuntime implements ResourceContainer {
     }
 
     /**
-     * Ensure that the given directory exists, creating it if necessary.
-     *
-     * @param directory The directory. May be relative or absolute.
-     * @return The directory.
-     * @throws IllegalArgumentException If the directory is absolute but is not within this {@link #path()}.
-     */
-    public Path ensureDirectory(Path directory) {
-        Path relativeDir = requireNonNull(directory);
-        if (directory.isAbsolute()) {
-            // Ensure that the directory is within our directory.
-            relativeDir = path().relativize(directory);
-        }
-        return FileUtils.ensureDirectory(path().resolve(relativeDir));
-    }
-
-    /**
      * Returns the on disk size.
      *
      * @return The size, in bytes.
@@ -354,8 +267,8 @@ public final class JavaRuntime implements ResourceContainer {
             }
             final ModuleDescriptor descriptor = ModuleDescriptor.read(zip.getInputStream(entry));
             return Runtime.Version.parse(descriptor.version()
-                                                   .orElseThrow(() -> new IllegalStateException("No version in " + javaBase))
-                                                   .toString());
+                    .orElseThrow(() -> new IllegalStateException("No version in " + javaBase))
+                    .toString());
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -382,10 +295,10 @@ public final class JavaRuntime implements ResourceContainer {
             return Optional.of(CUSTOM_JRI);
         } else if (OPEN_JDK && OS == Linux) {
             return OPEN_JDK_LINUX_PACKAGING.entrySet()
-                                           .stream()
-                                           .filter(e -> findExecutableInPath(e.getKey()).isPresent())
-                                           .map(Map.Entry::getValue)
-                                           .findFirst();
+                    .stream()
+                    .filter(e -> findExecutableInPath(e.getKey()).isPresent())
+                    .map(Map.Entry::getValue)
+                    .findFirst();
         }
         return Optional.empty();
     }
@@ -393,11 +306,12 @@ public final class JavaRuntime implements ResourceContainer {
     private static boolean isCustomJri(Path jdkDirectory) {
         if (jdkDirectory.equals(currentJavaHomeDir())) {
             return ModuleFinder.ofSystem()
-                               .findAll()
-                               .stream()
-                               .map(ref -> ref.descriptor().name())
-                               .anyMatch(moduleName -> !(moduleName.startsWith(JAVA_MODULE_NAME_PREFIX)
-                                                         || moduleName.startsWith(JDK_MODULE_NAME_PREFIX)));
+                    .findAll()
+                    .stream()
+                    .map(ref -> ref.descriptor().name())
+                    .anyMatch(moduleName -> !(
+                            moduleName.startsWith(JAVA_MODULE_NAME_PREFIX)
+                            || moduleName.startsWith(JDK_MODULE_NAME_PREFIX)));
         } else {
             return false;
         }
@@ -407,8 +321,8 @@ public final class JavaRuntime implements ResourceContainer {
         final Path appDir = jdkDirectory.resolve(Application.APP_DIR);
         if (Files.isDirectory(appDir)) {
             return FileUtils.list(appDir, 2)
-                            .stream()
-                            .anyMatch(path -> path.getFileName().toString().startsWith(HELIDON_JAR_NAME_PREFIX));
+                    .stream()
+                    .anyMatch(path -> path.getFileName().toString().startsWith(HELIDON_JAR_NAME_PREFIX));
         }
         return false;
     }
