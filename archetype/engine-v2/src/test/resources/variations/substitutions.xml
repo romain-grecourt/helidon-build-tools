@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 
-    Copyright (c) 2022, 2025 Oracle and/or its affiliates.
+    Copyright (c) 2022, 2026 Oracle and/or its affiliates.
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -20,9 +20,17 @@
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
 
-    <step name="boolean1">
+    <step name="substitutions">
+        <presets>
+            <text path="foo">a-foo</text>
+            <text path="bar">a-bar</text>
+            <text path="preset">${foo}-${bar}</text>
+        </presets>
         <inputs>
-            <boolean id="colors" name="Use colors" />
+            <text id="text" name="text" default="${preset}"/>
+            <list id="list-things" name="things" optional="true">
+                <option value="${bar}" name="bar"/>
+            </list>
         </inputs>
     </step>
 </archetype-script>

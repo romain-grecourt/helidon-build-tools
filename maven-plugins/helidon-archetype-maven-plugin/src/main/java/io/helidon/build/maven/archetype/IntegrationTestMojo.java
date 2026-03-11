@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,12 +34,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Properties;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import io.helidon.build.archetype.engine.v2.ArchetypeEngineV2;
 import io.helidon.build.archetype.engine.v2.Expression;
 import io.helidon.build.archetype.engine.v2.ScriptCompiler;
+import io.helidon.build.archetype.engine.v2.Variations;
 import io.helidon.build.common.Lists;
 import io.helidon.build.common.Maps;
 import io.helidon.build.common.PathFinder;
@@ -203,13 +203,13 @@ public class IntegrationTestMojo extends AbstractMojo {
      * External values to use when generating archetypes.
      */
     @Parameter(property = "archetype.test.externalValues")
-    private Map<String, String> externalValues;
+    private Map<String, String> externalValues = Map.of();
 
     /**
      * External defaults to use when generating archetypes.
      */
     @Parameter(property = "archetype.test.externalDefaults")
-    private Map<String, String> externalDefaults;
+    private Map<String, String> externalDefaults = Map.of();
 
     /**
      * File that contains rules to filter the generated tests.
@@ -229,6 +229,12 @@ public class IntegrationTestMojo extends AbstractMojo {
      */
     @Parameter(property = "archetype.test.generateOnly", defaultValue = "false")
     private boolean generateOnly;
+
+    /**
+     * Whether to fail when the computed variations include unbounded inputs.
+     */
+    @Parameter(property = "archetype.test.failOnUnboundedVariations", defaultValue = "false")
+    private boolean failOnUnboundedVariations;
 
     /**
      * Test start index.
@@ -280,7 +286,7 @@ public class IntegrationTestMojo extends AbstractMojo {
     private List<Validation> validations;
 
     private Path cli = null;
-    private Set<Map<String, String>> variations;
+    private Variations variations;
     private int index = 1;
 
     @Override
@@ -310,6 +316,10 @@ public class IntegrationTestMojo extends AbstractMojo {
                 variations = variations(archetypeFile.toPath());
                 Log.info("");
                 Log.info("Total projects: " + variations.size());
+                if (!variations.exhaustive()) {
+                    Log.warn("Computed variations are not exhaustive, unbounded inputs: "
+                            + String.join(", ", variations.unboundedInputs()));
+                }
                 Log.info("Markdown file: " + writeSummary());
                 Log.info("CSV file: " + writeCsv());
 
@@ -317,10 +327,10 @@ public class IntegrationTestMojo extends AbstractMojo {
                     return;
                 }
 
-                Map<Integer, Map<String, String>> variations = filterVariations();
-                for (Map.Entry<Integer, Map<String, String>> entry : variations.entrySet()) {
+                Map<Integer, Variations.Entry> variations = filterVariations();
+                for (Map.Entry<Integer, Variations.Entry> entry : variations.entrySet()) {
                     index = entry.getKey();
-                    Map<String, String> variation = entry.getValue();
+                    Map<String, String> variation = new LinkedHashMap<>(entry.getValue());
                     String artifactId = variation.getOrDefault("artifactId", "myproject");
                     if (index > 1) {
                         variation.put("artifactId", artifactId + "-" + index);
@@ -336,11 +346,17 @@ public class IntegrationTestMojo extends AbstractMojo {
         }
     }
 
-    private Set<Map<String, String>> variations(Path archetypeFile) {
+    private Variations variations(Path archetypeFile) throws MojoFailureException {
         try (FileSystem fs = newFileSystem(archetypeFile, this.getClass().getClassLoader())) {
             Path cwd = fs.getPath("/");
             ScriptCompiler compiler = new ScriptCompiler(() -> cwd.resolve("main.xml"), cwd);
-            return compiler.variations(rules());
+            Variations variations = Variations.compute(compiler, rules(), externalValues, externalDefaults);
+            if (failOnUnboundedVariations && !variations.exhaustive()) {
+                throw new MojoFailureException(
+                        "Variations must be exhaustive, unbounded inputs: "
+                                + String.join(", ", variations.unboundedInputs()));
+            }
+            return variations;
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }
@@ -354,15 +370,19 @@ public class IntegrationTestMojo extends AbstractMojo {
             try (PrintWriter printer = new PrintWriter(Files.newBufferedWriter(file))) {
                 printer.println("# Projects Summary");
                 printer.println("\nTotal projects: " + variations.size());
+                if (!variations.exhaustive()) {
+                    printer.println("\nThese projects are representative samples for unbounded inputs: "
+                            + String.join(", ", variations.unboundedInputs()));
+                }
                 int i = 1;
-                for (Map<String, String> variation : variations) {
+                for (Variations.Entry entry : variations) {
                     printer.println("\nProject " + i++ + ":");
                     printer.println("```shell");
                     printer.println("helidon init --batch \\");
-                    Iterator<Entry<String, String>> it = variation.entrySet().iterator();
+                    Iterator<Entry<String, String>> it = entry.entrySet().iterator();
                     while (it.hasNext()) {
-                        Entry<String, String> entry = it.next();
-                        printer.print("    -D" + entry.getKey() + "=" + entry.getValue());
+                        Entry<String, String> e = it.next();
+                        printer.print("    -D" + e);
                         if (it.hasNext()) {
                             printer.println(" \\");
                         } else {
@@ -382,24 +402,23 @@ public class IntegrationTestMojo extends AbstractMojo {
     private Path writeCsv() {
         Path testsDir = testsDirectory.toPath();
         Path file = testsDir.resolve("projects.csv");
-        try (PrintWriter csvWriter = new PrintWriter(Files.newBufferedWriter(file))) {
-            for (Map<String, String> variation : variations) {
-                String line = Lists.join(Maps.entries(variation), e -> e.getKey() + "=" + e.getValue(), " ");
-                csvWriter.println(line);
+        try (PrintWriter writer = new PrintWriter(Files.newBufferedWriter(file))) {
+            for (Variations.Entry variation : variations) {
+                writer.println(variation.toString(" "));
             }
-            csvWriter.flush();
+            writer.flush();
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }
         return file;
     }
 
-    private Map<Integer, Map<String, String>> filterVariations() {
-        Map<Integer, Map<String, String>> indexes = new LinkedHashMap<>();
+    private Map<Integer, Variations.Entry> filterVariations() {
+        Map<Integer, Variations.Entry> indexes = new LinkedHashMap<>();
         if (tests == null || tests.isEmpty()) {
-            Iterator<Map<String, String>> it = variations.iterator();
+            Iterator<Variations.Entry> it = variations.iterator();
             for (int i = 1; it.hasNext(); i++) {
-                Map<String, String> next = it.next();
+                Variations.Entry next = it.next();
                 if (i >= startIndex && (endIndex <= 0 || i <= endIndex)) {
                     indexes.put(i, next);
                 }
@@ -408,9 +427,9 @@ public class IntegrationTestMojo extends AbstractMojo {
             List<Integer> indices = Arrays.stream(tests.split(","))
                     .map(Integer::valueOf)
                     .toList();
-            Iterator<Map<String, String>> it = variations.iterator();
+            Iterator<Variations.Entry> it = variations.iterator();
             for (int i = 1; it.hasNext(); i++) {
-                Map<String, String> next = it.next();
+                Variations.Entry next = it.next();
                 if (indices.contains(i)) {
                     indexes.put(i, next);
                 }
@@ -477,7 +496,7 @@ public class IntegrationTestMojo extends AbstractMojo {
                             "--project", outputDir.toString(),
                             "--reset",
                             "--url", cliDataDirectory.toURI().toString()),
-                    Lists.map(values.entrySet(), e -> "-D" + e.getKey() + "=" + e.getValue()));
+                    Lists.map(values.entrySet(), e -> "-D" + e));
             Log.info("Executing: %s", String.join(" ", cmd));
             ProcessMonitor.builder()
                     .processBuilder(new ProcessBuilder(cmd))

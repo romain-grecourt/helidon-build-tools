@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 
-    Copyright (c) 2025 Oracle and/or its affiliates.
+    Copyright (c) 2022, 2026 Oracle and/or its affiliates.
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -20,19 +20,12 @@
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
 
-    <step name="nested-conditional-option">
+    <step name="enum1">
         <inputs>
-            <boolean id="advanced" name="Advanced" global="true"/>
-            <list id="features" name="Features" global="true">
-                <option value="base" name="Base">
-                    <inputs>
-                        <enum id="flavor" name="Flavor">
-                            <option value="plain" name="Plain"/>
-                            <option value="spicy" name="Spicy" if="${~advanced}"/>
-                        </enum>
-                    </inputs>
-                </option>
-            </list>
+            <enum id="color" name="Select color">
+                <option value="red" name="Red"/>
+                <option value="orange" name="Orange"/>
+            </enum>
         </inputs>
     </step>
 </archetype-script>

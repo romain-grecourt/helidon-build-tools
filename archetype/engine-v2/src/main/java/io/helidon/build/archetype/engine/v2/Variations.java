@@ -1,0 +1,932 @@
+/*
+ * Copyright (c) 2026 Oracle and/or its affiliates.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.helidon.build.archetype.engine.v2;
+
+import java.time.Duration;
+import java.util.AbstractMap;
+import java.util.AbstractSet;
+import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
+import java.util.stream.Collectors;
+
+import io.helidon.build.archetype.engine.v2.Context.Scope;
+import io.helidon.build.archetype.engine.v2.Context.ScopeValue;
+import io.helidon.build.archetype.engine.v2.Context.ValueKind;
+import io.helidon.build.archetype.engine.v2.InputResolver.InvalidInputException;
+import io.helidon.build.archetype.engine.v2.InputResolver.ResolvedKind;
+import io.helidon.build.archetype.engine.v2.Node.Kind;
+import io.helidon.build.archetype.engine.v2.ScriptInvoker.InvocationException;
+import io.helidon.build.common.BitSets;
+import io.helidon.build.common.Lists;
+import io.helidon.build.common.Maps;
+import io.helidon.build.common.logging.Log;
+import io.helidon.build.common.logging.LogLevel;
+
+import static io.helidon.build.archetype.engine.v2.Nodes.optionIndex;
+import static java.util.Objects.requireNonNull;
+
+/**
+ * Computed variations represented as an immutable set of entries.
+ * <p>
+ * A variation is exhaustive when every active user input is enumerated by the computed entries.
+ * Some inputs, such as free-form text inputs, cannot be exhaustively enumerated.
+ * <p>
+ * An input is active for a given entry when it participates in the reachable configuration represented by that
+ * entry.
+ * <p>
+ * Inputs excluded by conditions, selected options, or other branch-specific pruning are not active for that
+ * entry and therefore do not affect exhaustiveness.
+ * <p>
+ * Those inputs are tracked as unbounded on the affected entries and surfaced across the whole set through
+ * {@link #unboundedInputs()}.
+ * <p>
+ * An unbounded entry still carries one representative value for the input, but that value stands in for an
+ * open-ended range of possible user values rather than a complete enumeration.
+ */
+public final class Variations extends AbstractSet<Variations.Entry> {
+    private final Set<Entry> entries;
+    private final Set<String> unboundedInputs;
+
+    private Variations(Set<Entry> entries) {
+        this.entries = Collections.unmodifiableSet(new TreeSet<>(requireNonNull(entries)));
+        Set<String> unboundedInputs = new TreeSet<>();
+        for (Entry entry : this.entries) {
+            unboundedInputs.addAll(entry.unbounded());
+        }
+        this.unboundedInputs = Collections.unmodifiableSet(unboundedInputs);
+    }
+
+    /**
+     * Create an exhaustive singleton variation set.
+     *
+     * @param map variation values
+     * @return singleton variation set
+     */
+    public static Variations of(Map<String, String> map) {
+        return of(map, Set.of());
+    }
+
+    /**
+     * Create a singleton variation set.
+     *
+     * @param map       variation values
+     * @param unbounded unbounded input ids
+     * @return singleton variation set
+     */
+    public static Variations of(Map<String, String> map, Set<String> unbounded) {
+        return new Variations(Set.of(new Entry(map, unbounded)));
+    }
+
+    /**
+     * Create a variation set from existing entries.
+     *
+     * @param entries variation entries
+     * @return variation set
+     */
+    static Variations of(Set<Entry> entries) {
+        return new Variations(entries);
+    }
+
+    /**
+     * Compute variations for a compiler and filters.
+     *
+     * @param compiler compiler
+     * @param filters  filters
+     * @return computed variations
+     */
+    public static Variations compute(ScriptCompiler compiler, List<Expression> filters) {
+        return compute(compiler, filters, Map.of());
+    }
+
+    /**
+     * Compute variations for a compiler, filters, and fixed external values.
+     *
+     * @param compiler       compiler
+     * @param filters        filters
+     * @param externalValues fixed external values
+     * @return computed variations
+     */
+    public static Variations compute(ScriptCompiler compiler,
+                                     List<Expression> filters,
+                                     Map<String, String> externalValues) {
+        return compute(compiler, filters, externalValues, Map.of());
+    }
+
+    /**
+     * Compute variations for a compiler, filters, and external inputs.
+     *
+     * @param compiler         compiler
+     * @param filters          filters
+     * @param externalValues   fixed external values
+     * @param externalDefaults external defaults
+     * @return computed variations
+     */
+    public static Variations compute(ScriptCompiler compiler,
+                                     List<Expression> filters,
+                                     Map<String, String> externalValues,
+                                     Map<String, String> externalDefaults) {
+
+        requireNonNull(compiler);
+        requireNonNull(filters);
+        requireNonNull(externalValues);
+        requireNonNull(externalDefaults);
+
+        Node sourceNode = compiler.sourceNode();
+        Set<Entry> variations = new TreeSet<>();
+        sourceNode.visit(new VisitorImpl(compiler, sourceNode, variations, filters, externalValues, externalDefaults));
+        return new Variations(variations);
+    }
+
+    @Override
+    public Iterator<Entry> iterator() {
+        return entries.iterator();
+    }
+
+    @Override
+    public int size() {
+        return entries.size();
+    }
+
+    /**
+     * Get the input ids that remain unbounded across the computed variations.
+     *
+     * @return unbounded input ids
+     */
+    public Set<String> unboundedInputs() {
+        return unboundedInputs;
+    }
+
+    /**
+     * Returns whether the computed variations are exhaustive.
+     *
+     * @return {@code true} if no input remains unbounded
+     */
+    public boolean exhaustive() {
+        return unboundedInputs.isEmpty();
+    }
+
+    @Override
+    public String toString() {
+        return toString(true);
+    }
+
+    /**
+     * Render the computed variations with a custom separator between entries.
+     *
+     * @param separator separator between rendered entries
+     * @return rendered variations
+     */
+    public String toString(String separator) {
+        return toString(true, separator);
+    }
+
+    /**
+     * Render the computed variations.
+     *
+     * @param markUnbounded whether non-exhaustive entries should include their unbounded input ids
+     * @return rendered variations
+     */
+    public String toString(boolean markUnbounded) {
+        return toString(markUnbounded, System.lineSeparator());
+    }
+
+    /**
+     * Render the computed variations with a custom separator between entries.
+     *
+     * @param markUnbounded whether non-exhaustive entries should include their unbounded input ids
+     * @param separator     separator between rendered entries
+     * @return rendered variations
+     */
+    public String toString(boolean markUnbounded, String separator) {
+        requireNonNull(separator);
+        return entries.stream()
+                .map(entry -> entry.toString(markUnbounded))
+                .collect(Collectors.joining(separator));
+    }
+
+    /**
+     * Computed variation values with metadata about inputs that still admit arbitrary values.
+     */
+    public static final class Entry extends AbstractMap<String, String> implements Comparable<Variations.Entry> {
+        private final Map<String, String> map;
+        private final Set<String> unbounded;
+
+        Entry(Map<String, String> values, Set<String> unbounded) {
+            requireNonNull(values);
+            requireNonNull(unbounded);
+            this.map = Collections.unmodifiableMap(new LinkedHashMap<>(values));
+            this.unbounded = Collections.unmodifiableSet(new TreeSet<>(unbounded));
+        }
+
+        @Override
+        public Set<Map.Entry<String, String>> entrySet() {
+            return map.entrySet();
+        }
+
+        /**
+         * Get the active input ids that remain unbounded.
+         *
+         * @return unbounded input ids
+         */
+        public Set<String> unbounded() {
+            return unbounded;
+        }
+
+        /**
+         * Returns whether this variation is exhaustive.
+         *
+         * @return {@code true} if the variation has no unbounded inputs
+         */
+        public boolean exhaustive() {
+            return unbounded.isEmpty();
+        }
+
+        @Override
+        public int compareTo(Variations.Entry o) {
+            int result = Maps.compare(this, o);
+            if (result != 0) {
+                return result;
+            }
+            return Lists.compare(unbounded, o.unbounded);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof Variations.Entry)) {
+                return false;
+            }
+            Variations.Entry other = (Variations.Entry) o;
+            return Objects.equals(map, other.map)
+                   && Objects.equals(unbounded, other.unbounded);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(map, unbounded);
+        }
+
+        @Override
+        public String toString() {
+            return toString(true);
+        }
+
+        /**
+         * Render the variation entry with a custom separator between values.
+         *
+         * @param separator separator between rendered values
+         * @return rendered variation entry
+         */
+        public String toString(String separator) {
+            return toString(true, separator);
+        }
+
+        /**
+         * Render the variation entry.
+         *
+         * @param markUnbounded whether to include unbounded input ids for non-exhaustive entries
+         * @return rendered variation entry
+         */
+        public String toString(boolean markUnbounded) {
+            String values = "{" + valuesToString(", ") + "}";
+            if (!markUnbounded || exhaustive()) {
+                return values;
+            }
+            return values + " unbounded=" + unbounded;
+        }
+
+        /**
+         * Render the variation entry with a custom separator between values.
+         *
+         * @param markUnbounded whether to include unbounded input ids for non-exhaustive entries
+         * @param separator     separator between rendered values
+         * @return rendered variation entry
+         */
+        public String toString(boolean markUnbounded, String separator) {
+            String values = valuesToString(separator);
+            if (!markUnbounded || exhaustive()) {
+                return values;
+            }
+            return values + " unbounded=" + unbounded;
+        }
+
+        private String valuesToString(String separator) {
+            requireNonNull(separator);
+            return entrySet().stream()
+                    .map(Map.Entry::toString)
+                    .collect(Collectors.joining(separator));
+        }
+    }
+
+    private static final class VisitorImpl implements Node.Visitor {
+        private final ScriptCompiler compiler;
+        private final Node sourceNode;
+
+        private final List<Table> inputs = new ArrayList<>();
+        private final List<Column> columns = new ArrayList<>();
+        private final Map<Column, Integer> indexes = new LinkedHashMap<>();
+        private final Set<String> textInputs = new LinkedHashSet<>();
+        private final Set<Entry> variations;
+        private final List<Expression> filters;
+        private final Map<String, String> externalValues;
+        private final Map<String, String> externalDefaults;
+        private final Map<String, String> resolvedExternalValues;
+
+        VisitorImpl(ScriptCompiler compiler,
+                    Node sourceNode,
+                    Set<Entry> variations,
+                    List<Expression> filters,
+                    Map<String, String> externalValues,
+                    Map<String, String> externalDefaults) {
+            this.compiler = compiler;
+            this.sourceNode = sourceNode;
+            this.variations = variations;
+            this.filters = filters;
+            this.externalValues = Collections.unmodifiableMap(new LinkedHashMap<>(externalValues));
+            this.externalDefaults = Collections.unmodifiableMap(new LinkedHashMap<>(externalDefaults));
+            this.resolvedExternalValues = resolvedExternalValues();
+        }
+
+        @Override
+        public boolean visit(Node node) {
+            Table table;
+            List<Node> options;
+            List<Node> optionNodes;
+            switch (node.kind()) {
+                case INPUT_TEXT:
+                    table = table(node);
+                    String textValue = declaredValue(node, table.id).asString()
+                            .or(() -> node.attribute("default").asString())
+                            .orElse("<?>");
+                    table.columns.add(new Column(table.id, textValue));
+                    table.addRow(BitSets.of(0), Expression.TRUE);
+                    inputs.add(table);
+                    textInputs.add(table.id);
+                    break;
+                case INPUT_BOOLEAN:
+                    table = table(node);
+                    table.columns.add(new Column(table.id, "true"));
+                    table.columns.add(new Column(table.id, "false"));
+                    Value<Boolean> boolValue = declaredValue(node, table.id).asBoolean();
+                    if (boolValue.isPresent()) {
+                        table.addRow(BitSets.of(boolValue.get() ? 0 : 1), Expression.TRUE);
+                    } else {
+                        table.addRow(BitSets.of(0), Expression.TRUE);
+                        table.addRow(BitSets.of(1), Expression.TRUE);
+                    }
+                    inputs.add(table);
+                    break;
+                case INPUT_ENUM:
+                    table = table(node);
+                    optionNodes = optionNodes(node);
+                    options = Lists.map(optionNodes, Node::unwrap);
+                    for (Node o : options) {
+                        table.columns.add(new Column(table.id, o.value().getString()));
+                    }
+                    int index = declaredValue(node, table.id).asString()
+                            .map(o -> optionIndex(o, options))
+                            .orElse(-1);
+                    if (index >= 0) {
+                        // only add the preset option
+                        Node n = optionNodes.get(index);
+                        table.addRow(BitSets.of(index), n.expression());
+                    } else {
+                        for (int i = 0; i < table.columns.size(); i++) {
+                            Node n = optionNodes.get(i);
+                            table.addRow(BitSets.of(i), n.expression());
+                        }
+                    }
+                    inputs.add(table);
+                    break;
+                case INPUT_LIST:
+                    table = table(node);
+                    optionNodes = optionNodes(node);
+                    options = Lists.map(optionNodes, Node::unwrap);
+                    for (Node o : options) {
+                        table.columns.add(new Column(table.id, o.value().getString()));
+                    }
+                    Value<List<String>> value = declaredValue(node, table.id).asList();
+                    if (value.isPresent()) {
+                        // only add the preset options
+                        BitSet bits = new BitSet();
+                        Expression expr = Expression.TRUE;
+                        for (String o : value.getList()) {
+                            int i = optionIndex(o, options);
+                            bits.set(i);
+                            Node n = optionNodes.get(i);
+                            expr = expr.and(n.expression());
+                        }
+                        table.addRow(bits, expr);
+                    } else {
+                        for (int p = 1, permSize = 1 << table.columns.size(); p < permSize; p++) {
+                            Expression expr = Expression.TRUE;
+                            BitSet bits = BitSets.of((long) p);
+                            for (int i = bits.nextSetBit(0); i >= 0 && i < Integer.MAX_VALUE; i = bits.nextSetBit(i + 1)) {
+                                Node n = optionNodes.get(i);
+                                expr = expr.and(n.expression());
+                            }
+                            table.addRow(bits, expr);
+                        }
+                    }
+                    table.columns.add(new Column(table.id, "none"));
+                    table.addRow(BitSets.of(table.columns.size() - 1), Expression.TRUE);
+                    inputs.add(table);
+                    break;
+                default:
+            }
+            return true;
+        }
+
+        @Override
+        public void postVisit(Node node) {
+            if (node.kind() == Kind.SCRIPT) {
+
+                // compute the variations
+                long computeStartTime = System.currentTimeMillis();
+
+                // aggregate all columns
+                for (Table table : inputs) {
+                    for (Column column : table.columns) {
+                        int index = indexes.computeIfAbsent(column, e -> indexes.size());
+                        if (index == columns.size()) {
+                            columns.add(column);
+                        }
+                    }
+                }
+
+                // remap against the aggregated columns
+                List<Table> tables = new ArrayList<>();
+                for (Table input : inputs) {
+                    Table table = table(input.node);
+                    table.columns.addAll(input.columns);
+                    for (Row row : input.rows) {
+                        BitSet bitSet = new BitSet();
+                        for (int i = row.bits.nextSetBit(0); i >= 0 && i < Integer.MAX_VALUE; i = row.bits.nextSetBit(i + 1)) {
+                            bitSet.set(indexes.get(input.columns.get(i)));
+                        }
+                        table.addRow(bitSet, row.expr);
+                    }
+                    tables.add(table);
+                }
+
+                // collect the input ids that each remapped table depends on
+                Set<String> inputIds = tables.stream().map(t -> t.id)
+                        .collect(Collectors.toCollection(LinkedHashSet::new));
+                for (Table table : tables) {
+                    table.dependencies.addAll(dependencies(table, inputIds));
+                }
+
+                // tables that still need to be joined
+                List<Table> pending = new ArrayList<>(tables);
+
+                // number of joined table fragments per input id
+                Map<String, Integer> joined = new HashMap<>();
+
+                // input ids whose full set of fragments has already been joined
+                Set<String> available = new LinkedHashSet<>();
+
+                // total table fragments per input id
+                Map<String, Integer> totals = new HashMap<>();
+                for (Table table : tables) {
+                    totals.compute(table.id, (k, v) -> v == null ? 1 : v + 1);
+                }
+
+                // current intermediate rows that have not yet been expanded by a later join
+                Set<BitSet> merged = new LinkedHashSet<>();
+                for (int i = 0; i < tables.size(); i++) {
+                    // pick the next table whose guard allows expansion
+                    Join join = nextJoin(pending, available, merged);
+
+                    // remove the rows this join will expand
+                    join.filtered.forEach(merged::remove);
+
+                    // selected table is no longer pending
+                    pending.remove(join.table);
+
+                    // some logical inputs produce multiple table fragments with the same id
+                    // mark that id available only after all of them join
+                    int count = joined.compute(join.table.id, (k, v) -> v == null ? 1 : v + 1);
+                    if (count == totals.getOrDefault(join.table.id, -1)) {
+                        available.add(join.table.id);
+                    }
+
+                    Log.debug("Progress: %d/%d - %s - filtered: %d, merged: %d",
+                            i + 1,
+                            tables.size(),
+                            join.table,
+                            join.filtered.size(),
+                            merged.size());
+
+                    // compute variations for the input
+                    List<Row> computed = new ArrayList<>();
+                    if (join.filtered.isEmpty()) {
+                        if (merged.isEmpty()) {
+                            // use this table as the initial intermediate result
+                            computed.addAll(join.table.rows);
+                        }
+                    } else {
+                        // combine each eligible intermediate row with each row from this table
+                        for (Row row1 : join.table.rows) {
+                            for (BitSet row2 : join.filtered) {
+                                computed.add(new Row(BitSets.or(BitSets.copyOf(row1.bits), row2), row1.expr));
+                            }
+                        }
+                    }
+
+                    // apply excludes
+                    for (Row row : computed) {
+                        Map<String, String> vars = variation(row.bits);
+                        if (eval(join.table.node, join.table.expr, vars)
+                            && eval(join.table.node, row.expr, vars)
+                            && filter(node, vars)) {
+                            merged.add(row.bits);
+                        }
+                    }
+                }
+                logDuration(computeStartTime, "Computed " + merged.size() + " variations");
+
+                // normalize variations
+                // perform an execution and use the context values
+                long normalizeStartTime = System.currentTimeMillis();
+                Map<String, Entry> result = new HashMap<>();
+                for (BitSet row : merged) {
+                    Map<String, String> variation = variation(row);
+                    Map<String, ScopeValue<?>> effective = execute(variation);
+                    if (!effective.isEmpty()) {
+
+                        // compute signature, sorted user values only
+                        Map<String, String> normalized = Maps.mapValue(effective,
+                                (k, v) -> v.kind() == ValueKind.USER, v -> Value.toString(v), TreeMap::new);
+
+                        // signature
+                        String sig = Lists.join(normalized.entrySet(), " ");
+
+                        // compute duplicates
+                        Entry sample = sample(effective);
+                        result.compute(sig, (k, v) -> merge(v, sample));
+                    }
+                }
+                logDuration(normalizeStartTime, "Normalized " + merged.size() + " variations");
+
+                long sortStartTime = System.currentTimeMillis();
+                variations.addAll(result.values());
+                logDuration(sortStartTime, "Sorted " + variations.size() + " variations");
+            }
+        }
+
+        Map<String, String> variation(BitSet row) {
+            Map<String, String> variation = new LinkedHashMap<>();
+            for (int i = row.nextSetBit(0); i >= 0 && i < Integer.MAX_VALUE; i = row.nextSetBit(i + 1)) {
+                Column column = columns.get(i);
+                variation.compute(column.name, (k, v) -> v == null ? column.value : v + "," + column.value);
+            }
+            variation.putAll(resolvedExternalValues);
+            return variation;
+        }
+
+        Entry sample(Map<String, ScopeValue<?>> effective) {
+            Map<String, String> values = Maps.mapValue(effective, v -> Value.toString(v));
+            Set<String> unbounded = effective.entrySet().stream()
+                    .filter(e -> textInputs.contains(e.getKey()) && e.getValue().kind() != ValueKind.EXTERNAL)
+                    .map(Map.Entry::getKey)
+                    .collect(Collectors.toCollection(TreeSet::new));
+            return new Entry(values, unbounded);
+        }
+
+        Entry merge(Entry left, Entry right) {
+            if (left == null) {
+                return right;
+            }
+            Set<String> unbounded = new TreeSet<>(left.unbounded());
+            unbounded.addAll(right.unbounded());
+            Entry selected = left.size() >= right.size() ? left : right;
+            if (selected.unbounded().equals(unbounded)) {
+                return selected;
+            }
+            return new Entry(selected, unbounded);
+        }
+
+        boolean filter(Node node, Map<String, String> variation) {
+            for (Expression exclude : filters) {
+                if (eval(node, exclude, variation)) {
+                    if (LogLevel.isDebug()) {
+                        Log.debug("Excluding variation, rule: %s, entries: %s", exclude.literal(), variation);
+                    }
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        boolean eval(Node node, Expression expr, Map<String, String> variation) {
+            try {
+                Scope scope = compiler.scope(node);
+                return expr.eval(s -> {
+                    String v = variation.get(scope.key(s));
+                    if (v != null) {
+                        return Value.dynamic(v);
+                    }
+                    return null;
+                });
+            } catch (Expression.UnresolvedVariableException ignored) {
+                return false;
+            }
+        }
+
+        Map<String, ScopeValue<?>> execute(Map<String, String> variation) {
+            try {
+                // initialize a context with the variations
+                Context context = new Context()
+                        .externalValues(externalValues)
+                        .externalDefaults(externalDefaults)
+                        .pushCwd(compiler.cwd());
+                variation.forEach((k, v) -> {
+                    if (externalValues.containsKey(k)) {
+                        return;
+                    }
+                    Scope scope = context.scope().getOrCreate(k);
+                    scope.value(Value.dynamic(v), ValueKind.USER);
+                });
+
+                // record the scopes in traversal order
+                Set<Scope> scopes = new LinkedHashSet<>();
+                ScriptInvoker.invoke(sourceNode, context, new InputResolver.BatchResolver(context), n -> {
+                    scopes.add(context.scope());
+                    return true;
+                });
+
+                // return values in traversal order
+                Map<String, ScopeValue<?>> values = new LinkedHashMap<>();
+                for (Scope scope : scopes) {
+                    if (scope.parent() != null) {
+                        scope.values().forEach((k, v) -> {
+                            if (v.isPresent()) {
+                                switch (v.kind()) {
+                                    case USER:
+                                    case EXTERNAL:
+                                        if (!scopes.contains(v.scope())) {
+                                            // not visited, discard
+                                            return;
+                                        }
+                                        break;
+                                    case DEFAULT:
+                                        for (Object o : v.qualifiers()) {
+                                            if (o == ResolvedKind.AUTO_CREATED) {
+                                                return;
+                                            }
+                                        }
+                                        break;
+                                    default:
+                                        return;
+                                }
+                                values.putIfAbsent(k, v);
+                            }
+                        });
+                    }
+                }
+                return values;
+            } catch (InvocationException ex) {
+                if (!(ex.getCause() instanceof InvalidInputException)) {
+                    Log.debug("Execution error: %s, inputs: %s",
+                            ex.getCause().getMessage(),
+                            variation);
+                }
+                return Map.of();
+            }
+        }
+
+        Value<?> declaredValue(Node node, String key) {
+            String value = resolvedExternalValues.get(key);
+            if (value != null) {
+                return Value.typed(Value.dynamic(value), node.kind().valueType());
+            }
+            return compiler.declaredValue(node, key);
+        }
+
+        Map<String, String> resolvedExternalValues() {
+            if (externalValues.isEmpty()) {
+                return Map.of();
+            }
+            Context context = new Context()
+                    .externalValues(externalValues)
+                    .externalDefaults(externalDefaults)
+                    .pushCwd(compiler.cwd());
+            Map<String, String> values = new LinkedHashMap<>();
+            for (String key : externalValues.keySet()) {
+                ScopeValue<?> value = context.scope().getOrCreate(key).value();
+                if (value.isPresent()) {
+                    values.put(key, Value.toString(value));
+                }
+            }
+            return Collections.unmodifiableMap(values);
+        }
+
+        // choose the next table to join from the currently joinable candidates
+        Join nextJoin(List<Table> tables, Set<String> available, Set<BitSet> merged) {
+            Join best = null;
+            Join fallback = null;
+            for (Table table : tables) {
+                Join join = join(table, merged);
+                if (fallback == null) {
+                    fallback = join;
+                }
+                // prefer tables whose referenced inputs are already fully materialized
+                if (!available.containsAll(table.dependencies)) {
+                    continue;
+                }
+                // pick the join expected to produce the smallest next intermediate set
+                if (best == null
+                    || join.cost < best.cost
+                    || (join.cost == best.cost && table.rows.size() < best.table.rows.size())) {
+                    best = join;
+                }
+            }
+            return best != null ? best : fallback;
+        }
+
+        // estimate how many existing rows survive the table guard and would need expanding
+        Join join(Table table, Set<BitSet> merged) {
+            if (merged.isEmpty()) {
+                return new Join(table, List.of(), table.rows.size());
+            }
+            List<BitSet> filtered = new ArrayList<>();
+            for (BitSet row : merged) {
+                Map<String, String> variation = variation(row);
+                if (eval(table.node, table.expr, variation)) {
+                    filtered.add(row);
+                }
+            }
+            long cost = merged.size() - filtered.size() + (long) filtered.size() * table.rows.size();
+            return new Join(table, filtered, cost);
+        }
+
+        // collect every input id that must be available before this table can join
+        Set<String> dependencies(Table table, Set<String> inputIds) {
+            Scope scope = compiler.scope(table.node);
+            // join order only depends on input ids referenced by table and row predicates
+            Set<String> dependencies = new LinkedHashSet<>(dependencies(table.expr, scope, table.id, inputIds));
+            for (Row row : table.rows) {
+                dependencies.addAll(dependencies(row.expr, scope, table.id, inputIds));
+            }
+            return dependencies;
+        }
+
+        // resolve expression variables to input ids and keep only real inter-table dependencies
+        Set<String> dependencies(Expression expr, Scope scope, String self, Set<String> inputIds) {
+            Set<String> dependencies = new LinkedHashSet<>();
+            for (String variable : expr.variables()) {
+                String key = scope.key(variable);
+                // ignore self-references because they do not constrain when this table can join
+                if (!key.equals(self) && inputIds.contains(key)) {
+                    dependencies.add(key);
+                }
+            }
+            return dependencies;
+        }
+
+        Table table(Node node) {
+            return new Table(node, compiler.scopeId(node), compiler.expression(node.parent()));
+        }
+
+        List<Node> optionNodes(Node node) {
+            return node.children().stream()
+                    .filter(n -> n.unwrap().kind() == Kind.INPUT_OPTION)
+                    .collect(Collectors.toList());
+        }
+
+        static void logDuration(long startTime, String msg) {
+            long endTime = System.currentTimeMillis();
+            Duration duration = Duration.ofMillis(endTime - startTime);
+            Log.debug("%s in %d.%ds", msg, duration.toSeconds(), duration.toMillisPart());
+        }
+    }
+
+    /**
+     * One named value selected from a table row for a variation.
+     */
+    private static final class Column {
+        private final String name;
+        private final String value;
+
+        Column(String name, String value) {
+            this.name = name;
+            this.value = value;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof Column)) {
+                return false;
+            }
+            Column column = (Column) o;
+            return Objects.equals(name, column.name)
+                   && Objects.equals(value, column.value);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(name, value);
+        }
+
+        @Override
+        public String toString() {
+            return name + "=" + value;
+        }
+    }
+
+    /**
+     * One candidate selection for an input, with the predicate that keeps it active.
+     */
+    private static final class Row {
+        private final BitSet bits;
+        private final Expression expr;
+
+        Row(BitSet bits, Expression expr) {
+            this.bits = bits;
+            this.expr = expr.reduce();
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof Row)) {
+                return false;
+            }
+            Row row = (Row) o;
+            return Objects.equals(bits, row.bits)
+                   && Objects.equals(expr, row.expr);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(bits, expr);
+        }
+    }
+
+    /**
+     * Joinable rows for a single input, including its columns, guard, and input dependencies.
+     */
+    private static class Table {
+        private final List<Column> columns = new ArrayList<>();
+        private final Set<Row> rows = new LinkedHashSet<>();
+        private final Set<String> dependencies = new LinkedHashSet<>();
+        private final String id;
+        private final Node node;
+        private final Expression expr;
+
+        Table(Node node, String id, Expression expr) {
+            this.id = id;
+            this.node = node;
+            this.expr = expr;
+        }
+
+        void addRow(BitSet bits, Expression expr) {
+            expr = expr.reduce();
+            if (expr != Expression.FALSE) {
+                rows.add(new Row(bits, expr));
+            }
+        }
+
+        @Override
+        public String toString() {
+            return id;
+        }
+    }
+
+    /**
+     * Candidate join with its ready rows and a cheap cost estimate.
+     */
+    private static class Join {
+        private final Table table;
+        private final List<BitSet> filtered;
+        private final long cost;
+
+        Join(Table table, List<BitSet> filtered, long cost) {
+            this.table = table;
+            this.filtered = filtered;
+            this.cost = cost;
+        }
+    }
+}
