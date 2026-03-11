@@ -28,7 +28,6 @@ import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -45,6 +44,7 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import io.helidon.build.archetype.engine.v2.Context.Scope;
 import io.helidon.build.archetype.engine.v2.Context.ScopeValue;
@@ -65,7 +65,6 @@ import io.helidon.build.common.logging.Log;
 import io.helidon.build.common.logging.LogLevel;
 
 import static io.helidon.build.archetype.engine.v2.Nodes.optionIndex;
-import static io.helidon.build.archetype.engine.v2.Nodes.options;
 import static io.helidon.build.common.Checksum.md5;
 import static io.helidon.build.common.FileUtils.ensureDirectory;
 import static io.helidon.build.common.FileUtils.readAllBytes;
@@ -1552,9 +1551,41 @@ public class ScriptCompiler {
             }
         }
 
+        /**
+         * One candidate selection for an input, with the predicate that keeps it active.
+         */
+        class Row {
+            private final BitSet bits;
+            private final Expression expr;
+
+            Row(BitSet bits, Expression expr) {
+                this.bits = bits;
+                this.expr = expr.reduce();
+            }
+
+            @Override
+            public boolean equals(Object o) {
+                if (!(o instanceof Row)) {
+                    return false;
+                }
+                Row row = (Row) o;
+                return Objects.equals(bits, row.bits)
+                       && Objects.equals(expr, row.expr);
+            }
+
+            @Override
+            public int hashCode() {
+                return Objects.hash(bits, expr);
+            }
+        }
+
+        /**
+         * Joinable rows for a single input, including its columns, guard, and input dependencies.
+         */
         class Table {
             private final List<Column> columns = new ArrayList<>();
-            private final Set<BitSet> rows = new LinkedHashSet<>();
+            private final Set<Row> rows = new LinkedHashSet<>();
+            private final Set<String> dependencies = new LinkedHashSet<>();
             private final String id;
             private final Node node;
             private final Expression expr;
@@ -1565,9 +1596,31 @@ public class ScriptCompiler {
                 this.expr = expression(node.parent());
             }
 
+            void addRow(BitSet bits, Expression expr) {
+                expr = expr.reduce();
+                if (expr != Expression.FALSE) {
+                    rows.add(new Row(bits, expr));
+                }
+            }
+
             @Override
             public String toString() {
                 return id;
+            }
+        }
+
+        /**
+         * Candidate join with its ready rows and a cheap cost estimate.
+         */
+        class Join {
+            private final Table table;
+            private final List<BitSet> filtered;
+            private final long cost;
+
+            Join(Table table, List<BitSet> filtered, long cost) {
+                this.table = table;
+                this.filtered = filtered;
+                this.cost = cost;
             }
         }
 
@@ -1586,6 +1639,7 @@ public class ScriptCompiler {
         public boolean visit(Node node) {
             Table table;
             List<Node> options;
+            List<Node> optionNodes;
             switch (node.kind()) {
                 case INPUT_TEXT:
                     table = new Table(node);
@@ -1593,23 +1647,26 @@ public class ScriptCompiler {
                             .or(() -> node.attribute("default").asString())
                             .orElse("<?>");
                     table.columns.add(new Column(table.id, textValue));
-                    table.rows.add(BitSets.of(0));
+                    table.addRow(BitSets.of(0), Expression.TRUE);
                     inputs.add(table);
                     break;
                 case INPUT_BOOLEAN:
                     table = new Table(node);
                     table.columns.add(new Column(table.id, "true"));
                     table.columns.add(new Column(table.id, "false"));
-                    table.rows.add(BitSets.of(0));
-                    if (!declaredValue(node, table.id).asBoolean().orElse(false)) {
-                        // no preset, add false
-                        table.rows.add(BitSets.of(1));
+                    Value<Boolean> boolValue = declaredValue(node, table.id).asBoolean();
+                    if (boolValue.isPresent()) {
+                        table.addRow(BitSets.of(boolValue.get() ? 0 : 1), Expression.TRUE);
+                    } else {
+                        table.addRow(BitSets.of(0), Expression.TRUE);
+                        table.addRow(BitSets.of(1), Expression.TRUE);
                     }
                     inputs.add(table);
                     break;
                 case INPUT_ENUM:
                     table = new Table(node);
-                    options = options(node);
+                    optionNodes = optionNodes(node);
+                    options = Lists.map(optionNodes, Node::unwrap);
                     for (Node o : options) {
                         table.columns.add(new Column(table.id, o.value().getString()));
                     }
@@ -1618,35 +1675,48 @@ public class ScriptCompiler {
                             .orElse(-1);
                     if (index >= 0) {
                         // only add the preset option
-                        table.rows.add(BitSets.of(index));
+                        Node n = optionNodes.get(index);
+                        table.addRow(BitSets.of(index), n.expression());
                     } else {
                         for (int i = 0; i < table.columns.size(); i++) {
-                            table.rows.add(BitSets.of(i));
+                            Node n = optionNodes.get(i);
+                            table.addRow(BitSets.of(i), n.expression());
                         }
                     }
                     inputs.add(table);
                     break;
                 case INPUT_LIST:
                     table = new Table(node);
-                    options = options(node);
+                    optionNodes = optionNodes(node);
+                    options = Lists.map(optionNodes, Node::unwrap);
                     for (Node o : options) {
                         table.columns.add(new Column(table.id, o.value().getString()));
                     }
                     Value<List<String>> value = declaredValue(node, table.id).asList();
                     if (value.isPresent()) {
                         // only add the preset options
-                        int p = 0;
+                        BitSet bits = new BitSet();
+                        Expression expr = Expression.TRUE;
                         for (String o : value.getList()) {
-                            p |= 1 << optionIndex(o, options);
+                            int i = optionIndex(o, options);
+                            bits.set(i);
+                            Node n = optionNodes.get(i);
+                            expr = expr.and(n.expression());
                         }
-                        table.rows.add(BitSets.of((long) p));
+                        table.addRow(bits, expr);
                     } else {
                         for (int p = 1, permSize = 1 << table.columns.size(); p < permSize; p++) {
-                            table.rows.add(BitSets.of((long) p));
+                            Expression expr = Expression.TRUE;
+                            BitSet bits = BitSets.of((long) p);
+                            for (int i = bits.nextSetBit(0); i >= 0 && i < Integer.MAX_VALUE; i = bits.nextSetBit(i + 1)) {
+                                Node n = optionNodes.get(i);
+                                expr = expr.and(n.expression());
+                            }
+                            table.addRow(bits, expr);
                         }
                     }
                     table.columns.add(new Column(table.id, "none"));
-                    table.rows.add(BitSets.of(table.columns.size() - 1));
+                    table.addRow(BitSets.of(table.columns.size() - 1), Expression.TRUE);
                     inputs.add(table);
                     break;
                 default:
@@ -1657,6 +1727,10 @@ public class ScriptCompiler {
         @Override
         public void postVisit(Node node) {
             if (node.kind() == Kind.SCRIPT) {
+
+                // compute the variations
+                long computeStartTime = System.currentTimeMillis();
+
                 // aggregate all columns
                 for (Table table : inputs) {
                     for (Column column : table.columns) {
@@ -1672,58 +1746,85 @@ public class ScriptCompiler {
                 for (Table input : inputs) {
                     Table table = new Table(input.node);
                     table.columns.addAll(input.columns);
-                    for (BitSet row : input.rows) {
+                    for (Row row : input.rows) {
                         BitSet bitSet = new BitSet();
-                        for (int i = row.nextSetBit(0); i >= 0 && i < Integer.MAX_VALUE; i = row.nextSetBit(i + 1)) {
+                        for (int i = row.bits.nextSetBit(0); i >= 0 && i < Integer.MAX_VALUE; i = row.bits.nextSetBit(i + 1)) {
                             bitSet.set(indexes.get(input.columns.get(i)));
                         }
-                        table.rows.add(bitSet);
+                        table.addRow(bitSet, row.expr);
                     }
                     tables.add(table);
                 }
 
-                // compute the variations
-                long computeStartTime = System.currentTimeMillis();
+                // collect the input ids that each remapped table depends on
+                Set<String> inputIds = tables.stream().map(t -> t.id)
+                        .collect(Collectors.toCollection(LinkedHashSet::new));
+                for (Table table : tables) {
+                    table.dependencies.addAll(dependencies(table, inputIds));
+                }
+
+                // tables that still need to be joined
+                List<Table> pending = new ArrayList<>(tables);
+
+                // number of joined table fragments per input id
+                Map<String, Integer> joined = new HashMap<>();
+
+                // input ids whose full set of fragments has already been joined
+                Set<String> available = new LinkedHashSet<>();
+
+                // total table fragments per input id
+                Map<String, Integer> totals = new HashMap<>();
+                for (Table table : tables) {
+                    totals.compute(table.id, (k, v) -> v == null ? 1 : v + 1);
+                }
+
+                // current intermediate rows that have not yet been expanded by a later join
                 Set<BitSet> merged = new LinkedHashSet<>();
                 for (int i = 0; i < tables.size(); i++) {
-                    Table table = tables.get(i);
+                    // pick the next table whose guard allows expansion
+                    Join join = nextJoin(pending, available, merged);
 
-                    // filter rows to compute based on input expression
-                    List<BitSet> filtered = new ArrayList<>();
-                    Iterator<BitSet> it = merged.iterator();
-                    while (it.hasNext()) {
-                        BitSet row = it.next();
-                        Map<String, String> variation = variation(row);
-                        if (eval(table.node, table.expr, variation)) {
-                            filtered.add(row);
-                            it.remove();
-                        }
+                    // remove the rows this join will expand
+                    join.filtered.forEach(merged::remove);
+
+                    // selected table is no longer pending
+                    pending.remove(join.table);
+
+                    // some logical inputs produce multiple table fragments with the same id
+                    // mark that id available only after all of them join
+                    int count = joined.compute(join.table.id, (k, v) -> v == null ? 1 : v + 1);
+                    if (count == totals.getOrDefault(join.table.id, -1)) {
+                        available.add(join.table.id);
                     }
 
                     Log.debug("Progress: %d/%d - %s - filtered: %d, merged: %d",
                             i + 1,
                             tables.size(),
-                            table,
-                            filtered.size(),
+                            join.table,
+                            join.filtered.size(),
                             merged.size());
 
                     // compute variations for the input
-                    List<BitSet> computed = new ArrayList<>();
-                    if (filtered.isEmpty()) {
-                        computed.addAll(table.rows);
+                    List<Row> computed = new ArrayList<>();
+                    if (join.filtered.isEmpty()) {
+                        if (merged.isEmpty()) {
+                            computed.addAll(join.table.rows);
+                        }
                     } else {
-                        for (BitSet row1 : table.rows) {
-                            for (BitSet row2 : filtered) {
-                                computed.add(BitSets.or(BitSets.copyOf(row1), row2));
+                        for (Row row1 : join.table.rows) {
+                            for (BitSet row2 : join.filtered) {
+                                computed.add(new Row(BitSets.or(BitSets.copyOf(row1.bits), row2), row1.expr));
                             }
                         }
                     }
 
                     // apply excludes
-                    for (BitSet row : computed) {
-                        Map<String, String> vars = variation(row);
-                        if (filter(node, vars)) {
-                            merged.add(row);
+                    for (Row row : computed) {
+                        Map<String, String> vars = variation(row.bits);
+                        if (eval(join.table.node, join.table.expr, vars)
+                            && eval(join.table.node, row.expr, vars)
+                            && filter(node, vars)) {
+                            merged.add(row.bits);
                         }
                     }
                 }
@@ -1852,6 +1953,75 @@ public class ScriptCompiler {
                 }
                 return Map.of();
             }
+        }
+
+        // choose the next table to join from the currently joinable candidates
+        Join nextJoin(List<Table> tables, Set<String> available, Set<BitSet> merged) {
+            Join best = null;
+            Join fallback = null;
+            for (Table table : tables) {
+                Join join = join(table, merged);
+                if (fallback == null) {
+                    fallback = join;
+                }
+                // prefer tables whose referenced inputs are already fully materialized
+                if (!available.containsAll(table.dependencies)) {
+                    continue;
+                }
+                // pick the join expected to produce the smallest next intermediate set
+                if (best == null
+                    || join.cost < best.cost
+                    || (join.cost == best.cost && table.rows.size() < best.table.rows.size())) {
+                    best = join;
+                }
+            }
+            return best != null ? best : fallback;
+        }
+
+        // estimate how many existing rows survive the table guard and would need expanding
+        Join join(Table table, Set<BitSet> merged) {
+            if (merged.isEmpty()) {
+                return new Join(table, List.of(), table.rows.size());
+            }
+            List<BitSet> filtered = new ArrayList<>();
+            for (BitSet row : merged) {
+                Map<String, String> variation = variation(row);
+                if (eval(table.node, table.expr, variation)) {
+                    filtered.add(row);
+                }
+            }
+            long cost = merged.size() - filtered.size() + (long) filtered.size() * table.rows.size();
+            return new Join(table, filtered, cost);
+        }
+
+        // collect every input id that must be available before this table can join
+        Set<String> dependencies(Table table, Set<String> inputIds) {
+            Scope scope = scope(table.node);
+            // join order only depends on input ids referenced by table and row predicates
+            Set<String> dependencies = new LinkedHashSet<>(dependencies(table.expr, scope, table.id, inputIds));
+            for (Row row : table.rows) {
+                dependencies.addAll(dependencies(row.expr, scope, table.id, inputIds));
+            }
+            return dependencies;
+        }
+
+        // resolve expression variables to input ids and keep only real inter-table dependencies
+        Set<String> dependencies(Expression expr, Scope scope, String self, Set<String> inputIds) {
+            Set<String> dependencies = new LinkedHashSet<>();
+            for (String variable : expr.variables()) {
+                String key = scope.key(variable);
+                // ignore self-references because they do not constrain when this table can join
+                if (!key.equals(self) && inputIds.contains(key)) {
+                    dependencies.add(key);
+                }
+            }
+            return dependencies;
+        }
+
+        List<Node> optionNodes(Node node) {
+            return node.children().stream()
+                    .filter(n -> n.unwrap().kind() == Kind.INPUT_OPTION)
+                    .collect(Collectors.toList());
         }
     }
 

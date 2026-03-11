@@ -510,6 +510,13 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testVariationsBoolean4() {
+        Set<Map<String, String>> expected = loadVariations("compiler/variations/expected/boolean4.xml");
+        Set<Map<String, String>> actual = variations("compiler/variations", "boolean4.xml", List.of());
+        assertThat(toString(actual), is(toString(expected)));
+    }
+
+    @Test
     void testVariationsText1() {
         Set<Map<String, String>> expected = new LinkedHashSet<>();
         expected.add(Map.of("name", "Foo"));
@@ -541,6 +548,20 @@ class ScriptCompilerTest {
     void testVariationsConditionals() {
         Set<Map<String, String>> expected = loadVariations("compiler/variations/expected/conditionals.xml");
         Set<Map<String, String>> actual = variations("compiler/variations", "conditionals.xml", List.of());
+        assertThat(toString(actual), is(toString(expected)));
+    }
+
+    @Test
+    void testVariationsNestedConditionalOptionPruning() {
+        Set<Map<String, String>> expected = loadVariations("compiler/variations/expected/nested-conditional-option.xml");
+        Set<Map<String, String>> actual = variations("compiler/variations", "nested-conditional-option.xml", List.of());
+        assertThat(toString(actual), is(toString(expected)));
+    }
+
+    @Test
+    void testVariationsJoinOrder1() {
+        Set<Map<String, String>> expected = loadVariations("compiler/variations/expected/join-order1.xml");
+        Set<Map<String, String>> actual = variations("compiler/variations", "join-order1.xml", List.of());
         assertThat(toString(actual), is(toString(expected)));
     }
 
