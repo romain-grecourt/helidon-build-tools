@@ -20,6 +20,7 @@ import java.util.AbstractMap;
 import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -32,6 +33,11 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
+import java.util.function.BinaryOperator;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.stream.Collector;
 import java.util.stream.Collectors;
 
 import io.helidon.build.archetype.engine.v2.Context.Scope;
@@ -99,7 +105,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
      * @return variation entry
      */
     public static Entry entry(Map<String, String> map, Set<String> unbounded) {
-        return new Entry(map, unbounded);
+        return new Entry(map, unbounded, null);
     }
 
     /**
@@ -238,16 +244,18 @@ public final class Variations extends AbstractSet<Variations.Entry> {
     }
 
     /**
-     * Computed variation values with metadata about inputs that still admit arbitrary values.
+     * Computed variation.
      */
     public static final class Entry extends AbstractMap<String, String> implements Comparable<Variations.Entry> {
         private final Map<String, String> map;
+        private final String signature;
         private final Set<String> unbounded;
 
-        private Entry(Map<String, String> values, Set<String> unbounded) {
+        private Entry(Map<String, String> values, Set<String> unbounded, String signature) {
             requireNonNull(values);
             requireNonNull(unbounded);
             this.map = Collections.unmodifiableMap(new LinkedHashMap<>(values));
+            this.signature = signature;
             this.unbounded = Collections.unmodifiableSet(new TreeSet<>(unbounded));
         }
 
@@ -298,6 +306,13 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             return Objects.hash(map, unbounded);
         }
 
+        String signature() {
+            if (signature != null) {
+                return signature;
+            }
+            return Lists.join(new TreeMap<>(map).entrySet(), " ");
+        }
+
         @Override
         public String toString() {
             return toString(true);
@@ -320,11 +335,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
          * @return rendered variation entry
          */
         public String toString(boolean markUnbounded) {
-            String values = "{" + valuesToString(", ") + "}";
-            if (!markUnbounded || exhaustive()) {
-                return values;
-            }
-            return values + " unbounded=" + unbounded;
+            return toString(markUnbounded, ", ");
         }
 
         /**
@@ -335,37 +346,30 @@ public final class Variations extends AbstractSet<Variations.Entry> {
          * @return rendered variation entry
          */
         public String toString(boolean markUnbounded, String separator) {
-            String values = valuesToString(separator);
+            requireNonNull(separator);
+            String values = entrySet().stream()
+                    .map(Map.Entry::toString)
+                    .collect(Collectors.joining(separator));
             if (!markUnbounded || exhaustive()) {
                 return values;
             }
             return values + " unbounded=" + unbounded;
         }
 
-        private String valuesToString(String separator) {
-            requireNonNull(separator);
-            return entrySet().stream()
-                    .map(Map.Entry::toString)
-                    .collect(Collectors.joining(separator));
-        }
-
         private Variations.Entry merge(Variations.Entry other) {
             requireNonNull(other);
-            Set<String> mergedUnbounded = new TreeSet<>(unbounded);
-            mergedUnbounded.addAll(other.unbounded);
             Variations.Entry selected = representativeCompare(other) >= 0 ? this : other;
-            if (selected.unbounded.equals(mergedUnbounded)) {
+            Set<String> merged = new TreeSet<>(unbounded);
+            merged.addAll(other.unbounded);
+            if (selected.unbounded.equals(merged)) {
                 return selected;
             }
-            return new Variations.Entry(selected, mergedUnbounded);
+            return new Variations.Entry(selected, merged, selected.signature);
         }
 
         private int representativeCompare(Variations.Entry other) {
             int result = Integer.compare(size(), other.size());
-            if (result != 0) {
-                return result;
-            }
-            return Maps.compare(map, other.map);
+            return result != 0 ? result : Maps.compare(map, other.map);
         }
     }
 
@@ -616,20 +620,14 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                 // normalize variations
                 // perform an execution and use the context values
                 long normalizeStartTime = System.currentTimeMillis();
-                Set<Entry> result = merged.parallelStream()
-                        .map(this::normalizeVariation)
+                Collection<Entry> normalized = merged.parallelStream()
+                        .map(this::normalize)
                         .filter(Objects::nonNull)
-                        .collect(Collectors.collectingAndThen(
-                                Collectors.toMap(
-                                        Map.Entry::getKey,
-                                        Map.Entry::getValue,
-                                        Variations.Entry::merge,
-                                        HashMap::new),
-                                map -> new LinkedHashSet<>(map.values())));
+                        .collect(new NormalizedCollector());
                 logDuration(normalizeStartTime, "Normalized " + merged.size() + " variations");
 
                 long sortStartTime = System.currentTimeMillis();
-                variations.addAll(result);
+                variations.addAll(normalized);
                 logDuration(sortStartTime, "Sorted " + variations.size() + " variations");
             }
         }
@@ -638,7 +636,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             return variationCache.computeIfAbsent(row, this::variation0);
         }
 
-        private Map<String, String> variation0(BitSet row) {
+        Map<String, String> variation0(BitSet row) {
             Map<String, String> variation = new LinkedHashMap<>();
             for (int i = row.nextSetBit(0); i >= 0 && i < Integer.MAX_VALUE; i = row.nextSetBit(i + 1)) {
                 Column column = columns.get(i);
@@ -648,29 +646,25 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             return Collections.unmodifiableMap(variation);
         }
 
-        private Map.Entry<String, Entry> normalizeVariation(BitSet row) {
+        Entry normalize(BitSet row) {
             Map<String, String> variation = variation(row);
             Map<String, ScopeValue<?>> effective = execute(variation);
             if (effective.isEmpty()) {
                 return null;
             }
 
-            // compute signature, sorted user values only
-            Map<String, String> normalized = Maps.mapValue(effective,
-                    (k, v) -> v.kind() == ValueKind.USER, v -> Value.toString(v), TreeMap::new);
-
-            // sort keys so equivalent variations produce the same signature
-            String sig = Lists.join(normalized.entrySet(), " ");
-            return Map.entry(sig, normalizedEntry(effective));
-        }
-
-        Entry normalizedEntry(Map<String, ScopeValue<?>> effective) {
             Map<String, String> values = Maps.mapValue(effective, v -> Value.toString(v));
             Set<String> unbounded = effective.entrySet().stream()
                     .filter(e -> textInputs.contains(e.getKey()) && e.getValue().kind() != ValueKind.EXTERNAL)
                     .map(Map.Entry::getKey)
                     .collect(Collectors.toCollection(TreeSet::new));
-            return new Entry(values, unbounded);
+
+            // compute signature, sorted user values only
+            Map<String, String> normalized = Maps.mapValue(effective,
+                    (k, v) -> v.kind() == ValueKind.USER, v -> Value.toString(v), TreeMap::new);
+
+            String signature = Lists.join(normalized.entrySet(), " ");
+            return new Entry(values, unbounded, signature);
         }
 
         boolean filter(Node node, Map<String, String> variation) {
@@ -1060,6 +1054,40 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             this.table = table;
             this.filtered = filtered;
             this.cost = cost;
+        }
+    }
+
+    /**
+     * Collector that merges normalized entries by signature.
+     */
+    private static class NormalizedCollector implements Collector<Entry, Map<String, Entry>, Collection<Entry>> {
+
+        @Override
+        public Supplier<Map<String, Entry>> supplier() {
+            return HashMap::new;
+        }
+
+        @Override
+        public BiConsumer<Map<String, Entry>, Entry> accumulator() {
+            return (map, entry) -> map.merge(entry.signature(), entry, Variations.Entry::merge);
+        }
+
+        @Override
+        public BinaryOperator<Map<String, Entry>> combiner() {
+            return (left, right) -> {
+                right.forEach((key, entry) -> left.merge(key, entry, Variations.Entry::merge));
+                return left;
+            };
+        }
+
+        @Override
+        public Function<Map<String, Entry>, Collection<Entry>> finisher() {
+            return Map::values;
+        }
+
+        @Override
+        public Set<Characteristics> characteristics() {
+            return Set.of();
         }
     }
 }

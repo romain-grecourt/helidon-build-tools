@@ -195,7 +195,7 @@ class VariationsTest {
     @Test
     void testVariationsToStringWithSeparator() {
         Variations actual = variations("variations", "boolean1.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
-        assertThat(actual.toString(" | "), is("{colors=false} | {colors=true}"));
+        assertThat(actual.toString(" | "), is("colors=false | colors=true"));
     }
 
     @Test
