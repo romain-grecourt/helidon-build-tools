@@ -119,7 +119,19 @@ public final class Variations extends AbstractSet<Variations.Entry> {
      * @return computed variations
      */
     public static Variations compute(ScriptCompiler compiler, List<Expression> filters) {
-        return compute(compiler, filters, Map.of());
+        return compute(compiler, filters, Long.MAX_VALUE);
+    }
+
+    /**
+     * Compute variations for a compiler and filters.
+     *
+     * @param compiler      compiler
+     * @param filters       filters
+     * @param max max projected number of variations
+     * @return computed variations
+     */
+    public static Variations compute(ScriptCompiler compiler, List<Expression> filters, long max) {
+        return compute(compiler, filters, Map.of(), max);
     }
 
     /**
@@ -133,7 +145,23 @@ public final class Variations extends AbstractSet<Variations.Entry> {
     public static Variations compute(ScriptCompiler compiler,
                                      List<Expression> filters,
                                      Map<String, String> externalValues) {
-        return compute(compiler, filters, externalValues, Map.of());
+        return compute(compiler, filters, externalValues, Long.MAX_VALUE);
+    }
+
+    /**
+     * Compute variations for a compiler, filters, and fixed external values.
+     *
+     * @param compiler       compiler
+     * @param filters        filters
+     * @param externalValues fixed external values
+     * @param max            max projected number of variations
+     * @return computed variations
+     */
+    public static Variations compute(ScriptCompiler compiler,
+                                     List<Expression> filters,
+                                     Map<String, String> externalValues,
+                                     long max) {
+        return compute(compiler, filters, externalValues, Map.of(), max);
     }
 
     /**
@@ -149,15 +177,43 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                                      List<Expression> filters,
                                      Map<String, String> externalValues,
                                      Map<String, String> externalDefaults) {
+        return compute(compiler, filters, externalValues, externalDefaults, Long.MAX_VALUE);
+    }
+
+    /**
+     * Compute variations for a compiler, filters, and external inputs.
+     *
+     * @param compiler         compiler
+     * @param filters          filters
+     * @param externalValues   fixed external values
+     * @param externalDefaults external defaults
+     * @param max              max projected number of variations
+     * @return computed variations
+     */
+    public static Variations compute(ScriptCompiler compiler,
+                                     List<Expression> filters,
+                                     Map<String, String> externalValues,
+                                     Map<String, String> externalDefaults,
+                                     long max) {
 
         requireNonNull(compiler);
         requireNonNull(filters);
         requireNonNull(externalValues);
         requireNonNull(externalDefaults);
+        if (max < 0) {
+            throw new IllegalArgumentException("max must be >= 0");
+        }
 
         Node sourceNode = compiler.sourceNode();
         Set<Entry> variations = new TreeSet<>();
-        sourceNode.visit(new VisitorImpl(compiler, sourceNode, variations, filters, externalValues, externalDefaults));
+        sourceNode.visit(new VisitorImpl(
+                compiler,
+                sourceNode,
+                variations,
+                filters,
+                externalValues,
+                externalDefaults,
+                max));
         return new Variations(variations);
     }
 
@@ -354,13 +410,15 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         private final Map<String, String> externalValues;
         private final Map<String, String> externalDefaults;
         private final Map<String, String> resolvedExternalValues;
+        private final long max;
 
         VisitorImpl(ScriptCompiler compiler,
                     Node sourceNode,
                     Set<Entry> variations,
                     List<Expression> filters,
                     Map<String, String> externalValues,
-                    Map<String, String> externalDefaults) {
+                    Map<String, String> externalDefaults,
+                    long max) {
             this.compiler = compiler;
             this.sourceNode = sourceNode;
             this.variations = variations;
@@ -368,6 +426,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             this.externalValues = Collections.unmodifiableMap(new LinkedHashMap<>(externalValues));
             this.externalDefaults = Collections.unmodifiableMap(new LinkedHashMap<>(externalDefaults));
             this.resolvedExternalValues = resolvedExternalValues();
+            this.max = max;
         }
 
         @Override
@@ -519,6 +578,12 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                 for (int i = 0; i < tables.size(); i++) {
                     // pick the next table whose guard allows expansion
                     Join join = nextJoin(pending, available, merged);
+                    if (join.cost > max) {
+                        throw new IllegalStateException(String.format(
+                                "Projected variation count %d exceeds the configured limit of %d",
+                                join.cost,
+                                max));
+                    }
 
                     // remove the rows this join will expand
                     join.filtered.forEach(merged::remove);

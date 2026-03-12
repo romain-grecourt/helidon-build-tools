@@ -237,6 +237,13 @@ public class IntegrationTestMojo extends AbstractMojo {
     private boolean failOnUnboundedVariations;
 
     /**
+     * Maximum projected variation count to allow when computing variations.
+     * Use {@code -1} to disable the limit.
+     */
+    @Parameter(property = "archetype.test.maxVariations", defaultValue = "-1")
+    private long maxVariations;
+
+    /**
      * Test start index.
      */
     @Parameter(property = "archetype.test.startIndex", defaultValue = "1")
@@ -350,7 +357,17 @@ public class IntegrationTestMojo extends AbstractMojo {
         try (FileSystem fs = newFileSystem(archetypeFile, this.getClass().getClassLoader())) {
             Path cwd = fs.getPath("/");
             ScriptCompiler compiler = new ScriptCompiler(() -> cwd.resolve("main.xml"), cwd);
-            Variations variations = Variations.compute(compiler, rules(), externalValues, externalDefaults);
+            Variations variations;
+            try {
+                variations = Variations.compute(
+                        compiler,
+                        rules(),
+                        externalValues,
+                        externalDefaults,
+                        configuredMaxVariations());
+            } catch (IllegalStateException ex) {
+                throw new MojoFailureException(ex.getMessage());
+            }
             if (failOnUnboundedVariations && !variations.exhaustive()) {
                 throw new MojoFailureException(
                         "Variations must be exhaustive, unbounded inputs: "
@@ -360,6 +377,13 @@ public class IntegrationTestMojo extends AbstractMojo {
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }
+    }
+
+    private long configuredMaxVariations() throws MojoFailureException {
+        if (maxVariations < -1) {
+            throw new MojoFailureException("Parameter 'maxVariations' must be -1 or greater");
+        }
+        return maxVariations == -1 ? Long.MAX_VALUE : maxVariations;
     }
 
     private Path writeSummary() {
