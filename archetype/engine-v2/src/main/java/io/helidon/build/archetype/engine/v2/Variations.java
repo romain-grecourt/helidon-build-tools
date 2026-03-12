@@ -31,6 +31,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import io.helidon.build.archetype.engine.v2.Context.Scope;
@@ -347,6 +348,25 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                     .map(Map.Entry::toString)
                     .collect(Collectors.joining(separator));
         }
+
+        private Variations.Entry merge(Variations.Entry other) {
+            requireNonNull(other);
+            Set<String> mergedUnbounded = new TreeSet<>(unbounded);
+            mergedUnbounded.addAll(other.unbounded);
+            Variations.Entry selected = representativeCompare(other) >= 0 ? this : other;
+            if (selected.unbounded.equals(mergedUnbounded)) {
+                return selected;
+            }
+            return new Variations.Entry(selected, mergedUnbounded);
+        }
+
+        private int representativeCompare(Variations.Entry other) {
+            int result = Integer.compare(size(), other.size());
+            if (result != 0) {
+                return result;
+            }
+            return Maps.compare(map, other.map);
+        }
     }
 
     private static final class VisitorImpl implements Node.Visitor {
@@ -356,7 +376,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         private final List<Table> inputs = new ArrayList<>();
         private final List<Column> columns = new ArrayList<>();
         private final Map<Column, Integer> indexes = new LinkedHashMap<>();
-        private final Map<BitSet, Map<String, String>> variationCache = new HashMap<>();
+        private final Map<BitSet, Map<String, String>> variationCache = new ConcurrentHashMap<>();
         private final Set<String> textInputs = new LinkedHashSet<>();
         private final Set<Entry> variations;
         private final List<Expression> filters;
@@ -596,28 +616,20 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                 // normalize variations
                 // perform an execution and use the context values
                 long normalizeStartTime = System.currentTimeMillis();
-                Map<String, Entry> result = new HashMap<>();
-                for (BitSet row : merged) {
-                    Map<String, String> variation = variation(row);
-                    Map<String, ScopeValue<?>> effective = execute(variation);
-                    if (!effective.isEmpty()) {
-
-                        // compute signature, sorted user values only
-                        Map<String, String> normalized = Maps.mapValue(effective,
-                                (k, v) -> v.kind() == ValueKind.USER, v -> Value.toString(v), TreeMap::new);
-
-                        // signature
-                        String sig = Lists.join(normalized.entrySet(), " ");
-
-                        // compute duplicates
-                        Entry sample = sample(effective);
-                        result.compute(sig, (k, v) -> merge(v, sample));
-                    }
-                }
+                Set<Entry> result = merged.parallelStream()
+                        .map(this::normalizeVariation)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.collectingAndThen(
+                                Collectors.toMap(
+                                        Map.Entry::getKey,
+                                        Map.Entry::getValue,
+                                        Variations.Entry::merge,
+                                        HashMap::new),
+                                map -> new LinkedHashSet<>(map.values())));
                 logDuration(normalizeStartTime, "Normalized " + merged.size() + " variations");
 
                 long sortStartTime = System.currentTimeMillis();
-                variations.addAll(result.values());
+                variations.addAll(result);
                 logDuration(sortStartTime, "Sorted " + variations.size() + " variations");
             }
         }
@@ -633,29 +645,32 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                 variation.compute(column.name, (k, v) -> v == null ? column.value : v + "," + column.value);
             }
             variation.putAll(resolvedExternalValues);
-            return variation;
+            return Collections.unmodifiableMap(variation);
         }
 
-        Entry sample(Map<String, ScopeValue<?>> effective) {
+        private Map.Entry<String, Entry> normalizeVariation(BitSet row) {
+            Map<String, String> variation = variation(row);
+            Map<String, ScopeValue<?>> effective = execute(variation);
+            if (effective.isEmpty()) {
+                return null;
+            }
+
+            // compute signature, sorted user values only
+            Map<String, String> normalized = Maps.mapValue(effective,
+                    (k, v) -> v.kind() == ValueKind.USER, v -> Value.toString(v), TreeMap::new);
+
+            // sort keys so equivalent variations produce the same signature
+            String sig = Lists.join(normalized.entrySet(), " ");
+            return Map.entry(sig, normalizedEntry(effective));
+        }
+
+        Entry normalizedEntry(Map<String, ScopeValue<?>> effective) {
             Map<String, String> values = Maps.mapValue(effective, v -> Value.toString(v));
             Set<String> unbounded = effective.entrySet().stream()
                     .filter(e -> textInputs.contains(e.getKey()) && e.getValue().kind() != ValueKind.EXTERNAL)
                     .map(Map.Entry::getKey)
                     .collect(Collectors.toCollection(TreeSet::new));
             return new Entry(values, unbounded);
-        }
-
-        Entry merge(Entry left, Entry right) {
-            if (left == null) {
-                return right;
-            }
-            Set<String> unbounded = new TreeSet<>(left.unbounded());
-            unbounded.addAll(right.unbounded());
-            Entry selected = left.size() >= right.size() ? left : right;
-            if (selected.unbounded().equals(unbounded)) {
-                return selected;
-            }
-            return new Entry(selected, unbounded);
         }
 
         boolean filter(Node node, Map<String, String> variation) {
