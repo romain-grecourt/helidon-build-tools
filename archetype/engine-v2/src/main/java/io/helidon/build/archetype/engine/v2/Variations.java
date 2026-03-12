@@ -81,13 +81,24 @@ public final class Variations extends AbstractSet<Variations.Entry> {
     }
 
     /**
-     * Create an exhaustive singleton variation set.
+     * Create an exhaustive variation entry.
      *
      * @param map variation values
-     * @return singleton variation set
+     * @return exhaustive variation entry
      */
-    public static Variations of(Map<String, String> map) {
-        return of(map, Set.of());
+    public static Entry entry(Map<String, String> map) {
+        return entry(map, Set.of());
+    }
+
+    /**
+     * Create a variation entry.
+     *
+     * @param map       variation values
+     * @param unbounded unbounded input ids
+     * @return variation entry
+     */
+    public static Entry entry(Map<String, String> map, Set<String> unbounded) {
+        return new Entry(map, unbounded);
     }
 
     /**
@@ -98,7 +109,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
      * @return singleton variation set
      */
     public static Variations of(Map<String, String> map, Set<String> unbounded) {
-        return new Variations(Set.of(new Entry(map, unbounded)));
+        return new Variations(Set.of(entry(map, unbounded)));
     }
 
     /**
@@ -112,72 +123,13 @@ public final class Variations extends AbstractSet<Variations.Entry> {
     }
 
     /**
-     * Compute variations for a compiler and filters.
+     * Create a variation set from existing entries.
      *
-     * @param compiler compiler
-     * @param filters  filters
-     * @return computed variations
+     * @param entries variation entries
+     * @return variation set
      */
-    public static Variations compute(ScriptCompiler compiler, List<Expression> filters) {
-        return compute(compiler, filters, Long.MAX_VALUE);
-    }
-
-    /**
-     * Compute variations for a compiler and filters.
-     *
-     * @param compiler      compiler
-     * @param filters       filters
-     * @param max max projected number of variations
-     * @return computed variations
-     */
-    public static Variations compute(ScriptCompiler compiler, List<Expression> filters, long max) {
-        return compute(compiler, filters, Map.of(), max);
-    }
-
-    /**
-     * Compute variations for a compiler, filters, and fixed external values.
-     *
-     * @param compiler       compiler
-     * @param filters        filters
-     * @param externalValues fixed external values
-     * @return computed variations
-     */
-    public static Variations compute(ScriptCompiler compiler,
-                                     List<Expression> filters,
-                                     Map<String, String> externalValues) {
-        return compute(compiler, filters, externalValues, Long.MAX_VALUE);
-    }
-
-    /**
-     * Compute variations for a compiler, filters, and fixed external values.
-     *
-     * @param compiler       compiler
-     * @param filters        filters
-     * @param externalValues fixed external values
-     * @param max            max projected number of variations
-     * @return computed variations
-     */
-    public static Variations compute(ScriptCompiler compiler,
-                                     List<Expression> filters,
-                                     Map<String, String> externalValues,
-                                     long max) {
-        return compute(compiler, filters, externalValues, Map.of(), max);
-    }
-
-    /**
-     * Compute variations for a compiler, filters, and external inputs.
-     *
-     * @param compiler         compiler
-     * @param filters          filters
-     * @param externalValues   fixed external values
-     * @param externalDefaults external defaults
-     * @return computed variations
-     */
-    public static Variations compute(ScriptCompiler compiler,
-                                     List<Expression> filters,
-                                     Map<String, String> externalValues,
-                                     Map<String, String> externalDefaults) {
-        return compute(compiler, filters, externalValues, externalDefaults, Long.MAX_VALUE);
+    static Variations of(Entry... entries) {
+        return new Variations(Set.of(entries));
     }
 
     /**
@@ -291,7 +243,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         private final Map<String, String> map;
         private final Set<String> unbounded;
 
-        Entry(Map<String, String> values, Set<String> unbounded) {
+        private Entry(Map<String, String> values, Set<String> unbounded) {
             requireNonNull(values);
             requireNonNull(unbounded);
             this.map = Collections.unmodifiableMap(new LinkedHashMap<>(values));
@@ -410,6 +362,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         private final Map<String, String> externalValues;
         private final Map<String, String> externalDefaults;
         private final Map<String, String> resolvedExternalValues;
+        private final Map<String, String> resolvedExternalDefaults;
         private final long max;
 
         VisitorImpl(ScriptCompiler compiler,
@@ -426,6 +379,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             this.externalValues = Collections.unmodifiableMap(new LinkedHashMap<>(externalValues));
             this.externalDefaults = Collections.unmodifiableMap(new LinkedHashMap<>(externalDefaults));
             this.resolvedExternalValues = resolvedExternalValues();
+            this.resolvedExternalDefaults = resolvedExternalDefaults();
             this.max = max;
         }
 
@@ -438,6 +392,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                 case INPUT_TEXT:
                     table = table(node);
                     String textValue = declaredValue(node, table.id).asString()
+                            .or(() -> externalDefaultValue(table.id))
                             .or(() -> node.attribute("default").asString())
                             .orElse("<?>");
                     table.columns.add(new Column(table.id, textValue));
@@ -791,6 +746,14 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             return compiler.declaredValue(node, key);
         }
 
+        Value<String> externalDefaultValue(String key) {
+            String value = resolvedExternalDefaults.get(key);
+            if (value == null) {
+                value = externalDefaults.get(key);
+            }
+            return Value.of(value);
+        }
+
         Map<String, String> resolvedExternalValues() {
             if (externalValues.isEmpty()) {
                 return Map.of();
@@ -804,6 +767,28 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                 ScopeValue<?> value = context.scope().getOrCreate(key).value();
                 if (value.isPresent()) {
                     values.put(key, Value.toString(value));
+                }
+            }
+            return Collections.unmodifiableMap(values);
+        }
+
+        Map<String, String> resolvedExternalDefaults() {
+            if (externalDefaults.isEmpty()) {
+                return Map.of();
+            }
+            Context context = new Context()
+                    .externalValues(externalValues)
+                    .externalDefaults(externalDefaults)
+                    .pushCwd(compiler.cwd());
+            Map<String, String> values = new LinkedHashMap<>();
+            for (Map.Entry<String, String> entry : externalDefaults.entrySet()) {
+                try {
+                    String value = Value.toString(context.defaultValue(entry.getKey()));
+                    if (value != null) {
+                        values.put(entry.getKey(), value);
+                    }
+                } catch (RuntimeException ignored) {
+                    values.put(entry.getKey(), entry.getValue());
                 }
             }
             return Collections.unmodifiableMap(values);
