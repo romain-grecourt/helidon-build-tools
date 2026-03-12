@@ -99,8 +99,8 @@ Maven goal to test Helidon archetypes.
 | endIndex                  | int     | `-1`                                              | Variation end index                                                                               |
 | generateOnly              | boolean | `false`                                           | Whether to only generate input variations                                                         |
 | generateTests             | boolean | `true`                                            | Whether to auto-compute input variations                                                          |
-| failOnUnboundedVariations | boolean | `false`                                           | Whether to fail when computed variations include unbounded inputs                                 |
-| maxVariations             | long    | `-1`                                              | Maximum projected variation count to allow during computation, use `-1` for no limit             |
+| failOnUnbounded           | boolean | `false`                                           | Whether to fail when computed variations include unbounded inputs                                 |
+| maxVariations             | long    | `-1`                                              | Maximum projected variation count to allow during computation, use `-1` for no limit              |
 | rulesFile                 | File    | `${project.basedir}/src/test/archetype/rules.xml` | XML file that contains filters used to prune the computed variations                              |
 | externalDefaults          | Map     | `null`                                            | External defaults to use when generating archetypes                                               |
 | externalValues            | Map     | `null`                                            | External values to use when generating archetypes                                                 |

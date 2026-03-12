@@ -938,7 +938,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         static void logDuration(long startTime, String msg) {
             long endTime = System.currentTimeMillis();
             Duration duration = Duration.ofMillis(endTime - startTime);
-            Log.debug("%s in %d.%ds", msg, duration.toSeconds(), duration.toMillisPart());
+            Log.info("%s in %d.%ds", msg, duration.toSeconds(), duration.toMillisPart());
         }
     }
 

@@ -233,8 +233,8 @@ public class IntegrationTestMojo extends AbstractMojo {
     /**
      * Whether to fail when the computed variations include unbounded inputs.
      */
-    @Parameter(property = "archetype.test.failOnUnboundedVariations", defaultValue = "false")
-    private boolean failOnUnboundedVariations;
+    @Parameter(property = "archetype.test.failOnUnbounded", defaultValue = "false")
+    private boolean failOnUnbounded;
 
     /**
      * Maximum projected variation count to allow when computing variations.
@@ -368,7 +368,7 @@ public class IntegrationTestMojo extends AbstractMojo {
             } catch (IllegalStateException ex) {
                 throw new MojoFailureException(ex.getMessage());
             }
-            if (failOnUnboundedVariations && !variations.exhaustive()) {
+            if (failOnUnbounded && !variations.exhaustive()) {
                 throw new MojoFailureException(
                         "Variations must be exhaustive, unbounded inputs: "
                                 + String.join(", ", variations.unboundedInputs()));
