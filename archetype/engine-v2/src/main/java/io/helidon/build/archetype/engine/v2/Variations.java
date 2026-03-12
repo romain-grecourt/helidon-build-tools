@@ -356,6 +356,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         private final List<Table> inputs = new ArrayList<>();
         private final List<Column> columns = new ArrayList<>();
         private final Map<Column, Integer> indexes = new LinkedHashMap<>();
+        private final Map<BitSet, Map<String, String>> variationCache = new HashMap<>();
         private final Set<String> textInputs = new LinkedHashSet<>();
         private final Set<Entry> variations;
         private final List<Expression> filters;
@@ -578,6 +579,10 @@ public final class Variations extends AbstractSet<Variations.Entry> {
 
                     // apply excludes
                     for (Row row : computed) {
+                        if (join.table.expr == Expression.TRUE && row.expr == Expression.TRUE && filters.isEmpty()) {
+                            merged.add(row.bits);
+                            continue;
+                        }
                         Map<String, String> vars = variation(row.bits);
                         if (eval(join.table.node, join.table.expr, vars)
                             && eval(join.table.node, row.expr, vars)
@@ -618,6 +623,10 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         }
 
         Map<String, String> variation(BitSet row) {
+            return variationCache.computeIfAbsent(row, this::variation0);
+        }
+
+        private Map<String, String> variation0(BitSet row) {
             Map<String, String> variation = new LinkedHashMap<>();
             for (int i = row.nextSetBit(0); i >= 0 && i < Integer.MAX_VALUE; i = row.nextSetBit(i + 1)) {
                 Column column = columns.get(i);
@@ -650,6 +659,9 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         }
 
         boolean filter(Node node, Map<String, String> variation) {
+            if (filters.isEmpty()) {
+                return true;
+            }
             for (Expression exclude : filters) {
                 if (eval(node, exclude, variation)) {
                     if (LogLevel.isDebug()) {
@@ -662,6 +674,12 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         }
 
         boolean eval(Node node, Expression expr, Map<String, String> variation) {
+            if (expr == Expression.TRUE) {
+                return true;
+            }
+            if (expr == Expression.FALSE) {
+                return false;
+            }
             try {
                 Scope scope = compiler.scope(node);
                 return expr.eval(s -> {
@@ -796,32 +814,77 @@ public final class Variations extends AbstractSet<Variations.Entry> {
 
         // choose the next table to join from the currently joinable candidates
         Join nextJoin(List<Table> tables, Set<String> available, Set<BitSet> merged) {
-            Join best = null;
-            Join fallback = null;
+            if (tables.isEmpty()) {
+                throw new IllegalStateException("No tables available for join");
+            }
+            Table best = null;
+            Table fallback = null;
+            int mergedSize = merged.size();
+            long bestCost = Long.MAX_VALUE;
             for (Table table : tables) {
-                Join join = join(table, merged);
                 if (fallback == null) {
-                    fallback = join;
+                    fallback = table;
                 }
+
                 // prefer tables whose referenced inputs are already fully materialized
                 if (!available.containsAll(table.dependencies)) {
                     continue;
                 }
+
                 // pick the join expected to produce the smallest next intermediate set
-                if (best == null
-                    || join.cost < best.cost
-                    || (join.cost == best.cost && table.rows.size() < best.table.rows.size())) {
-                    best = join;
+                long cost = estimateJoinSize(table, mergedSize);
+                if (best == null || cost < bestCost || (cost == bestCost && table.rows.size() < best.rows.size())) {
+                    best = table;
+                    bestCost = cost;
                 }
             }
-            return best != null ? best : fallback;
+            return join(best != null ? best : fallback, merged);
+        }
+
+        // cheap heuristic to estimate the next intermediate result size
+        long estimateJoinSize(Table table, int mergedSize) {
+            if (table.expr == Expression.FALSE) {
+                // never matches, current rows are unchanged.
+                return mergedSize;
+            }
+            if (mergedSize == 0) {
+                // initial intermediate set
+                return table.rows.size();
+            }
+            if (table.expr == Expression.TRUE) {
+                // always matches
+                // every merged row combines with every row in the table
+                return (long) mergedSize * table.rows.size();
+            }
+            if (table.rows.size() <= 1) {
+                // a single-row table keeps the merged row count unchanged
+                return mergedSize;
+            }
+
+            // conditional multi-row joins
+            // assume half the current rows survive the guard
+            long estimatedFiltered = mergedSize >>> 1;
+            return mergedSize - estimatedFiltered + estimatedFiltered * table.rows.size();
         }
 
         // estimate how many existing rows survive the table guard and would need expanding
         Join join(Table table, Set<BitSet> merged) {
+            if (table.expr == Expression.FALSE) {
+                // never matches, current rows are unchanged.
+                return new Join(table, List.of(), merged.size());
+            }
             if (merged.isEmpty()) {
+                // initial intermediate set
                 return new Join(table, List.of(), table.rows.size());
             }
+            if (table.expr == Expression.TRUE) {
+                // always matches
+                // every merged row combines with every row in the table
+                long cost = (long) merged.size() * table.rows.size();
+                return new Join(table, new ArrayList<>(merged), cost);
+            }
+
+            // collect the rows that should be expanded.
             List<BitSet> filtered = new ArrayList<>();
             for (BitSet row : merged) {
                 Map<String, String> variation = variation(row);
@@ -829,6 +892,8 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                     filtered.add(row);
                 }
             }
+
+            // cost = unchanged rows (merged - filtered) + expanded rows (filtered * table rows)
             long cost = merged.size() - filtered.size() + (long) filtered.size() * table.rows.size();
             return new Join(table, filtered, cost);
         }
@@ -846,6 +911,9 @@ public final class Variations extends AbstractSet<Variations.Entry> {
 
         // resolve expression variables to input ids and keep only real inter-table dependencies
         Set<String> dependencies(Expression expr, Scope scope, String self, Set<String> inputIds) {
+            if (expr == Expression.TRUE || expr == Expression.FALSE) {
+                return Set.of();
+            }
             Set<String> dependencies = new LinkedHashSet<>();
             for (String variable : expr.variables()) {
                 String key = scope.key(variable);
@@ -966,7 +1034,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
     }
 
     /**
-     * Candidate join with its ready rows and a cheap cost estimate.
+     * Candidate join state.
      */
     private static class Join {
         private final Table table;
