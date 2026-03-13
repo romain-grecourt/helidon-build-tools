@@ -16,11 +16,11 @@
     limitations under the License.
 
 -->
-<variation-plans>
+<plans>
     <plan id="red">
-        <externalValues>
+        <values>
             <color>red</color>
-        </externalValues>
+        </values>
         <externalDefaults>
             <artifactId>demo-red</artifactId>
         </externalDefaults>
@@ -31,17 +31,17 @@
         </rules>
     </plan>
     <plan id="blue">
-        <externalValues>
+        <values>
             <color>blue</color>
-        </externalValues>
+        </values>
         <rules>
             <exclude if="${docker}"/>
         </rules>
     </plan>
     <plan id="red-default">
-        <externalValues>
+        <values>
             <color>red</color>
             <docker>false</docker>
-        </externalValues>
+        </values>
     </plan>
-</variation-plans>
+</plans>

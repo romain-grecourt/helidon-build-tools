@@ -120,19 +120,19 @@ The above parameters are mapped to user properties of the form `archetype.test.P
 ### Variation Plans
 
 `plansFile` is the supported way to bound archetype variation generation. Each `<plan>` pins a coherent
-scenario using `externalValues` and `externalDefaults`, then the plugin computes variations for each plan
+scenario using `<values>` and `<externalDefaults>`, then the plugin computes variations for each plan
 independently and merges the unique results. Use each plan's `<rules>` block for any exclusions needed inside
 that scenario.
 
 ```xml
-<variation-plans>
-    <plan id="custom-security">
-        <externalValues>
+<plans>
+    <plan id="custom/security">
+        <values>
             <app-type>custom</app-type>
             <security>true</security>
             <extra></extra>
             <media></media>
-        </externalValues>
+        </values>
         <rules>
             <rule if="${security.atz} == []">
                 <exclude if="sizeof ((list) ${security.atn}) != 1"/>
@@ -140,16 +140,16 @@ that scenario.
         </rules>
     </plan>
 
-    <plan id="custom-observability">
-        <externalValues>
+    <plan id="custom/observability">
+        <values>
             <app-type>custom</app-type>
             <metrics>true</metrics>
             <health>true</health>
             <tracing>true</tracing>
             <media></media>
-        </externalValues>
+        </values>
     </plan>
-</variation-plans>
+</plans>
 ```
 
 If `plansFile` is not configured, the plugin computes the full variation set from the archetype inputs and

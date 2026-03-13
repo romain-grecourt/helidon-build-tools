@@ -54,7 +54,10 @@ final class VariationPlan {
         }
         try (InputStream is = Files.newInputStream(file)) {
             XMLElement root = XMLElement.parse(is);
-            if (!root.name().equals("variation-plans") && !root.name().equals("plans")) {
+            if (root.name().equals("variation-plans")) {
+                throw new IllegalStateException("Variation plans file uses <variation-plans>; use <plans> instead");
+            }
+            if (!root.name().equals("plans")) {
                 throw new IllegalStateException("Unexpected variation plans root element: " + root.name());
             }
             List<VariationPlan> plans = load(root);
@@ -72,7 +75,10 @@ final class VariationPlan {
         int index = 1;
         for (XMLElement plan : root.children("plan")) {
             String id = plan.attribute("id", "plan-" + index++);
-            Map<String, String> externalValues = plan.child("externalValues")
+            if (plan.child("externalValues").isPresent()) {
+                throw new IllegalStateException("Plan '" + id + "' uses <externalValues>; use <values> instead");
+            }
+            Map<String, String> externalValues = plan.child("values")
                     .map(VariationPlan::readMap)
                     .orElse(Map.of());
             Map<String, String> externalDefaults = plan.child("externalDefaults")
