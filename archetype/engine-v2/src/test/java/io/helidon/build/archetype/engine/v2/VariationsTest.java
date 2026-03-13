@@ -199,6 +199,38 @@ class VariationsTest {
     }
 
     @Test
+    void testVariationsUnionMergesEquivalentEntries() {
+        Variations actual = Variations.union(List.of(
+                Variations.of(
+                        Variations.entry(Map.of("name", "Foo"), Set.of("name")),
+                        Variations.entry(Map.of("name", "Bar"), Set.of())),
+                Variations.of(
+                        Variations.entry(Map.of("name", "Foo"), Set.of()),
+                        Variations.entry(Map.of("name", "Baz"), Set.of()))));
+
+        Variations expected = Variations.of(
+                Variations.entry(Map.of("name", "Foo"), Set.of("name")),
+                Variations.entry(Map.of("name", "Bar"), Set.of()),
+                Variations.entry(Map.of("name", "Baz"), Set.of()));
+
+        assertThat(actual, is(expected));
+        assertThat(actual.unboundedInputs(), contains("name"));
+    }
+
+    @Test
+    void testVariationsUnionRetainsDistinctResolvedValues() {
+        Variations actual = Variations.union(List.of(
+                Variations.of(Variations.entry(Map.of("name", "Foo", "preset", "red"), Set.of())),
+                Variations.of(Variations.entry(Map.of("name", "Foo", "preset", "blue"), Set.of()))));
+
+        Variations expected = Variations.of(
+                Variations.entry(Map.of("name", "Foo", "preset", "red"), Set.of()),
+                Variations.entry(Map.of("name", "Foo", "preset", "blue"), Set.of()));
+
+        assertThat(actual, is(expected));
+    }
+
+    @Test
     void testVariationsSubstitutions() {
         Variations expected = loadVariations("variations/expected/substitutions.xml");
         Variations actual = variations("variations", "substitutions.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
@@ -215,8 +247,17 @@ class VariationsTest {
     @Test
     void testVariationsNestedConditionalOptionPruning() {
         Variations expected = loadVariations("variations/expected/nested-conditional-option.xml");
-        Variations actual = variations("variations", "nested-conditional-option.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "nested-conditional-option.xml",
+                List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
         assertThat(actual.toString(false), is(expected.toString(false)));
+    }
+
+    @Test
+    void testVariationsPruneInactiveBranchBeforePresetValidation() {
+        Variations expected = Variations.of(Map.of("app-type", "oci", "flavor", "mp"), Set.of());
+        Variations actual = variations("variations", "branch-pruning.xml",
+                List.of(), Map.of("flavor", "mp", "app-type", "oci"), Map.of(), Long.MAX_VALUE);
+        assertThat(actual, is(expected));
     }
 
     @Test
@@ -281,7 +322,7 @@ class VariationsTest {
     }
 
     static Variations loadVariations(String path) {
-        Set<Variations.Entry> result = new java.util.TreeSet<>();
+        List<Variations.Entry> result = new ArrayList<>();
         for (XMLElement e : loadXml(path).children("variation")) {
             Map<String, String> map = new java.util.LinkedHashMap<>();
             for (XMLElement entry : e.children()) {

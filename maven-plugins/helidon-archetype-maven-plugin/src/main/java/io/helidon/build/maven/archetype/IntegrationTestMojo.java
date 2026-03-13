@@ -18,7 +18,6 @@ package io.helidon.build.maven.archetype;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.UncheckedIOException;
@@ -37,7 +36,6 @@ import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
 import io.helidon.build.archetype.engine.v2.ArchetypeEngineV2;
-import io.helidon.build.archetype.engine.v2.Expression;
 import io.helidon.build.archetype.engine.v2.ScriptCompiler;
 import io.helidon.build.archetype.engine.v2.Variations;
 import io.helidon.build.common.Lists;
@@ -50,7 +48,6 @@ import io.helidon.build.common.ProcessMonitor.ProcessTimeoutException;
 import io.helidon.build.common.ansi.AnsiConsoleInstaller;
 import io.helidon.build.common.logging.Log;
 import io.helidon.build.common.maven.plugin.MavenArtifact;
-import io.helidon.build.common.xml.XMLElement;
 import io.helidon.build.maven.archetype.config.Validation;
 
 import org.apache.maven.RepositoryUtils;
@@ -212,11 +209,10 @@ public class IntegrationTestMojo extends AbstractMojo {
     private Map<String, String> externalDefaults = Map.of();
 
     /**
-     * File that contains rules to filter the generated tests.
+     * File that contains named variation plans.
      */
-    @Parameter(property = "archetype.test.rulesFile",
-               defaultValue = "${project.basedir}/src/test/archetype/rules.xml")
-    private File rulesFile;
+    @Parameter(property = "archetype.test.plansFile")
+    private File plansFile;
 
     /**
      * Whether to generate tests.
@@ -354,36 +350,51 @@ public class IntegrationTestMojo extends AbstractMojo {
     }
 
     private Variations variations(Path archetypeFile) throws MojoFailureException {
+        if (maxVariations < -1) {
+            throw new MojoFailureException("Parameter 'maxVariations' must be -1 or greater");
+        }
+        long max = maxVariations == -1 ? Long.MAX_VALUE : maxVariations;
         try (FileSystem fs = newFileSystem(archetypeFile, this.getClass().getClassLoader())) {
             Path cwd = fs.getPath("/");
             ScriptCompiler compiler = new ScriptCompiler(() -> cwd.resolve("main.xml"), cwd);
-            Variations variations;
+            List<VariationPlan> plans = plans();
             try {
-                variations = Variations.compute(
-                        compiler,
-                        rules(),
-                        externalValues,
-                        externalDefaults,
-                        configuredMaxVariations());
+                Variations variations = plans.isEmpty()
+                        ? Variations.compute(compiler, List.of(), externalValues, externalDefaults, max)
+                        : variations(compiler, plans, max);
+                if (failOnUnbounded && !variations.exhaustive()) {
+                    throw new MojoFailureException(
+                            "Variations must be exhaustive, unbounded inputs: "
+                                    + String.join(", ", variations.unboundedInputs()));
+                }
+                return variations;
             } catch (IllegalStateException ex) {
                 throw new MojoFailureException(ex.getMessage());
             }
-            if (failOnUnbounded && !variations.exhaustive()) {
-                throw new MojoFailureException(
-                        "Variations must be exhaustive, unbounded inputs: "
-                                + String.join(", ", variations.unboundedInputs()));
-            }
-            return variations;
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }
     }
 
-    private long configuredMaxVariations() throws MojoFailureException {
-        if (maxVariations < -1) {
-            throw new MojoFailureException("Parameter 'maxVariations' must be -1 or greater");
+    private Variations variations(ScriptCompiler compiler, List<VariationPlan> plans, long maxVariations) {
+        List<Variations> computed = new ArrayList<>();
+        for (VariationPlan plan : plans) {
+            Log.info("");
+            Log.info("Computing plan '%s'", plan.id());
+            Map<String, String> planValues = new LinkedHashMap<>(externalValues);
+            planValues.putAll(plan.externalValues());
+            Map<String, String> planDefaults = new LinkedHashMap<>(externalDefaults);
+            planDefaults.putAll(plan.externalDefaults());
+            Variations computedPlan = Variations.compute(
+                    compiler,
+                    plan.filters(),
+                    planValues,
+                    planDefaults,
+                    maxVariations);
+            computed.add(computedPlan);
+            Log.info("Plan '%s': %d variations", plan.id(), computedPlan.size());
         }
-        return maxVariations == -1 ? Long.MAX_VALUE : maxVariations;
+        return Variations.union(computed);
     }
 
     private Path writeSummary() {
@@ -692,24 +703,8 @@ public class IntegrationTestMojo extends AbstractMojo {
         }
     }
 
-    private List<Expression> rules() {
-        if (rulesFile == null || !Files.exists(rulesFile.toPath())) {
-            return List.of();
-        }
-        try (InputStream is = Files.newInputStream(rulesFile.toPath())) {
-            List<Expression> excludes = new ArrayList<>();
-            XMLElement root = XMLElement.parse(is);
-            for (XMLElement elt : root.traverse(it -> it.name().equals("exclude"))) {
-                Expression exclude = Expression.TRUE;
-                for (XMLElement n = elt; n.parent() != null; n = n.parent()) {
-                    exclude = exclude.and(Expression.create(n.attribute("if")));
-                }
-                excludes.add(exclude);
-            }
-            return excludes;
-        } catch (IOException ex) {
-            throw new UncheckedIOException(ex);
-        }
+    private List<VariationPlan> plans() {
+        return plansFile == null ? List.of() : VariationPlan.load(plansFile.toPath());
     }
 
     private Path resolveArtifact(MavenArtifact artifact) {

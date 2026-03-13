@@ -21,6 +21,7 @@ import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -78,7 +79,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
     private final Set<Entry> entries;
     private final Set<String> unboundedInputs;
 
-    private Variations(Set<Entry> entries) {
+    private Variations(Collection<Entry> entries) {
         this.entries = Collections.unmodifiableSet(new TreeSet<>(requireNonNull(entries)));
         Set<String> unboundedInputs = new TreeSet<>();
         for (Entry entry : this.entries) {
@@ -120,12 +121,33 @@ public final class Variations extends AbstractSet<Variations.Entry> {
     }
 
     /**
+     * Merge multiple computed variation sets into one.
+     * <p>
+     * Entries with the same resolved values are merged so the result preserves a single representative entry
+     * and the union of their unbounded inputs.
+     *
+     * @param variations computed variations to merge
+     * @return merged variations
+     */
+    public static Variations union(Collection<Variations> variations) {
+        requireNonNull(variations);
+        Map<String, Entry> merged = new HashMap<>();
+        for (Variations variation : variations) {
+            requireNonNull(variation);
+            for (Entry entry : variation) {
+                merged.merge(entry.identity(), entry, Variations.Entry::merge);
+            }
+        }
+        return new Variations(merged.values());
+    }
+
+    /**
      * Create a variation set from existing entries.
      *
      * @param entries variation entries
      * @return variation set
      */
-    static Variations of(Set<Entry> entries) {
+    static Variations of(Collection<Entry> entries) {
         return new Variations(entries);
     }
 
@@ -148,6 +170,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
      * @param externalDefaults external defaults
      * @param max              max projected number of variations
      * @return computed variations
+     * @throws IllegalStateException if the projected variation count exceeds max
      */
     public static Variations compute(ScriptCompiler compiler,
                                      List<Expression> filters,
@@ -164,7 +187,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         }
 
         Node sourceNode = compiler.sourceNode();
-        Set<Entry> variations = new TreeSet<>();
+        Collection<Entry> variations = new ArrayList<>();
         sourceNode.visit(new VisitorImpl(
                 compiler,
                 sourceNode,
@@ -313,6 +336,10 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             return Lists.join(new TreeMap<>(map).entrySet(), " ");
         }
 
+        String identity() {
+            return Lists.join(new TreeMap<>(map).entrySet(), " ");
+        }
+
         @Override
         public String toString() {
             return toString(true);
@@ -382,17 +409,18 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         private final Map<Column, Integer> indexes = new LinkedHashMap<>();
         private final Map<BitSet, Map<String, String>> variationCache = new ConcurrentHashMap<>();
         private final Set<String> textInputs = new LinkedHashSet<>();
-        private final Set<Entry> variations;
+        private final Collection<Entry> variations;
         private final List<Expression> filters;
         private final Map<String, String> externalValues;
         private final Map<String, String> externalDefaults;
+        private final Map<String, Value.Type> inputTypes;
         private final Map<String, String> resolvedExternalValues;
         private final Map<String, String> resolvedExternalDefaults;
         private final long max;
 
         VisitorImpl(ScriptCompiler compiler,
                     Node sourceNode,
-                    Set<Entry> variations,
+                    Collection<Entry> variations,
                     List<Expression> filters,
                     Map<String, String> externalValues,
                     Map<String, String> externalDefaults,
@@ -403,6 +431,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             this.filters = filters;
             this.externalValues = Collections.unmodifiableMap(new LinkedHashMap<>(externalValues));
             this.externalDefaults = Collections.unmodifiableMap(new LinkedHashMap<>(externalDefaults));
+            this.inputTypes = inputTypes();
             this.resolvedExternalValues = resolvedExternalValues();
             this.resolvedExternalDefaults = resolvedExternalDefaults();
             this.max = max;
@@ -410,6 +439,9 @@ public final class Variations extends AbstractSet<Variations.Entry> {
 
         @Override
         public boolean visit(Node node) {
+            if (!active(node)) {
+                return false;
+            }
             Table table;
             List<Node> options;
             List<Node> optionNodes;
@@ -446,16 +478,16 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                         table.columns.add(new Column(table.id, o.value().getString()));
                     }
                     int index = declaredValue(node, table.id).asString()
-                            .map(o -> optionIndex(o, options))
+                            .map(o -> requiredOptionIndex(table.id, o, options))
                             .orElse(-1);
                     if (index >= 0) {
                         // only add the preset option
                         Node n = optionNodes.get(index);
-                        table.addRow(BitSets.of(index), n.expression());
+                        table.addRow(BitSets.of(index), prune(node, n.expression()));
                     } else {
                         for (int i = 0; i < table.columns.size(); i++) {
                             Node n = optionNodes.get(i);
-                            table.addRow(BitSets.of(i), n.expression());
+                            table.addRow(BitSets.of(i), prune(node, n.expression()));
                         }
                     }
                     inputs.add(table);
@@ -473,10 +505,10 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                         BitSet bits = new BitSet();
                         Expression expr = Expression.TRUE;
                         for (String o : value.getList()) {
-                            int i = optionIndex(o, options);
+                            int i = requiredOptionIndex(table.id, o, options);
                             bits.set(i);
                             Node n = optionNodes.get(i);
-                            expr = expr.and(n.expression());
+                            expr = expr.and(prune(node, n.expression()));
                         }
                         table.addRow(bits, expr);
                     } else {
@@ -485,7 +517,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                             BitSet bits = BitSets.of((long) p);
                             for (int i = bits.nextSetBit(0); i >= 0 && i < Integer.MAX_VALUE; i = bits.nextSetBit(i + 1)) {
                                 Node n = optionNodes.get(i);
-                                expr = expr.and(n.expression());
+                                expr = expr.and(prune(node, n.expression()));
                             }
                             table.addRow(bits, expr);
                         }
@@ -507,7 +539,11 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                 long computeStartTime = System.currentTimeMillis();
 
                 // aggregate all columns
-                for (Table table : inputs) {
+                List<Table> orderedInputs = new ArrayList<>(inputs);
+                orderedInputs.sort(Comparator
+                        .comparingInt((Table table) -> inputOrder(table.id))
+                        .thenComparingInt(table -> table.node.id()));
+                for (Table table : orderedInputs) {
                     for (Column column : table.columns) {
                         int index = indexes.computeIfAbsent(column, e -> indexes.size());
                         if (index == columns.size()) {
@@ -703,6 +739,37 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             }
         }
 
+        boolean active(Node node) {
+            return prune(node, activation(node)) != Expression.FALSE;
+        }
+
+        Expression activation(Node node) {
+            switch (node.kind()) {
+                case INPUT_TEXT:
+                case INPUT_BOOLEAN:
+                case INPUT_ENUM:
+                case INPUT_LIST:
+                    return node.parent() == null ? Expression.TRUE : compiler.expression(node.parent());
+                default:
+                    return compiler.expression(node);
+            }
+        }
+
+        Expression prune(Node node, Expression expr) {
+            if (expr == Expression.TRUE || expr == Expression.FALSE || resolvedExternalValues.isEmpty()) {
+                return expr;
+            }
+            Scope scope = compiler.scope(node);
+            return expr.inline(s -> {
+                String key = scope.key(s);
+                String value = resolvedExternalValues.get(key);
+                if (value == null) {
+                    return null;
+                }
+                return typedValue(key, value);
+            });
+        }
+
         Map<String, ScopeValue<?>> execute(Map<String, String> variation) {
             try {
                 // initialize a context with the variations
@@ -797,6 +864,42 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                 }
             }
             return Collections.unmodifiableMap(values);
+        }
+
+        Map<String, Value.Type> inputTypes() {
+            Map<String, Value.Type> types = new LinkedHashMap<>();
+            for (Node input : sourceNode.traverse(Kind::isInput)) {
+                types.putIfAbsent(compiler.scopeId(input), input.kind().valueType());
+            }
+            return Collections.unmodifiableMap(types);
+        }
+
+        Value<?> typedValue(String key, String value) {
+            Value.Type type = inputTypes.get(key);
+            if (type == null) {
+                return Value.of(value);
+            }
+            switch (type) {
+                case BOOLEAN:
+                    return Value.parseBoolean(value);
+                case INTEGER:
+                    return Value.parseInt(value);
+                case LIST:
+                    return Value.parseList(value);
+                default:
+                    return Value.of(value);
+            }
+        }
+
+        int inputOrder(String key) {
+            int index = 0;
+            for (String id : inputTypes.keySet()) {
+                if (id.equals(key)) {
+                    return index;
+                }
+                index++;
+            }
+            return Integer.MAX_VALUE;
         }
 
         Map<String, String> resolvedExternalDefaults() {
@@ -935,19 +1038,36 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         }
 
         Table table(Node node) {
-            return new Table(node, compiler.scopeId(node), compiler.expression(node.parent()));
+            Expression expr = node.parent() == null ? Expression.TRUE : compiler.expression(node.parent());
+            return new Table(node, compiler.scopeId(node), prune(node, expr));
         }
 
-        List<Node> optionNodes(Node node) {
+        static List<Node> optionNodes(Node node) {
             return node.children().stream()
                     .filter(n -> n.unwrap().kind() == Kind.INPUT_OPTION)
                     .collect(Collectors.toList());
         }
 
+        static int requiredOptionIndex(String inputId, String option, List<Node> options) {
+            int index = optionIndex(option, options);
+            if (index >= 0) {
+                return index;
+            }
+            String values = options.stream()
+                    .map(Node::value)
+                    .map(v -> Value.toString(v))
+                    .collect(Collectors.joining(", "));
+            throw new IllegalStateException(String.format(
+                    "Invalid value '%s' for input '%s', available options: %s",
+                    option,
+                    inputId,
+                    values));
+        }
+
         static void logDuration(long startTime, String msg) {
             long endTime = System.currentTimeMillis();
             Duration duration = Duration.ofMillis(endTime - startTime);
-            Log.info("%s in %d.%ds", msg, duration.toSeconds(), duration.toMillisPart());
+            Log.debug("%s in %d.%ds", msg, duration.toSeconds(), duration.toMillisPart());
         }
     }
 
