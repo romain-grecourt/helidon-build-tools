@@ -122,31 +122,38 @@ The above parameters are mapped to user properties of the form `archetype.test.P
 `plansFile` is the supported way to bound archetype variation generation. Each `<plan>` pins a coherent
 scenario using `<values>` and `<externalDefaults>`, then the plugin computes variations for each plan
 independently and merges the unique results. Use each plan's `<rules>` block for any exclusions needed inside
-that scenario.
+that scenario. Use `<fragment>` for reusable values, defaults, and rules; a `<plan>` or `<fragment>` can
+inherit one or more fragments via `extends="fragment-a,fragment-b"`. Inherited values/defaults merge
+left-to-right, and local rules are appended after inherited rules.
 
 ```xml
 <plans>
-    <plan id="custom/security">
+    <fragment id="custom/base">
         <values>
             <app-type>custom</app-type>
+            <media></media>
+        </values>
+    </fragment>
+
+    <fragment id="custom/security" extends="custom/base">
+        <values>
             <security>true</security>
             <extra></extra>
-            <media></media>
         </values>
         <rules>
             <rule if="${security.atz} == []">
                 <exclude if="sizeof ((list) ${security.atn}) != 1"/>
             </rule>
         </rules>
-    </plan>
+    </fragment>
 
-    <plan id="custom/observability">
+    <plan id="custom/security" extends="custom/security"/>
+
+    <plan id="custom/observability" extends="custom/base">
         <values>
-            <app-type>custom</app-type>
             <metrics>true</metrics>
             <health>true</health>
             <tracing>true</tracing>
-            <media></media>
         </values>
     </plan>
 </plans>

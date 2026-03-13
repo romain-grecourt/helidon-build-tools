@@ -54,9 +54,6 @@ final class VariationPlan {
         }
         try (InputStream is = Files.newInputStream(file)) {
             XMLElement root = XMLElement.parse(is);
-            if (root.name().equals("variation-plans")) {
-                throw new IllegalStateException("Variation plans file uses <variation-plans>; use <plans> instead");
-            }
             if (!root.name().equals("plans")) {
                 throw new IllegalStateException("Unexpected variation plans root element: " + root.name());
             }
@@ -71,23 +68,25 @@ final class VariationPlan {
     }
 
     static List<VariationPlan> load(XMLElement root) {
+        Map<String, Template> fragments = new LinkedHashMap<>();
+        int fragmentIndex = 1;
+        for (XMLElement fragment : root.children("fragment")) {
+            Template template = template(fragment, "fragment-" + fragmentIndex++, true);
+            if (fragments.putIfAbsent(template.id(), template) != null) {
+                throw new IllegalStateException("Duplicate fragment id: " + template.id());
+            }
+        }
+
         List<VariationPlan> plans = new ArrayList<>();
+        Map<String, ResolvedTemplate> resolvedFragments = new LinkedHashMap<>();
         int index = 1;
         for (XMLElement plan : root.children("plan")) {
-            String id = plan.attribute("id", "plan-" + index++);
-            if (plan.child("externalValues").isPresent()) {
-                throw new IllegalStateException("Plan '" + id + "' uses <externalValues>; use <values> instead");
-            }
-            Map<String, String> externalValues = plan.child("values")
-                    .map(VariationPlan::readMap)
-                    .orElse(Map.of());
-            Map<String, String> externalDefaults = plan.child("externalDefaults")
-                    .map(VariationPlan::readMap)
-                    .orElse(Map.of());
-            List<Expression> filters = plan.child("rules")
-                    .map(VariationRules::load)
-                    .orElse(List.of());
-            plans.add(new VariationPlan(id, externalValues, externalDefaults, filters));
+            Template template = template(plan, "plan-" + index++, false);
+            ResolvedTemplate resolved = resolvePlan(template, fragments, resolvedFragments);
+            plans.add(new VariationPlan(template.id(),
+                    resolved.externalValues(),
+                    resolved.externalDefaults(),
+                    resolved.filters()));
         }
         return List.copyOf(plans);
     }
@@ -114,5 +113,119 @@ final class VariationPlan {
             values.put(entry.name(), entry.value());
         }
         return values;
+    }
+
+    private static Template template(XMLElement element, String defaultId, boolean requireId) {
+        String id = templateId(element, defaultId, requireId);
+        return new Template(id,
+                extendsIds(element),
+                element.child("values")
+                        .map(VariationPlan::readMap)
+                        .orElse(Map.of()),
+                element.child("externalDefaults")
+                        .map(VariationPlan::readMap)
+                        .orElse(Map.of()),
+                element.child("rules")
+                        .map(VariationRules::load)
+                        .orElse(List.of()));
+    }
+
+    private static String templateId(XMLElement element, String defaultId, boolean requireId) {
+        String id = element.attribute("id", null);
+        if (id == null || id.isBlank()) {
+            if (requireId) {
+                throw new IllegalStateException("Fragment is missing required id attribute");
+            }
+            return defaultId;
+        }
+        return id.trim();
+    }
+
+    private static List<String> extendsIds(XMLElement element) {
+        String value = element.attribute("extends", "").trim();
+        if (value.isEmpty()) {
+            return List.of();
+        }
+        List<String> ids = new ArrayList<>();
+        for (String token : value.split(",")) {
+            String id = token.trim();
+            if (!id.isEmpty()) {
+                ids.add(id);
+            }
+        }
+        return List.copyOf(ids);
+    }
+
+    private static ResolvedTemplate resolvePlan(Template plan,
+                                                Map<String, Template> fragments,
+                                                Map<String, ResolvedTemplate> resolvedFragments) {
+        ResolvedTemplate inherited = resolveParents(plan, fragments, resolvedFragments, new ArrayList<>());
+        return plan.merge(inherited);
+    }
+
+    private static ResolvedTemplate resolveParents(Template template,
+                                                   Map<String, Template> fragments,
+                                                   Map<String, ResolvedTemplate> resolvedFragments,
+                                                   List<String> stack) {
+
+        LinkedHashMap<String, String> externalValues = new LinkedHashMap<>();
+        LinkedHashMap<String, String> externalDefaults = new LinkedHashMap<>();
+        List<Expression> filters = new ArrayList<>();
+        for (String fragmentId : template.extendsIds()) {
+            Template fragment = fragments.get(fragmentId);
+            if (fragment == null) {
+                throw new IllegalStateException(
+                        "Unknown fragment '%s' referenced by '%s'"
+                                .formatted(fragmentId, template.id()));
+            }
+            ResolvedTemplate resolved = resolveFragment(fragment, fragments, resolvedFragments, stack);
+            externalValues.putAll(resolved.externalValues());
+            externalDefaults.putAll(resolved.externalDefaults());
+            filters.addAll(resolved.filters());
+        }
+        return new ResolvedTemplate(externalValues, externalDefaults, filters);
+    }
+
+    private static ResolvedTemplate resolveFragment(Template fragment,
+                                                    Map<String, Template> fragments,
+                                                    Map<String, ResolvedTemplate> resolvedFragments,
+                                                    List<String> stack) {
+        ResolvedTemplate cached = resolvedFragments.get(fragment.id());
+        if (cached != null) {
+            return cached;
+        }
+        if (stack.contains(fragment.id())) {
+            List<String> cycle = new ArrayList<>(stack);
+            cycle.add(fragment.id());
+            throw new IllegalStateException("Circular fragment inheritance: " + String.join(" -> ", cycle));
+        }
+        stack.add(fragment.id());
+        ResolvedTemplate inherited = resolveParents(fragment, fragments, resolvedFragments, stack);
+        ResolvedTemplate resolved = fragment.merge(inherited);
+        stack.remove(stack.size() - 1);
+        resolvedFragments.put(fragment.id(), resolved);
+        return resolved;
+    }
+
+    private record Template(String id,
+                            List<String> extendsIds,
+                            Map<String, String> externalValues,
+                            Map<String, String> externalDefaults,
+                            List<Expression> filters) {
+
+        ResolvedTemplate merge(ResolvedTemplate inherited) {
+            Map<String, String> mergedValues = new LinkedHashMap<>(inherited.externalValues());
+            Map<String, String> mergedDefaults = new LinkedHashMap<>(inherited.externalDefaults());
+            List<Expression> mergedFilters = new ArrayList<>(inherited.filters());
+            mergedValues.putAll(externalValues);
+            mergedDefaults.putAll(externalDefaults);
+            mergedFilters.addAll(filters);
+            return new ResolvedTemplate(mergedValues, mergedDefaults, mergedFilters);
+        }
+    }
+
+    private record ResolvedTemplate(Map<String, String> externalValues,
+                                    Map<String, String> externalDefaults,
+                                    List<Expression> filters) {
     }
 }

@@ -15,7 +15,11 @@
  */
 package io.helidon.build.maven.archetype;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,11 +28,13 @@ import java.util.stream.Collectors;
 
 import io.helidon.build.archetype.engine.v2.ScriptCompiler;
 import io.helidon.build.archetype.engine.v2.Variations;
+import io.helidon.build.common.xml.XMLElement;
 
 import org.junit.jupiter.api.Test;
 
 import static io.helidon.build.common.test.utils.TestFiles.testResourcePath;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
@@ -60,6 +66,90 @@ class VariationPlanTest {
         assertThat(plans.get(1).filters(), hasSize(1));
         assertThat(plans.get(1).filters().get(0).variables(), containsInAnyOrder("docker"));
         assertThat(plans.get(2).externalValues(), is(Map.of("color", "red", "docker", "false")));
+        assertThat(plans.get(2).externalDefaults(), is(Map.of("artifactId", "demo-red")));
+    }
+
+    @Test
+    void testLoadRejectsFragmentWithoutId() {
+        XMLElement root = xml("""
+                <plans>
+                    <fragment>
+                        <values>
+                            <color>red</color>
+                        </values>
+                    </fragment>
+                    <plan id="red"/>
+                </plans>
+                """);
+
+        assertThrows(IllegalStateException.class, () -> VariationPlan.load(root));
+    }
+
+    @Test
+    void testLoadRejectsDuplicateFragments() {
+        XMLElement root = xml("""
+                <plans>
+                    <fragment id="color/red"/>
+                    <fragment id="color/red"/>
+                    <plan id="red"/>
+                </plans>
+                """);
+
+        assertThrows(IllegalStateException.class, () -> VariationPlan.load(root));
+    }
+
+    @Test
+    void testLoadRejectsUnknownFragmentReference() {
+        XMLElement root = xml("""
+                <plans>
+                    <plan id="red" extends="missing"/>
+                </plans>
+                """);
+
+        assertThrows(IllegalStateException.class, () -> VariationPlan.load(root));
+    }
+
+    @Test
+    void testLoadRejectsCircularFragmentInheritance() {
+        XMLElement root = xml("""
+                <plans>
+                    <fragment id="a" extends="b"/>
+                    <fragment id="b" extends="a"/>
+                    <plan id="red" extends="a"/>
+                </plans>
+                """);
+
+        assertThrows(IllegalStateException.class, () -> VariationPlan.load(root));
+    }
+
+    @Test
+    void testLoadPreservesInheritedValueOrder() {
+        XMLElement root = xml("""
+                <plans>
+                    <fragment id="base">
+                        <values>
+                            <one>1</one>
+                            <two>2</two>
+                        </values>
+                    </fragment>
+                    <fragment id="extra">
+                        <values>
+                            <three>3</three>
+                            <four>4</four>
+                        </values>
+                    </fragment>
+                    <plan id="ordered" extends="base, extra">
+                        <values>
+                            <five>5</five>
+                        </values>
+                    </plan>
+                </plans>
+                """);
+
+        List<VariationPlan> plans = VariationPlan.load(root);
+
+        assertThat(plans, hasSize(1));
+        assertThat(plans.get(0).externalValues().keySet(), contains("one", "two", "three", "four", "five"));
     }
 
     @Test
@@ -86,5 +176,13 @@ class VariationPlanTest {
 
     private static Path resource(String path) {
         return testResourcePath(VariationPlanTest.class, "variation-plans/" + path);
+    }
+
+    private static XMLElement xml(String value) {
+        try {
+            return XMLElement.parse(new ByteArrayInputStream(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
+        }
     }
 }

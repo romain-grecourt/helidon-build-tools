@@ -17,30 +17,40 @@
 
 -->
 <plans>
-    <plan id="red">
-        <values>
-            <color>red</color>
-        </values>
+    <fragment id="defaults/demo-red">
         <externalDefaults>
             <artifactId>demo-red</artifactId>
         </externalDefaults>
+    </fragment>
+
+    <fragment id="color/red">
+        <values>
+            <color>red</color>
+        </values>
+    </fragment>
+
+    <fragment id="rules/no-docker">
+        <rules>
+            <exclude if="${docker}"/>
+        </rules>
+    </fragment>
+
+    <fragment id="red/plan" extends="defaults/demo-red, color/red">
         <rules>
             <rule if="${color} == 'red'">
                 <exclude if="${docker}"/>
             </rule>
         </rules>
-    </plan>
-    <plan id="blue">
+    </fragment>
+
+    <plan id="red" extends="red/plan"/>
+    <plan id="blue" extends="rules/no-docker">
         <values>
             <color>blue</color>
         </values>
-        <rules>
-            <exclude if="${docker}"/>
-        </rules>
     </plan>
-    <plan id="red-default">
+    <plan id="red-default" extends="defaults/demo-red, color/red">
         <values>
-            <color>red</color>
             <docker>false</docker>
         </values>
     </plan>
