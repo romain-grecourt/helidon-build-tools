@@ -120,14 +120,16 @@ The above parameters are mapped to user properties of the form `archetype.test.P
 ### Variation Plans
 
 `plansFile` is the supported way to bound archetype variation generation. Each `<plan>` pins a coherent
-scenario using `<values>` and `<externalDefaults>`, then the plugin computes variations for each plan
+scenario using `<values>` and `<defaults>`, then the plugin computes variations for each plan
 independently and merges the unique results. Use each plan's `<rules>` block for any exclusions needed inside
 that scenario. Use `<fragment>` for reusable values, defaults, and rules; a `<plan>` or `<fragment>` can
 inherit one or more fragments via `extends="fragment-a,fragment-b"`. Inherited values/defaults merge
 left-to-right, and local rules are appended after inherited rules.
 
 ```xml
-<plans>
+<plans xmlns="https://helidon.io/archetype-plans/1.0"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="https://helidon.io/archetype-plans/1.0 https://helidon.io/xsd/archetype-plans-1.0.xsd">
     <fragment id="custom/base">
         <values>
             <app-type>custom</app-type>

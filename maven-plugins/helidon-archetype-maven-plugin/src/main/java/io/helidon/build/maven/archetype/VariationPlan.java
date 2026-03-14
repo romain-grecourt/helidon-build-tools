@@ -122,7 +122,7 @@ final class VariationPlan {
                 element.child("values")
                         .map(VariationPlan::readMap)
                         .orElse(Map.of()),
-                element.child("externalDefaults")
+                element.child("defaults")
                         .map(VariationPlan::readMap)
                         .orElse(Map.of()),
                 element.child("rules")

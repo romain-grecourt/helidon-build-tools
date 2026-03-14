@@ -19,41 +19,12 @@
 <plans xmlns="https://helidon.io/archetype-plans/1.0"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xsi:schemaLocation="https://helidon.io/archetype-plans/1.0 https://helidon.io/xsd/archetype-plans-1.0.xsd">
-    <fragment id="defaults/demo-red">
-        <defaults>
-            <artifactId>demo-red</artifactId>
-        </defaults>
-    </fragment>
 
-    <fragment id="color/red">
+    <fragment>
         <values>
-            <color>red</color>
+            <flavor>se</flavor>
         </values>
     </fragment>
 
-    <fragment id="rules/no-docker">
-        <rules>
-            <exclude if="${docker}"/>
-        </rules>
-    </fragment>
-
-    <fragment id="red/plan" extends="defaults/demo-red, color/red">
-        <rules>
-            <rule if="${color} == 'red'">
-                <exclude if="${docker}"/>
-            </rule>
-        </rules>
-    </fragment>
-
-    <plan id="red" extends="red/plan"/>
-    <plan id="blue" extends="rules/no-docker">
-        <values>
-            <color>blue</color>
-        </values>
-    </plan>
-    <plan id="red-default" extends="defaults/demo-red, color/red">
-        <values>
-            <docker>false</docker>
-        </values>
-    </plan>
+    <plan id="se/extra"/>
 </plans>

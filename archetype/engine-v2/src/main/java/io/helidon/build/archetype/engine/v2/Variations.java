@@ -147,7 +147,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
      * @param entries variation entries
      * @return variation set
      */
-    static Variations of(Collection<Entry> entries) {
+    public static Variations of(Collection<Entry> entries) {
         return new Variations(entries);
     }
 
@@ -157,7 +157,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
      * @param entries variation entries
      * @return variation set
      */
-    static Variations of(Entry... entries) {
+    public static Variations of(Entry... entries) {
         return new Variations(Set.of(entries));
     }
 

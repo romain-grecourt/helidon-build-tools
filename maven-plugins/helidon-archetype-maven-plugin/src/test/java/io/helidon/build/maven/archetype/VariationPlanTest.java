@@ -21,10 +21,8 @@ import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 import io.helidon.build.archetype.engine.v2.ScriptCompiler;
 import io.helidon.build.archetype.engine.v2.Variations;
@@ -72,7 +70,7 @@ class VariationPlanTest {
     @Test
     void testLoadRejectsFragmentWithoutId() {
         XMLElement root = xml("""
-                <plans>
+                <plans xmlns="https://helidon.io/archetype-plans/1.0">
                     <fragment>
                         <values>
                             <color>red</color>
@@ -88,7 +86,7 @@ class VariationPlanTest {
     @Test
     void testLoadRejectsDuplicateFragments() {
         XMLElement root = xml("""
-                <plans>
+                <plans xmlns="https://helidon.io/archetype-plans/1.0">
                     <fragment id="color/red"/>
                     <fragment id="color/red"/>
                     <plan id="red"/>
@@ -101,7 +99,7 @@ class VariationPlanTest {
     @Test
     void testLoadRejectsUnknownFragmentReference() {
         XMLElement root = xml("""
-                <plans>
+                <plans xmlns="https://helidon.io/archetype-plans/1.0">
                     <plan id="red" extends="missing"/>
                 </plans>
                 """);
@@ -112,7 +110,7 @@ class VariationPlanTest {
     @Test
     void testLoadRejectsCircularFragmentInheritance() {
         XMLElement root = xml("""
-                <plans>
+                <plans xmlns="https://helidon.io/archetype-plans/1.0">
                     <fragment id="a" extends="b"/>
                     <fragment id="b" extends="a"/>
                     <plan id="red" extends="a"/>
@@ -125,7 +123,7 @@ class VariationPlanTest {
     @Test
     void testLoadPreservesInheritedValueOrder() {
         XMLElement root = xml("""
-                <plans>
+                <plans xmlns="https://helidon.io/archetype-plans/1.0">
                     <fragment id="base">
                         <values>
                             <one>1</one>
@@ -157,21 +155,22 @@ class VariationPlanTest {
         Path cwd = resource("script").toAbsolutePath().normalize();
         ScriptCompiler compiler = new ScriptCompiler(() -> cwd.resolve("main.xml"), cwd);
         List<VariationPlan> plans = VariationPlan.load(resource("plans.xml"));
+
         List<Variations> computed = new ArrayList<>();
-
         for (VariationPlan plan : plans) {
-            Map<String, String> externalValues = new LinkedHashMap<>(plan.externalValues());
-            Map<String, String> externalDefaults = new LinkedHashMap<>(plan.externalDefaults());
-            computed.add(Variations.compute(compiler, plan.filters(), externalValues, externalDefaults, Long.MAX_VALUE));
+            computed.add(Variations.compute(
+                    compiler,
+                    plan.filters(),
+                    plan.externalValues(),
+                    plan.externalDefaults(),
+                    Long.MAX_VALUE));
         }
-
         Variations actual = Variations.union(computed);
+        Variations expected = Variations.of(
+                Variations.entry(Map.of("color", "blue", "docker", "false")),
+                Variations.entry(Map.of("color", "red", "docker", "false")));
 
-        assertThat(actual.stream()
-                .map(entry -> entry.toString(false, " "))
-                .collect(Collectors.toList()), containsInAnyOrder(
-                "color=blue docker=false",
-                "color=red docker=false"));
+        assertThat(actual, is(expected));
     }
 
     private static Path resource(String path) {
