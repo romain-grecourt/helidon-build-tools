@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -335,6 +336,107 @@ public class Lists {
             }
         }
         return it2.hasNext() ? -1 : it1.hasNext() ? 1 : 0;
+    }
+
+    /**
+     * Remove adjacent duplicates from a sorted list.
+     *
+     * @param list sorted list
+     * @param <T>  the list element type
+     * @return list without adjacent duplicates
+     */
+    public static <T> List<T> unique(List<T> list) {
+        List<T> result = new ArrayList<>(list.size());
+        T previous = null;
+        for (T element : list) {
+            if (!Objects.equals(element, previous)) {
+                result.add(element);
+            }
+            previous = element;
+        }
+        return result;
+    }
+
+    /**
+     * Test if all elements from a sorted subset list are present in the sorted superset list.
+     *
+     * @param superset sorted superset list
+     * @param subset   sorted subset list
+     * @param <T>      the list element type
+     * @return {@code true} if all subset elements are present, {@code false} otherwise
+     */
+    public static <T extends Comparable<T>> boolean containsAll(List<T> superset, List<T> subset) {
+        int i = 0;
+        int j = 0;
+        while (i < superset.size() && j < subset.size()) {
+            int cmp = superset.get(i).compareTo(subset.get(j));
+            if (cmp == 0) {
+                i++;
+                j++;
+            } else if (cmp < 0) {
+                i++;
+            } else {
+                return false;
+            }
+        }
+        return j == subset.size();
+    }
+
+    /**
+     * Intersect two sorted lists.
+     *
+     * @param left left list
+     * @param right right list
+     * @param <T> the list element type
+     * @return intersection preserving sorted order
+     */
+    public static <T extends Comparable<T>> List<T> intersect(List<T> left, List<T> right) {
+        List<T> result = new ArrayList<>();
+        int i = 0;
+        int j = 0;
+        while (i < left.size() && j < right.size()) {
+            int cmp = left.get(i).compareTo(right.get(j));
+            if (cmp == 0) {
+                result.add(left.get(i));
+                i++;
+                j++;
+            } else if (cmp < 0) {
+                i++;
+            } else {
+                j++;
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Subtract the sorted exclusions list from the sorted values list.
+     *
+     * @param values sorted values list
+     * @param exclusions sorted exclusions list
+     * @param <T> the list element type
+     * @return values minus exclusions preserving sorted order
+     */
+    public static <T extends Comparable<T>> List<T> subtract(List<T> values, List<T> exclusions) {
+        List<T> result = new ArrayList<>(Math.max(0, values.size() - exclusions.size()));
+        int i = 0;
+        int j = 0;
+        while (i < values.size()) {
+            if (j >= exclusions.size()) {
+                result.addAll(values.subList(i, values.size()));
+                break;
+            }
+            int cmp = values.get(i).compareTo(exclusions.get(j));
+            if (cmp == 0) {
+                i++;
+                j++;
+            } else if (cmp < 0) {
+                result.add(values.get(i++));
+            } else {
+                j++;
+            }
+        }
+        return result;
     }
 
     /**

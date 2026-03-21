@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -481,29 +481,66 @@ public interface Value<T> {
      * @return {@code 1} if greater, {@code 0} if equal, {@code -1} if less than
      */
     static int compare(Value<?> v1, Value<?> v2) {
+        if (v1 == v2) {
+            return 0;
+        }
+        if (v1 == null || v2 == null) {
+            return v1 == null ? -1 : 1;
+        }
         boolean e1 = v1.isEmpty();
         boolean e2 = v2.isEmpty();
         if (e1 || e2) {
-            return e1 && e2 ? 0 : e2 ? 1 : -1;
+            return e1 == e2 ? 0 : e1 ? -1 : 1;
         }
-        Type t1 = v1.type();
-        Type t2 = v2.type();
-        if (t1 == t2) {
-            switch (t1) {
-                case STRING:
-                case DYNAMIC:
-                    return v1.getString().compareTo(v2.getString());
-                case INTEGER:
-                    return Integer.compare(v1.getInt(), v2.getInt());
-                case BOOLEAN:
-                    return Boolean.compare(v1.getBoolean(), v2.getBoolean());
-                case LIST:
-                    return Lists.compare(v1.getList(), v2.getList());
-                default:
-                    throw new IllegalStateException("Unsupported value type: " + t1);
-            }
+        int type = v1.type().compareTo(v2.type());
+        if (type != 0) {
+            return type;
         }
-        return Objects.compare(toString(v1), toString(v2), String::compareTo);
+        switch (v1.type()) {
+            case STRING:
+            case DYNAMIC:
+                return v1.getString().compareTo(v2.getString());
+            case INTEGER:
+                return Integer.compare(v1.getInt(), v2.getInt());
+            case BOOLEAN:
+                return Boolean.compare(v1.getBoolean(), v2.getBoolean());
+            case LIST:
+                return Lists.compare(v1.getList(), v2.getList());
+            case EMPTY:
+                return 0;
+            default:
+                throw new IllegalStateException("Unsupported value type: " + v1.type());
+        }
+    }
+
+    /**
+     * Compute a stable hash for a value.
+     *
+     * @param value value
+     * @return hash
+     */
+    static int hash(Value<?> value) {
+        if (value == null) {
+            return 0;
+        }
+        switch (value.type()) {
+            case STRING:
+                return Objects.hash(value.type(), value.getString());
+            case DYNAMIC:
+                return value.isEmpty()
+                        ? Objects.hash(Type.EMPTY)
+                        : Objects.hash(value.type(), value.getString());
+            case INTEGER:
+                return Objects.hash(value.type(), value.getInt());
+            case BOOLEAN:
+                return Objects.hash(value.type(), value.getBoolean());
+            case LIST:
+                return Objects.hash(value.type(), value.getList());
+            case EMPTY:
+                return Objects.hash(Type.EMPTY);
+            default:
+                throw new IllegalStateException("Unsupported value type: " + value.type());
+        }
     }
 
     /**
@@ -571,6 +608,45 @@ public interface Value<T> {
                 default:
                     return Objects.equals(v1, v2);
             }
+        }
+    }
+
+    /**
+     * Test strict value equality.
+     *
+     * @param v1 value
+     * @param v2 value
+     * @return {@code true} if both values have the same type and value, {@code false} otherwise
+     */
+    static boolean isStrictEqual(Value<?> v1, Value<?> v2) {
+        if (v1 == v2) {
+            return true;
+        }
+        if (v1 == null || v2 == null) {
+            return false;
+        }
+        boolean e1 = v1.isEmpty();
+        boolean e2 = v2.isEmpty();
+        if (e1 || e2) {
+            return e1 && e2;
+        }
+        if (v1.type() != v2.type()) {
+            return false;
+        }
+        switch (v1.type()) {
+            case STRING:
+            case DYNAMIC:
+                return Objects.equals(v1.getString(), v2.getString());
+            case INTEGER:
+                return v1.getInt() == v2.getInt();
+            case BOOLEAN:
+                return v1.getBoolean() == v2.getBoolean();
+            case LIST:
+                return v1.getList().equals(v2.getList());
+            case EMPTY:
+                return true;
+            default:
+                throw new IllegalStateException("Unsupported value type: " + v1.type());
         }
     }
 
