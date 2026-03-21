@@ -16,12 +16,15 @@
 
 package io.helidon.build.archetype.engine.v2;
 
+import java.util.BitSet;
 import java.util.List;
 import java.util.Map;
 
 import io.helidon.build.archetype.engine.v2.Expression.FormatException;
+import io.helidon.build.archetype.engine.v2.Expression.QmcLimitException;
 import io.helidon.build.archetype.engine.v2.Expression.UnresolvedVariableException;
 import io.helidon.build.archetype.engine.v2.Value.ValueException;
+import io.helidon.build.common.BitSets;
 import io.helidon.build.common.Lists;
 
 import org.junit.jupiter.api.Test;
@@ -516,6 +519,17 @@ class ExpressionTest {
     }
 
     @Test
+    void testReduceSameVariableEqualities() {
+        assertThat(expr("${v1} == 'a' && ${v1} == 'b'").reduce(), is(expr("false")));
+        assertThat(expr("${v1} == 'a' && ${v1} != 'b'").reduce(), is(expr("${v1} == 'a'")));
+        assertThat(expr("${v1} != 'a' || ${v1} != 'b'").reduce(), is(expr("true")));
+        assertThat(expr("${v1} == 'a' || ${v1} == 'a' && ${v1} == 'b'").reduce(), is(expr("${v1} == 'a'")));
+        assertThat(expr("${app-type} == 'quickstart' && ${flavor} == 'mp'"
+                        + " || ${app-type} == 'oci' && ${flavor} == 'mp' && ${flavor} == 'se'").reduce(),
+                is(expr("${app-type} == 'quickstart' && ${flavor} == 'mp'")));
+    }
+
+    @Test
     void testReduceConstants() {
         assertThat(expr("${v1} || true").reduce(), is(expr("true")));
         assertThat(expr("${v1} || false").reduce(), is(expr("${v1}")));
@@ -545,24 +559,82 @@ class ExpressionTest {
         assertThat(expr("!${v1} && ${v2}").reduce(), is(expr("!${v1} && ${v2}")));
         assertThat(expr("${v1} == true").reduce(), is(expr("${v1}")));
         assertThat(expr("${v1} == false").reduce(), is(expr("!${v1}")));
-        assertThat(expr("${a} && ${d} || ${a} && ${b} && ${c}").reduce(), is(expr("${a} && ${d} || ${a} && ${b} && ${c}")));
+        assertThat(expr("${a} && ${d} || ${a} && ${b} && ${c}").reduce(),
+                is(expr("${a} && (${d} || ${b} && ${c})")));
+    }
+
+    @Test
+    void testReduceWithTruth() {
+        assertThat(expr("${x} != 'a' && ${x} != 'b'").reduce(expr("${x} == 'a' || ${x} == 'b' || ${x} == 'c'")),
+                is(expr("${x} == 'c'")));
+        assertThat(expr("${a} && ${c} || ${b} && ${c}").reduce(expr("${c}")),
+                is(expr("${a} || ${b}").reduce()));
+
+        assertThat(expr("${app-type} != 'oci'"
+                        + " && (${flavor} != 'mp' && ${flavor} != 'se'"
+                        + " || ${app-type} != 'custom'"
+                        + " && ${app-type} != 'database'"
+                        + " && ${app-type} != 'quickstart')")
+                        .reduce(expr("(${flavor} == 'se' || ${flavor} == 'mp')"
+                                     + " && (${flavor} != 'se'"
+                                     + " || ${app-type} == 'quickstart'"
+                                     + " || ${app-type} == 'database'"
+                                     + " || ${app-type} == 'custom')"
+                                     + " && (${flavor} != 'mp'"
+                                     + " || ${app-type} == 'quickstart'"
+                                     + " || ${app-type} == 'database'"
+                                     + " || ${app-type} == 'custom'"
+                                     + " || ${app-type} == 'oci')"
+                                     + " && (${app-type} != 'oci' || ${flavor} == 'mp')")),
+                is(expr("false")));
+    }
+
+    @Test
+    void testReduceFactorization() {
+        assertThat(expr("${a} && ${b} || ${a} && ${c}").reduce(),
+                is(expr("${a} && (${b} || ${c})")));
+        assertThat(expr("${a} && ${b} || ${d} && ${b}").reduce(),
+                is(expr("${b} && (${a} || ${d})")));
+        assertThat(expr("${a} && ${b} || ${a} && ${c} || ${d} && ${b} || ${d} && ${c}").reduce(),
+                is(expr("(${a} || ${d}) && (${b} || ${c})")));
     }
 
     @Test
     void testReduceTerms4Vars1() {
-        assertThat(Expression.reduce(0, 1, 2, 4, 6, 8, 9, 11, 13, 15),
+        assertThat(Expression.reduce(BitSets.of(0, 1, 2, 4, 6, 8, 9, 11, 13, 15), BitSets.of()),
                 is(a(i(0, 9), i(0, 6), i(9, 6))));
     }
 
     @Test
     void testReduceTerms4Vars2() {
-        assertThat(Expression.reduce(4, 8, 9, 10, 12, 11, 14, 15),
+        assertThat(Expression.reduce(BitSets.of(4, 8, 9, 10, 11, 12, 14, 15), BitSets.of()),
                 is(a(i(4, 8), i(8, 3), i(10, 5))));
     }
 
     @Test
     void testReduceTerms7Vars() {
-        assertThat(Expression.reduce(20, 28, 52, 60), is(a(i(20, 40))));
+        assertThat(Expression.reduce(BitSets.of(20, 28, 52, 60), BitSets.of()), is(a(i(20, 40))));
+    }
+
+    @Test
+    void testReduceTermsWithDontCares() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> Expression.reduce(BitSets.of(1, 3), BitSets.of(1)));
+        assertThat(ex.getMessage(), containsString("disjoint"));
+    }
+
+    @Test
+    void testReduceTermsWithExternalDontCares() {
+        assertThat(Expression.reduce(BitSets.of(3), BitSets.of(1)), is(a(i(1, 2))));
+    }
+
+    @Test
+    void testReduceTermsLimit() {
+        BitSet minterms = new BitSet();
+        minterms.set(0, 65537);
+        QmcLimitException ex = assertThrows(QmcLimitException.class,
+                () -> Expression.reduce(minterms, new BitSet()));
+        assertThat(ex.getMessage(), containsString("QMC initial term limit exceeded"));
     }
 
     @Test
@@ -580,12 +652,8 @@ class ExpressionTest {
                         + " || ${a} == 'jkl' && ${c} && ${b} == 'xyz'"
                         + " || ${a} == 'jkl' && ${c} && ${b} == 'uvw'").reduce(),
                 is(expr("${a} == 'ghi' && ${b} == 'uvw'"
-                        + " || ${a} == 'def' && ${b} == 'xyz'"
-                        + " || ${a} == 'def' && ${b} == 'uvw'"
-                        + " || ${a} == 'abc' && ${b} == 'xyz'"
-                        + " || ${a} == 'abc' && ${b} == 'uvw'"
-                        + " || ${a} == 'jkl' && ${b} == 'xyz' && ${c}"
-                        + " || ${a} == 'jkl' && ${b} == 'uvw' && ${c}")));
+                        + " || (${b} == 'uvw' || ${b} == 'xyz')"
+                        + " && (${a} == 'abc' || ${a} == 'def' || ${c} && ${a} == 'jkl')")));
     }
 
     @Test
@@ -594,7 +662,7 @@ class ExpressionTest {
                 is(expr("${b} || ${a} || ${c} && ${d} && ${e}")));
 
         assertThat(expr("${a} && ${b} && ${c} || ${a} && ${d} && ${c}").reduce(),
-                is(expr("${a} && ${c} && ${d} || ${a} && ${b} && ${c}")));
+                is(expr("${a} && ${c} && (${b} || ${d})")));
     }
 
     @Test
@@ -659,8 +727,10 @@ class ExpressionTest {
         assertThat(expr("${a} && ${b} && ${c} || ${b} && ${c} && ${d}").sub(expr("${a}")),
                 is(expr("${b} && ${c}")));
         assertThat(expr("${a} && ${b} && ${c} || ${b} && ${c} && ${d}").sub(expr("${c}")),
-                is(expr("${b} && ${d} || ${a} && ${b}")));
+                is(expr("${b} && (${a} || ${d})")));
         assertThat(expr("${a}").sub(expr("${a} || ${b} || ${c}")),
+                is(expr("true")));
+        assertThat(expr("${v1} == 'a' && ${v1} != 'b'").sub(expr("${v1} == 'a'")),
                 is(expr("true")));
     }
 
