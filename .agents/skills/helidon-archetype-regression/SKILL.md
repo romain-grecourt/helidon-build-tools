@@ -18,6 +18,10 @@ Use this skill when engine-v2 or other archetype-facing build-tools changes
 might alter generated Helidon archetype outputs. Prefer the repo's own
 generation and diff workflow over ad hoc spot checks.
 
+If a task might need this workflow and the Helidon archetype checkout
+location is not already known, ask the user for that location before
+starting the regression work. Do not assume a default sibling checkout.
+
 ## Decide Scope
 
 - Compare only `projects.csv` when the change affects variation
@@ -31,6 +35,9 @@ generation and diff workflow over ad hoc spot checks.
 
 - Use the default `~/.m2` repository unless the user explicitly asks
   for a different local repository strategy.
+- Run the workflow through
+  `.agents/skills/helidon-archetype-regression/scripts/run-regression.sh`
+  instead of retyping the Maven commands by hand.
 - Reinstall the intended build-tools version before every generation. Do not
   assume `~/.m2` still contains the right engine-v2 build.
 - Snapshot `target/tests` or `projects.csv` before the next
@@ -43,20 +50,24 @@ generation and diff workflow over ad hoc spot checks.
 
 ## Workflow
 
-1. Locate the sibling `helidon` repo and verify
-   `archetypes/archetypes/pom.xml` exists.
-2. Create a clean baseline source for `helidon-build-tools` at `HEAD` without
-   local changes. Prefer a detached worktree or a local clone.
-3. Install baseline build-tools into `~/.m2`.
-4. In the `helidon` repo, generate the baseline output for the chosen scope.
-5. Save the generated `projects.csv` or `target/tests` outside the repo.
-6. Reinstall the modified build-tools from the current worktree into `~/.m2`.
-7. Regenerate the same output in the `helidon` repo.
-8. Diff the baseline and actual results with the helper script.
-9. Report whether outputs changed and state that `~/.m2`
-   currently contains the modified build-tools install.
+1. Obtain the Helidon archetype checkout location from the user if it is
+   not already known, then verify `archetypes/archetypes/pom.xml` exists
+   there.
+2. Choose the wrapper mode:
+   - `compile_gate` for the archetype compiler timing check
+   - `diff_variations` for `projects.csv` coverage-only checks
+   - `diff_projects` for generated-project snapshot checks
+   - `all` when the scope is uncertain or the task needs every check
+3. Run
+   `.agents/skills/helidon-archetype-regression/scripts/run-regression.sh`
+   with `--helidon-dir <path>` and, when needed, `--baseline-ref <rev>`.
+4. Review the wrapper summary and any artifacts under
+   `.agents/skills/helidon-archetype-regression/.state/<run-id>/`.
+5. Report whether outputs changed and whether `~/.m2` was restored to the
+   current workspace install, unless `--no-restore-current` was used.
 
 ## Reference
 
 Read `references/workflow.md` for the exact commands,
-comparison modes, and helper-script usage.
+wrapper usage, required `--helidon-dir` usage, state layout, and
+helper-compatibility details.

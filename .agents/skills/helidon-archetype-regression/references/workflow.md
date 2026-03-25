@@ -1,36 +1,95 @@
 # Archetype Regression Workflow
 
-## Repo Assumptions
+## Wrapper Entry Point
 
-- Run the build-tools install commands from the `helidon-build-tools` repo.
-- Use the sibling `helidon` checkout for archetype generation. The expected
-  path is usually `../helidon` from the build-tools repo root.
-- Verify that `archetypes/archetypes/pom.xml` exists before running
-  generation commands.
+Run the workflow through:
+
+```text
+.agents/skills/helidon-archetype-regression/scripts/run-regression.sh
+```
+
+That wrapper keeps the regression state under the skill directory and gives
+the user one stable approval prefix instead of a long sequence of ad hoc
+commands.
+
+## Required Inputs
+
+- Run the build-tools install steps from the `helidon-build-tools` repo.
+- Require the Helidon checkout location explicitly through
+  `--helidon-dir <path>`.
+- When the skill is triggered and the Helidon location is unknown, ask the
+  user for it before starting the regression workflow.
+- Verify that `<helidon-dir>/archetypes/archetypes/pom.xml` exists before
+  running generation commands.
+
+Do not default `--helidon-dir` to `../helidon`. The wrapper should fail
+early with a usage error when it is missing.
+
+## Script Interface
+
+```text
+Usage:
+  run-regression.sh <diff_variations|diff_projects|compile_gate|all> \
+      [options]
+
+Options:
+  --baseline-ref <rev>        Baseline git ref to install first
+                              Default: HEAD
+  --helidon-dir <path>        Required Helidon checkout location
+  --state-dir <path>          Override the default .state root directory
+  --threshold-seconds <n>     Compile gate threshold, default 5
+  --verbose                   Echo commands as they run
+  --no-restore-current        Skip reinstalling current workspace at end
+```
+
+## Default State Layout
+
+The wrapper keeps its state root under:
+
+```text
+.agents/skills/helidon-archetype-regression/.state/
+```
+
+Each invocation creates one unique run directory under that root, for
+example:
+
+```text
+.agents/skills/helidon-archetype-regression/.state/20260325-123456-12345/
+```
+
+The important subdirectories inside each run directory are:
+
+- `logs/` for install, generation, compare, and timing logs
+- `worktrees/baseline/` for the detached baseline checkout
+- `snapshots/diff_variations/{baseline,actual}/`
+- `snapshots/diff_projects/{baseline,actual}/`
+
+The wrapper hard-caps the state root at 10 run directories. When a new run
+would exceed that cap, it prunes the oldest run directories first.
+
+The nested `.gitignore` should ignore `.state/`.
 
 ## Baseline Source
 
-Create a clean baseline source from `HEAD` without the local
-modifications that are under test.
+Use one dedicated detached worktree under:
 
-Preferred approach:
-
-```sh
-git worktree add --detach /tmp/helidon-build-tools-baseline HEAD
+```text
+.state/<run-id>/worktrees/baseline
 ```
 
-Acceptable fallback:
+That worktree exists only to install the clean baseline build-tools into
+`~/.m2`. Do not use the modified workspace as the baseline install source.
 
-```sh
-git clone /path/to/helidon-build-tools /tmp/helidon-build-tools-baseline
-```
+The wrapper should:
 
-The baseline source exists only to install the clean build-tools artifacts into
-`~/.m2`. Do not reuse the modified worktree for the baseline install.
+1. Resolve `--baseline-ref` to a commit.
+2. Create the baseline worktree inside the current run directory.
+3. Reuse that worktree within the same invocation when both diff modes run,
+   such as in `all`.
 
-## Install Build-Tools Into ~/.m2
+## Build-Tools Install Command
 
-Prefer the narrow install that rebuilds the archetype plugin and its
+Use the narrow install that rebuilds the archetype plugin and its
 dependencies, including `helidon-archetype-engine-v2`:
 
 ```sh
@@ -40,19 +99,39 @@ mvn -pl maven-plugins/helidon-archetype-maven-plugin \
     -DskipTests
 ```
 
-Run that command once from the baseline source before baseline generation, then
-run the same command again from the modified worktree before actual generation.
+Run that once from the baseline worktree before baseline generation and
+again from the current workspace before the actual generation.
 
-If that targeted installation ever stops being sufficient because the dependency
-graph changes, fall back to a wider repository install and keep the same
-baseline-then-modified order.
+## Mode: `compile_gate`
 
-## Compare Variation-Only Changes
+Use this mode to check compiler complexity.
 
-Use this path when the change affects variation computation but not
+The wrapper should:
+
+1. Install the current workspace into `~/.m2`.
+2. Run:
+
+```sh
+mvn -f archetypes/archetypes/pom.xml \
+    compile \
+    -e \
+    -Dhelidon.build.archetype.engine.v2.debugReduction=true
+```
+
+3. Capture the wall-clock time from `/usr/bin/time -p`.
+4. Fail when the measured time exceeds `--threshold-seconds`.
+5. Report the measured wall-clock time and threshold in the summary.
+
+## Mode: `diff_variations`
+
+Use this mode when the change affects variation computation but not
 generated project contents.
 
-Generate the baseline:
+The wrapper should:
+
+1. Prepare the baseline worktree at `--baseline-ref`.
+2. Install the baseline build-tools into `~/.m2`.
+3. Run:
 
 ```sh
 mvn -f archetypes/archetypes/pom.xml \
@@ -61,8 +140,11 @@ mvn -f archetypes/archetypes/pom.xml \
     -Darchetype.test.variationsOnly=true
 ```
 
-Save the baseline `projects.csv`, reinstall the modified build-tools into
-`~/.m2`, rerun the same command, and compare the two files with:
+4. Copy `target/tests/projects.csv` into the baseline snapshot directory.
+5. Install the current workspace into `~/.m2`.
+6. Re-run the same generation command.
+7. Copy `target/tests/projects.csv` into the actual snapshot directory.
+8. Compare the copied snapshots with:
 
 ```sh
 ./archetypes/archetypes/etc/projects-diff.sh \
@@ -71,15 +153,19 @@ Save the baseline `projects.csv`, reinstall the modified build-tools into
     diff_csv
 ```
 
-Use `variationsOnly` here because the CSV diff compares computed variations,
-not generated project directories.
+Do not diff against the live Helidon `target/` tree after another run has
+started.
 
-## Compare Runtime Or Normalization Changes
+## Mode: `diff_projects`
 
-Use this path when the change can affect generated files, including
-`ScriptCompiler` and normalization work.
+Use this mode when the change can affect generated files, including
+`ScriptCompiler`, engine-v2 runtime behavior, or normalization logic.
 
-Generate the baseline:
+The wrapper should:
+
+1. Prepare the baseline worktree at `--baseline-ref`.
+2. Install the baseline build-tools into `~/.m2`.
+3. Run:
 
 ```sh
 mvn -f archetypes/archetypes/pom.xml \
@@ -89,38 +175,29 @@ mvn -f archetypes/archetypes/pom.xml \
     -Darchetype.test.parallelGeneration=true
 ```
 
-Save `archetypes/archetypes/target/tests` outside the repo, reinstall the
-modified build-tools into `~/.m2`, rerun the same command, and compare with:
+4. Copy `target/tests/` into the baseline snapshot directory.
+5. Install the current workspace into `~/.m2`.
+6. Re-run the same generation command.
+7. Copy `target/tests/` into the actual snapshot directory.
+8. Compare the copied snapshots with `projects-diff.sh diff_csv` and
+   `projects-diff.sh diff_projects`.
+If the helper fails, treat that as a regression workflow failure and report
+the helper output from the compare log.
 
-```sh
-./archetypes/archetypes/etc/projects-diff.sh \
-    --orig=/path/to/baseline-tests \
-    --actual=/path/to/actual-tests \
-    diff_csv
-./archetypes/archetypes/etc/projects-diff.sh \
-    --orig=/path/to/baseline-tests \
-    --actual=/path/to/actual-tests \
-    diff_projects
-```
+## Mode: `all`
 
-The helper now defaults to the current generated project prefix, `test-project`.
-Only pass `--project-dir=...` when comparing a non-standard directory prefix.
-Use `generateOnly` here because the regression compares generated files in
-`target/tests`; invoking Maven inside each generated project does not change the
-diff input.
+`all` must run these checks in order and fail fast:
 
-## Snapshot Guidance
-
-- Copy `target/tests` or `projects.csv` to a stable directory before
-  the next generation run.
-- Do not diff directly against the live `target/tests` tree after
-  another generation has started.
+1. `compile_gate`
+2. `diff_variations`
+3. `diff_projects`
 
 ## Reporting
 
 Always report:
 
-- whether `projects.csv` changed
-- whether generated projects changed
-- any filtered noise that was ignored after inspection
-- that `~/.m2` was restored to the modified build-tools install at the end
+- the pass/fail status for each mode that ran
+- the measured wall-clock time and threshold for `compile_gate`
+- whether outputs changed for the diff modes
+- that `~/.m2` contains the current workspace install at the end, unless
+  `--no-restore-current` was used
