@@ -29,7 +29,7 @@
                   name="Input1-1"
                   default="o1"
                   global="true"
-                  if="${i1} == &apos;o1&apos;">
+                  if="${i1} != &apos;o2&apos;">
                 <option name="Option1" value="o1"/>
                 <option name="Option2" value="o2"/>
             </enum>
@@ -40,11 +40,11 @@
         <inputs>
             <boolean id="i1-1-1"
                      name="Input1-1-1"
-                     if="${i1} == &apos;o1&apos; &amp;&amp; ${i1-1} == &apos;o1&apos;"/>
+                     if="${i1} != &apos;o2&apos; &amp;&amp; ${i1-1} != &apos;o2&apos;"/>
             <boolean id="i1-1-2"
                      name="Input1-1-2"
-                     if="${i1} == &apos;o1&apos; &amp;&amp; ${i1-1} == &apos;o2&apos;"/>
-            <enum id="i1-2" name="Input1-2" default="i1-2" if="${i1} == &apos;o2&apos;">
+                     if="${i1} != &apos;o2&apos; &amp;&amp; ${i1-1} != &apos;o1&apos;"/>
+            <enum id="i1-2" name="Input1-2" default="i1-2" if="${i1} != &apos;o1&apos;">
                 <option name="Option1" value="o1">
                     <inputs>
                         <boolean id="i1-2-1" name="Input1-2-1"/>

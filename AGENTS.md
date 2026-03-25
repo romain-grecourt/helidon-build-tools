@@ -46,6 +46,11 @@ Prefer fenced code blocks for commands, and leave an empty line after
 headings such as `#` and `##`. When a shell command is split across
 lines, use trailing `\` continuations on argument lines.
 
+Keep XML copyright headers in place, including test fixtures under
+`src/test/resources`; some XML assertions normalize away comments, but
+the files on disk must still retain the header. If you add a new XML
+file, include the standard copyright header with the current year.
+
 ## Testing Guidelines
 
 JUnit 5 is the default test framework, with Hamcrest used heavily for

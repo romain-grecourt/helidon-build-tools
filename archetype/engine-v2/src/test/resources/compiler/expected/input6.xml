@@ -27,7 +27,7 @@
             </enum>
         </inputs>
     </step>
-    <step name="Step2" if="${i1} == &apos;o1&apos; || ${i1} == &apos;o2&apos;">
+    <step name="Step2" if="${i1} != &apos;o2&apos; || ${i1} != &apos;o1&apos;">
         <inputs>
             <enum id="i2" name="Input2" global="true">
                 <option name="Option1" value="o1"/>

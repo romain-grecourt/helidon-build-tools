@@ -24,21 +24,10 @@
             <enum id="i1" name="Input1" default="option1" global="true">
                 <option name="Option1" value="option1"/>
             </enum>
-            <enum id="i2"
-                  name="Input2"
-                  default="option2"
-                  global="true"
-                  if="${i1} == &apos;option1&apos;">
+            <enum id="i2" name="Input2" default="option2" global="true">
                 <option name="Option2" value="option2"/>
             </enum>
-        </inputs>
-        <variables>
-            <text path="~i2" if="${i1} != &apos;option1&apos;"><![CDATA[]]></text>
-        </variables>
-        <inputs>
-            <boolean id="i3"
-                     name="Input3"
-                     if="${i1} == &apos;option1&apos; &amp;&amp; ${i2} == &apos;option2&apos;">
+            <boolean id="i3" name="Input3">
                 <inputs>
                     <text id="i4" name="Input4"/>
                 </inputs>
