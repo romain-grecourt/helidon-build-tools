@@ -58,7 +58,7 @@ Generate the baseline:
 mvn -f archetypes/archetypes/pom.xml \
     clean \
     install \
-    -Darchetype.test.generateOnly=true
+    -Darchetype.test.variationsOnly=true
 ```
 
 Save the baseline `projects.csv`, reinstall the modified build-tools into
@@ -71,6 +71,9 @@ Save the baseline `projects.csv`, reinstall the modified build-tools into
     diff_csv
 ```
 
+Use `variationsOnly` here because the CSV diff compares computed variations,
+not generated project directories.
+
 ## Compare Runtime Or Normalization Changes
 
 Use this path when the change can affect generated files, including
@@ -82,7 +85,8 @@ Generate the baseline:
 mvn -f archetypes/archetypes/pom.xml \
     clean \
     install \
-    -Darchetype.test.testGoal=clean
+    -Darchetype.test.generateOnly=true \
+    -Darchetype.test.parallelGeneration=true
 ```
 
 Save `archetypes/archetypes/target/tests` outside the repo, reinstall the
@@ -101,6 +105,9 @@ modified build-tools into `~/.m2`, rerun the same command, and compare with:
 
 The helper now defaults to the current generated project prefix, `test-project`.
 Only pass `--project-dir=...` when comparing a non-standard directory prefix.
+Use `generateOnly` here because the regression compares generated files in
+`target/tests`; invoking Maven inside each generated project does not change the
+diff input.
 
 ## Snapshot Guidance
 

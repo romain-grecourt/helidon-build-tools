@@ -781,12 +781,13 @@ public final class FileUtils {
      * @param directory parent directory where to create the new directory
      * @param name      the name of the entry to create
      * @param suffix    the suffix to append after {@code -$i}
+     * @param exists    predicate used to determine if the path exists
      * @return Path
      */
-    public static Path unique(Path directory, String name, String suffix) {
+    public static Path unique(Path directory, String name, String suffix, Predicate<Path> exists) {
         Path path = directory.resolve(name + suffix);
         int i = 1;
-        while (Files.exists(path)) {
+        while (exists.test(path)) {
             path = directory.resolve(name + "-" + i + suffix);
             i++;
         }
@@ -799,10 +800,49 @@ public final class FileUtils {
      *
      * @param directory parent directory where to create the new directory
      * @param name      the name of the entry to create
+     * @param suffix    the suffix to append after {@code -$i}
+     * @return Path
+     */
+    public static Path unique(Path directory, String name, String suffix) {
+        return unique(directory, name, suffix, Files::exists);
+    }
+
+    /**
+     * Create a {@link Path} path under the given parent directory that does not already exist.
+     * Appends {@code -$i} to the given name until a non-existing entry is found.
+     *
+     * @param directory parent directory where to create the new directory
+     * @param name      the name of the entry to create
      * @return Path
      */
     public static Path unique(Path directory, String name) {
         return unique(directory, name, "");
+    }
+
+    /**
+     * Create a {@link Path} path under the given parent directory that does not already exist.
+     * Appends {@code -$i} to the given name until a non-existing entry is found.
+     *
+     * @param directory parent directory where to create the new directory
+     * @param name      the name of the entry to create
+     * @param exists    predicate used to determine whether a path is already reserved
+     * @return Path
+     */
+    public static Path unique(Path directory, String name, Predicate<Path> exists) {
+        return unique(directory, name, "", exists);
+    }
+
+    /**
+     * Create a unique {@link Path} for the given path within its parent directory.
+     *
+     * @param path the path whose parent directory and file name are used
+     * @return Path
+     */
+    public static Path unique(Path path) {
+        requireNonNull(path);
+        return unique(
+                requireNonNull(path.getParent(), "parent is null"),
+                requireNonNull(path.getFileName(), "fileName is null").toString());
     }
 
     /**

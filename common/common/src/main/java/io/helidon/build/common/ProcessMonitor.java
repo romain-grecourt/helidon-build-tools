@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,9 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -56,6 +56,8 @@ public final class ProcessMonitor {
     private final AtomicBoolean shutdown;
     private final Runnable beforeShutdown;
     private final Runnable afterShutdown;
+    private volatile CompletableFuture<Process> onExitFuture;
+    private volatile Throwable exitError;
     private volatile Process process;
 
     /**
@@ -323,6 +325,13 @@ public final class ProcessMonitor {
         Log.debug("Executing command: %s", String.join(" ", builder.command()));
         process = builder.start();
         recorder.start(process.getInputStream(), process.getErrorStream());
+        onExitFuture = process.onExit();
+        onExitFuture.whenComplete((p, th) -> {
+            if (th != null) {
+                exitError = th;
+            }
+            LockSupport.unpark(MONITOR_THREAD);
+        });
         Log.debug("Process ID: %d", process.pid());
         MONITOR_THREAD.register(this);
         return this;
@@ -376,23 +385,23 @@ public final class ProcessMonitor {
         if (process == null) {
             throw new IllegalStateException("not started");
         }
-        if (process.isAlive()) {
+        if (!exitFuture.isDone()) {
             Log.debug("Waiting for completion, pid=%d, timeout=%d, unit=%s", process.pid(), timeout, unit);
+        }
+        try {
+            exitFuture.get(timeout, unit);
             try {
-                exitFuture.get(timeout, unit);
-                try {
-                    // ignore exit code if this is a shutdown
-                    if (process.exitValue() != 0 && !shutdown.get()) {
-                        throw new ProcessFailedException();
-                    }
-                } catch (IllegalThreadStateException ex) {
+                // ignore exit code if this is a shutdown
+                if (process.exitValue() != 0 && !shutdown.get()) {
                     throw new ProcessFailedException();
                 }
-            } catch (ExecutionException ex) {
-                throw new IllegalStateException(ex);
-            } catch (TimeoutException e) {
-                throw new ProcessTimeoutException();
+            } catch (IllegalThreadStateException ex) {
+                throw new ProcessFailedException();
             }
+        } catch (ExecutionException ex) {
+            throw new IllegalStateException(ex);
+        } catch (TimeoutException e) {
+            throw new ProcessTimeoutException();
         }
         return this;
     }
@@ -451,7 +460,6 @@ public final class ProcessMonitor {
 
         private final List<ProcessMonitor> processes = new ArrayList<>();
         private int backoff = 0;
-        private Iterator<ProcessMonitor> iterator;
 
         private MonitorThread() {
             start();
@@ -478,54 +486,63 @@ public final class ProcessMonitor {
         public void run() {
             //noinspection InfiniteLoopStatement
             while (true) {
-                if (processes.isEmpty()) {
-                    // wait for processes
-                    LockSupport.park();
-                }
-
-                iterator = processes.iterator();
-                boolean ticked = true;
-                while (iterator.hasNext()) {
-                    if (!tick(iterator.next())) {
-                        ticked = false;
+                try {
+                    List<ProcessMonitor> snapshot = snapshot();
+                    if (snapshot.isEmpty()) {
+                        // wait for processes
+                        LockSupport.park();
+                        continue;
                     }
-                }
 
-                if (!processes.isEmpty()) {
-                    // sleep to avoid consuming cpu
-                    backoff = ticked ? 0 : backoff < 5 ? backoff + 1 : backoff;
-                    try {
-                        //noinspection BusyWait
-                        Thread.sleep((50L / processes.size()) * backoff);
-                    } catch (InterruptedException e) {
-                        // ignore
+                    boolean ticked = true;
+                    for (ProcessMonitor process : snapshot) {
+                        if (!tick(process)) {
+                            ticked = false;
+                        }
                     }
+
+                    int size = size();
+                    if (size != 0) {
+                        // sleep to avoid consuming cpu
+                        backoff = ticked ? 0 : backoff < 5 ? backoff + 1 : backoff;
+                        try {
+                            //noinspection BusyWait
+                            Thread.sleep((50L / size) * backoff);
+                        } catch (InterruptedException e) {
+                            // ignore
+                        }
+                    }
+                } catch (Throwable ex) {
+                    Log.error(ex, "Unhandled monitor thread error");
                 }
             }
         }
 
-        private void shutdown() {
+        void shutdown() {
             // use a copy since the monitor thread will react to the stop operation
             // and remove processes from the list
-            CompletableFuture<Void> exitFuture = CompletableFuture.allOf(
-                    new ArrayList<>(processes)
-                            .stream()
-                            .map(p -> {
-                                p.recorder.stop();
-                                p.beforeShutdown.run();
-                                p.shutdown.set(true);
-                                p.process.destroy();
-                                return p.exitFuture.thenRun(p.afterShutdown);
-                            })
-                            .toArray(CompletableFuture[]::new));
-            try {
-                exitFuture.get();
-            } catch (InterruptedException | ExecutionException e) {
-                // ignored
+            List<ProcessMonitor> snapshot = snapshot();
+
+            // stop all tracked processes before waiting on any of them
+            for (ProcessMonitor process : snapshot) {
+                process.recorder.stop();
+                process.beforeShutdown.run();
+                process.shutdown.set(true);
+                process.process.destroy();
+            }
+
+            // then wait for each process to finish its shutdown
+            for (ProcessMonitor process : snapshot) {
+                try {
+                    process.exitFuture.get();
+                    process.afterShutdown.run();
+                } catch (InterruptedException | ExecutionException e) {
+                    // ignored
+                }
             }
         }
 
-        private boolean tick(ProcessMonitor process) {
+        boolean tick(ProcessMonitor process) {
             try {
                 return process.recorder.tick();
             } catch (Throwable ex) {
@@ -533,10 +550,59 @@ public final class ProcessMonitor {
                 return false;
             } finally {
                 if (!process.isAlive()) {
-                    process.recorder.drain();
-                    process.exitFuture.complete(null);
-                    iterator.remove();
+                    complete(process);
                 }
+            }
+        }
+
+        private void complete(ProcessMonitor process) {
+            Throwable completionError = completionError(process);
+            try {
+                process.recorder.drain();
+            } catch (Throwable ex) {
+                Log.error(ex, "Failed to drain process output, pid=%d", process.process.pid());
+                if (completionError == null) {
+                    completionError = ex;
+                } else {
+                    completionError.addSuppressed(ex);
+                }
+            } finally {
+                synchronized (processes) {
+                    processes.remove(process);
+                }
+            }
+            if (completionError == null) {
+                process.exitFuture.complete(null);
+            } else {
+                process.exitFuture.completeExceptionally(completionError);
+            }
+        }
+
+        private Throwable completionError(ProcessMonitor process) {
+            Throwable completionError = process.exitError;
+            CompletableFuture<Process> onExitFuture = process.onExitFuture;
+            if (completionError == null && onExitFuture != null && onExitFuture.isCompletedExceptionally()) {
+                try {
+                    onExitFuture.getNow(process.process);
+                } catch (CompletionException ex) {
+                    completionError = ex.getCause() != null ? ex.getCause() : ex;
+                }
+            }
+            return completionError;
+        }
+
+        List<ProcessMonitor> snapshot() {
+            synchronized (processes) {
+                if (processes.isEmpty()) {
+                    return List.of();
+                }
+                return new ArrayList<>(processes);
+            }
+        }
+
+        int size() {
+            synchronized (processes) {
+                return processes.size();
             }
         }
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -124,6 +124,32 @@ class ProjectsTestIT {
         assertProjectShape(projectDir, "square");
     }
 
+    @ParameterizedTest
+    @ConfigurationParameterSource("basedir")
+    void test8(String basedir) throws IOException {
+        Path variationsOnlyDir = Path.of(basedir, "target", "tests-variations-only");
+        assertThat(Files.exists(variationsOnlyDir), is(true));
+        assertProjectCount(variationsOnlyDir, 0);
+        assertThat(Files.exists(variationsOnlyDir.resolve("projects.md")), is(true));
+        assertThat(Files.exists(variationsOnlyDir.resolve("projects.csv")), is(true));
+
+        Path generateOnlyDir = Path.of(basedir, "target", "tests-generate-only");
+        assertThat(Files.exists(generateOnlyDir), is(true));
+        assertProjectCount(generateOnlyDir, 3);
+        assertProjectShape(generateOnlyDir, "circle");
+        assertProjectShape(generateOnlyDir, "triangle");
+        assertProjectShape(generateOnlyDir, "square");
+        assertNoBuildLog(generateOnlyDir);
+
+        Path parallelGenerationDir = Path.of(basedir, "target", "tests-parallel-generation");
+        assertThat(Files.exists(parallelGenerationDir), is(true));
+        assertProjectCount(parallelGenerationDir, 3);
+        assertProjectShape(parallelGenerationDir, "circle");
+        assertProjectShape(parallelGenerationDir, "triangle");
+        assertProjectShape(parallelGenerationDir, "square");
+        assertNoBuildLog(parallelGenerationDir);
+    }
+
     private static Path projectsDir(String baseDir) {
         return projectsDir(baseDir, null);
     }
@@ -185,6 +211,12 @@ class ProjectsTestIT {
         assertContains(shapeSourceFile, List.of(
                 "System.out.println(\"" + shape + "\");"
         ));
+    }
+
+    private static void assertNoBuildLog(Path projectsDir) throws IOException {
+        for (Path path : testProjects(projectsDir)) {
+            assertThat(Files.exists(path.resolve("build.log")), is(false));
+        }
     }
 
     private static void assertContains(Path file, List<String> expected) throws IOException {
