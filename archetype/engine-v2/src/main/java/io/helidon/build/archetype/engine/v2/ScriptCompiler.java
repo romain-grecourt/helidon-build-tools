@@ -194,6 +194,9 @@ public class ScriptCompiler {
     private final Map<String, Set<Node>> declaredValues = new HashMap<>();
     private final Map<Node, Expression> expressions = new HashMap<>();
     private final Map<Node, Map<String, Expression>> refs = new HashMap<>();
+    private final Map<Node, Reachability> reachabilityByNode = new HashMap<>();
+    private final Map<Node, Map<String, Reachability>> refReachabilityByNode = new HashMap<>();
+    private final Map<String, InputDomain> domains = new LinkedHashMap<>();
     private final Map<String, Type> refTypes = new HashMap<>();
     private final Map<Node, Path> workDirs = new HashMap<>();
     private final Set<String> errors = new LinkedHashSet<>();
@@ -368,23 +371,38 @@ public class ScriptCompiler {
 
             boolean resolved = true;
             Scope scope = scope(node);
-            Expression blockExpr = expression(node.parent());
-            Map<String, Expression> refMap = refs.getOrDefault(node, Map.of());
+            Reachability blockReachability = reachability(node.parent());
+            Map<String, Reachability> refReachabilityMap = refReachabilityByNode.getOrDefault(node, Map.of());
+            Expression blockExpr = null;
+            Map<String, Expression> refMap = null;
             for (String variable : expr.variables()) {
 
                 // normalized variable
                 String ref = scope.key(variable);
 
-                // expression that represents where the reference is defined
-                Expression refExpr0 = refMap.getOrDefault(ref, Expression.FALSE);
+                boolean variableResolved = false;
+                Reachability refReachability = refReachabilityMap.get(ref);
+                if (blockReachability != null && refReachability != null) {
+                    variableResolved = refReachability.contains(blockReachability);
+                }
+                if (!variableResolved) {
+                    if (blockExpr == null) {
+                        blockExpr = expression(node.parent());
+                        refMap = refs.getOrDefault(node, Map.of());
+                    }
 
-                // "relativize" the expression within the block
-                Expression refExpr1 = blockExpr.relativize(refExpr0);
+                    // expression that represents where the reference is defined
+                    Expression refExpr0 = refMap.getOrDefault(ref, Expression.FALSE);
 
-                // inline values
-                Expression refExpr2 = inline(node, refExpr1);
+                    // "relativize" the expression within the block
+                    Expression refExpr1 = blockExpr.relativize(refExpr0);
 
-                if (refExpr2 != Expression.TRUE) {
+                    // inline values
+                    Expression refExpr2 = inline(node, refExpr1);
+                    variableResolved = refExpr2 == Expression.TRUE;
+                }
+
+                if (!variableResolved) {
                     resolved = false;
                     errors.add(String.format("%s %s: '%s'",
                             node.location(),
@@ -602,6 +620,110 @@ public class ScriptCompiler {
         }).reduce();
     }
 
+    private void registerDomain(Node node, String key) {
+        switch (node.kind()) {
+            case INPUT_BOOLEAN:
+                domains.putIfAbsent(key, InputDomain.booleanDomain());
+                break;
+            case INPUT_ENUM:
+                domains.put(key, InputDomain.scalar(optionValues(node)));
+                break;
+            case INPUT_LIST:
+                domains.put(key, InputDomain.list(optionValues(node)));
+                break;
+            default:
+                registerImplicitDomain(key, node.kind().valueType());
+        }
+    }
+
+    private void registerImplicitDomain(String key, Type type) {
+        if (domains.containsKey(key)) {
+            return;
+        }
+        if (type == Type.BOOLEAN) {
+            domains.put(key, InputDomain.booleanDomain());
+        }
+    }
+
+    private Set<String> optionValues(Node node) {
+        Set<String> values = new TreeSet<>();
+        for (Node option : node.traverse(Kind.INPUT_OPTION::equals)) {
+            if (option.ancestor(Kind::isInput).orElse(null) == node) {
+                values.add(option.value().getString());
+            }
+        }
+        return values;
+    }
+
+    private Reachability trueReachability() {
+        return Reachability.trueValue(domains);
+    }
+
+    private Reachability falseReachability() {
+        return Reachability.falseValue(domains);
+    }
+
+    private Reachability reachability(Node node) {
+        return node == null ? trueReachability() : reachabilityByNode.get(node);
+    }
+
+    private Expression reachabilityExpression(Reachability reachability, Scope scope) {
+        return reachability.toExpression(scope).reduce();
+    }
+
+    private Expression residualExpression(Reachability reachability, Reachability base, Scope scope) {
+        return reachability.toExpression(scope).reduce(base.toExpression(scope));
+    }
+
+    private Expression compiledExpression(Node node, Scope scope) {
+        Reachability reachability = reachability(node);
+        return reachability != null ? reachabilityExpression(reachability, scope) : normalize(expression(node), scope);
+    }
+
+    private Reachability translate(Expression expr,
+                                   Scope scope,
+                                   Map<String, ConstantBindings> bindings,
+                                   Map<String, Reachability> definitions) {
+        return new ReachabilityTranslator(scope, bindings, definitions).translate(expr);
+    }
+
+    private Value<?> constantValue(Node node) {
+        try {
+            Value<?> value = Value.typed(node.value(), node.kind().valueType());
+            if (value.type() == Type.STRING && value.getString().matches("^\\$\\{~?[\\w.-]+}$")) {
+                return null;
+            }
+            return value;
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private String scalarLiteral(Value<?> value) {
+        switch (value.type()) {
+            case STRING:
+            case DYNAMIC:
+                return value.getString();
+            case BOOLEAN:
+                return String.valueOf(value.getBoolean());
+            default:
+                return null;
+        }
+    }
+
+    private Reachability optionReachability(Node node) {
+        Node input = node.ancestor(Kind::isInput).orElseThrow();
+        String key = scopeId(input);
+        switch (input.kind()) {
+            case INPUT_ENUM:
+                return Reachability.scalar(key, Set.of(node.value().getString()), domains);
+            case INPUT_LIST:
+                return Reachability.listContains(key, Set.of(node.value().getString()), domains);
+            default:
+                return null;
+        }
+    }
+
     Expression expression(Node node) {
         return expressions.computeIfAbsent(node, k -> expression(k, this::scopeId));
     }
@@ -730,6 +852,10 @@ public class ScriptCompiler {
     private final class RefsInvoker extends ScriptInvoker {
 
         private final Map<String, Expression> currentRefs = new HashMap<>();
+        private final Map<String, Reachability> currentReachabilityByRef = new HashMap<>();
+        private final Map<String, ConstantBindings> currentBindings = new HashMap<>();
+        private final Deque<ReachabilityState> reachabilityStack = new ArrayDeque<>(
+                List.of(ReachabilityState.of(trueReachability())));
         private final Set<Node> modifiedSteps = new HashSet<>();
         private int nextId = 0;
 
@@ -741,12 +867,15 @@ public class ScriptCompiler {
         public boolean visit(Node node) {
             node.id(nextId++);
             Scope scope = ctx.scope();
+            ReachabilityState currentState = reachabilityStack.peek();
+            ReachabilityState nodeState = currentState;
             switch (node.kind()) {
                 case SOURCE:
                 case EXEC:
                     scopes.put(node, scope.key());
                     if (node.attribute("url").isPresent()) {
                         // skip url invocation
+                        reachabilityStack.push(nodeState);
                         return false;
                     }
                     break;
@@ -756,11 +885,26 @@ public class ScriptCompiler {
                     if (expr != Expression.FALSE) {
                         node.expression(expr);
                         refs.put(node, Map.copyOf(currentRefs));
+                        refReachabilityByNode.put(node, Map.copyOf(currentReachabilityByRef));
+                        Reachability conditionReachability = translate(expr, scope, currentBindings, currentReachabilityByRef);
+                        nodeState = currentState.and(conditionReachability);
+                        if (nodeState.isFalse()) {
+                            node.expression(Expression.FALSE);
+                            reachabilityByNode.put(node, nodeState.reachability());
+                            reachabilityStack.push(nodeState);
+                            return false;
+                        }
+                        if (nodeState.supported()) {
+                            reachabilityByNode.put(node, nodeState.reachability());
+                        }
+                        reachabilityStack.push(nodeState);
                         return true;
                     }
                     // condition is always false
                     // skip traversal and prune (postVisit)
                     node.expression(Expression.FALSE);
+                    reachabilityByNode.put(node, falseReachability());
+                    reachabilityStack.push(ReachabilityState.of(falseReachability()));
                     return false;
                 case INPUT_TEXT:
                 case INPUT_BOOLEAN:
@@ -769,13 +913,33 @@ public class ScriptCompiler {
                     scope = ctx.pushScope(s -> s.getOrCreate(node));
                     scopes.put(node, scope.key());
                     refTypes.putIfAbsent(scope.key(), node.kind().valueType());
+                    registerDomain(node, scope.key());
                     currentRefs.compute(scope.key(), (k, v) -> expression(node.parent()).or(v).reduce());
+                    if (currentState.supported()) {
+                        Reachability parentReachability = currentState.reachability();
+                        currentReachabilityByRef.compute(scope.key(),
+                                (k, v) -> v == null ? parentReachability : v.or(parentReachability));
+                    }
+                    switch (node.kind()) {
+                        case INPUT_BOOLEAN:
+                            nodeState = currentState.and(Reachability.scalar(scope.key(), Set.of("true"), domains));
+                            break;
+                        case INPUT_TEXT:
+                            nodeState = ReachabilityState.unsupported();
+                            break;
+                        default:
+                    }
                     if (inline(node, expression(node)) == Expression.FALSE) {
+                        if (nodeState.supported()) {
+                            reachabilityByNode.put(node, nodeState.reachability());
+                        }
+                        reachabilityStack.push(nodeState);
                         return false;
                     }
                     break;
                 case INPUT_OPTION:
                     scopes.put(node, scope.key());
+                    nodeState = currentState.and(optionReachability(node));
                     break;
                 case VARIABLE_TEXT:
                 case VARIABLE_ENUM:
@@ -789,10 +953,30 @@ public class ScriptCompiler {
                     scopes.put(node, scope.key());
                     declaredValues.computeIfAbsent(scope.key(), k -> new LinkedHashSet<>()).add(node);
                     refTypes.putIfAbsent(scope.key(), node.kind().valueType());
+                    registerImplicitDomain(scope.key(), node.kind().valueType());
                     currentRefs.compute(scope.key(), (k, v) -> expression(node.parent()).or(v).reduce());
+                    if (currentState.supported()) {
+                        Reachability parentReachability = currentState.reachability();
+                        currentReachabilityByRef.compute(scope.key(),
+                                (k, v) -> v == null ? parentReachability : v.or(parentReachability));
+                        Value<?> value = constantValue(node);
+                        if (value != null) {
+                            currentBindings.computeIfAbsent(scope.key(),
+                                    k -> new ConstantBindings(node.kind().valueType()))
+                                    .add(value, parentReachability);
+                        }
+                    }
+                    if (nodeState.supported()) {
+                        reachabilityByNode.put(node, nodeState.reachability());
+                    }
+                    reachabilityStack.push(nodeState);
                     return true;
                 default:
             }
+            if (nodeState.supported()) {
+                reachabilityByNode.put(node, nodeState.reachability());
+            }
+            reachabilityStack.push(nodeState);
             return super.visit(node);
         }
 
@@ -848,6 +1032,7 @@ public class ScriptCompiler {
                     break;
                 default:
             }
+            reachabilityStack.pop();
             super.postVisit(node);
         }
 
@@ -1006,7 +1191,14 @@ public class ScriptCompiler {
             Scope scope = scope(block);
 
             // "relativize" the expression within the block
-            Expression expr = normalize(expression(block).relativize(expression(node.parent())), scope);
+            Reachability blockReachability = reachability(block);
+            Reachability nodeReachability = reachability(node.parent());
+            Expression expr;
+            if (blockReachability != null && nodeReachability != null) {
+                expr = residualExpression(nodeReachability, blockReachability, scope);
+            } else {
+                expr = normalize(expression(block).relativize(expression(node.parent())), scope);
+            }
 
             // create copy
             Node copy = node.copy();
@@ -1050,7 +1242,7 @@ public class ScriptCompiler {
                     fileOps.computeIfAbsent(node.attribute("id").getString(), k -> new HashMap<>())
                             .compute(ops, (k, v) -> {
                                 Expression expr = v != null ? v : Expression.FALSE;
-                                return expr.or(normalize(expression(node), scope(node)));
+                                return expr.or(compiledExpression(node, scope(node)));
                             });
                     break;
                 case FILE:
@@ -1110,7 +1302,7 @@ public class ScriptCompiler {
             String checksum = checksum(path);
             image.blobs.putIfAbsent(checksum, readAllBytes(path));
             List<FileOp> fileOps = List.of(new FileOp(Pattern.quote(checksum), target));
-            return new FileObject(checksum, fileOps, normalize(expression(node), scope(node)));
+            return new FileObject(checksum, fileOps, compiledExpression(node, scope(node)));
         }
 
         Set<FileObject> resolveFiles(Node node) {
@@ -1153,7 +1345,7 @@ public class ScriptCompiler {
                     filterExpr = filterExpr.and(v.negate());
                 }
 
-                Expression blobExpr = normalize(expression(node), scope).and(filterExpr).reduce();
+                Expression blobExpr = compiledExpression(node, scope).and(filterExpr).reduce();
                 if (includes.isEmpty() || blobExpr != Expression.FALSE) {
                     String source = file.asString(false);
                     Path path = directory.resolve(source);
@@ -1259,7 +1451,7 @@ public class ScriptCompiler {
                         throw new IllegalStateException("Unresolved cwd");
                     }
                     Scope scope = scope(node);
-                    Expression expr = normalize(expression(node), scope).reduce();
+                    Expression expr = compiledExpression(node, scope);
                     if (expr != Expression.FALSE) {
                         Node copy = node.deepCopy();
                         for (Node n : copy.traverse(Kind.MODEL_VALUE::equals)) {
@@ -1307,6 +1499,8 @@ public class ScriptCompiler {
     private class StubsVisitor implements Node.Visitor {
         private final Map<String, Expression> currentRefs = new HashMap<>();
         private final Map<Node, Map<String, Expression>> refs = new LinkedHashMap<>();
+        private final Map<String, Reachability> currentReachabilityByRef = new HashMap<>();
+        private final Map<Node, Map<String, Reachability>> reachabilityRefs = new LinkedHashMap<>();
         private final Map<Node, Node> mirrors;
 
         StubsVisitor(Map<Node, Node> mirrors) {
@@ -1334,9 +1528,15 @@ public class ScriptCompiler {
                     Expression expr0 = expression(node.parent(), n -> scopeId(mirror(n)));
                     Expression expr = expr0.inline(s -> declaredValue(mirror, scope.get(s).key()));
                     currentRefs.compute(scopeId(mirror), (k, v) -> expr.or(v).reduce());
+                    Reachability reachability = translate(expr, scope, Map.of(), currentReachabilityByRef);
+                    if (reachability != null) {
+                        currentReachabilityByRef.compute(scopeId(mirror),
+                                (k, v) -> v == null ? reachability : v.or(reachability));
+                    }
                     break;
                 case CONDITION:
                     refs.put(node, Map.copyOf(currentRefs));
+                    reachabilityRefs.put(node, Map.copyOf(currentReachabilityByRef));
                     break;
                 default:
             }
@@ -1347,7 +1547,7 @@ public class ScriptCompiler {
         public void postVisit(Node node) {
             if (node.kind() == Kind.SCRIPT) {
                 refs.forEach((n, snapshot) -> {
-                    List<Node> stubs = resolveStubs(n, snapshot);
+                    List<Node> stubs = resolveStubs(n, snapshot, reachabilityRefs.getOrDefault(n, Map.of()));
                     if (!stubs.isEmpty()) {
                         addVariables(n, stubs);
                     }
@@ -1413,7 +1613,7 @@ public class ScriptCompiler {
             }
         }
 
-        List<Node> resolveStubs(Node node, Map<String, Expression> snapshot) {
+        List<Node> resolveStubs(Node node, Map<String, Expression> snapshot, Map<String, Reachability> reachabilitySnapshot) {
             Set<String> variables = node.expression().variables();
             if (variables.isEmpty()) {
                 return List.of();
@@ -1423,10 +1623,22 @@ public class ScriptCompiler {
             Node block = node.ancestor(Kind::isBlock).orElseThrow();
             Scope scope = ctx.scope().get("~" + scopes.getOrDefault(mirror(block), ""));
             Expression blockExpr = expression(block, n -> scopeId(mirror(n)));
+            Reachability blockReachability = translate(blockExpr, scope, Map.of(), reachabilitySnapshot);
             for (String ref : variables) {
 
                 // normalize the ref
                 String key = scope.key(ref);
+
+                Reachability refReachability = reachabilitySnapshot.get(key);
+                if (blockReachability != null && refReachability != null) {
+                    Reachability missing = blockReachability.subtract(refReachability);
+                    if (missing.isFalse()) {
+                        continue;
+                    }
+                    Type type = refTypes.getOrDefault(key, Type.EMPTY);
+                    nodes.add(Nodes.variable(type, "~" + key).wrap(residualExpression(missing, blockReachability, scope)));
+                    continue;
+                }
 
                 // expressions that represent all cases where the reference is defined
                 Expression refExpr = snapshot.getOrDefault(key, Expression.FALSE);
@@ -1490,6 +1702,956 @@ public class ScriptCompiler {
                     }
                 }
             }
+        }
+    }
+
+    private static final class ReachabilityState {
+        private static final ReachabilityState UNSUPPORTED = new ReachabilityState(null);
+
+        private final Reachability reachability;
+
+        private ReachabilityState(Reachability reachability) {
+            this.reachability = reachability;
+        }
+
+        static ReachabilityState of(Reachability reachability) {
+            return reachability == null ? UNSUPPORTED : new ReachabilityState(reachability);
+        }
+
+        static ReachabilityState unsupported() {
+            return UNSUPPORTED;
+        }
+
+        boolean supported() {
+            return reachability != null;
+        }
+
+        boolean isFalse() {
+            return supported() && reachability.isFalse();
+        }
+
+        Reachability reachability() {
+            return reachability;
+        }
+
+        ReachabilityState and(Reachability other) {
+            if (!supported() || other == null) {
+                return unsupported();
+            }
+            return of(reachability.and(other));
+        }
+    }
+
+    private static final class InputDomain {
+        enum Kind {
+            SCALAR,
+            LIST
+        }
+
+        private final Kind kind;
+        private final Set<String> scalarValues;
+        private final Set<String> listItems;
+
+        private InputDomain(Kind kind, Set<String> scalarValues, Set<String> listItems) {
+            this.kind = kind;
+            this.scalarValues = Set.copyOf(new TreeSet<>(scalarValues));
+            this.listItems = Set.copyOf(new TreeSet<>(listItems));
+        }
+
+        static InputDomain booleanDomain() {
+            return scalar(Set.of("false", "true"));
+        }
+
+        static InputDomain scalar(Set<String> values) {
+            return new InputDomain(Kind.SCALAR, values, Set.of());
+        }
+
+        static InputDomain list(Set<String> values) {
+            return new InputDomain(Kind.LIST, Set.of(), values);
+        }
+
+        boolean isBoolean() {
+            return kind == Kind.SCALAR && scalarValues.equals(Set.of("false", "true"));
+        }
+    }
+
+    private final class ConstantBindings {
+        private final Type type;
+        private final List<ConstantCase> cases = new ArrayList<>();
+        private Reachability defined = falseReachability();
+
+        private ConstantBindings(Type type) {
+            this.type = type;
+        }
+
+        Reachability defined() {
+            return defined;
+        }
+
+        void add(Value<?> value, Reachability reachability) {
+            if (reachability == null || reachability.isFalse()) {
+                return;
+            }
+            ListIterator<ConstantCase> it = cases.listIterator();
+            while (it.hasNext()) {
+                ConstantCase next = it.next();
+                Reachability remaining = next.reachability.subtract(reachability);
+                if (remaining.isFalse()) {
+                    it.remove();
+                } else {
+                    next.reachability = remaining;
+                }
+            }
+            for (ConstantCase constantCase : cases) {
+                if (Value.isEqual(constantCase.value, value)) {
+                    constantCase.reachability = constantCase.reachability.or(reachability);
+                    defined = defined.or(reachability);
+                    return;
+                }
+            }
+            cases.add(new ConstantCase(value, reachability));
+            defined = defined.or(reachability);
+        }
+
+        Reachability match(Value<?> value) {
+            Reachability reachability = falseReachability();
+            for (ConstantCase constantCase : cases) {
+                if (Value.isEqual(constantCase.value, value)) {
+                    reachability = reachability.or(constantCase.reachability);
+                }
+            }
+            return reachability;
+        }
+
+        Reachability scalarAny(Set<String> values) {
+            Reachability reachability = falseReachability();
+            for (ConstantCase constantCase : cases) {
+                String value = scalarLiteral(constantCase.value);
+                if (value != null && values.contains(value)) {
+                    reachability = reachability.or(constantCase.reachability);
+                }
+            }
+            return reachability;
+        }
+
+        Reachability listContains(Set<String> required) {
+            Reachability reachability = falseReachability();
+            if (type != Type.LIST) {
+                return reachability;
+            }
+            for (ConstantCase constantCase : cases) {
+                if (constantCase.value.type() == Type.LIST) {
+                    Set<String> values = new HashSet<>(constantCase.value.getList());
+                    if (values.containsAll(required)) {
+                        reachability = reachability.or(constantCase.reachability);
+                    }
+                }
+            }
+            return reachability;
+        }
+    }
+
+    private static final class ConstantCase {
+        private final Value<?> value;
+        private Reachability reachability;
+
+        private ConstantCase(Value<?> value, Reachability reachability) {
+            this.value = value;
+            this.reachability = reachability;
+        }
+    }
+
+    private final class ReachabilityTranslator {
+        private final Scope scope;
+        private final Map<String, ConstantBindings> bindings;
+        private final Map<String, Reachability> definitions;
+
+        private ReachabilityTranslator(Scope scope,
+                                      Map<String, ConstantBindings> bindings,
+                                      Map<String, Reachability> definitions) {
+            this.scope = scope;
+            this.bindings = bindings;
+            this.definitions = definitions;
+        }
+
+        Reachability translate(Expression expr) {
+            Deque<TranslationTerm> stack = new ArrayDeque<>();
+            try {
+                for (Token token : expr.tokens()) {
+                    if (token.isOperand()) {
+                        stack.push(new TranslationTerm.Value(token.operand()));
+                        continue;
+                    }
+                    if (token.isVariable()) {
+                        stack.push(new TranslationTerm.Ref(scope.key(token.variable())));
+                        continue;
+                    }
+                    switch (token.operator()) {
+                        case NOT:
+                            Reachability negated = booleanReachability(stack.pop());
+                            if (negated == null) {
+                                return null;
+                            }
+                            stack.push(new TranslationTerm.Boolean(trueReachability().subtract(negated)));
+                            break;
+                        case AND:
+                        case OR:
+                            Reachability right = booleanReachability(stack.pop());
+                            Reachability left = booleanReachability(stack.pop());
+                            if (left == null || right == null) {
+                                return null;
+                            }
+                            stack.push(new TranslationTerm.Boolean(token.operator() == Expression.Operator.AND
+                                    ? left.and(right)
+                                    : left.or(right)));
+                            break;
+                        case EQUAL:
+                        case NOT_EQUAL:
+                            Reachability equality = equality(stack.pop(), stack.pop());
+                            if (equality == null) {
+                                return null;
+                            }
+                            stack.push(new TranslationTerm.Boolean(token.operator() == Expression.Operator.NOT_EQUAL
+                                    ? trueReachability().subtract(equality)
+                                    : equality));
+                            break;
+                        case CONTAINS:
+                            Reachability contains = contains(stack.pop(), stack.pop());
+                            if (contains == null) {
+                                return null;
+                            }
+                            stack.push(new TranslationTerm.Boolean(contains));
+                            break;
+                        default:
+                            return null;
+                    }
+                }
+                if (stack.size() != 1) {
+                    return null;
+                }
+                return booleanReachability(stack.pop());
+            } catch (RuntimeException ex) {
+                return null;
+            }
+        }
+
+        private Reachability booleanReachability(TranslationTerm term) {
+            if (term instanceof TranslationTerm.Boolean) {
+                return ((TranslationTerm.Boolean) term).reachability;
+            }
+            if (term instanceof TranslationTerm.Value) {
+                Value<?> value = ((TranslationTerm.Value) term).value;
+                if (value.type() == Type.BOOLEAN) {
+                    return value.getBoolean() ? trueReachability() : falseReachability();
+                }
+                return null;
+            }
+            if (term instanceof TranslationTerm.Ref) {
+                return equality(((TranslationTerm.Ref) term).key, Value.TRUE);
+            }
+            return null;
+        }
+
+        private Reachability equality(TranslationTerm right, TranslationTerm left) {
+            if (left instanceof TranslationTerm.Value && right instanceof TranslationTerm.Value) {
+                return Value.isEqual(((TranslationTerm.Value) left).value, ((TranslationTerm.Value) right).value)
+                        ? trueReachability()
+                        : falseReachability();
+            }
+            if (left instanceof TranslationTerm.Ref && right instanceof TranslationTerm.Value) {
+                return equality(((TranslationTerm.Ref) left).key, ((TranslationTerm.Value) right).value);
+            }
+            if (left instanceof TranslationTerm.Value && right instanceof TranslationTerm.Ref) {
+                return equality(((TranslationTerm.Ref) right).key, ((TranslationTerm.Value) left).value);
+            }
+            return null;
+        }
+
+        private Reachability contains(TranslationTerm right, TranslationTerm left) {
+            if (left instanceof TranslationTerm.Ref && right instanceof TranslationTerm.Value) {
+                return listContains(((TranslationTerm.Ref) left).key, ((TranslationTerm.Value) right).value);
+            }
+            if (left instanceof TranslationTerm.Value && right instanceof TranslationTerm.Ref) {
+                Value<?> value = ((TranslationTerm.Value) left).value;
+                if (value.type() == Type.LIST) {
+                    return scalarAny(((TranslationTerm.Ref) right).key, new TreeSet<>(value.getList()));
+                }
+            }
+            if (left instanceof TranslationTerm.Value && right instanceof TranslationTerm.Value) {
+                Value<?> leftValue = ((TranslationTerm.Value) left).value;
+                Value<?> rightValue = ((TranslationTerm.Value) right).value;
+                if (leftValue.type() == Type.LIST) {
+                    Set<String> required = containsValues(rightValue);
+                    if (required != null) {
+                        Set<String> values = new HashSet<>(leftValue.getList());
+                        return values.containsAll(required) ? trueReachability() : falseReachability();
+                    }
+                }
+            }
+            return null;
+        }
+
+        private Reachability equality(String key, Value<?> value) {
+            ConstantBindings binding = bindings.get(key);
+            Reachability bound = binding != null ? binding.match(value) : null;
+            Reachability raw = rawEquality(key, value);
+            return combine(key, bound, raw);
+        }
+
+        private Reachability scalarAny(String key, Set<String> values) {
+            ConstantBindings binding = bindings.get(key);
+            Reachability bound = binding != null ? binding.scalarAny(values) : null;
+            Reachability raw = rawScalarAny(key, values);
+            return combine(key, bound, raw);
+        }
+
+        private Reachability listContains(String key, Value<?> value) {
+            Set<String> required = containsValues(value);
+            if (required == null) {
+                return null;
+            }
+            ConstantBindings binding = bindings.get(key);
+            Reachability bound = binding != null ? binding.listContains(required) : null;
+            Reachability raw = rawListContains(key, required);
+            return combine(key, bound, raw);
+        }
+
+        private Reachability combine(String key, Reachability bound, Reachability raw) {
+            ConstantBindings binding = bindings.get(key);
+            Reachability defined = definitions.get(key);
+            if (binding == null) {
+                if (raw == null) {
+                    return bound;
+                }
+                return defined == null ? raw : defined.and(raw);
+            }
+            if (raw == null) {
+                return bound;
+            }
+            Reachability available = defined == null ? trueReachability() : defined;
+            Reachability unresolved = available.subtract(binding.defined()).and(raw);
+            return bound == null ? unresolved : bound.or(unresolved);
+        }
+
+        private Reachability rawEquality(String key, Value<?> value) {
+            String scalarValue = scalarLiteral(value);
+            if (scalarValue == null) {
+                return null;
+            }
+            InputDomain domain = domains.get(key);
+            if (domain == null || domain.kind != InputDomain.Kind.SCALAR) {
+                return null;
+            }
+            if (!domain.scalarValues.contains(scalarValue)) {
+                return falseReachability();
+            }
+            return Reachability.scalar(key, Set.of(scalarValue), domains);
+        }
+
+        private Reachability rawScalarAny(String key, Set<String> values) {
+            InputDomain domain = domains.get(key);
+            if (domain == null || domain.kind != InputDomain.Kind.SCALAR) {
+                return null;
+            }
+            Set<String> allowed = new TreeSet<>(values);
+            allowed.retainAll(domain.scalarValues);
+            return allowed.isEmpty() ? falseReachability() : Reachability.scalar(key, allowed, domains);
+        }
+
+        private Reachability rawListContains(String key, Set<String> required) {
+            InputDomain domain = domains.get(key);
+            if (domain == null || domain.kind != InputDomain.Kind.LIST) {
+                return null;
+            }
+            if (!domain.listItems.containsAll(required)) {
+                return falseReachability();
+            }
+            return Reachability.listContains(key, required, domains);
+        }
+
+        private Set<String> containsValues(Value<?> value) {
+            switch (value.type()) {
+                case STRING:
+                case DYNAMIC:
+                    return Set.of(value.getString());
+                case LIST:
+                    return new TreeSet<>(value.getList());
+                default:
+                    return null;
+            }
+        }
+    }
+
+    private interface TranslationTerm {
+        final class Boolean implements TranslationTerm {
+            private final Reachability reachability;
+
+            private Boolean(Reachability reachability) {
+                this.reachability = reachability;
+            }
+        }
+
+        final class Ref implements TranslationTerm {
+            private final String key;
+
+            private Ref(String key) {
+                this.key = key;
+            }
+        }
+
+        final class Value implements TranslationTerm {
+            private final io.helidon.build.archetype.engine.v2.Value<?> value;
+
+            private Value(io.helidon.build.archetype.engine.v2.Value<?> value) {
+                this.value = value;
+            }
+        }
+    }
+
+    private static final class Reachability {
+        private final Map<String, InputDomain> domains;
+        private final List<ConstraintSet> constraintSets;
+
+        private Reachability(Map<String, InputDomain> domains, List<ConstraintSet> constraintSets) {
+            this.domains = domains;
+            this.constraintSets = List.copyOf(constraintSets);
+        }
+
+        static Reachability trueValue(Map<String, InputDomain> domains) {
+            return new Reachability(domains, List.of(new ConstraintSet()));
+        }
+
+        static Reachability falseValue(Map<String, InputDomain> domains) {
+            return new Reachability(domains, List.of());
+        }
+
+        static Reachability scalar(String key, Set<String> allowed, Map<String, InputDomain> domains) {
+            InputDomain domain = domains.get(key);
+            if (domain == null || domain.kind != InputDomain.Kind.SCALAR) {
+                return null;
+            }
+            Set<String> actual = new TreeSet<>(allowed);
+            actual.retainAll(domain.scalarValues);
+            if (actual.isEmpty()) {
+                return falseValue(domains);
+            }
+            if (actual.equals(domain.scalarValues)) {
+                return trueValue(domains);
+            }
+            return of(List.of(new ConstraintSet(
+                    Map.of(key, new ScalarConstraint(actual)),
+                    Map.of())), domains);
+        }
+
+        static Reachability listContains(String key, Set<String> required, Map<String, InputDomain> domains) {
+            InputDomain domain = domains.get(key);
+            if (domain == null || domain.kind != InputDomain.Kind.LIST) {
+                return null;
+            }
+            if (!domain.listItems.containsAll(required)) {
+                return falseValue(domains);
+            }
+            if (required.isEmpty()) {
+                return trueValue(domains);
+            }
+            ListConstraint listConstraint = new ListConstraint(required, Set.of());
+            ConstraintSet constraintSet = new ConstraintSet(Map.of(), Map.of(key, listConstraint));
+            return of(List.of(constraintSet), domains);
+        }
+
+        static Reachability of(List<ConstraintSet> constraintSets, Map<String, InputDomain> domains) {
+            if (constraintSets.isEmpty()) {
+                return falseValue(domains);
+            }
+            List<ConstraintSet> normalized = new ArrayList<>();
+            for (ConstraintSet set : constraintSets) {
+                ConstraintSet next = set.normalized(domains);
+                if (next.isTrue()) {
+                    return trueValue(domains);
+                }
+                if (!normalized.contains(next)) {
+                    normalized.add(next);
+                }
+            }
+            boolean changed = true;
+            while (changed) {
+                int removeIndex = -1;
+                int mergeIndex = -1;
+                ConstraintSet merged = null;
+                for (int i = 0; i < normalized.size() && removeIndex < 0; i++) {
+                    for (int j = i + 1; j < normalized.size(); j++) {
+                        ConstraintSet left = normalized.get(i);
+                        ConstraintSet right = normalized.get(j);
+                        if (left.subsetOf(right)) {
+                            removeIndex = i;
+                            break;
+                        }
+                        if (right.subsetOf(left)) {
+                            removeIndex = j;
+                            break;
+                        }
+                        ConstraintSet candidate = left.tryMerge(right, domains);
+                        if (candidate != null) {
+                            merged = candidate;
+                            mergeIndex = i;
+                            removeIndex = j;
+                            break;
+                        }
+                    }
+                }
+                changed = removeIndex >= 0;
+                if (changed) {
+                    if (mergeIndex >= 0) {
+                        normalized.set(mergeIndex, merged);
+                    }
+                    normalized.remove(removeIndex);
+                }
+            }
+            normalized.sort(Comparator.comparing(ConstraintSet::literal));
+            return normalized.isEmpty() ? falseValue(domains) : new Reachability(domains, normalized);
+        }
+
+        boolean isFalse() {
+            return constraintSets.isEmpty();
+        }
+
+        Reachability and(Reachability other) {
+            if (isFalse() || other.isFalse()) {
+                return falseValue(domains);
+            }
+            if (constraintSets.size() == 1 && constraintSets.get(0).isTrue()) {
+                return other;
+            }
+            if (other.constraintSets.size() == 1 && other.constraintSets.get(0).isTrue()) {
+                return this;
+            }
+            List<ConstraintSet> result = new ArrayList<>();
+            for (ConstraintSet left : constraintSets) {
+                for (ConstraintSet right : other.constraintSets) {
+                    ConstraintSet intersected = left.intersect(right, domains);
+                    if (intersected != null) {
+                        result.add(intersected);
+                    }
+                }
+            }
+            return of(result, domains);
+        }
+
+        Reachability or(Reachability other) {
+            if (isFalse()) {
+                return other;
+            }
+            if (other.isFalse()) {
+                return this;
+            }
+            List<ConstraintSet> result = new ArrayList<>(constraintSets);
+            result.addAll(other.constraintSets);
+            return of(result, domains);
+        }
+
+        Reachability subtract(Reachability other) {
+            if (isFalse() || other.isFalse()) {
+                return this;
+            }
+            if (other.constraintSets.size() == 1 && other.constraintSets.get(0).isTrue()) {
+                return falseValue(domains);
+            }
+            List<ConstraintSet> remaining = new ArrayList<>(constraintSets);
+            for (ConstraintSet right : other.constraintSets) {
+                List<ConstraintSet> next = new ArrayList<>();
+                for (ConstraintSet left : remaining) {
+                    next.addAll(left.subtract(right, domains));
+                }
+                remaining = next;
+                if (remaining.isEmpty()) {
+                    return falseValue(domains);
+                }
+            }
+            return of(remaining, domains);
+        }
+
+        boolean contains(Reachability other) {
+            return other.subtract(this).isFalse();
+        }
+
+        Expression toExpression(Scope scope) {
+            if (isFalse()) {
+                return Expression.FALSE;
+            }
+            Expression expr = Expression.FALSE;
+            for (ConstraintSet constraintSet : constraintSets) {
+                expr = expr.or(constraintSet.toExpression(scope, domains));
+            }
+            return expr;
+        }
+    }
+
+    private static final class ConstraintSet {
+        private final Map<String, ScalarConstraint> scalars;
+        private final Map<String, ListConstraint> listConstraints;
+
+        private ConstraintSet() {
+            this(Map.of(), Map.of());
+        }
+
+        private ConstraintSet(Map<String, ScalarConstraint> scalars, Map<String, ListConstraint> listConstraints) {
+            this.scalars = new TreeMap<>(scalars);
+            this.listConstraints = new TreeMap<>(listConstraints);
+        }
+
+        boolean isTrue() {
+            return scalars.isEmpty() && listConstraints.isEmpty();
+        }
+
+        ConstraintSet normalized(Map<String, InputDomain> domains) {
+            Map<String, ScalarConstraint> normalizedScalars = new TreeMap<>();
+            for (Entry<String, ScalarConstraint> entry : scalars.entrySet()) {
+                InputDomain domain = domains.get(entry.getKey());
+                if (domain == null || domain.kind != InputDomain.Kind.SCALAR
+                    || !domain.scalarValues.equals(entry.getValue().allowed)) {
+                    normalizedScalars.put(entry.getKey(), entry.getValue());
+                }
+            }
+            Map<String, ListConstraint> normalizedLists = new TreeMap<>();
+            for (Entry<String, ListConstraint> entry : listConstraints.entrySet()) {
+                if (!entry.getValue().isEmpty()) {
+                    normalizedLists.put(entry.getKey(), entry.getValue());
+                }
+            }
+            return new ConstraintSet(normalizedScalars, normalizedLists);
+        }
+
+        ConstraintSet intersect(ConstraintSet other, Map<String, InputDomain> domains) {
+            Map<String, ScalarConstraint> mergedScalars = new TreeMap<>(scalars);
+            for (Entry<String, ScalarConstraint> entry : other.scalars.entrySet()) {
+                ScalarConstraint current = mergedScalars.get(entry.getKey());
+                if (current == null) {
+                    mergedScalars.put(entry.getKey(), entry.getValue());
+                } else {
+                    ScalarConstraint intersected = current.intersect(entry.getValue());
+                    if (intersected == null) {
+                        return null;
+                    }
+                    mergedScalars.put(entry.getKey(), intersected);
+                }
+            }
+            Map<String, ListConstraint> mergedLists = new TreeMap<>(listConstraints);
+            for (Entry<String, ListConstraint> entry : other.listConstraints.entrySet()) {
+                ListConstraint current = mergedLists.get(entry.getKey());
+                if (current == null) {
+                    mergedLists.put(entry.getKey(), entry.getValue());
+                } else {
+                    ListConstraint intersected = current.intersect(entry.getValue());
+                    if (intersected == null) {
+                        return null;
+                    }
+                    mergedLists.put(entry.getKey(), intersected);
+                }
+            }
+            return new ConstraintSet(mergedScalars, mergedLists).normalized(domains);
+        }
+
+        boolean subsetOf(ConstraintSet other) {
+            Set<String> scalarKeys = new HashSet<>(scalars.keySet());
+            scalarKeys.addAll(other.scalars.keySet());
+            for (String key : scalarKeys) {
+                ScalarConstraint left = scalars.get(key);
+                ScalarConstraint right = other.scalars.get(key);
+                if (left == null) {
+                    if (right != null) {
+                        return false;
+                    }
+                } else if (right != null && !right.allowed.containsAll(left.allowed)) {
+                    return false;
+                }
+            }
+            Set<String> listKeys = new HashSet<>(listConstraints.keySet());
+            listKeys.addAll(other.listConstraints.keySet());
+            for (String key : listKeys) {
+                ListConstraint left = listConstraints.getOrDefault(key, ListConstraint.EMPTY);
+                ListConstraint right = other.listConstraints.getOrDefault(key, ListConstraint.EMPTY);
+                if (!left.required.containsAll(right.required) || !left.forbidden.containsAll(right.forbidden)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        ConstraintSet tryMerge(ConstraintSet other, Map<String, InputDomain> domains) {
+            if (!listConstraints.equals(other.listConstraints)) {
+                return null;
+            }
+            String diffKey = null;
+            Map<String, ScalarConstraint> mergedScalars = new TreeMap<>();
+            Set<String> keys = new TreeSet<>(scalars.keySet());
+            keys.addAll(other.scalars.keySet());
+            for (String key : keys) {
+                InputDomain domain = domains.get(key);
+                if (domain == null || domain.kind != InputDomain.Kind.SCALAR) {
+                    return null;
+                }
+                Set<String> leftAllowed = allowed(key, domain);
+                Set<String> rightAllowed = other.allowed(key, domain);
+                if (!leftAllowed.equals(rightAllowed)) {
+                    if (diffKey != null) {
+                        return null;
+                    }
+                    diffKey = key;
+                    Set<String> union = new TreeSet<>(leftAllowed);
+                    union.addAll(rightAllowed);
+                    if (!union.equals(domain.scalarValues)) {
+                        mergedScalars.put(key, new ScalarConstraint(union));
+                    }
+                } else if (!leftAllowed.equals(domain.scalarValues)) {
+                    mergedScalars.put(key, new ScalarConstraint(leftAllowed));
+                }
+            }
+            return diffKey == null ? null : new ConstraintSet(mergedScalars, listConstraints).normalized(domains);
+        }
+
+        List<ConstraintSet> subtract(ConstraintSet other, Map<String, InputDomain> domains) {
+            ConstraintSet intersection = intersect(other, domains);
+            if (intersection == null) {
+                return List.of(this);
+            }
+            if (subsetOf(other)) {
+                return List.of();
+            }
+            Split split = splitAgainst(other, domains);
+            if (split == null) {
+                return List.of(this);
+            }
+            List<ConstraintSet> result = new ArrayList<>();
+            result.add(split.outside);
+            result.addAll(split.overlap.subtract(other, domains));
+            return result;
+        }
+
+        Expression toExpression(Scope scope, Map<String, InputDomain> domains) {
+            Expression expr = Expression.TRUE;
+            for (Entry<String, ScalarConstraint> entry : scalars.entrySet()) {
+                expr = expr.and(entry.getValue().toExpression(scope.key(entry.getKey()), domains.get(entry.getKey())));
+            }
+            for (Entry<String, ListConstraint> entry : listConstraints.entrySet()) {
+                expr = expr.and(entry.getValue().toExpression(scope.key(entry.getKey())));
+            }
+            return expr;
+        }
+
+        String literal() {
+            return scalars + "|" + listConstraints;
+        }
+
+        private Split splitAgainst(ConstraintSet other, Map<String, InputDomain> domains) {
+            for (Entry<String, ScalarConstraint> entry : other.scalars.entrySet()) {
+                InputDomain domain = domains.get(entry.getKey());
+                if (domain == null || domain.kind != InputDomain.Kind.SCALAR) {
+                    continue;
+                }
+                Set<String> leftAllowed = allowed(entry.getKey(), domain);
+                Set<String> rightAllowed = other.allowed(entry.getKey(), domain);
+                if (!rightAllowed.containsAll(leftAllowed)) {
+                    Set<String> outside = new TreeSet<>(leftAllowed);
+                    outside.removeAll(rightAllowed);
+                    Set<String> overlap = new TreeSet<>(leftAllowed);
+                    overlap.retainAll(rightAllowed);
+                    return new Split(withScalar(entry.getKey(), outside, domain, domains),
+                            withScalar(entry.getKey(), overlap, domain, domains));
+                }
+            }
+            for (Entry<String, ListConstraint> entry : other.listConstraints.entrySet()) {
+                String key = entry.getKey();
+                ListConstraint left = listConstraints.getOrDefault(key, ListConstraint.EMPTY);
+                for (String required : entry.getValue().required) {
+                    if (!left.required.contains(required) && !left.forbidden.contains(required)) {
+                        return new Split(withListForbidden(key, required, domains),
+                                withListRequired(key, required, domains));
+                    }
+                }
+                for (String forbidden : entry.getValue().forbidden) {
+                    if (!left.forbidden.contains(forbidden) && !left.required.contains(forbidden)) {
+                        return new Split(withListRequired(key, forbidden, domains),
+                                withListForbidden(key, forbidden, domains));
+                    }
+                }
+            }
+            return null;
+        }
+
+        private ConstraintSet withScalar(String key, Set<String> allowed, InputDomain domain, Map<String, InputDomain> domains) {
+            Map<String, ScalarConstraint> next = new TreeMap<>(scalars);
+            if (allowed.equals(domain.scalarValues)) {
+                next.remove(key);
+            } else {
+                next.put(key, new ScalarConstraint(allowed));
+            }
+            return new ConstraintSet(next, listConstraints).normalized(domains);
+        }
+
+        private ConstraintSet withListRequired(String key, String value, Map<String, InputDomain> domains) {
+            Map<String, ListConstraint> next = new TreeMap<>(listConstraints);
+            ListConstraint constraint = next.getOrDefault(key, ListConstraint.EMPTY);
+            next.put(key, constraint.withRequired(value));
+            return new ConstraintSet(scalars, next).normalized(domains);
+        }
+
+        private ConstraintSet withListForbidden(String key, String value, Map<String, InputDomain> domains) {
+            Map<String, ListConstraint> next = new TreeMap<>(listConstraints);
+            ListConstraint constraint = next.getOrDefault(key, ListConstraint.EMPTY);
+            next.put(key, constraint.withForbidden(value));
+            return new ConstraintSet(scalars, next).normalized(domains);
+        }
+
+        private Set<String> allowed(String key, InputDomain domain) {
+            ScalarConstraint constraint = scalars.get(key);
+            return constraint == null ? domain.scalarValues : constraint.allowed;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof ConstraintSet)) {
+                return false;
+            }
+            ConstraintSet other = (ConstraintSet) o;
+            return scalars.equals(other.scalars) && listConstraints.equals(other.listConstraints);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(scalars, listConstraints);
+        }
+    }
+
+    private static final class ScalarConstraint {
+        private final Set<String> allowed;
+
+        private ScalarConstraint(Set<String> allowed) {
+            this.allowed = Set.copyOf(new TreeSet<>(allowed));
+        }
+
+        ScalarConstraint intersect(ScalarConstraint other) {
+            Set<String> intersection = new TreeSet<>(allowed);
+            intersection.retainAll(other.allowed);
+            return intersection.isEmpty() ? null : new ScalarConstraint(intersection);
+        }
+
+        Expression toExpression(String key, InputDomain domain) {
+            if (domain != null && domain.isBoolean()) {
+                if (allowed.equals(Set.of("true"))) {
+                    return Expression.create(String.format("${%s}", key));
+                }
+                if (allowed.equals(Set.of("false"))) {
+                    return Expression.create(String.format("!${%s}", key));
+                }
+            }
+            if (domain != null && domain.kind == InputDomain.Kind.SCALAR) {
+                Set<String> excluded = new TreeSet<>(domain.scalarValues);
+                excluded.removeAll(allowed);
+                if (excluded.size() == 1) {
+                    return Expression.create(String.format("${%s} != '%s'", key, excluded.iterator().next()));
+                }
+            }
+            Expression expr = Expression.FALSE;
+            for (String value : allowed) {
+                expr = expr.or(Expression.create(String.format("${%s} == '%s'", key, value)));
+            }
+            return expr.reduce();
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof ScalarConstraint && allowed.equals(((ScalarConstraint) o).allowed);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(allowed);
+        }
+
+        @Override
+        public String toString() {
+            return allowed.toString();
+        }
+    }
+
+    private static final class ListConstraint {
+        private static final ListConstraint EMPTY = new ListConstraint(Set.of(), Set.of());
+
+        private final Set<String> required;
+        private final Set<String> forbidden;
+
+        private ListConstraint(Set<String> required, Set<String> forbidden) {
+            this.required = Set.copyOf(new TreeSet<>(required));
+            this.forbidden = Set.copyOf(new TreeSet<>(forbidden));
+        }
+
+        boolean isEmpty() {
+            return required.isEmpty() && forbidden.isEmpty();
+        }
+
+        ListConstraint intersect(ListConstraint other) {
+            Set<String> nextRequired = new TreeSet<>(required);
+            nextRequired.addAll(other.required);
+            Set<String> nextForbidden = new TreeSet<>(forbidden);
+            nextForbidden.addAll(other.forbidden);
+            for (String value : nextRequired) {
+                if (nextForbidden.contains(value)) {
+                    return null;
+                }
+            }
+            return new ListConstraint(nextRequired, nextForbidden);
+        }
+
+        ListConstraint withRequired(String value) {
+            Set<String> next = new TreeSet<>(required);
+            next.add(value);
+            return new ListConstraint(next, forbidden);
+        }
+
+        ListConstraint withForbidden(String value) {
+            Set<String> next = new TreeSet<>(forbidden);
+            next.add(value);
+            return new ListConstraint(required, next);
+        }
+
+        Expression toExpression(String key) {
+            Expression expr = Expression.TRUE;
+            for (String value : required) {
+                expr = expr.and(Expression.create(String.format("${%s} contains '%s'", key, value)));
+            }
+            for (String value : forbidden) {
+                expr = expr.and(Expression.create(String.format("!(${%s} contains '%s')", key, value)));
+            }
+            return expr;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof ListConstraint)) {
+                return false;
+            }
+            ListConstraint other = (ListConstraint) o;
+            return required.equals(other.required) && forbidden.equals(other.forbidden);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(required, forbidden);
+        }
+
+        @Override
+        public String toString() {
+            return required + "!" + forbidden;
+        }
+    }
+
+    private static final class Split {
+        private final ConstraintSet outside;
+        private final ConstraintSet overlap;
+
+        private Split(ConstraintSet outside, ConstraintSet overlap) {
+            this.outside = outside;
+            this.overlap = overlap;
         }
     }
 

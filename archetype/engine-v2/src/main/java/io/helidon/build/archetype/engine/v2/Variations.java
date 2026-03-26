@@ -89,7 +89,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
     }
 
     /**
-     * Create an exhaustive variation entry.
+     * Create a variation entry.
      *
      * @param map variation values
      * @return exhaustive variation entry
@@ -121,6 +121,26 @@ public final class Variations extends AbstractSet<Variations.Entry> {
     }
 
     /**
+     * Create a variation set from existing entries.
+     *
+     * @param entries variation entries
+     * @return variation set
+     */
+    public static Variations of(Collection<Entry> entries) {
+        return new Variations(entries);
+    }
+
+    /**
+     * Create a variation set from existing entries.
+     *
+     * @param entries variation entries
+     * @return variation set
+     */
+    public static Variations of(Entry... entries) {
+        return new Variations(Set.of(entries));
+    }
+
+    /**
      * Merge multiple computed variation sets into one.
      * <p>
      * Entries with the same resolved values are merged so the result preserves a single representative entry
@@ -142,27 +162,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
     }
 
     /**
-     * Create a variation set from existing entries.
-     *
-     * @param entries variation entries
-     * @return variation set
-     */
-    public static Variations of(Collection<Entry> entries) {
-        return new Variations(entries);
-    }
-
-    /**
-     * Create a variation set from existing entries.
-     *
-     * @param entries variation entries
-     * @return variation set
-     */
-    public static Variations of(Entry... entries) {
-        return new Variations(Set.of(entries));
-    }
-
-    /**
-     * Compute variations for a compiler, filters, and external inputs.
+     * Compute variations.
      *
      * @param compiler         compiler
      * @param filters          filters

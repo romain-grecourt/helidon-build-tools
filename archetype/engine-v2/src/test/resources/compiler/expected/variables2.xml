@@ -30,9 +30,6 @@
             </boolean>
         </inputs>
     </step>
-    <variables>
-        <text path="~i1.i2" if="!${i1}"><![CDATA[]]></text>
-    </variables>
     <output>
         <transformation id="template-blobs-1">
             <replace regex="\Q5860E2660BD44EAB2BE5190CD2CAFB8B\E" replacement="file1.txt"/>
@@ -40,7 +37,7 @@
         <templates engine="mustache" transformations="template-blobs-1">
             <directory>blobs</directory>
             <includes>
-                <include if="${i1} &amp;&amp; ${i1.i2} == &apos;o1&apos;">5860E2660BD44EAB2BE5190CD2CAFB8B</include>
+                <include if="${i1}">5860E2660BD44EAB2BE5190CD2CAFB8B</include>
                 <include><![CDATA[]]></include>
             </includes>
         </templates>

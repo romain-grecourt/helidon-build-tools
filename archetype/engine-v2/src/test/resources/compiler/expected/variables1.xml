@@ -34,10 +34,9 @@
         </inputs>
         <variables>
             <text path="~v1">v1</text>
-            <text path="~i1.i2" if="!(${i1} contains &apos;o1&apos;)"><![CDATA[]]></text>
         </variables>
         <inputs>
-            <text id="i3" name="Input3" if="${i1.i2} == &apos;o1&apos;"/>
+            <text id="i3" name="Input3" if="${i1} contains &apos;o1&apos;"/>
         </inputs>
     </step>
 </archetype-script>

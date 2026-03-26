@@ -97,16 +97,19 @@ Maven goal to test Helidon archetypes.
 | test              | String  | `null`                                | Indices (comma separated) of the variations to process                                            |
 | startIndex        | int     | `1`                                   | Variation start index                                                                             |
 | endIndex          | int     | `-1`                                  | Variation end index                                                                               |
-| generateOnly      | boolean | `false`                               | Whether to only generate input variations                                                         |
+| variationsOnly    | boolean | `false`                               | Whether to only compute input variations                                                          |
+| generateOnly      | boolean | `false`                               | Whether to only generate test projects and skip the Maven invocation                              |
+| parallelGeneration| boolean | `false`                               | Whether to generate projects in parallel when generateOnly is enabled                             |
 | generateTests     | boolean | `true`                                | Whether to auto-compute input variations                                                          |
 | failOnUnbounded   | boolean | `false`                               | Whether to fail when computed variations include unbounded inputs                                 |
 | maxVariations     | long    | `-1`                                  | Maximum projected variation count to allow during computation, use `-1` for no limit              |
 | plansFile         | File    | `null`                                | XML file that defines the named plans used to generate the test projects                          |
 | externalDefaults  | Map     | `null`                                | External defaults to use when generating archetypes                                               |
 | externalValues    | Map     | `null`                                | External values to use when generating archetypes                                                 |
-| testGoal          | String  | `package`                             | The goal to use when building archetypes.                                                         |
-| testProfiles      | List    | `[]`                                  | The profiles to use when building archetypes.                                                     |
+| testGoal          | String  | `package`                             | The Maven goal to use when invoking Maven for generated test projects                             |
+| testProfiles      | List    | `[]`                                  | The Maven profiles to use when invoking Maven for generated test projects                         |
 | invokerId         | String  | `maven`                               | Specify the invoker used to generate the test projects. See [invokerId](#InvokerId).              |
+| cliTimeout        | long    | `1`                                   | Timeout in minutes for Helidon CLI invocations                                                    |
 | cliDataDirectory  | File    | `${project.build.directory}/cli-data` | Directory that contains the staged `cli-data` used when the invoker is a Helidon CLI distribution |
 | debug             | boolean | `false`                               | Whether to show debug statements in the build output                                              |
 | showVersion       | boolean | `false`                               | flag to show the maven version used.                                                              |

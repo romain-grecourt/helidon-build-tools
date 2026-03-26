@@ -29,7 +29,7 @@
                   name="Berry type"
                   default="raspberry"
                   global="true"
-                  if="${fruit} == &apos;berries&apos;">
+                  if="${fruit} != &apos;tropical&apos;">
                 <option name="Raspberry" value="raspberry"/>
                 <option name="Strawberry" value="strawberry"/>
             </enum>
@@ -40,15 +40,15 @@
         <inputs>
             <boolean id="organic"
                      name="Organic"
-                     if="${berry-type} == &apos;raspberry&apos; &amp;&amp; ${fruit} == &apos;berries&apos;"/>
+                     if="${berry-type} != &apos;strawberry&apos; &amp;&amp; ${fruit} != &apos;tropical&apos;"/>
             <boolean id="frozen"
                      name="Frozen"
-                     if="${berry-type} == &apos;strawberry&apos; &amp;&amp; ${fruit} == &apos;berries&apos;"/>
+                     if="${berry-type} != &apos;raspberry&apos; &amp;&amp; ${fruit} != &apos;tropical&apos;"/>
             <enum id="tropical-type"
                   name="Tropical type"
                   default="mango"
                   global="true"
-                  if="${fruit} == &apos;tropical&apos;">
+                  if="${fruit} != &apos;berries&apos;">
                 <option name="Mango" value="mango"/>
                 <option name="Banana" value="banana"/>
             </enum>
@@ -60,7 +60,7 @@
             <boolean id="fare-trade"
                      name="Fare trade"
                      global="true"
-                     if="${fruit} == &apos;tropical&apos; &amp;&amp; ${tropical-type} == &apos;mango&apos;"/>
+                     if="${fruit} != &apos;berries&apos; &amp;&amp; ${tropical-type} != &apos;banana&apos;"/>
         </inputs>
         <variables>
             <boolean path="~fare-trade"
@@ -69,10 +69,10 @@
         <inputs>
             <text id="comment"
                   name="Comment"
-                  if="${fare-trade} &amp;&amp; ${fruit} == &apos;tropical&apos; &amp;&amp; ${tropical-type} == &apos;mango&apos;"/>
+                  if="${fare-trade} &amp;&amp; ${fruit} != &apos;berries&apos; &amp;&amp; ${tropical-type} != &apos;banana&apos;"/>
             <boolean id="plantain"
                      name="Plantain"
-                     if="${fruit} == &apos;tropical&apos; &amp;&amp; ${tropical-type} == &apos;banana&apos;"/>
+                     if="${fruit} != &apos;berries&apos; &amp;&amp; ${tropical-type} != &apos;mango&apos;"/>
             <text id="comment" name="Comment"/>
             <boolean id="frosting" name="Frosting"/>
         </inputs>

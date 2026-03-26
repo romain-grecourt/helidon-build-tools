@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2025, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -122,6 +122,20 @@ class ValueTest {
 
         ex = assertThrows(ValueException.class, () -> Value.dynamic(() -> "foo").getInt());
         assertThat(ex.getMessage(), is("Cannot parse integer value: foo"));
+    }
+
+    @Test
+    void testCompare() {
+        assertThat(Value.compare(Value.dynamic(() -> "1"), Value.of("1")), is(not(0)));
+        assertThat(Value.compare(Value.of("1"), Value.dynamic(() -> "1")), is(not(0)));
+        assertThat(Value.compare(Value.dynamic(() -> null), Value.empty()), is(0));
+    }
+
+    @Test
+    void testStrictEqual() {
+        assertThat(Value.isStrictEqual(Value.dynamic(() -> "1"), Value.of("1")), is(false));
+        assertThat(Value.isStrictEqual(Value.dynamic(() -> "1"), Value.dynamic(() -> "1")), is(true));
+        assertThat(Value.isStrictEqual(Value.dynamic(() -> null), Value.empty()), is(true));
     }
 
     @Test

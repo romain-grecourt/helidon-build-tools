@@ -27,12 +27,15 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Properties;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import io.helidon.build.archetype.engine.v2.ArchetypeEngineV2;
@@ -185,13 +188,13 @@ public class IntegrationTestMojo extends AbstractMojo {
     private Map<String, String> properties = new HashMap<>();
 
     /**
-     * The goal to use when building archetypes.
+     * The Maven goal to use when invoking Maven for generated test projects.
      */
     @Parameter(property = "archetype.test.testGoal", defaultValue = "package")
     private String testGoal;
 
     /**
-     * The profiles to use when building archetypes.
+     * The Maven profiles to use when invoking Maven for generated test projects.
      */
     @Parameter(property = "archetype.test.testProfiles")
     private List<String> testProfiles = List.of();
@@ -221,10 +224,22 @@ public class IntegrationTestMojo extends AbstractMojo {
     private boolean generateTests;
 
     /**
-     * Whether to only generate tests.
+     * Whether to only compute input variations.
+     */
+    @Parameter(property = "archetype.test.variationsOnly", defaultValue = "false")
+    private boolean variationsOnly;
+
+    /**
+     * Whether to only generate test projects and skip the Maven invocation.
      */
     @Parameter(property = "archetype.test.generateOnly", defaultValue = "false")
     private boolean generateOnly;
+
+    /**
+     * Whether to generate projects in parallel when using {@code generateOnly}.
+     */
+    @Parameter(property = "archetype.test.parallelGeneration", defaultValue = "false")
+    private boolean parallelGeneration;
 
     /**
      * Whether to fail when the computed variations include unbounded inputs.
@@ -283,14 +298,24 @@ public class IntegrationTestMojo extends AbstractMojo {
     private File cliDataDirectory;
 
     /**
+     * Timeout in minutes for Helidon CLI invocations.
+     */
+    @Parameter(property = "archetype.test.cliTimeout", defaultValue = "1")
+    private long cliTimeout;
+
+    /**
      * Generated code inspection.
      */
     @Parameter
     private List<Validation> validations;
 
     private Path cli = null;
+    private Path archetypeFile;
+    private Path testsDir;
+    private String testName;
     private Variations variations;
-    private int index = 1;
+    private final Set<Path> reservedOutputs = new HashSet<>();
+    private final Object lock = new Object();
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
@@ -304,19 +329,18 @@ public class IntegrationTestMojo extends AbstractMojo {
             return;
         }
 
-        File archetypeFile = project.getArtifact().getFile();
-        if (archetypeFile == null) {
-            throw new MojoFailureException("Archetype not found");
-        }
+        testsDir = ensureDirectory(testsDirectory.toPath());
+        testName = fileName(project.getFile().toPath().getParent());
+        archetypeFile = archetypeFile();
 
-        String testName = fileName(project.getFile().toPath().getParent());
         try {
             if (generateTests) {
                 logVariations(testName);
 
                 Log.info("");
                 Log.info("Computing variations...");
-                variations = variations(archetypeFile.toPath());
+                variations = variations(archetypeFile);
+
                 Log.info("");
                 Log.info("Total projects: " + variations.size());
                 if (!variations.exhaustive()) {
@@ -326,22 +350,43 @@ public class IntegrationTestMojo extends AbstractMojo {
                 Log.info("Markdown file: " + writeSummary());
                 Log.info("CSV file: " + writeCsv());
 
-                if (generateOnly) {
+                if (variationsOnly) {
                     return;
                 }
 
                 Map<Integer, Variations.Entry> variations = filterVariations();
-                for (Map.Entry<Integer, Variations.Entry> entry : variations.entrySet()) {
-                    index = entry.getKey();
-                    Map<String, String> variation = new LinkedHashMap<>(entry.getValue());
-                    String artifactId = variation.getOrDefault("artifactId", "myproject");
-                    if (index > 1) {
-                        variation.put("artifactId", artifactId + "-" + index);
+                prepareInvoker();
+
+                if (generateOnly) {
+                    if (parallelGeneration) {
+                        List<CompletableFuture<?>> futures = new ArrayList<>();
+                        for (Map.Entry<Integer, Variations.Entry> entry : variations.entrySet()) {
+                            futures.add(CompletableFuture.runAsync(() -> {
+                                try {
+                                    generateProject(entry.getKey(), entry.getValue());
+                                } catch (IOException e) {
+                                    throw new RuntimeException(e);
+                                }
+                            }));
+                        }
+                        CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
+                    } else {
+                        for (Map.Entry<Integer, Variations.Entry> entry : variations.entrySet()) {
+                            generateProject(entry.getKey(), entry.getValue());
+                        }
                     }
-                    processIntegrationTest(testName, variation, archetypeFile);
+                } else {
+                    for (Map.Entry<Integer, Variations.Entry> entry : variations.entrySet()) {
+                        Path projectDir = generateProject(entry.getKey(), entry.getValue());
+                        invokePostArchetypeGenerationGoals(projectDir);
+                    }
                 }
             } else {
-                processIntegrationTest(testName, externalValues, archetypeFile);
+                prepareInvoker();
+                Path projectDir = generateProject(1, externalValues);
+                if (!generateOnly) {
+                    invokePostArchetypeGenerationGoals(projectDir);
+                }
             }
         } catch (IOException e) {
             Log.error(e, "Integration test failed with error(s)");
@@ -399,7 +444,6 @@ public class IntegrationTestMojo extends AbstractMojo {
 
     private Path writeSummary() {
         try {
-            Path testsDir = testsDirectory.toPath();
             Path file = testsDir.resolve("projects.md");
             Files.createDirectories(testsDir);
             try (PrintWriter printer = new PrintWriter(Files.newBufferedWriter(file))) {
@@ -435,7 +479,6 @@ public class IntegrationTestMojo extends AbstractMojo {
     }
 
     private Path writeCsv() {
-        Path testsDir = testsDirectory.toPath();
         Path file = testsDir.resolve("projects.csv");
         try (PrintWriter writer = new PrintWriter(Files.newBufferedWriter(file))) {
             for (Variations.Entry variation : variations) {
@@ -473,25 +516,24 @@ public class IntegrationTestMojo extends AbstractMojo {
         return indexes;
     }
 
-    private void processIntegrationTest(String testName,
-                                        Map<String, String> externalValues,
-                                        File archetypeFile) throws IOException, MojoExecutionException {
+    private Path generateProject(int index, Map<String, String> externalValues) throws IOException {
+        Map<String, String> values = new LinkedHashMap<>(externalValues);
+        Path outputDir;
+        String projectName;
 
-        logTestDescription(testName, externalValues);
-
-        Path testsDir = testsDirectory.toPath();
-        ensureDirectory(testsDir);
-
-        // ensure artifactId matches the directory
-        Map<String, String> values = new HashMap<>(externalValues);
-        Path outputDir = unique(testsDir, values.getOrDefault("artifactId", "myproject"));
-        String projectName = fileName(outputDir);
-        values.put("artifactId", projectName);
+        synchronized (lock) {
+            String artifactId = values.getOrDefault("artifactId", "myproject") + "-" + index;
+            outputDir = unique(testsDir, artifactId, path -> Files.exists(path) || reservedOutputs.contains(path));
+            reservedOutputs.add(outputDir);
+            projectName = fileName(outputDir);
+            values.put("artifactId", projectName);
+            logTestDescription(index, values);
+        }
 
         switch (invokerId) {
             case "helidon":
                 Log.info("Generating project '" + projectName + "' using Helidon archetype engine");
-                helidonEmbedded(archetypeFile.toPath(), values, outputDir);
+                invokeEmbedded(archetypeFile, values, outputDir);
                 break;
             case "maven":
                 Log.info("Generating project '" + projectName + "' using Maven archetype");
@@ -500,7 +542,6 @@ public class IntegrationTestMojo extends AbstractMojo {
                         project.getGroupId(),
                         project.getArtifactId(),
                         project.getVersion(),
-                        archetypeFile,
                         Maps.toProperties(values),
                         testsDir);
                 break;
@@ -508,30 +549,39 @@ public class IntegrationTestMojo extends AbstractMojo {
                 Log.info("Generating project '" + projectName + "' using Helidon CLI");
                 helidonInit(values, outputDir);
         }
-        invokePostArchetypeGenerationGoals(outputDir);
+        return outputDir;
     }
 
-    private String invokerExe() {
-        if (cli == null) {
-            Path cliArtifact = resolveArtifact(MavenArtifact.create(invokerId));
-            Path downloadDir = outputDirectory.toPath().resolve("downloads");
-            Log.debug("Unpacking %s to %s", cliArtifact, downloadDir);
-            List<Path> entries = unzip(cliArtifact, downloadDir);
-            cli = PathFinder.find("helidon", Lists.filter(entries, Files::isDirectory)).orElseThrow();
-        }
-        return cli.toString();
+    private void installHelidonCli() throws IOException {
+        // download the cli
+        Path cliArtifact = resolveArtifact(MavenArtifact.create(invokerId));
+        Path downloadDir = outputDirectory.toPath().resolve("downloads");
+        Log.debug("Unpacking %s to %s", cliArtifact, downloadDir);
+        List<Path> entries = unzip(cliArtifact, downloadDir);
+        cli = PathFinder.find("helidon", Lists.filter(entries, Files::isDirectory)).orElseThrow();
+
+        // prime the cli-data
+        invokeCli(List.of("version",
+                "--error",
+                "--reset",
+                "--url", cliDataDirectory.toURI().toString()));
     }
 
     private void helidonInit(Map<String, String> values, Path outputDir) throws IOException {
+        List<String> opts = List.of("init",
+                "--batch",
+                "--error",
+                "--url", cliDataDirectory.toURI().toString(),
+                "--project", outputDir.toString());
+        List<String> props = Lists.map(values.entrySet(), e -> "-D" + e);
+        invokeCli(Lists.addAll(opts, props));
+    }
+
+    private void invokeCli(List<String> args) throws IOException {
         try {
-            List<String> cmd = Lists.addAll(
-                    List.of(invokerExe(), "init",
-                            "--batch",
-                            "--error",
-                            "--project", outputDir.toString(),
-                            "--reset",
-                            "--url", cliDataDirectory.toURI().toString()),
-                    Lists.map(values.entrySet(), e -> "-D" + e));
+            List<String> cmd = new ArrayList<>();
+            cmd.add(cli.toString());
+            cmd.addAll(args);
             Log.info("Executing: %s", String.join(" ", cmd));
             ProcessMonitor.builder()
                     .processBuilder(new ProcessBuilder(cmd))
@@ -539,7 +589,7 @@ public class IntegrationTestMojo extends AbstractMojo {
                     .stdOut(PrintStreams.accept(DEVNULL, Log::debug))
                     .stdErr(PrintStreams.accept(DEVNULL, Log::warn))
                     .build()
-                    .execute(1, TimeUnit.DAYS);
+                    .execute(cliTimeout, TimeUnit.MINUTES);
         } catch (ProcessFailedException | ProcessTimeoutException | InterruptedException e) {
             throw new RuntimeException(e);
         }
@@ -557,7 +607,7 @@ public class IntegrationTestMojo extends AbstractMojo {
         logInputs("externalDefaults", externalDefaults, maxKeyWidth);
     }
 
-    private void logTestDescription(String testName, Map<String, String> externalValues) {
+    private void logTestDescription(int index, Map<String, String> externalValues) {
         String description = Bold.apply("Test: ") + BoldBlue.apply(testName);
         if (variations != null && index > 0) {
             int total = endIndex == -1 ? variations.size() : endIndex;
@@ -601,7 +651,7 @@ public class IntegrationTestMojo extends AbstractMojo {
         return maxLen;
     }
 
-    private void helidonEmbedded(Path archetypeFile, Map<String, String> externalValues, Path outputDir) {
+    private void invokeEmbedded(Path archetypeFile, Map<String, String> externalValues, Path outputDir) {
         try (FileSystem fs = newFileSystem(archetypeFile, this.getClass().getClassLoader())) {
             Path root = fs.getRootDirectories().iterator().next();
             ArchetypeEngineV2 engine = ArchetypeEngineV2.builder()
@@ -619,20 +669,8 @@ public class IntegrationTestMojo extends AbstractMojo {
     private void mavenEmbedded(String archetypeGroupId,
                                String archetypeArtifactId,
                                String archetypeVersion,
-                               File archetypeFile,
                                Properties properties,
-                               Path basedir) throws MojoExecutionException {
-
-        // pre-install the archetype JAR so that the post-generate script can resolve it
-        try {
-            InstallRequest request = new InstallRequest();
-            request.addArtifact(RepositoryUtils.toArtifact(new ProjectArtifact(project)));
-            request.addArtifact(RepositoryUtils.toArtifact(project.getArtifact()));
-            repoSystem.install(session.getRepositorySession(), request);
-        } catch (InstallationException ex) {
-            throw new MojoExecutionException("Unable to pre-install project", ex);
-        }
-
+                               Path basedir) {
         PlexusContainer container = pluginContainerManager.create(MAVEN_ARCHETYPE_PLUGIN,
                 project.getRemotePluginRepositories(),
                 session.getRepositorySession());
@@ -642,7 +680,7 @@ public class IntegrationTestMojo extends AbstractMojo {
                 archetypeGroupId,
                 archetypeArtifactId,
                 archetypeVersion,
-                archetypeFile,
+                archetypeFile.toFile(),
                 properties,
                 basedir,
                 session
@@ -650,9 +688,32 @@ public class IntegrationTestMojo extends AbstractMojo {
         invokeMethod(container.getLookupRealm(), MAVEN_GENERATOR_FCN, "generate", args);
     }
 
+    private void installProject() throws MojoExecutionException {
+        try {
+            InstallRequest request = new InstallRequest();
+            request.addArtifact(RepositoryUtils.toArtifact(new ProjectArtifact(project)));
+            request.addArtifact(RepositoryUtils.toArtifact(project.getArtifact()));
+            repoSystem.install(session.getRepositorySession(), request);
+        } catch (InstallationException ex) {
+            throw new MojoExecutionException("Unable to pre-install project", ex);
+        }
+    }
+
+    private void prepareInvoker() throws MojoExecutionException, IOException {
+        switch (invokerId) {
+            case "maven":
+                System.setProperty("interactiveMode", "false");
+                installProject();
+                break;
+            case "helidon":
+                break;
+            default:
+                installHelidonCli();
+        }
+    }
+
     private void invokePostArchetypeGenerationGoals(Path basedir) throws IOException, MojoExecutionException {
         FileLogger logger = setupBuildLogger(basedir);
-
         Log.info(String.format("Invoking post-archetype-generation goal: %s, profiles: %s", testGoal, testProfiles));
 
         File localRepo = session.getRepositorySession().getLocalRepository().getBasedir();
@@ -705,6 +766,15 @@ public class IntegrationTestMojo extends AbstractMojo {
 
     private List<VariationPlan> plans() {
         return plansFile == null ? List.of() : VariationPlan.load(plansFile.toPath());
+    }
+
+    private Path archetypeFile() throws MojoFailureException {
+        File artifactFile = project.getArtifact().getFile();
+        if (artifactFile != null) {
+            return artifactFile.toPath();
+        } else {
+            throw new MojoFailureException("Archetype not found");
+        }
     }
 
     private Path resolveArtifact(MavenArtifact artifact) {

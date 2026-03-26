@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2025, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,5 +43,27 @@ class ListsTest {
         assertThat(Lists.<String>addAll(List.of(), 0, "0", "1", "2", "3"), is(List.of("0", "1", "2", "3")));
         assertThat(Lists.<String>addAll(List.of("2", "3"), 0, "0", "1"), is(List.of("0", "1", "2", "3")));
         assertThat(Lists.<String>addAll(List.of("0", "3"), 1, "1", "2"), is(List.of("0", "1", "2", "3")));
+    }
+
+    @Test
+    void testUnique() {
+        assertThat(Lists.unique(List.of("a", "a", "b", "b", "c")), is(List.of("a", "b", "c")));
+    }
+
+    @Test
+    void testContainsAll() {
+        assertThat(Lists.containsAll(List.of("a", "b", "c"), List.of()), is(true));
+        assertThat(Lists.containsAll(List.of("a", "b", "c"), List.of("a", "c")), is(true));
+        assertThat(Lists.containsAll(List.of("a", "b", "c"), List.of("a", "d")), is(false));
+    }
+
+    @Test
+    void testIntersect() {
+        assertThat(Lists.intersect(List.of("a", "b", "d"), List.of("b", "c", "d")), is(List.of("b", "d")));
+    }
+
+    @Test
+    void testSubtract() {
+        assertThat(Lists.subtract(List.of("a", "b", "c", "d"), List.of("b", "d")), is(List.of("a", "c")));
     }
 }

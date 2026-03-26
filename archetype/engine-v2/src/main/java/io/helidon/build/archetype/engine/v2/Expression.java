@@ -20,6 +20,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -44,7 +45,6 @@ import java.util.stream.StreamSupport;
 import io.helidon.build.common.BitSets;
 import io.helidon.build.common.LazyValue;
 import io.helidon.build.common.Lists;
-import io.helidon.build.common.Maps;
 
 import static java.util.Collections.unmodifiableList;
 import static java.util.Spliterator.ORDERED;
@@ -56,6 +56,10 @@ import static java.util.stream.Collectors.toMap;
  * Logical expression.
  */
 public final class Expression implements Comparable<Expression> {
+    private static final int QMC_MAX_TERMS = 1 << 16;
+    private static final long QMC_MAX_MERGE_PAIRS = 500_000L;
+    private static final long QMC_MAX_TABLE_BYTES = 64L * 1024 * 1024;
+    private static final long QMC_TERM_OVERHEAD_BYTES = 96L;
 
     /**
      * True.
@@ -289,6 +293,26 @@ public final class Expression implements Comparable<Expression> {
     }
 
     /**
+     * Reduce the expression under the given assumptions.
+     *
+     * @param truth assumptions that describe the reachable cases
+     * @return Expression
+     */
+    Expression reduce(Expression truth) {
+        if (truth == TRUE) {
+            return reduced ? this : reduced0.get();
+        } else if (truth == FALSE) {
+            return FALSE;
+        }
+        try {
+            return reduce1(truth);
+        } catch (QmcLimitException e) {
+            // preserve semantics by skipping QMC simplification when it exceeds the guard
+            return this;
+        }
+    }
+
+    /**
      * Inline variables.
      *
      * @param resolver resolver
@@ -326,36 +350,31 @@ public final class Expression implements Comparable<Expression> {
      * @return sub expression
      */
     public Expression sub(Expression expr) {
-        Map<String, List<Token>> v1 = new TreeMap<>();
+        SyntheticVars v1 = new SyntheticVars(new TreeMap<>());
         Expression e1 = synthetic(v1);
-        if (v1.isEmpty()) {
+        if (v1.vars.isEmpty()) {
             return e1.eval() ? TRUE : FALSE;
         }
 
-        Map<String, List<Token>> v2 = new TreeMap<>();
+        SyntheticVars v2 = new SyntheticVars(new TreeMap<>());
         Expression e2 = expr.synthetic(v2);
-        if (v2.isEmpty()) {
+        if (v2.vars.isEmpty()) {
             return this;
         }
 
-        // shared variables
-        Map<String, List<Token>> sharedVars = new LinkedHashMap<>();
-        sharedVars.putAll(Maps.filterKey(v1, v2::containsKey));
-        sharedVars.putAll(Maps.filterKey(v2, v1::containsKey));
-
-        if (sharedVars.isEmpty()) {
+        SyntheticVars sharedVars = v1.intersect(v2);
+        if (sharedVars.vars.isEmpty()) {
             // not intersecting
             return this;
         }
+        SyntheticVars vars = new SyntheticVars(new LinkedHashMap<>());
+        vars.put(sharedVars, v1, v2);
 
-        // shared variables first
-        Map<String, List<Token>> vars = new LinkedHashMap<>(sharedVars);
-        vars.putAll(v1);
-        vars.putAll(v2);
+        BitSet excludes = vars.exclusiveDontCares();
 
         // evaluate the truth tables
-        BitSet m2 = e2.minterms(vars.keySet());
-        BitSet m1 = e1.minterms(vars.keySet());
+        BitSet m2 = BitSets.andNot(e2.minterms(vars), excludes);
+        BitSet m1 = BitSets.andNot(e1.minterms(vars), excludes);
 
         if (!m1.intersects(m2)) {
             // not intersecting
@@ -367,9 +386,9 @@ public final class Expression implements Comparable<Expression> {
             return TRUE;
         }
 
-        int tableSize = 1 << vars.size();
+        int tableSize = 1 << vars.vars.size();
         boolean flip = false;
-        if (m1.cardinality() > tableSize >> 1) {
+        if (excludes.isEmpty() && m1.cardinality() > tableSize >> 1) {
             m1.flip(0, tableSize);
             m2.flip(0, tableSize);
             flip = true;
@@ -378,16 +397,17 @@ public final class Expression implements Comparable<Expression> {
         BitSet minterms = BitSets.copyOf(m1);
         BitSet shared = BitSets.and(BitSets.copyOf(m1), m2);
 
-        int offset = vars.size() - sharedVars.size();
+        int offset = vars.vars.size() - sharedVars.vars.size();
         int mask = -1 << offset;
         int suffixes = 1 << offset; // number of suffix variations
-        int prefixes = 1 << sharedVars.size(); // number of prefix variations
+        int prefixes = 1 << sharedVars.vars.size(); // number of prefix variations
         for (int i = shared.nextSetBit(0); i >= 0 && i < tableSize; i = shared.nextSetBit(i + 1)) {
             // test all suffixes of the prefix
             int prefix = i & mask;
             boolean stable = true;
             for (int y = 0; y < suffixes; y++) {
-                if (!m2.get(prefix | y)) {
+                int index = prefix | y;
+                if (!excludes.get(index) && !m2.get(index)) {
                     stable = false;
                     break;
                 }
@@ -405,11 +425,12 @@ public final class Expression implements Comparable<Expression> {
             minterms.flip(0, tableSize);
         }
 
-        if (minterms.isEmpty() || minterms.cardinality() == tableSize) {
+        BitSet actualMinterms = BitSets.andNot(BitSets.copyOf(minterms), excludes);
+        if (actualMinterms.isEmpty() || actualMinterms.cardinality() == tableSize - excludes.cardinality()) {
             // always true
             return TRUE;
         }
-        return reduce(vars, minterms);
+        return reduce(vars, minterms, excludes);
     }
 
     /**
@@ -448,29 +469,12 @@ public final class Expression implements Comparable<Expression> {
     }
 
     // QMC algorithm
-    static int[][] reduce(int... minterms) {
-        TermTable table = new TermTable();
-
-        // sort by bit count
-        BitSet positions = new BitSet(); // bitmap of sorted minterms
-        int numVars = 32 - Integer.numberOfLeadingZeros(Math.max(minterms[minterms.length - 1], 1));
-        for (int x = 0, y = 0; x <= numVars && y < minterms.length; x++) {
-            int z = y;
-            for (int i = positions.nextClearBit(0); i < minterms.length; i = positions.nextClearBit(i + 1)) {
-                int term = minterms[i];
-                if (x == Integer.bitCount(term)) {
-                    table.terms.add(new Term(term, 0, BitSets.of(i)));
-                    positions.set(i);
-                    y++;
-                    if (x == 0) {
-                        break;
-                    }
-                }
-            }
-            if (y > z) {
-                table.groups.add(y);
-            }
+    static int[][] reduce(BitSet minterms, BitSet dontCares) {
+        if (minterms.intersects(dontCares)) {
+            throw new IllegalArgumentException("minterms and dontCares must be disjoint");
         }
+        BitSet terms = BitSets.or(BitSets.copyOf(minterms), dontCares);
+        TermTable table = TermTable.init(terms);
 
         // find implicants
         TermTable tmp = new TermTable(); // write-table
@@ -492,7 +496,7 @@ public final class Expression implements Comparable<Expression> {
                                     if (!tmp.contains(ids)) { // add once
                                         int mark = delta | term1.mark | term2.mark; // merge the marks
                                         int bits = (term1.bits | term2.bits) & ~mark; // merge the bits (exclude the marks)
-                                        tmp.terms.add(new Term(bits, mark, ids));
+                                        tmp.add(bits, mark, ids);
                                         bitmap.or(ids);
                                         merged = true;
                                     }
@@ -502,7 +506,7 @@ public final class Expression implements Comparable<Expression> {
                     }
                     if (!merged && !BitSets.containsAll(term1.ids, bitmap)) {
                         // not mergeable and not covered by any other term
-                        tmp.terms.add(term1);
+                        tmp.add(term1.bits, term1.mark, term1.ids);
                         bitmap.or(term1.ids);
                         if (!tmp.groups.isEmpty()) {
                             tmp.groups.set(tmp.groups.size() - 1, tmp.terms.size());
@@ -524,56 +528,43 @@ public final class Expression implements Comparable<Expression> {
             }
         }
 
-        // prime chart
-        BitSet essentials = new BitSet();
-        BitSet duplicates = new BitSet();
-        for (Term term : table.terms) {
-            if (term.ids.intersects(essentials)) {
-                duplicates.or(BitSets.and(BitSets.copyOf(term.ids), essentials)); // record used terms
-                essentials.andNot(duplicates); // remove duplicates from essentials
-                essentials.or(BitSets.andNot(BitSets.copyOf(term.ids), duplicates)); // record unused terms
-            } else {
-                essentials.or(term.ids);
-            }
-        }
+        // select terms
+        PrimeChart chart = PrimeChart.init(table, minterms, dontCares);
+        List<Term> selected = chart.select();
+        selected.sort(Comparator.comparingInt(term -> term.order));
 
         // compute the result as an array of [bits][marks]
-        List<int[]> result = new ArrayList<>(table.terms.size());
-        for (Term term : table.terms) {
-            if (term.ids.intersects(essentials)) {
-                result.add(new int[] {
-                        term.bits,
-                        term.mark
-                });
-            }
+        List<int[]> result = new ArrayList<>(selected.size());
+        for (Term term : selected) {
+            result.add(new int[] {
+                    term.bits,
+                    term.mark
+            });
         }
         return result.toArray(new int[0][]);
     }
 
-    private static Expression reduce(Map<String, List<Token>> vars, BitSet minterms) {
+    private static Expression reduce(SyntheticVars vars, BitSet minterms, BitSet dontCares) {
+        int[][] terms = reduce(minterms, dontCares);
+        Expression dnf = new Expression(dnf(vars, terms), true);
+        if (terms.length < 2) {
+            return dnf;
+        }
+        FactorNode factored = FactorNode.or(FactorNode.terms(vars, terms));
+        Expression candidate = new Expression(factored.tokens(), true);
+        return !candidate.equals(dnf) && candidate.tokens.size() < dnf.tokens.size() ? candidate : dnf;
+    }
+
+    private static List<Token> dnf(SyntheticVars vars, int[][] terms) {
         List<Token> tokens = new ArrayList<>();
-        int[][] terms = reduce(minterms.stream().toArray());
         for (int i = 0; i < terms.length; i++) {
             // associate bits with variables from high to low
-            int bit = 1 << vars.size() - 1;
+            int bit = 1 << vars.vars.size() - 1;
             int y = 0;
-            for (List<Token> v : vars.values()) {
+            for (SyntheticVar v : vars.vars.values()) {
                 if ((bit & terms[i][1]) == 0) {
                     // bit is not marked
-                    tokens.addAll(v);
-                    if ((bit & terms[i][0]) == 0) {
-                        int index = tokens.size() - 1;
-                        Token last = tokens.get(index);
-                        if (last == Token.EQUAL) {
-                            // replace NOT + EQUAL with NOT_EQUAL
-                            tokens.set(index, Token.NOT_EQUAL);
-                        } else if (last == Token.NOT_EQUAL) {
-                            // replace NOT + NOT_EQUAL with EQUAL
-                            tokens.set(index, Token.EQUAL);
-                        } else {
-                            tokens.add(Token.NOT);
-                        }
-                    }
+                    tokens.addAll((bit & terms[i][0]) == 0 ? Token.negate(v.tokens) : v.tokens);
                     if (y++ > 0) {
                         tokens.add(Token.AND);
                     }
@@ -584,38 +575,7 @@ public final class Expression implements Comparable<Expression> {
                 tokens.add(Token.OR);
             }
         }
-        return new Expression(tokens, true);
-    }
-
-    /**
-     * Unresolved variable error.
-     */
-    public static final class UnresolvedVariableException extends RuntimeException {
-        private final String variable;
-
-        private UnresolvedVariableException(String variable) {
-            super("Unresolved variable: " + variable);
-            this.variable = variable;
-        }
-
-        /**
-         * Get the unresolved variable name.
-         *
-         * @return variable name
-         */
-        public String variable() {
-            return variable;
-        }
-    }
-
-    /**
-     * Expression formatting error.
-     */
-    public static final class FormatException extends RuntimeException {
-
-        private FormatException(String message) {
-            super(message);
-        }
+        return tokens;
     }
 
     private String print() {
@@ -663,24 +623,50 @@ public final class Expression implements Comparable<Expression> {
         } else if (this == FALSE) {
             return FALSE;
         } else {
-            return CACHE2.computeIfAbsent(tokens, l -> reduce1());
+            return CACHE2.computeIfAbsent(tokens, l -> {
+                try {
+                    return reduce1(TRUE);
+                } catch (QmcLimitException e) {
+                    // preserve semantics by skipping QMC simplification when it exceeds the guard
+                    return this;
+                }
+            });
         }
     }
 
-    private Expression reduce1() {
-        Map<String, List<Token>> vars = new TreeMap<>();
+    private Expression reduce1(Expression truth) {
+        SyntheticVars vars = new SyntheticVars(new TreeMap<>());
 
         // ensure a boolean-only expression and record variables
         Expression expr = synthetic(vars);
+        Expression truthExpr = truth.synthetic(vars);
 
         // constant
-        int numVars = vars.size();
+        int numVars = vars.vars.size();
         if (numVars == 0) {
-            return expr.eval() ? TRUE : FALSE;
+            return truthExpr.eval() && expr.eval() ? TRUE : FALSE;
+        }
+        if (numVars > Integer.numberOfTrailingZeros(QMC_MAX_TERMS)) {
+            throw new QmcLimitException("QMC variable limit exceeded");
         }
 
         // evaluate the truth table
-        BitSet minterms = expr.minterms(vars.keySet());
+        int tableSize = 1 << numVars;
+        BitSet truthTerms = truthExpr.minterms(vars);
+        if (truthTerms.isEmpty()) {
+            return FALSE;
+        }
+
+        // synthetic minterms
+        BitSet minterms = expr.minterms(vars);
+
+        // ignore terms from mutually exclusive synthetic equalities
+        // and terms ruled out by the truth expression
+        BitSet excludes = BitSets.or(vars.exclusiveDontCares(), BitSets.not(truthTerms, tableSize));
+
+        // filter minterms
+        minterms.and(truthTerms); // reachable terms satisfied by the expression
+        minterms.andNot(excludes); // reachable terms that still matter
 
         // always false
         if (minterms.isEmpty()) {
@@ -688,12 +674,12 @@ public final class Expression implements Comparable<Expression> {
         }
 
         // always true
-        if (minterms.cardinality() == (1 << numVars)) {
+        if (minterms.cardinality() == tableSize - excludes.cardinality()) {
             return TRUE;
         }
 
         // QMC resolution
-        return reduce(vars, minterms);
+        return reduce(vars, minterms, excludes);
     }
 
     private List<Token> expandVar(String varName, Map<String, List<Token>> vars) {
@@ -713,7 +699,7 @@ public final class Expression implements Comparable<Expression> {
         }
     }
 
-    private Expression synthetic(Map<String, List<Token>> vars) {
+    private Expression synthetic(SyntheticVars vars) {
         // substitute non-logical operations that use variables with synthetic variables
         // to produce an expression containing only logical operations
         Map<String, List<Token>> tempVars = new TreeMap<>();
@@ -734,7 +720,10 @@ public final class Expression implements Comparable<Expression> {
                     case AS_STRING:
                         // t1 is always a variable (enforced in parse)
                         varName = token.operator.symbol() + ' ' + s1;
-                        tempVars.putIfAbsent(varName, Lists.addAll(vars.getOrDefault(s1, op1), token));
+                        SyntheticVar syntheticVar = vars.vars.get(s1);
+                        tempVars.putIfAbsent(varName, Lists.addAll(
+                                syntheticVar != null ? syntheticVar.tokens : op1,
+                                token));
                         stack.push(List.of(Token.of(varName)));
                         break;
                     case CONTAINS:
@@ -784,7 +773,8 @@ public final class Expression implements Comparable<Expression> {
         while (!stack.isEmpty()) {
             for (Token token : stack.pop()) {
                 if (token.variable != null) {
-                    vars.putIfAbsent(token.variable, expandVar(token.variable, tempVars));
+                    List<Token> expansion = expandVar(token.variable, tempVars);
+                    vars.put(token.variable, expansion);
                 }
                 expr.add(token);
             }
@@ -792,17 +782,17 @@ public final class Expression implements Comparable<Expression> {
         return new Expression(expr, false);
     }
 
-    private BitSet minterms(Set<String> names) {
+    private BitSet minterms(SyntheticVars sVars) {
         BitSet minterms = new BitSet();
 
         // evaluate the truth table
-        int tableSize = 1 << names.size(); // 2 ^ length
+        int tableSize = 1 << sVars.vars.size(); // 2 ^ length
         for (int y = 0; y < tableSize; y++) {
 
             // associate bits with variables from high to low
-            int x = 1 << names.size() - 1;
+            int x = 1 << sVars.vars.size() - 1;
             Map<String, Value<Boolean>> vars = new HashMap<>();
-            for (String varName : names) {
+            for (String varName : sVars.vars.keySet()) {
                 vars.put(varName, Value.of((y & x) != 0));
                 x >>>= 1;
             }
@@ -914,6 +904,47 @@ public final class Expression implements Comparable<Expression> {
         }
         tokens.add(token);
         return valence;
+    }
+
+    /**
+     * Unresolved variable error.
+     */
+    public static final class UnresolvedVariableException extends RuntimeException {
+        private final String variable;
+
+        private UnresolvedVariableException(String variable) {
+            super("Unresolved variable: " + variable);
+            this.variable = variable;
+        }
+
+        /**
+         * Get the unresolved variable name.
+         *
+         * @return variable name
+         */
+        public String variable() {
+            return variable;
+        }
+    }
+
+    /**
+     * Expression formatting error.
+     */
+    public static final class FormatException extends RuntimeException {
+
+        private FormatException(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * QMC reduction limit exceeded.
+     */
+    public static final class QmcLimitException extends IllegalStateException {
+
+        private QmcLimitException(String message) {
+            super(message);
+        }
     }
 
     /**
@@ -1180,16 +1211,21 @@ public final class Expression implements Comparable<Expression> {
 
         @Override
         public int compareTo(Token o) {
-            if (operator != null) {
-                return o.operator != null ? operator.compareTo(o.operator) : 1;
+            int kind = operand != null ? 0 : variable != null ? 1 : operator != null ? 2 : 3;
+            int otherKind = o.operand != null ? 0 : o.variable != null ? 1 : o.operator != null ? 2 : 3;
+            if (kind != otherKind) {
+                return Integer.compare(kind, otherKind);
             }
-            if (operand != null) {
-                return o.operand != null ? Value.compare(operand, o.operand) : -1;
+            switch (kind) {
+                case 0:
+                    return Value.compare(operand, o.operand);
+                case 1:
+                    return variable.compareTo(o.variable);
+                case 2:
+                    return operator.compareTo(o.operator);
+                default:
+                    return 0;
             }
-            if (variable != null) {
-                return o.variable != null ? variable.compareTo(o.variable) : -1;
-            }
-            return 0;
         }
 
         @Override
@@ -1200,12 +1236,12 @@ public final class Expression implements Comparable<Expression> {
             Token token = (Token) o;
             return operator == token.operator
                    && Objects.equals(variable, token.variable)
-                   && Value.isEqual(operand, token.operand);
+                   && Value.isStrictEqual(operand, token.operand);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(operator, variable, operand);
+            return Objects.hash(operator, variable, Value.hash(operand));
         }
 
         @Override
@@ -1236,7 +1272,21 @@ public final class Expression implements Comparable<Expression> {
             }
         }
 
-        private String signature() {
+        static List<Token> negate(List<Token> tokens) {
+            List<Token> result = new ArrayList<>(tokens);
+            int index = result.size() - 1;
+            Token last = result.get(index);
+            if (last == EQUAL) {
+                result.set(index, NOT_EQUAL);
+            } else if (last == NOT_EQUAL) {
+                result.set(index, EQUAL);
+            } else {
+                result.add(NOT);
+            }
+            return result;
+        }
+
+        String signature() {
             if (operand != null) {
                 switch (operand.type()) {
                     case DYNAMIC:
@@ -1260,11 +1310,11 @@ public final class Expression implements Comparable<Expression> {
             throw new IllegalStateException("Expected operand token");
         }
 
-        private static String quoted(String value) {
+        static String quoted(String value) {
             return "'" + value + "'";
         }
 
-        private static List<String> parseArray(String symbol) {
+        static List<String> parseArray(String symbol) {
             return ARRAY_PATTERN.matcher(symbol)
                     .results()
                     .map(r -> r.group(1))
@@ -1272,7 +1322,7 @@ public final class Expression implements Comparable<Expression> {
                     .collect(toList());
         }
 
-        private static String parseVariable(String symbol) {
+        static String parseVariable(String symbol) {
             return VAR_PATTERN.matcher(symbol)
                     .results()
                     .map(r -> r.group(1))
@@ -1281,7 +1331,7 @@ public final class Expression implements Comparable<Expression> {
                             "Incorrect variable name: " + symbol));
         }
 
-        private static Token of(Symbol symbol) {
+        static Token of(Symbol symbol) {
             switch (symbol.type) {
                 case BINARY_OPERATOR:
                 case UNARY_OPERATOR:
@@ -1376,34 +1426,80 @@ public final class Expression implements Comparable<Expression> {
         private final int mark;
         private final int bits;
         private final BitSet ids;
+        private final int order;
 
-        Term(int bits, int mark, BitSet ids) {
+        Term(int bits, int mark, BitSet ids, int order) {
             this.bits = bits;
             this.mark = mark;
             this.ids = ids;
+            this.order = order;
         }
 
-        @Override
-        public boolean equals(Object o) {
-            if (!(o instanceof Term)) {
-                return false;
+        boolean prefer(Term other) {
+            int marks = Integer.bitCount(mark);
+            int otherMarks = Integer.bitCount(other.mark);
+            if (marks != otherMarks) {
+                return marks > otherMarks;
             }
-            return ids.equals(((Term) o).ids);
+            int bits = Integer.compare(this.bits, other.bits);
+            return bits < 0 || (bits == 0 && mark < other.mark);
         }
 
-        @Override
-        public int hashCode() {
-            return Objects.hashCode(ids);
-        }
     }
 
     private static final class TermTable {
         private final List<Term> terms = new ArrayList<>();
         private final List<Integer> groups = new ArrayList<>();
+        private long memoryCost;
+
+        static TermTable init(BitSet terms) {
+            TermTable table = new TermTable();
+            int termCount = terms.cardinality();
+            int numVars = 32 - Integer.numberOfLeadingZeros(Math.max(terms.length() - 1, 1));
+            if (termCount > QMC_MAX_TERMS) {
+                throw new QmcLimitException("QMC initial term limit exceeded");
+            }
+            for (int x = 0, y = 0; x <= numVars && y < termCount; x++) {
+                int z = y;
+                for (int i = 0, term = terms.nextSetBit(0); term >= 0; term = terms.nextSetBit(term + 1), i++) {
+                    if (x == Integer.bitCount(term)) {
+                        table.terms.add(new Term(term, 0, BitSets.of(i), table.terms.size()));
+                        y++;
+                        if (x == 0) {
+                            break;
+                        }
+                    }
+                }
+                if (y > z) {
+                    table.groups.add(y);
+                }
+            }
+            long mergePairs = 0;
+            for (int i = 0, start = 0; i + 1 < table.groups.size(); i++) {
+                int mid = table.groups.get(i);
+                int end = table.groups.get(i + 1);
+                mergePairs += (long) (mid - start) * (end - mid);
+                start = mid;
+            }
+            if (mergePairs > QMC_MAX_MERGE_PAIRS) {
+                throw new QmcLimitException("QMC merge pair limit exceeded");
+            }
+            return table;
+        }
 
         void clear() {
             terms.clear();
             groups.clear();
+            memoryCost = 0;
+        }
+
+        void add(int bits, int mark, BitSet ids) {
+            long nextMemoryCost = memoryCost + QMC_TERM_OVERHEAD_BYTES + (long) ids.size() / Byte.SIZE;
+            if (nextMemoryCost > QMC_MAX_TABLE_BYTES) {
+                throw new QmcLimitException("QMC implicant table memory limit exceeded");
+            }
+            terms.add(new Term(bits, mark, ids, terms.size()));
+            memoryCost = nextMemoryCost;
         }
 
         boolean contains(BitSet ids) {
@@ -1416,6 +1512,447 @@ public final class Expression implements Comparable<Expression> {
                 }
             }
             return false;
+        }
+    }
+
+    private static final class PrimeChart {
+        private final List<Term> terms;
+        private final BitSet essentials;
+        private final int cardinality;
+
+        private PrimeChart(List<Term> terms, BitSet essentials, int cardinality) {
+            this.terms = terms;
+            this.essentials = essentials;
+            this.cardinality = cardinality;
+        }
+
+        static PrimeChart init(TermTable table, BitSet minterms, BitSet dontCares) {
+            BitSet terms = BitSets.or(BitSets.copyOf(minterms), dontCares);
+            BitSet excludes = BitSets.indicesOf(terms, dontCares);
+            BitSet essentials = new BitSet();
+            BitSet coverage = new BitSet();
+            List<Term> chart = new ArrayList<>(table.terms.size());
+            for (Term term : table.terms) {
+                BitSet ids = BitSets.reindex(term.ids, excludes); // reindex without dontCares
+                if (!ids.isEmpty()) {
+                    chart.add(new Term(term.bits, term.mark, ids, term.order));
+                    BitSet shared = BitSets.and(BitSets.copyOf(ids), coverage); // record reused terms
+                    essentials.andNot(shared); // remove terms now covered more than once
+                    essentials.or(BitSets.andNot(BitSets.copyOf(ids), coverage)); // record terms first seen here
+                    coverage.or(ids); // record all covered terms
+                }
+            }
+            int cardinality = minterms.cardinality();
+            if (coverage.cardinality() != cardinality) {
+                throw new IllegalStateException("Prime chart does not cover all terms");
+            }
+            return new PrimeChart(chart, essentials, cardinality);
+        }
+
+        List<Term> select() {
+            List<Term> selected = new ArrayList<>(terms.size());
+            List<Term> remaining = new ArrayList<>(terms.size());
+            BitSet uncovered = BitSets.not(essentials, cardinality);
+            for (Term term : terms) {
+                if (term.ids.intersects(essentials)) {
+                    selected.add(term);
+                    uncovered.andNot(term.ids);
+                } else {
+                    remaining.add(term);
+                }
+            }
+            while (!uncovered.isEmpty()) {
+                Term best = select(remaining, uncovered);
+                if (best == null) {
+                    throw new IllegalStateException("Prime chart does not cover all terms");
+                }
+                selected.add(best);
+                uncovered.andNot(best.ids);
+            }
+            return selected;
+        }
+
+        static Term select(List<Term> terms, BitSet ids) {
+            Term best = null;
+            int bestCoverage = 0;
+            for (Term term : terms) {
+                int coverage = BitSets.intersectCount(term.ids, ids);
+                if (coverage > 0) {
+                    if (best == null) {
+                        best = term;
+                        bestCoverage = coverage;
+                    } else if (coverage > bestCoverage) {
+                        best = term;
+                        bestCoverage = coverage;
+                    } else if (coverage == bestCoverage && term.prefer(best)) {
+                        best = term;
+                    }
+                }
+            }
+            return best;
+        }
+    }
+
+    private static final class SyntheticVars {
+        private final Map<String, SyntheticVar> vars;
+
+        SyntheticVars(Map<String, SyntheticVar> vars) {
+            this.vars = vars;
+        }
+
+        List<int[]> exclusiveMasks() {
+            if (vars.size() < 2) {
+                return List.of();
+            }
+            int bit = 1 << vars.size() - 1;
+            Map<List<Token>, Map<List<Token>, Integer>> variableExpressions = new HashMap<>();
+            for (Map.Entry<String, SyntheticVar> entry : vars.entrySet()) {
+                SyntheticVar value = entry.getValue();
+                if (!value.variableExpr.isEmpty()) {
+                    variableExpressions.computeIfAbsent(value.variableExpr, k -> new HashMap<>())
+                            .merge(value.valueExpr, bit, (v1, v2) -> v1 | v2);
+                }
+                bit >>>= 1;
+            }
+            List<int[]> result = new ArrayList<>();
+            for (Map<List<Token>, Integer> values : variableExpressions.values()) {
+                if (values.size() > 1) {
+                    result.add(values.values().stream()
+                            .mapToInt(Integer::intValue)
+                            .toArray());
+                }
+            }
+            return result;
+        }
+
+        BitSet exclusiveDontCares() {
+            List<int[]> groups = exclusiveMasks();
+            if (groups.isEmpty()) {
+                return new BitSet();
+            }
+            BitSet result = new BitSet();
+            int tableSize = 1 << vars.size();
+            for (int y = 0; y < tableSize; y++) {
+                for (int[] masks : groups) {
+                    int count = 0;
+                    for (int mask : masks) {
+                        if ((y & mask) != 0 && ++count > 1) {
+                            result.set(y);
+                            break;
+                        }
+                    }
+                    if (result.get(y)) {
+                        break;
+                    }
+                }
+            }
+            return result;
+        }
+
+        void put(String name, List<Token> tokens) {
+            vars.putIfAbsent(name, new SyntheticVar(tokens));
+        }
+
+        void put(SyntheticVars... others) {
+            for (SyntheticVars other : others) {
+                other.vars.forEach(vars::putIfAbsent);
+            }
+        }
+
+        SyntheticVars intersect(SyntheticVars other) {
+            SyntheticVars result = new SyntheticVars(new LinkedHashMap<>());
+            vars.forEach((name, value) -> {
+                if (other.vars.containsKey(name)) {
+                    result.vars.putIfAbsent(name, value);
+                }
+            });
+            other.vars.forEach((name, value) -> {
+                if (vars.containsKey(name)) {
+                    result.vars.putIfAbsent(name, value);
+                }
+            });
+            return result;
+        }
+    }
+
+    private static final class SyntheticVar {
+        private final List<Token> tokens;
+        private final List<Token> variableExpr; // variable side of the equality
+        private final List<Token> valueExpr; // value side of the equality
+
+        SyntheticVar(List<Token> tokens) {
+            this.tokens = List.copyOf(tokens);
+            if (tokens.isEmpty() || tokens.get(tokens.size() - 1) != Token.EQUAL) {
+                this.variableExpr = List.of();
+                this.valueExpr = List.of();
+                return;
+            }
+            List<Token> right = expression(tokens, tokens.size() - 1);
+            List<Token> left = expression(tokens, tokens.size() - 1 - right.size());
+            boolean leftVar = left.stream().anyMatch(Token::isVariable);
+            boolean rightVar = right.stream().anyMatch(Token::isVariable);
+            if (leftVar != rightVar) {
+                this.variableExpr = leftVar ? left : right;
+                this.valueExpr = leftVar ? right : left;
+            } else {
+                this.variableExpr = List.of();
+                this.valueExpr = List.of();
+            }
+        }
+
+        static List<Token> expression(List<Token> tokens, int endIndex) {
+            for (int i = endIndex - 1, depth = 1; i >= 0; i--) {
+                Token token = tokens.get(i);
+                if (token.operator != null) {
+                    depth += token.operator.valence - 1;
+                } else {
+                    depth--;
+                }
+                if (depth == 0) {
+                    return tokens.subList(i, endIndex);
+                }
+            }
+            throw new IllegalStateException("Invalid postfix expression");
+        }
+    }
+
+    private static final class FactorNode implements Comparable<FactorNode> {
+        private enum Type {
+            TRUE, FALSE, LITERAL, COMPOSITE
+        }
+
+        private static final FactorNode TRUE = new FactorNode(Type.TRUE, 0, false, List.of(), null, List.of());
+        private static final FactorNode FALSE = new FactorNode(Type.FALSE, 0, false, List.of(), null, List.of());
+
+        private final Type type;
+        private final int bit; // truth table bit
+        private final boolean negated;
+        private final List<Token> literalTokens;
+        private final Operator operator;
+        private final List<FactorNode> children;
+        private final LazyValue<List<Token>> tokens = new LazyValue<>(this::tokens0);
+
+        private FactorNode(Type type, int bit, boolean negated, List<Token> literalTokens,
+                           Operator operator, List<FactorNode> children) {
+            this.type = type;
+            this.bit = bit;
+            this.negated = negated;
+            this.literalTokens = literalTokens;
+            this.operator = operator;
+            this.children = children;
+        }
+
+        List<Token> tokens() {
+            return tokens.get();
+        }
+
+        @Override
+        public int compareTo(FactorNode other) {
+            int cmp = Integer.compare(tokens().size(), other.tokens().size());
+            return cmp != 0 ? cmp : Lists.compare(tokens(), other.tokens());
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof FactorNode)) {
+                return false;
+            }
+            FactorNode other = (FactorNode) o;
+            return type == other.type
+                   && bit == other.bit
+                   && negated == other.negated
+                   && literalTokens.equals(other.literalTokens)
+                   && operator == other.operator
+                   && children.equals(other.children);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(type, bit, negated, literalTokens, operator, children);
+        }
+
+        List<Token> tokens0() {
+            switch (type) {
+                case TRUE:
+                    return List.of(Token.TRUE);
+                case FALSE:
+                    return List.of(Token.FALSE);
+                case LITERAL:
+                    return negated ? Token.negate(literalTokens) : literalTokens;
+                case COMPOSITE:
+                    List<Token> tokens = new ArrayList<>();
+                    for (int i = 0; i < children.size(); i++) {
+                        tokens.addAll(children.get(i).tokens());
+                        if (i > 0) {
+                            tokens.add(Token.of(operator));
+                        }
+                    }
+                    return tokens;
+                default:
+                    throw new IllegalStateException("Unexpected factor node type: " + type);
+            }
+        }
+
+        static List<FactorNode> terms(SyntheticVars vars, int[][] terms) {
+            List<SyntheticVar> values = new ArrayList<>(vars.vars.values());
+            List<FactorNode> result = new ArrayList<>(terms.length);
+            for (int[] term : terms) {
+                int bit = 1 << vars.vars.size() - 1;
+                List<FactorNode> factors = new ArrayList<>();
+                for (SyntheticVar value : values) {
+                    if ((bit & term[1]) == 0) {
+                        factors.add(literal(bit, (bit & term[0]) == 0, value.tokens));
+                    }
+                    bit >>>= 1;
+                }
+                result.add(and(factors));
+            }
+            return result;
+        }
+
+        static FactorNode literal(int bit, boolean negated, List<Token> tokens) {
+            return new FactorNode(Type.LITERAL, bit, negated, tokens, null, List.of());
+        }
+
+        static FactorNode composite(Operator operator, List<FactorNode> children) {
+            return new FactorNode(Type.COMPOSITE, 0, false, List.of(), operator, children);
+        }
+
+        static FactorNode and(List<FactorNode> children) {
+            return node(Operator.AND, children);
+        }
+
+        static FactorNode or(List<FactorNode> children) {
+            return node(Operator.OR, children);
+        }
+
+        static FactorNode node(Operator operator, List<FactorNode> rawChildren) {
+            List<FactorNode> children = new ArrayList<>();
+            FactorNode annihilator = operator == Operator.OR ? TRUE : FALSE;
+            FactorNode identity = operator == Operator.OR ? FALSE : TRUE;
+            for (FactorNode child : rawChildren) {
+                if (child == annihilator) {
+                    return annihilator;
+                }
+                if (child != identity) {
+                    if (child.type == Type.COMPOSITE && child.operator == operator) {
+                        children.addAll(child.children);
+                    } else {
+                        children.add(child);
+                    }
+                }
+            }
+            if (children.isEmpty()) {
+                return identity;
+            }
+            children.sort(FactorNode::compareTo);
+            children = Lists.unique(children);
+            FactorNode complement = complement(operator, children);
+            if (complement != null) {
+                return complement;
+            }
+            children = absorb(operator, children);
+            if (children.isEmpty()) {
+                return identity;
+            }
+            if (children.size() == 1) {
+                return children.get(0);
+            }
+            FactorNode direct = composite(operator, children);
+            if (operator == Operator.OR) {
+                return factor(direct, children);
+            }
+            return direct;
+        }
+
+        static FactorNode complement(Operator operator, List<FactorNode> children) {
+            Map<Integer, Boolean> states = new HashMap<>();
+            for (FactorNode child : children) {
+                if (child.type != Type.LITERAL) {
+                    continue;
+                }
+                Boolean previous = states.putIfAbsent(child.bit, child.negated);
+                if (previous != null && previous != child.negated) {
+                    return operator == Operator.OR ? TRUE : FALSE;
+                }
+            }
+            return null;
+        }
+
+        static List<FactorNode> absorb(Operator operator, List<FactorNode> children) {
+            List<List<FactorNode>> factors = new ArrayList<>(children.size());
+            for (FactorNode child : children) {
+                factors.add(factors(operator, child));
+            }
+            BitSet removed = new BitSet(children.size());
+            for (int i = 0; i < children.size(); i++) {
+                if (!removed.get(i)) {
+                    for (int j = 0; j < children.size(); j++) {
+                        if (i != j && !removed.get(j) && Lists.containsAll(factors.get(j), factors.get(i))) {
+                            removed.set(j);
+                        }
+                    }
+                }
+            }
+            if (removed.isEmpty()) {
+                return children;
+            }
+            List<FactorNode> result = new ArrayList<>(children.size() - removed.cardinality());
+            for (int i = 0; i < children.size(); i++) {
+                if (!removed.get(i)) {
+                    result.add(children.get(i));
+                }
+            }
+            return result;
+        }
+
+        static FactorNode factor(FactorNode direct, List<FactorNode> children) {
+            List<List<FactorNode>> factors = new ArrayList<>(children.size());
+            for (FactorNode child : children) {
+                factors.add(factors(Operator.OR, child));
+            }
+            Set<List<FactorNode>> candidates = new HashSet<>();
+            FactorNode best = direct;
+            for (int i = 0; i < factors.size(); i++) {
+                for (int j = i + 1; j < factors.size(); j++) {
+                    List<FactorNode> common = Lists.intersect(factors.get(i), factors.get(j));
+                    if (!common.isEmpty() && candidates.add(common)) {
+                        List<FactorNode> grouped = new ArrayList<>();
+                        List<FactorNode> groupedFactors = new ArrayList<>();
+                        List<FactorNode> remaining = new ArrayList<>();
+                        for (int k = 0; k < children.size(); k++) {
+                            if (Lists.containsAll(factors.get(k), common)) {
+                                grouped.add(children.get(k));
+                                groupedFactors.add(and(Lists.subtract(factors.get(k), common)));
+                            } else {
+                                remaining.add(children.get(k));
+                            }
+                        }
+                        if (grouped.size() >= 2) {
+                            FactorNode remainders = or(groupedFactors);
+                            List<FactorNode> nextFactors = new ArrayList<>(common.size() + 1);
+                            nextFactors.addAll(common);
+                            if (remainders != TRUE) {
+                                nextFactors.add(remainders);
+                            }
+                            remaining.add(and(nextFactors));
+                            FactorNode candidate = or(remaining);
+                            if (!candidate.equals(best) && candidate.tokens().size() < best.tokens().size()) {
+                                best = candidate;
+                            }
+                        }
+                    }
+                }
+            }
+            return best;
+        }
+
+        static List<FactorNode> factors(Operator operator, FactorNode child) {
+            Operator nested = operator == Operator.OR ? Operator.AND : Operator.OR;
+            if (child.type == Type.COMPOSITE && child.operator == nested) {
+                return child.children;
+            }
+            return List.of(child);
         }
     }
 }
