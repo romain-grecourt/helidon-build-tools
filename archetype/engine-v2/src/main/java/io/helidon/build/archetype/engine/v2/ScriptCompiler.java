@@ -1314,8 +1314,7 @@ public class ScriptCompiler {
                         node.expression(expr);
                         refs.put(node, Map.copyOf(currentRefs));
                         refReachabilityByNode.put(node, Map.copyOf(currentReachabilityByRef));
-                        Expression reachabilityExpr = inline(node, expr);
-                        Reachability conditionReachability = translate(reachabilityExpr, scope, currentBindings,
+                        Reachability conditionReachability = translate(expr, scope, currentBindings,
                                 currentReachabilityByRef);
                         nodeState = currentState.and(conditionReachability);
                         if (nodeState.isFalse()) {

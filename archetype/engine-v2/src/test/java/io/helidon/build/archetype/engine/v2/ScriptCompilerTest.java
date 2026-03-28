@@ -211,6 +211,13 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testConstantVariableConditionUsesInputReachability() {
+        Path outputDir = compile("compiler/preset-condition", "main.xml");
+        assertThat(normalizeXml(outputDir.resolve("main.xml")),
+                is(normalizeXml("compiler/expected/preset-condition.xml")));
+    }
+
+    @Test
     void testVariables1() {
         Path outputDir = compile("compiler/variables1", "main.xml", IGNORE_ERRORS);
         assertThat(normalizeXml(outputDir.resolve("main.xml")), is(normalizeXml("compiler/expected/variables1.xml")));
