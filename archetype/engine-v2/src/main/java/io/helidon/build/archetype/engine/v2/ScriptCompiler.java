@@ -1344,7 +1344,6 @@ public class ScriptCompiler {
                     refTypes.putIfAbsent(scope.key(), node.kind().valueType());
                     registerDomain(node, scope.key());
                     currentRefs.compute(scope.key(), (k, v) -> expression(node.parent()).or(v).reduce());
-                    Expression inputExpr = inline(node, expression(node));
                     if (currentState.supported()) {
                         Reachability parentReachability = currentState.reachability();
                         currentReachabilityByRef.compute(scope.key(),
@@ -1362,14 +1361,14 @@ public class ScriptCompiler {
                             break;
                         default:
                     }
-                    if (shouldPrune(node, nodeState, inputExpr)) {
+                    if (shouldPrune(node, nodeState)) {
                         return skipPrunedNode(node, nodeState);
                     }
                     break;
                 case INPUT_OPTION:
                     scopes.put(node, scope.key());
                     nodeState = currentState.and(optionReachability(node));
-                    if (shouldPrune(node, nodeState, null)) {
+                    if (shouldPrune(node, nodeState)) {
                         return skipPrunedNode(node, nodeState);
                     }
                     break;
@@ -1468,16 +1467,16 @@ public class ScriptCompiler {
             super.postVisit(node);
         }
 
-        private boolean shouldPrune(Node node, ReachabilityState nodeState, Expression fallbackExpr) {
+        private boolean shouldPrune(Node node, ReachabilityState nodeState) {
             if (nodeState.supported()) {
                 return nodeState.isFalse();
             }
             // unsupported reachability still needs compatibility pruning via full inlining
-            return compatibilityPruned(node, fallbackExpr);
+            return compatibilityPruned(node);
         }
 
-        private boolean compatibilityPruned(Node node, Expression fallbackExpr) {
-            Expression expr = fallbackExpr != null ? fallbackExpr : inline(node, expression(node));
+        private boolean compatibilityPruned(Node node) {
+            Expression expr = inline(node, expression(node));
             return expr == Expression.FALSE;
         }
 
