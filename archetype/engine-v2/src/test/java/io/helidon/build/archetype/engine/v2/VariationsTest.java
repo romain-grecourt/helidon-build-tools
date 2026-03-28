@@ -113,6 +113,49 @@ class VariationsTest {
     }
 
     @Test
+    void testVariationsBoolean5() {
+        Variations expected = loadVariations("variations/expected/boolean5.xml");
+        Variations actual = variations("variations", "boolean5.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        assertThat(actual.toString(false), is(expected.toString(false)));
+    }
+
+    @Test
+    void testVariationsBoolean6() {
+        Variations expected = loadVariations("variations/expected/boolean6.xml");
+        Variations actual = variations("variations", "boolean6.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        assertThat(actual.toString(false), is(expected.toString(false)));
+    }
+
+    @Test
+    void testVariationsBoolean7() {
+        Variations expected = loadVariations("variations/expected/boolean7.xml");
+        Variations actual = variations("variations", "boolean7.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        assertThat(actual.toString(false), is(expected.toString(false)));
+    }
+
+    @Test
+    void testVariationsBoolean8() {
+        Variations expected = loadVariations("variations/expected/boolean8.xml");
+        Variations actual = variations("variations", "boolean8.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        assertThat(actual.toString(false), is(expected.toString(false)));
+    }
+
+    @Test
+    void testVariationsBoolean9() {
+        Variations expected = loadVariations("variations/expected/boolean9.xml");
+        Variations actual = variations("variations", "boolean9.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        assertThat(actual.toString(false), is(expected.toString(false)));
+    }
+
+    @Test
+    void testVariationsBoolean10() {
+        Variations expected = loadVariations("variations/expected/boolean10.xml");
+        Variations actual = variations("variations", "boolean10.xml", List.of(),
+                Map.of("flavor", "mp", "app-type", "custom"), Map.of(), Long.MAX_VALUE);
+        assertThat(actual.toString(false), is(expected.toString(false)));
+    }
+
+    @Test
     void testVariationsText1() {
         Variations expected = Variations.of(Map.of("name", "Foo"), Set.of("name"));
         Variations actual = variations("variations", "text1.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);

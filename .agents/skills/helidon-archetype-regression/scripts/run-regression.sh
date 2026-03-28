@@ -24,10 +24,12 @@ Usage:
 
 Modes:
   diff_variations
-      Ensure the variation coverage is unchanged.
+      Ensure the variation coverage is unchanged and stays within the
+      variation timing gate.
 
   diff_projects
-      Ensure generated project outputs are unchanged.
+      Ensure generated project outputs are unchanged after the
+      diff_variations gate passes.
 
   compile_gate
       Ensure compiler complexity remains acceptable.
@@ -43,6 +45,8 @@ Options:
   --helidon-dir <path>        Required Helidon checkout location
   --state-dir <path>          Override the default .state root directory
   --threshold-seconds <n>     Compile gate threshold, default 5
+  --variations-threshold-seconds <n>
+                              Variation timing gate threshold, default 15
   --verbose                   Echo commands as they run
   --no-restore-current        Skip reinstalling current workspace at end
   --help                      Show this usage text
@@ -120,8 +124,12 @@ resolve_state_root() {
 }
 
 validate_threshold() {
-    if ! printf "%s\n" "${THRESHOLD_SECONDS}" | grep -Eq '^[0-9]+([.][0-9]+)?$'; then
-        die "--threshold-seconds must be numeric"
+    local flag value
+    flag="$1"
+    value="$2"
+
+    if ! printf "%s\n" "${value}" | grep -Eq '^[0-9]+([.][0-9]+)?$'; then
+        die "${flag} must be numeric"
     fi
 }
 
@@ -149,7 +157,8 @@ validate_paths() {
     [ -f "${HELIDON_POM}" ] || die "missing ${HELIDON_POM}"
     [ -x "${HELPER_SCRIPT}" ] || die "missing executable helper ${HELPER_SCRIPT}"
 
-    validate_threshold
+    validate_threshold "--threshold-seconds" "${THRESHOLD_SECONDS}"
+    validate_threshold "--variations-threshold-seconds" "${VARIATIONS_THRESHOLD_SECONDS}"
     resolve_state_root
 
     if [ "${MODE}" = "diff_variations" ] || [ "${MODE}" = "diff_projects" ] || [ "${MODE}" = "all" ]; then
@@ -290,7 +299,7 @@ generate_variations() {
     log_file="$1"
 
     step "${CURRENT_MODE}: generating variation snapshot"
-    run_logged "${HELIDON_DIR}" "${log_file}" \
+    run_timed_logged "${HELIDON_DIR}" "${log_file}" \
         mvn -f archetypes/archetypes/pom.xml \
             clean \
             install \
@@ -357,6 +366,19 @@ compile_gate_passes_threshold() {
         'BEGIN { exit !(measured <= threshold) }'
 }
 
+variations_gate_passes_threshold() {
+    local measured
+    measured="$1"
+
+    awk -v measured="${measured}" \
+        -v threshold="${VARIATIONS_THRESHOLD_SECONDS}" \
+        'BEGIN { exit !(measured <= threshold) }'
+}
+
+timing_value_from_log() {
+    awk '/^real /{value=$2} END{print value}' "$1"
+}
+
 print_compile_gate_summary() {
     local status wall_seconds timing_log
     status="$1"
@@ -371,15 +393,22 @@ print_compile_gate_summary() {
 }
 
 print_diff_variations_summary() {
-    local status changed snapshot_root compare_log
+    local status changed timing_ok baseline_wall_seconds actual_wall_seconds snapshot_root compare_log
     status="$1"
     changed="$2"
-    snapshot_root="$3"
-    compare_log="$4"
+    timing_ok="$3"
+    baseline_wall_seconds="$4"
+    actual_wall_seconds="$5"
+    snapshot_root="$6"
+    compare_log="$7"
 
     printf "\n"
     printf "diff_variations: %s\n" "${status}"
     printf "  outputs changed: %s\n" "$(yes_no "${changed}")"
+    printf "  current variation within threshold: %s\n" "$(yes_no "${timing_ok}")"
+    printf "  baseline wall-clock: %ss\n" "${baseline_wall_seconds}"
+    printf "  current wall-clock: %ss\n" "${actual_wall_seconds}"
+    printf "  threshold: %ss\n" "${VARIATIONS_THRESHOLD_SECONDS}"
     printf "  snapshots: %s\n" "${snapshot_root}"
     printf "  compare log: %s\n" "${compare_log}"
 }
@@ -433,7 +462,7 @@ run_compile_gate() {
         return 1
     fi
 
-    timing_value="$(awk '/^real /{value=$2} END{print value}' "${timing_log}")"
+    timing_value="$(timing_value_from_log "${timing_log}")"
     if [ -z "${timing_value}" ]; then
         wall_seconds="missing"
         print_compile_gate_summary "${status}" "${wall_seconds}" "${timing_log}"
@@ -455,10 +484,14 @@ run_diff_variations() {
     local baseline_install_log baseline_generate_log
     local actual_install_log actual_generate_log compare_log
     local baseline_snapshot actual_snapshot snapshot_root status changed
+    local baseline_wall_seconds actual_wall_seconds timing_ok
 
     CURRENT_MODE="diff_variations"
     status="FAIL"
     changed=2
+    timing_ok=2
+    baseline_wall_seconds="n/a"
+    actual_wall_seconds="n/a"
 
     baseline_install_log="${STATE_DIR}/logs/diff_variations-baseline-install.log"
     baseline_generate_log="${STATE_DIR}/logs/diff_variations-baseline-generate.log"
@@ -470,11 +503,36 @@ run_diff_variations() {
     actual_snapshot="${snapshot_root}/actual"
 
     if ! install_baseline "${BASELINE_WORKTREE_DIR}" "${baseline_install_log}" "baseline (${BASELINE_REF})" \
-        || ! generate_variations "${baseline_generate_log}" || ! copy_variations_snapshot "${baseline_snapshot}" \
-        || ! install_current "${actual_install_log}" "current workspace" || ! generate_variations "${actual_generate_log}" \
-        || ! copy_variations_snapshot "${actual_snapshot}" \
+        || ! generate_variations "${baseline_generate_log}"; then
+        print_diff_variations_summary "${status}" "${changed}" "${timing_ok}" \
+            "${baseline_wall_seconds}" "${actual_wall_seconds}" "${snapshot_root}" "${compare_log}"
+        return 1
+    fi
+    baseline_wall_seconds="$(timing_value_from_log "${baseline_generate_log}")"
+    if [ -z "${baseline_wall_seconds}" ]; then
+        baseline_wall_seconds="missing"
+    fi
+
+    if ! copy_variations_snapshot "${baseline_snapshot}" \
+        || ! install_current "${actual_install_log}" "current workspace" \
+        || ! generate_variations "${actual_generate_log}"; then
+        print_diff_variations_summary "${status}" "${changed}" "${timing_ok}" \
+            "${baseline_wall_seconds}" "${actual_wall_seconds}" "${snapshot_root}" "${compare_log}"
+        return 1
+    fi
+    actual_wall_seconds="$(timing_value_from_log "${actual_generate_log}")"
+    if [ -z "${actual_wall_seconds}" ]; then
+        actual_wall_seconds="missing"
+    elif variations_gate_passes_threshold "${actual_wall_seconds}"; then
+        timing_ok=1
+    else
+        timing_ok=0
+    fi
+
+    if ! copy_variations_snapshot "${actual_snapshot}" \
         || ! run_helper_compare "${compare_log}" diff_csv "${baseline_snapshot}" "${actual_snapshot}"; then
-        print_diff_variations_summary "${status}" "${changed}" "${snapshot_root}" "${compare_log}"
+        print_diff_variations_summary "${status}" "${changed}" "${timing_ok}" \
+            "${baseline_wall_seconds}" "${actual_wall_seconds}" "${snapshot_root}" "${compare_log}"
         return 1
     fi
 
@@ -484,17 +542,30 @@ run_diff_variations() {
         changed=0
     fi
 
-    if [ "${changed}" -eq 0 ]; then
+    if [ "${changed}" -eq 0 ] && [ "${timing_ok}" -eq 1 ]; then
         status="PASS"
-        print_diff_variations_summary "${status}" "${changed}" "${snapshot_root}" "${compare_log}"
+        print_diff_variations_summary "${status}" "${changed}" "${timing_ok}" \
+            "${baseline_wall_seconds}" "${actual_wall_seconds}" "${snapshot_root}" "${compare_log}"
         return 0
     fi
 
-    print_diff_variations_summary "${status}" "${changed}" "${snapshot_root}" "${compare_log}"
+    print_diff_variations_summary "${status}" "${changed}" "${timing_ok}" \
+        "${baseline_wall_seconds}" "${actual_wall_seconds}" "${snapshot_root}" "${compare_log}"
     return 1
 }
 
-run_diff_projects() {
+ensure_diff_variations_gate() {
+    if [ "${DIFF_VARIATIONS_RAN}" -eq 1 ]; then
+        return "${DIFF_VARIATIONS_STATUS}"
+    fi
+
+    run_diff_variations
+    DIFF_VARIATIONS_STATUS=$?
+    DIFF_VARIATIONS_RAN=1
+    return "${DIFF_VARIATIONS_STATUS}"
+}
+
+run_diff_projects_core() {
     local baseline_install_log baseline_generate_log
     local actual_install_log actual_generate_log csv_log compare_log
     local actual_snapshot baseline_snapshot changed csv_changed
@@ -562,18 +633,28 @@ run_diff_projects() {
     return 1
 }
 
+run_diff_projects() {
+    if ! ensure_diff_variations_gate; then
+        printf "\n"
+        printf "diff_projects: FAIL (diff_variations gate failed)\n"
+        return 1
+    fi
+
+    run_diff_projects_core
+}
+
 run_all() {
     if ! run_compile_gate; then
         printf "\n"
         printf "all: FAIL (stopped at %s)\n" "compile_gate"
         return 1
     fi
-    if ! run_diff_variations; then
+    if ! ensure_diff_variations_gate; then
         printf "\n"
         printf "all: FAIL (stopped at %s)\n" "diff_variations"
         return 1
     fi
-    if ! run_diff_projects; then
+    if ! run_diff_projects_core; then
         printf "\n"
         printf "all: FAIL (stopped at %s)\n" "diff_projects"
         return 1
@@ -638,6 +719,11 @@ parse_args() {
         --threshold-seconds)
             [ "$#" -ge 2 ] || die "missing value for --threshold-seconds"
             THRESHOLD_SECONDS="$2"
+            shift 2
+            ;;
+        --variations-threshold-seconds)
+            [ "$#" -ge 2 ] || die "missing value for --variations-threshold-seconds"
+            VARIATIONS_THRESHOLD_SECONDS="$2"
             shift 2
             ;;
         --verbose)
@@ -707,11 +793,14 @@ STATE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.state"
 STATE_DIR=""
 STATE_DIR_LIMIT=10
 THRESHOLD_SECONDS="5"
+VARIATIONS_THRESHOLD_SECONDS="15"
 VERBOSE=0
 RESTORE_CURRENT=1
 RUN_ID=""
 CURRENT_MODE=""
 CURRENT_WORKSPACE_INSTALLED=0
+DIFF_VARIATIONS_RAN=0
+DIFF_VARIATIONS_STATUS=2
 RESTORE_NOTE=""
 RESTORE_LOG=""
 BASELINE_WORKTREE_DIR=""

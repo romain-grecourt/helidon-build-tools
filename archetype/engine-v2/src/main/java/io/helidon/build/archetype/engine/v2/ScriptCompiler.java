@@ -26,6 +26,7 @@ import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -177,6 +178,7 @@ public class ScriptCompiler {
     static final String PRESET_UNRESOLVED = "Preset input cannot be resolved";
     static final String PRESET_TYPE_MISMATCH = "Preset type mismatch";
     static final String EXPR_INCOMPATIBLE_OPERATOR = "Expression contains a non compatible operator";
+    static final String EXPR_UNSUPPORTED_CONDITION = "Expression contains an unsupported condition shape";
     static final String EXPR_UNRESOLVED_VARIABLE = "Expression contains an unresolved variable";
     static final String EXPR_EVAL_ERROR = "Expression evaluated with an error";
     static final String STEP_NO_INPUT = "Step does not contain any input";
@@ -192,6 +194,8 @@ public class ScriptCompiler {
     private final Map<Node, String> scopes = new HashMap<>();
     private final Map<Node, Map<String, Value<?>>> paths = new HashMap<>();
     private final Map<String, Set<Node>> declaredValues = new HashMap<>();
+    private final Map<Node, Map<String, Value<?>>> declaredValueCache = new IdentityHashMap<>();
+    private final Map<Node, Map<String, Value<?>>> inlineDeclaredValueCache = new IdentityHashMap<>();
     private final Map<Node, Expression> expressions = new HashMap<>();
     private final Map<Node, Map<String, Expression>> refs = new HashMap<>();
     private final Map<Node, Reachability> reachabilityByNode = new HashMap<>();
@@ -346,6 +350,7 @@ public class ScriptCompiler {
     private void validateExpressions() {
         for (Node node : sourceNode.traverse(Kind.CONDITION::equals)) {
             Expression expr = node.expression();
+            boolean compatible = true;
 
             // check operators compatibility
             for (Token token : expr.tokens()) {
@@ -359,6 +364,7 @@ public class ScriptCompiler {
                         case GREATER_OR_EQUAL:
                         case LOWER_THAN:
                         case LOWER_OR_EQUAL:
+                            compatible = false;
                             errors.add(String.format("%s %s: '%s'",
                                     node.location(),
                                     EXPR_INCOMPATIBLE_OPERATOR,
@@ -373,6 +379,7 @@ public class ScriptCompiler {
             Scope scope = scope(node);
             Reachability blockReachability = reachability(node.parent());
             Map<String, Reachability> refReachabilityMap = refReachabilityByNode.getOrDefault(node, Map.of());
+            Map<String, Reachability> variableDemands = variableDemands(expr, scope, refReachabilityMap);
             Expression blockExpr = null;
             Map<String, Expression> refMap = null;
             for (String variable : expr.variables()) {
@@ -382,26 +389,26 @@ public class ScriptCompiler {
 
                 boolean variableResolved = false;
                 Reachability refReachability = refReachabilityMap.get(ref);
-                if (blockReachability != null && refReachability != null) {
-                    variableResolved = refReachability.contains(blockReachability);
+                Reachability requiredReachability = blockReachability;
+                Reachability variableDemand = variableDemands.get(ref);
+                if (variableDemand != null) {
+                    requiredReachability = requiredReachability == null
+                            ? variableDemand
+                            : requiredReachability.and(variableDemand);
+                }
+                if (requiredReachability != null && refReachability != null) {
+                    variableResolved = refReachability.contains(requiredReachability);
                 }
                 if (!variableResolved) {
                     if (blockExpr == null) {
                         blockExpr = expression(node.parent());
                         refMap = refs.getOrDefault(node, Map.of());
                     }
-
-                    // expression that represents where the reference is defined
                     Expression refExpr0 = refMap.getOrDefault(ref, Expression.FALSE);
-
-                    // "relativize" the expression within the block
                     Expression refExpr1 = blockExpr.relativize(refExpr0);
-
-                    // inline values
                     Expression refExpr2 = inline(node, refExpr1);
                     variableResolved = refExpr2 == Expression.TRUE;
                 }
-
                 if (!variableResolved) {
                     resolved = false;
                     errors.add(String.format("%s %s: '%s'",
@@ -413,12 +420,12 @@ public class ScriptCompiler {
 
             // check evaluation
             if (resolved) {
+                Map<String, Value<?>> variables = new HashMap<>();
+                for (String variable : expr.variables()) {
+                    Type type = refTypes.getOrDefault(scope.key(variable), Type.EMPTY);
+                    variables.put(variable, Value.typed(type));
+                }
                 try {
-                    Map<String, Value<?>> variables = new HashMap<>();
-                    for (String variable : expr.variables()) {
-                        Type type = refTypes.getOrDefault(scope.key(variable), Type.EMPTY);
-                        variables.put(variable, Value.typed(type));
-                    }
                     expr.eval(variables::get);
                 } catch (RuntimeException ex) {
                     errors.add(String.format(
@@ -426,9 +433,23 @@ public class ScriptCompiler {
                             node.location(),
                             EXPR_EVAL_ERROR,
                             ex.getMessage()));
+                    continue;
+                }
+                if (compatible && translate(expr, scope, Map.of(), refReachabilityMap) == null) {
+                    errors.add(String.format(
+                            "%s %s: '%s'",
+                            node.location(),
+                            EXPR_UNSUPPORTED_CONDITION,
+                            expr.literal()));
                 }
             }
         }
+    }
+
+    private Map<String, Reachability> variableDemands(Expression expr,
+                                                      Scope scope,
+                                                      Map<String, Reachability> definitions) {
+        return new VariableDemandAnalyzer(scope, definitions).analyze(expr);
     }
 
     private void validateOptions() {
@@ -543,11 +564,67 @@ public class ScriptCompiler {
     }
 
     Value<?> declaredValue(Node node, String key) {
+        return declaredValueCache
+                .computeIfAbsent(node, n -> new HashMap<>())
+                .computeIfAbsent(key, k -> declaredValue0(node, k));
+    }
+
+    private Value<?> declaredValue0(Node node, String key) {
+        Node node0 = null;
+        Expression blockExpr = expression(node.parent());
+        Reachability blockReachability = reachability(node.parent());
+        for (Node n : declaredValues.getOrDefault(key, Set.of())) {
+            if (!attached(n)) {
+                continue;
+            }
+            if (node.id() > n.id()) {
+                Reachability refReachability = reachability(n);
+                if (blockReachability != null && refReachability != null) {
+                    Reachability overlap = blockReachability.and(refReachability);
+                    if (!overlap.isFalse()) {
+                        if (refReachability.contains(blockReachability)) {
+                            if (node0 == null || n.id() > node0.id()) {
+                                node0 = n;
+                            }
+                        } else if (node0 != null && n.id() > node0.id()) {
+                            node0 = null;
+                        }
+                    }
+                } else {
+                    // "relativize" the expression within the block
+                    Expression refExpr = blockExpr.relativize(expression(n));
+                    if (refExpr == Expression.TRUE) {
+                        if (node0 == null || n.id() > node0.id()) {
+                            node0 = n;
+                        }
+                    } else if (refExpr != Expression.FALSE) {
+                        if (node0 != null && n.id() > node0.id()) {
+                            node0 = null;
+                        }
+                    }
+                }
+            }
+        }
+        if (node0 != null) {
+            return Value.typed(node0.value(), node0.kind().valueType());
+        }
+        return Value.empty();
+    }
+
+    private Value<?> declaredValueForInlining(Node node, String key) {
+        return inlineDeclaredValueCache
+                .computeIfAbsent(node, n -> new HashMap<>())
+                .computeIfAbsent(key, k -> declaredValueForInlining0(node, k));
+    }
+
+    private Value<?> declaredValueForInlining0(Node node, String key) {
         Node node0 = null;
         Expression blockExpr = expression(node.parent());
         for (Node n : declaredValues.getOrDefault(key, Set.of())) {
+            if (!attached(n)) {
+                continue;
+            }
             if (node.id() > n.id()) {
-                // "relativize" the expression within the block
                 Expression refExpr = blockExpr.relativize(expression(n));
                 if (refExpr == Expression.TRUE) {
                     if (node0 == null || n.id() > node0.id()) {
@@ -566,7 +643,32 @@ public class ScriptCompiler {
         return Value.empty();
     }
 
+    private boolean attached(Node node) {
+        Node current = node;
+        while (current != null) {
+            Node parent = current.parent();
+            if (parent == null) {
+                return current == sourceNode;
+            }
+            if (!parent.children().contains(current)) {
+                return false;
+            }
+            current = parent;
+        }
+        return false;
+    }
+
     private Expression inline(Node node, Expression expr) {
+        return inline(node, expr, this::declaredValue);
+    }
+
+    private Expression inlineCondition(Node node, Expression expr) {
+        return inline(node, expr, this::declaredValueForInlining);
+    }
+
+    private Expression inline(Node node,
+                              Expression expr,
+                              BiFunction<Node, String, Value<?>> declaredValueResolver) {
         try {
             Scope scope = scope(node);
             Map<String, Value<?>> values = path(node);
@@ -574,7 +676,7 @@ public class ScriptCompiler {
                 String key = scope.get(s).key();
                 Value<?> value = values.get(key);
                 if (value == null) {
-                    value = declaredValue(node, key);
+                    value = declaredValueResolver.apply(node, key);
                 }
                 return value;
             });
@@ -696,6 +798,306 @@ public class ScriptCompiler {
             return value;
         } catch (RuntimeException ex) {
             return null;
+        }
+    }
+
+    private final class VariableDemandAnalyzer {
+        private final Scope scope;
+        private final Map<String, Reachability> definitions;
+
+        private VariableDemandAnalyzer(Scope scope, Map<String, Reachability> definitions) {
+            this.scope = scope;
+            this.definitions = definitions;
+        }
+
+        Map<String, Reachability> analyze(Expression expr) {
+            Deque<DemandTerm> stack = new ArrayDeque<>();
+            try {
+                for (Token token : expr.tokens()) {
+                    if (token.isOperand()) {
+                        stack.push(new DemandValue(token.operand()));
+                        continue;
+                    }
+                    if (token.isVariable()) {
+                        stack.push(new DemandRef(scope.key(token.variable())));
+                        continue;
+                    }
+                    switch (token.operator()) {
+                        case NOT:
+                            stack.push(booleanTerm(stack.pop()).negate());
+                            break;
+                        case AND:
+                            stack.push(booleanTerm(stack.pop()).and(booleanTerm(stack.pop())));
+                            break;
+                        case OR:
+                            stack.push(booleanTerm(stack.pop()).or(booleanTerm(stack.pop())));
+                            break;
+                        case EQUAL:
+                            stack.push(equality(stack.pop(), stack.pop(), false));
+                            break;
+                        case NOT_EQUAL:
+                            stack.push(equality(stack.pop(), stack.pop(), true));
+                            break;
+                        case CONTAINS:
+                            stack.push(contains(stack.pop(), stack.pop()));
+                            break;
+                        default:
+                            return Map.of();
+                    }
+                }
+                if (stack.size() != 1) {
+                    return Map.of();
+                }
+                Map<String, Reachability> demands = new HashMap<>();
+                booleanTerm(stack.pop()).collect(trueReachability(), demands);
+                return demands;
+            } catch (RuntimeException ex) {
+                return Map.of();
+            }
+        }
+
+        private DemandBoolean booleanTerm(DemandTerm term) {
+            if (term instanceof DemandBoolean) {
+                return (DemandBoolean) term;
+            }
+            if (term instanceof DemandValue) {
+                Value<?> value = ((DemandValue) term).value;
+                if (value.type() == Type.BOOLEAN) {
+                    return new DemandBoolean(value.getBoolean() ? trueReachability() : falseReachability(),
+                            (demand, output) -> {
+                            });
+                }
+                return new DemandBoolean(null, term::collect);
+            }
+            if (term instanceof DemandRef) {
+                String key = ((DemandRef) term).key;
+                return new DemandBoolean(booleanReachability(key), term::collect);
+            }
+            throw new IllegalStateException("Unsupported demand term: " + term);
+        }
+
+        private DemandBoolean equality(DemandTerm right, DemandTerm left, boolean negate) {
+            Reachability reachability = equality(left, right);
+            if (negate && reachability != null) {
+                reachability = trueReachability().subtract(reachability);
+            }
+            return new DemandBoolean(reachability, (demand, output) -> {
+                left.collect(demand, output);
+                right.collect(demand, output);
+            });
+        }
+
+        private Reachability equality(DemandTerm left, DemandTerm right) {
+            if (left instanceof DemandValue && right instanceof DemandValue) {
+                return Value.isEqual(((DemandValue) left).value, ((DemandValue) right).value)
+                        ? trueReachability()
+                        : falseReachability();
+            }
+            if (left instanceof DemandRef && right instanceof DemandValue) {
+                return equality(((DemandRef) left).key, ((DemandValue) right).value);
+            }
+            if (left instanceof DemandValue && right instanceof DemandRef) {
+                return equality(((DemandRef) right).key, ((DemandValue) left).value);
+            }
+            return null;
+        }
+
+        private DemandBoolean contains(DemandTerm right, DemandTerm left) {
+            Reachability reachability = containsReachability(left, right);
+            return new DemandBoolean(reachability, (demand, output) -> {
+                left.collect(demand, output);
+                right.collect(demand, output);
+            });
+        }
+
+        private Reachability containsReachability(DemandTerm left, DemandTerm right) {
+            if (left instanceof DemandRef && right instanceof DemandValue) {
+                return listContains(((DemandRef) left).key, ((DemandValue) right).value);
+            }
+            if (left instanceof DemandValue && right instanceof DemandRef) {
+                Value<?> value = ((DemandValue) left).value;
+                if (value.type() == Type.LIST) {
+                    return scalarAny(((DemandRef) right).key, new TreeSet<>(value.getList()));
+                }
+            }
+            if (left instanceof DemandValue && right instanceof DemandValue) {
+                Value<?> leftValue = ((DemandValue) left).value;
+                Value<?> rightValue = ((DemandValue) right).value;
+                if (leftValue.type() == Type.LIST) {
+                    Set<String> required = containsValues(rightValue);
+                    if (required != null) {
+                        Set<String> values = new HashSet<>(leftValue.getList());
+                        return values.containsAll(required) ? trueReachability() : falseReachability();
+                    }
+                }
+            }
+            return null;
+        }
+
+        private Reachability booleanReachability(String key) {
+            InputDomain domain = domains.get(key);
+            if (domain == null || !domain.isBoolean()) {
+                return null;
+            }
+            Reachability raw = Reachability.scalar(key, Set.of("true"), domains);
+            Reachability defined = definitions.get(key);
+            return defined == null ? raw : defined.and(raw);
+        }
+
+        private Reachability equality(String key, Value<?> value) {
+            Reachability raw = rawEquality(key, value);
+            Reachability defined = definitions.get(key);
+            if (raw == null) {
+                return null;
+            }
+            return defined == null ? raw : defined.and(raw);
+        }
+
+        private Reachability scalarAny(String key, Set<String> values) {
+            Reachability raw = rawScalarAny(key, values);
+            Reachability defined = definitions.get(key);
+            if (raw == null) {
+                return null;
+            }
+            return defined == null ? raw : defined.and(raw);
+        }
+
+        private Reachability listContains(String key, Value<?> value) {
+            Set<String> required = containsValues(value);
+            if (required == null) {
+                return null;
+            }
+            Reachability raw = rawListContains(key, required);
+            Reachability defined = definitions.get(key);
+            if (raw == null) {
+                return null;
+            }
+            return defined == null ? raw : defined.and(raw);
+        }
+
+        private Reachability rawEquality(String key, Value<?> value) {
+            String scalarValue = scalarLiteral(value);
+            if (scalarValue == null) {
+                return null;
+            }
+            InputDomain domain = domains.get(key);
+            if (domain == null || domain.kind != InputDomain.Kind.SCALAR) {
+                return null;
+            }
+            if (!domain.scalarValues.contains(scalarValue)) {
+                return falseReachability();
+            }
+            return Reachability.scalar(key, Set.of(scalarValue), domains);
+        }
+
+        private Reachability rawScalarAny(String key, Set<String> values) {
+            InputDomain domain = domains.get(key);
+            if (domain == null || domain.kind != InputDomain.Kind.SCALAR) {
+                return null;
+            }
+            Set<String> allowed = new TreeSet<>(values);
+            allowed.retainAll(domain.scalarValues);
+            return allowed.isEmpty() ? falseReachability() : Reachability.scalar(key, allowed, domains);
+        }
+
+        private Reachability rawListContains(String key, Set<String> required) {
+            InputDomain domain = domains.get(key);
+            if (domain == null || domain.kind != InputDomain.Kind.LIST) {
+                return null;
+            }
+            if (!domain.listItems.containsAll(required)) {
+                return falseReachability();
+            }
+            return Reachability.listContains(key, required, domains);
+        }
+
+        private Set<String> containsValues(Value<?> value) {
+            switch (value.type()) {
+                case STRING:
+                case DYNAMIC:
+                    return Set.of(value.getString());
+                case LIST:
+                    return new TreeSet<>(value.getList());
+                default:
+                    return null;
+            }
+        }
+
+        private void addDemand(String key, Reachability demand, Map<String, Reachability> output) {
+            if (demand == null || demand.isFalse()) {
+                return;
+            }
+            output.compute(key, (k, current) -> current == null ? demand : current.or(demand));
+        }
+
+        private abstract class DemandTerm {
+            abstract void collect(Reachability demand, Map<String, Reachability> output);
+        }
+
+        private final class DemandValue extends DemandTerm {
+            private final Value<?> value;
+
+            private DemandValue(Value<?> value) {
+                this.value = value;
+            }
+
+            @Override
+            public void collect(Reachability demand, Map<String, Reachability> output) {
+            }
+        }
+
+        private final class DemandRef extends DemandTerm {
+            private final String key;
+
+            private DemandRef(String key) {
+                this.key = key;
+            }
+
+            @Override
+            public void collect(Reachability demand, Map<String, Reachability> output) {
+                addDemand(key, demand, output);
+            }
+        }
+
+        private final class DemandBoolean extends DemandTerm {
+            private final Reachability truthy;
+            private final BiConsumer<Reachability, Map<String, Reachability>> collector;
+
+            private DemandBoolean(Reachability truthy,
+                                  BiConsumer<Reachability, Map<String, Reachability>> collector) {
+                this.truthy = truthy;
+                this.collector = collector;
+            }
+
+            DemandBoolean negate() {
+                Reachability reachability = truthy == null ? null : trueReachability().subtract(truthy);
+                return new DemandBoolean(reachability, collector);
+            }
+
+            DemandBoolean and(DemandBoolean left) {
+                Reachability reachability = left.truthy == null || truthy == null ? null : left.truthy.and(truthy);
+                return new DemandBoolean(reachability, (demand, output) -> {
+                    left.collect(demand, output);
+                    Reachability rightDemand = left.truthy == null ? demand : demand.and(left.truthy);
+                    collect(rightDemand, output);
+                });
+            }
+
+            DemandBoolean or(DemandBoolean left) {
+                Reachability reachability = left.truthy == null || truthy == null ? null : left.truthy.or(truthy);
+                return new DemandBoolean(reachability, (demand, output) -> {
+                    left.collect(demand, output);
+                    Reachability rightDemand = left.truthy == null
+                            ? demand
+                            : demand.and(trueReachability().subtract(left.truthy));
+                    collect(rightDemand, output);
+                });
+            }
+
+            @Override
+            public void collect(Reachability demand, Map<String, Reachability> output) {
+                collector.accept(demand, output);
+            }
         }
     }
 
@@ -881,12 +1283,14 @@ public class ScriptCompiler {
                     break;
                 case CONDITION:
                     scopes.put(node, scope.key());
-                    Expression expr = inline(node, node.expression());
+                    Expression expr = inlineCondition(node, node.expression());
                     if (expr != Expression.FALSE) {
                         node.expression(expr);
                         refs.put(node, Map.copyOf(currentRefs));
                         refReachabilityByNode.put(node, Map.copyOf(currentReachabilityByRef));
-                        Reachability conditionReachability = translate(expr, scope, currentBindings, currentReachabilityByRef);
+                        Expression reachabilityExpr = inline(node, expr);
+                        Reachability conditionReachability = translate(reachabilityExpr, scope, currentBindings,
+                                currentReachabilityByRef);
                         nodeState = currentState.and(conditionReachability);
                         if (nodeState.isFalse()) {
                             node.expression(Expression.FALSE);
@@ -915,10 +1319,16 @@ public class ScriptCompiler {
                     refTypes.putIfAbsent(scope.key(), node.kind().valueType());
                     registerDomain(node, scope.key());
                     currentRefs.compute(scope.key(), (k, v) -> expression(node.parent()).or(v).reduce());
+                    Expression inputExpr = inline(node, expression(node));
                     if (currentState.supported()) {
                         Reachability parentReachability = currentState.reachability();
                         currentReachabilityByRef.compute(scope.key(),
                                 (k, v) -> v == null ? parentReachability : v.or(parentReachability));
+                        if (currentState.isFalse()) {
+                            reachabilityByNode.put(node, falseReachability());
+                            reachabilityStack.push(ReachabilityState.of(falseReachability()));
+                            return false;
+                        }
                     }
                     switch (node.kind()) {
                         case INPUT_BOOLEAN:
@@ -929,17 +1339,30 @@ public class ScriptCompiler {
                             break;
                         default:
                     }
-                    if (inline(node, expression(node)) == Expression.FALSE) {
-                        if (nodeState.supported()) {
-                            reachabilityByNode.put(node, nodeState.reachability());
-                        }
+                    if (nodeState.supported() && nodeState.isFalse()) {
+                        reachabilityByNode.put(node, nodeState.reachability());
                         reachabilityStack.push(nodeState);
+                        return false;
+                    }
+                    if (!nodeState.supported() && inputExpr == Expression.FALSE) {
+                        reachabilityByNode.put(node, falseReachability());
+                        reachabilityStack.push(ReachabilityState.of(falseReachability()));
                         return false;
                     }
                     break;
                 case INPUT_OPTION:
                     scopes.put(node, scope.key());
                     nodeState = currentState.and(optionReachability(node));
+                    if (nodeState.supported() && nodeState.isFalse()) {
+                        reachabilityByNode.put(node, nodeState.reachability());
+                        reachabilityStack.push(nodeState);
+                        return false;
+                    }
+                    if (!nodeState.supported() && inline(node, expression(node)) == Expression.FALSE) {
+                        reachabilityByNode.put(node, falseReachability());
+                        reachabilityStack.push(ReachabilityState.of(falseReachability()));
+                        return false;
+                    }
                     break;
                 case VARIABLE_TEXT:
                 case VARIABLE_ENUM:
@@ -982,12 +1405,12 @@ public class ScriptCompiler {
 
         @Override
         public void postVisit(Node node) {
-            Expression expr;
             switch (node.kind()) {
                 case SOURCE:
                 case EXEC:
                     if (node.attribute("url").isPresent()) {
                         // skip url invocation
+                        reachabilityStack.pop();
                         return;
                     }
                     break;
@@ -998,7 +1421,7 @@ public class ScriptCompiler {
                     break;
                 case INPUT_BOOLEAN:
                 case INPUT_TEXT:
-                    expr = inline(node, expression(node));
+                    Expression expr = inline(node, expression(node));
                     if (expr == Expression.FALSE) {
                         remove(node);
                         node.ancestor(Kind.STEP::equals).ifPresent(modifiedSteps::add);
@@ -1220,7 +1643,7 @@ public class ScriptCompiler {
     }
 
     private final class OutputVisitor implements Node.Visitor {
-        private final Map<String, Map<List<FileOp>, Expression>> fileOps = new HashMap<>();
+        private final Map<String, Map<List<FileOp>, Reachability>> fileOps = new HashMap<>();
         private final Set<FileObject> files = new TreeSet<>();
         private final Set<FileObject> templates = new TreeSet<>();
         private final Image image;
@@ -1239,10 +1662,11 @@ public class ScriptCompiler {
                                 n.attribute("regex").getString(),
                                 n.attribute("replacement").getString()));
                     }
+                    Reachability nodeReachability = outputReachability(node);
                     fileOps.computeIfAbsent(node.attribute("id").getString(), k -> new HashMap<>())
                             .compute(ops, (k, v) -> {
-                                Expression expr = v != null ? v : Expression.FALSE;
-                                return expr.or(compiledExpression(node, scope(node)));
+                                Reachability reachability = v != null ? v : falseReachability();
+                                return reachability.or(nodeReachability);
                             });
                     break;
                 case FILE:
@@ -1302,7 +1726,9 @@ public class ScriptCompiler {
             String checksum = checksum(path);
             image.blobs.putIfAbsent(checksum, readAllBytes(path));
             List<FileOp> fileOps = List.of(new FileOp(Pattern.quote(checksum), target));
-            return new FileObject(checksum, fileOps, compiledExpression(node, scope(node)));
+            Scope scope = scope(node);
+            Expression expr = reachabilityExpression(outputReachability(node), scope);
+            return new FileObject(checksum, fileOps, expr);
         }
 
         Set<FileObject> resolveFiles(Node node) {
@@ -1312,21 +1738,19 @@ public class ScriptCompiler {
             List<List<FileOps>> allOps = Lists.filter(Combinatorics.cartesianProduct(fileOps(node)), l -> !l.isEmpty());
             Set<FileOps> resolvedOps = new TreeSet<>(Lists.map(allOps, FileOps::combine));
 
-            Map<String, Expression> includes = new HashMap<>();
-            Map<String, Expression> excludes = new HashMap<>();
+            Map<String, Reachability> includes = new HashMap<>();
+            Map<String, Reachability> excludes = new HashMap<>();
 
             Scope scope = scope(node);
+            Reachability nodeReachability = outputReachability(node);
             for (Node n : node.traverse()) {
                 switch (n.kind()) {
                     case INCLUDE:
                     case EXCLUDE:
-                        Map<String, Expression> map = n.kind() == Kind.INCLUDE ? includes : excludes;
+                        Map<String, Reachability> map = n.kind() == Kind.INCLUDE ? includes : excludes;
+                        Reachability filterReachability = outputReachability(n);
                         map.compute(n.value().getString(), (k, v) -> {
-                            Expression expr = v == null ? Expression.TRUE : v;
-                            if (n.parent().kind() == Kind.CONDITION) {
-                                expr = expr.and(normalize(n.parent().expression(), scope));
-                            }
-                            return expr;
+                            return v == null ? filterReachability : v.or(filterReachability);
                         });
                         break;
                     default:
@@ -1336,17 +1760,17 @@ public class ScriptCompiler {
             Path directory = workDirs.get(node).resolve(node.attribute("directory").getString());
             for (SourcePath file : SourcePath.scan(directory)) {
 
-                // filter manually to collect expressions
-                Expression filterExpr = Expression.FALSE;
-                for (Expression v : Maps.filterKey(includes, file::matches).values()) {
-                    filterExpr = filterExpr.or(v);
+                Reachability includeReachability = includes.isEmpty() ? trueReachability() : falseReachability();
+                for (Reachability v : Maps.filterKey(includes, file::matches).values()) {
+                    includeReachability = includeReachability.or(v);
                 }
-                for (Expression v : Maps.filterKey(excludes, file::matches).values()) {
-                    filterExpr = filterExpr.and(v.negate());
+                Reachability excludeReachability = falseReachability();
+                for (Reachability v : Maps.filterKey(excludes, file::matches).values()) {
+                    excludeReachability = excludeReachability.or(v);
                 }
 
-                Expression blobExpr = compiledExpression(node, scope).and(filterExpr).reduce();
-                if (includes.isEmpty() || blobExpr != Expression.FALSE) {
+                Reachability blobReachability = nodeReachability.and(includeReachability).subtract(excludeReachability);
+                if (!blobReachability.isFalse()) {
                     String source = file.asString(false);
                     Path path = directory.resolve(source);
 
@@ -1356,12 +1780,13 @@ public class ScriptCompiler {
 
                     if (resolvedOps.isEmpty()) {
                         List<FileOp> fileOps = List.of(new FileOp(Pattern.quote(checksum), source));
+                        Expression blobExpr = reachabilityExpression(blobReachability, scope);
                         fileObjects.add(new FileObject(checksum, fileOps, blobExpr));
                     } else {
                         // create a unique file object for each transformation variation
                         for (FileOps e : resolvedOps) {
                             List<FileOp> fileOps = e.resolve(checksum, source);
-                            Expression fileExpr = blobExpr.and(e.expression).reduce();
+                            Expression fileExpr = reachabilityExpression(blobReachability.and(e.reachability), scope);
                             fileObjects.add(new FileObject(checksum, fileOps, fileExpr));
                         }
                     }
@@ -1432,10 +1857,18 @@ public class ScriptCompiler {
             List<List<FileOps>> ops = new ArrayList<>();
             List<String> ids = node.attribute("transformations").asList().orElse(List.of());
             for (String id : ids) {
-                Map<List<FileOp>, Expression> idOps = fileOps.getOrDefault(id, Map.of());
+                Map<List<FileOp>, Reachability> idOps = fileOps.getOrDefault(id, Map.of());
                 ops.add(Lists.map(idOps.entrySet(), e -> new FileOps(e.getKey(), e.getValue())));
             }
             return ops;
+        }
+
+        private Reachability outputReachability(Node node) {
+            Reachability reachability = reachability(node);
+            if (reachability == null) {
+                throw new IllegalStateException("Missing reachability for output node: " + node);
+            }
+            return reachability;
         }
 
         List<Node> renderModels() {
@@ -1497,8 +1930,6 @@ public class ScriptCompiler {
     }
 
     private class StubsVisitor implements Node.Visitor {
-        private final Map<String, Expression> currentRefs = new HashMap<>();
-        private final Map<Node, Map<String, Expression>> refs = new LinkedHashMap<>();
         private final Map<String, Reachability> currentReachabilityByRef = new HashMap<>();
         private final Map<Node, Map<String, Reachability>> reachabilityRefs = new LinkedHashMap<>();
         private final Map<Node, Node> mirrors;
@@ -1527,7 +1958,6 @@ public class ScriptCompiler {
                     Scope scope = scope(mirror);
                     Expression expr0 = expression(node.parent(), n -> scopeId(mirror(n)));
                     Expression expr = expr0.inline(s -> declaredValue(mirror, scope.get(s).key()));
-                    currentRefs.compute(scopeId(mirror), (k, v) -> expr.or(v).reduce());
                     Reachability reachability = translate(expr, scope, Map.of(), currentReachabilityByRef);
                     if (reachability != null) {
                         currentReachabilityByRef.compute(scopeId(mirror),
@@ -1535,7 +1965,6 @@ public class ScriptCompiler {
                     }
                     break;
                 case CONDITION:
-                    refs.put(node, Map.copyOf(currentRefs));
                     reachabilityRefs.put(node, Map.copyOf(currentReachabilityByRef));
                     break;
                 default:
@@ -1546,8 +1975,8 @@ public class ScriptCompiler {
         @Override
         public void postVisit(Node node) {
             if (node.kind() == Kind.SCRIPT) {
-                refs.forEach((n, snapshot) -> {
-                    List<Node> stubs = resolveStubs(n, snapshot, reachabilityRefs.getOrDefault(n, Map.of()));
+                reachabilityRefs.forEach((n, snapshot) -> {
+                    List<Node> stubs = resolveStubs(n, snapshot);
                     if (!stubs.isEmpty()) {
                         addVariables(n, stubs);
                     }
@@ -1613,7 +2042,7 @@ public class ScriptCompiler {
             }
         }
 
-        List<Node> resolveStubs(Node node, Map<String, Expression> snapshot, Map<String, Reachability> reachabilitySnapshot) {
+        List<Node> resolveStubs(Node node, Map<String, Reachability> reachabilitySnapshot) {
             Set<String> variables = node.expression().variables();
             if (variables.isEmpty()) {
                 return List.of();
@@ -1624,35 +2053,22 @@ public class ScriptCompiler {
             Scope scope = ctx.scope().get("~" + scopes.getOrDefault(mirror(block), ""));
             Expression blockExpr = expression(block, n -> scopeId(mirror(n)));
             Reachability blockReachability = translate(blockExpr, scope, Map.of(), reachabilitySnapshot);
+            if (blockReachability == null) {
+                // validation already reports unsupported condition shapes; do not reintroduce expression fallback here
+                return List.of();
+            }
             for (String ref : variables) {
 
                 // normalize the ref
                 String key = scope.key(ref);
 
-                Reachability refReachability = reachabilitySnapshot.get(key);
-                if (blockReachability != null && refReachability != null) {
-                    Reachability missing = blockReachability.subtract(refReachability);
-                    if (missing.isFalse()) {
-                        continue;
-                    }
-                    Type type = refTypes.getOrDefault(key, Type.EMPTY);
-                    nodes.add(Nodes.variable(type, "~" + key).wrap(residualExpression(missing, blockReachability, scope)));
+                Reachability refReachability = reachabilitySnapshot.getOrDefault(key, falseReachability());
+                Reachability missing = blockReachability.subtract(refReachability);
+                if (missing.isFalse()) {
                     continue;
                 }
-
-                // expressions that represent all cases where the reference is defined
-                Expression refExpr = snapshot.getOrDefault(key, Expression.FALSE);
-
-                // substitute parent expression
-                Expression refExpr1 = blockExpr.relativize(refExpr);
-                if (refExpr1 == Expression.TRUE) {
-                    // resolved
-                    continue;
-                }
-
-                Expression stubExpr = refExpr1.negate().reduce();
                 Type type = refTypes.getOrDefault(key, Type.EMPTY);
-                nodes.add(Nodes.variable(type, "~" + key).wrap(stubExpr));
+                nodes.add(Nodes.variable(type, "~" + key).wrap(residualExpression(missing, blockReachability, scope)));
             }
             return nodes;
         }
@@ -1947,7 +2363,19 @@ public class ScriptCompiler {
                 return null;
             }
             if (term instanceof TranslationTerm.Ref) {
-                return equality(((TranslationTerm.Ref) term).key, Value.TRUE);
+                String key = ((TranslationTerm.Ref) term).key;
+                ConstantBindings binding = bindings.get(key);
+                if (binding != null) {
+                    if (binding.type != Type.BOOLEAN) {
+                        return null;
+                    }
+                } else {
+                    InputDomain domain = domains.get(key);
+                    if (domain == null || !domain.isBoolean()) {
+                        return null;
+                    }
+                }
+                return equality(key, Value.TRUE);
             }
             return null;
         }
@@ -2274,6 +2702,36 @@ public class ScriptCompiler {
             return other.subtract(this).isFalse();
         }
 
+        Reachability relativize(Reachability base) {
+            if (isFalse() || base.isFalse()) {
+                return falseValue(domains);
+            }
+            Reachability expected = and(base);
+            if (expected.isFalse()) {
+                return falseValue(domains);
+            }
+            Reachability candidate = expected;
+            boolean changed = true;
+            while (changed) {
+                changed = false;
+                for (int i = 0; i < candidate.constraintSets.size() && !changed; i++) {
+                    for (ConstraintSet weakened : candidate.constraintSets.get(i).weakenings(domains)) {
+                        Reachability next = candidate.withConstraintSet(i, weakened);
+                        if (next.constraintSets.equals(candidate.constraintSets)) {
+                            continue;
+                        }
+                        Reachability projected = base.and(next);
+                        if (projected.subtract(expected).isFalse() && expected.subtract(projected).isFalse()) {
+                            candidate = next;
+                            changed = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            return candidate;
+        }
+
         Expression toExpression(Scope scope) {
             if (isFalse()) {
                 return Expression.FALSE;
@@ -2283,6 +2741,34 @@ public class ScriptCompiler {
                 expr = expr.or(constraintSet.toExpression(scope, domains));
             }
             return expr;
+        }
+
+        String literal() {
+            StringBuilder builder = new StringBuilder();
+            for (ConstraintSet constraintSet : constraintSets) {
+                if (builder.length() > 0) {
+                    builder.append("||");
+                }
+                builder.append(constraintSet.literal());
+            }
+            return builder.toString();
+        }
+
+        private Reachability withConstraintSet(int index, ConstraintSet replacement) {
+            List<ConstraintSet> next = new ArrayList<>(constraintSets);
+            next.set(index, replacement);
+            return of(next, domains);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof Reachability
+                   && constraintSets.equals(((Reachability) o).constraintSets);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(constraintSets);
         }
     }
 
@@ -2442,6 +2928,23 @@ public class ScriptCompiler {
             return scalars + "|" + listConstraints;
         }
 
+        List<ConstraintSet> weakenings(Map<String, InputDomain> domains) {
+            List<ConstraintSet> weakened = new ArrayList<>();
+            for (String key : scalars.keySet()) {
+                weakened.add(withoutScalar(key, domains));
+            }
+            for (Entry<String, ListConstraint> entry : listConstraints.entrySet()) {
+                String key = entry.getKey();
+                for (String value : entry.getValue().required) {
+                    weakened.add(withoutListRequired(key, value, domains));
+                }
+                for (String value : entry.getValue().forbidden) {
+                    weakened.add(withoutListForbidden(key, value, domains));
+                }
+            }
+            return weakened;
+        }
+
         private Split splitAgainst(ConstraintSet other, Map<String, InputDomain> domains) {
             for (Entry<String, ScalarConstraint> entry : other.scalars.entrySet()) {
                 InputDomain domain = domains.get(entry.getKey());
@@ -2488,6 +2991,12 @@ public class ScriptCompiler {
             return new ConstraintSet(next, listConstraints).normalized(domains);
         }
 
+        private ConstraintSet withoutScalar(String key, Map<String, InputDomain> domains) {
+            Map<String, ScalarConstraint> next = new TreeMap<>(scalars);
+            next.remove(key);
+            return new ConstraintSet(next, listConstraints).normalized(domains);
+        }
+
         private ConstraintSet withListRequired(String key, String value, Map<String, InputDomain> domains) {
             Map<String, ListConstraint> next = new TreeMap<>(listConstraints);
             ListConstraint constraint = next.getOrDefault(key, ListConstraint.EMPTY);
@@ -2499,6 +3008,20 @@ public class ScriptCompiler {
             Map<String, ListConstraint> next = new TreeMap<>(listConstraints);
             ListConstraint constraint = next.getOrDefault(key, ListConstraint.EMPTY);
             next.put(key, constraint.withForbidden(value));
+            return new ConstraintSet(scalars, next).normalized(domains);
+        }
+
+        private ConstraintSet withoutListRequired(String key, String value, Map<String, InputDomain> domains) {
+            Map<String, ListConstraint> next = new TreeMap<>(listConstraints);
+            ListConstraint constraint = next.getOrDefault(key, ListConstraint.EMPTY);
+            next.put(key, constraint.withoutRequired(value));
+            return new ConstraintSet(scalars, next).normalized(domains);
+        }
+
+        private ConstraintSet withoutListForbidden(String key, String value, Map<String, InputDomain> domains) {
+            Map<String, ListConstraint> next = new TreeMap<>(listConstraints);
+            ListConstraint constraint = next.getOrDefault(key, ListConstraint.EMPTY);
+            next.put(key, constraint.withoutForbidden(value));
             return new ConstraintSet(scalars, next).normalized(domains);
         }
 
@@ -2614,6 +3137,18 @@ public class ScriptCompiler {
             return new ListConstraint(required, next);
         }
 
+        ListConstraint withoutRequired(String value) {
+            Set<String> next = new TreeSet<>(required);
+            next.remove(value);
+            return new ListConstraint(next, forbidden);
+        }
+
+        ListConstraint withoutForbidden(String value) {
+            Set<String> next = new TreeSet<>(forbidden);
+            next.remove(value);
+            return new ListConstraint(required, next);
+        }
+
         Expression toExpression(String key) {
             Expression expr = Expression.TRUE;
             for (String value : required) {
@@ -2697,17 +3232,17 @@ public class ScriptCompiler {
 
     private static final class FileOps implements Comparable<FileOps> {
         private static final Pattern VAR_PATTERN = Pattern.compile("\\$\\{[^}]+}");
-        private final Expression expression;
+        private final Reachability reachability;
         private final List<FileOp> ops;
 
-        FileOps(List<FileOp> ops, Expression expression) {
-            this.expression = expression;
+        FileOps(List<FileOp> ops, Reachability reachability) {
+            this.reachability = reachability;
             this.ops = ops;
         }
 
         @Override
         public int compareTo(FileOps o) {
-            int r = expression.compareTo(o.expression);
+            int r = reachability.literal().compareTo(o.reachability.literal());
             if (r == 0) {
                 r = Lists.compare(ops, o.ops);
             }
@@ -2720,13 +3255,13 @@ public class ScriptCompiler {
                 return false;
             }
             FileOps other = (FileOps) o;
-            return Objects.equals(expression, other.expression)
+            return Objects.equals(reachability, other.reachability)
                    && Objects.equals(ops, other.ops);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(expression, ops);
+            return Objects.hash(reachability, ops);
         }
 
         List<FileOp> resolve(String id, String path) {
@@ -2769,12 +3304,15 @@ public class ScriptCompiler {
 
         static FileOps combine(List<FileOps> list) {
             List<FileOp> ops = new ArrayList<>();
-            Expression expr = Expression.TRUE;
+            FileOps first = list.get(0);
+            Reachability reachability = first.reachability;
             for (FileOps e : list) {
                 ops.addAll(e.ops);
-                expr = expr.and(e.expression);
             }
-            return new FileOps(ops, expr.reduce());
+            for (int i = 1; i < list.size(); i++) {
+                reachability = reachability.and(list.get(i).reachability);
+            }
+            return new FileOps(ops, reachability);
         }
     }
 

@@ -38,6 +38,8 @@ Options:
   --helidon-dir <path>        Required Helidon checkout location
   --state-dir <path>          Override the default .state root directory
   --threshold-seconds <n>     Compile gate threshold, default 5
+  --variations-threshold-seconds <n>
+                              Variation timing gate threshold, default 15
   --verbose                   Echo commands as they run
   --no-restore-current        Skip reinstalling current workspace at end
 ```
@@ -125,7 +127,8 @@ mvn -f archetypes/archetypes/pom.xml \
 ## Mode: `diff_variations`
 
 Use this mode when the change affects variation computation but not
-generated project contents.
+generated project contents. This is also the required gate before
+interpreting `diff_projects`.
 
 The wrapper should:
 
@@ -155,17 +158,26 @@ mvn -f archetypes/archetypes/pom.xml \
 
 Do not diff against the live Helidon `target/` tree after another run has
 started.
+9. Capture the current-workspace wall-clock time from `/usr/bin/time -p`
+   and fail when it exceeds `--variations-threshold-seconds`
+   (default `15`).
 
 ## Mode: `diff_projects`
 
 Use this mode when the change can affect generated files, including
 `ScriptCompiler`, engine-v2 runtime behavior, or normalization logic.
 
+Always run the `diff_variations` gate first. If `projects.csv` changes or
+the variation timing gate fails, stop there and do not inspect project
+tree diffs yet.
+
 The wrapper should:
 
-1. Prepare the baseline worktree at `--baseline-ref`.
-2. Install the baseline build-tools into `~/.m2`.
-3. Run:
+1. Run the `diff_variations` gate first in the same invocation when it
+   has not already passed.
+2. Prepare the baseline worktree at `--baseline-ref`.
+3. Install the baseline build-tools into `~/.m2`.
+4. Run:
 
 ```sh
 mvn -f archetypes/archetypes/pom.xml \
@@ -175,11 +187,11 @@ mvn -f archetypes/archetypes/pom.xml \
     -Darchetype.test.parallelGeneration=true
 ```
 
-4. Copy `target/tests/` into the baseline snapshot directory.
-5. Install the current workspace into `~/.m2`.
-6. Re-run the same generation command.
-7. Copy `target/tests/` into the actual snapshot directory.
-8. Compare the copied snapshots with `projects-diff.sh diff_csv` and
+5. Copy `target/tests/` into the baseline snapshot directory.
+6. Install the current workspace into `~/.m2`.
+7. Re-run the same generation command.
+8. Copy `target/tests/` into the actual snapshot directory.
+9. Compare the copied snapshots with `projects-diff.sh diff_csv` and
    `projects-diff.sh diff_projects`.
 If the helper fails, treat that as a regression workflow failure and report
 the helper output from the compare log.

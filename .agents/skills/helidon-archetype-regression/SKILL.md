@@ -35,6 +35,9 @@ starting the regression work. Do not assume a default sibling checkout.
 
 - Use the default `~/.m2` repository unless the user explicitly asks
   for a different local repository strategy.
+- Always run `diff_variations` before `diff_projects`. If `projects.csv`
+  changes or the variation timing gate fails, stop there and do not
+  interpret project-tree diffs yet.
 - Run the workflow through
   `.agents/skills/helidon-archetype-regression/scripts/run-regression.sh`
   instead of retyping the Maven commands by hand.
@@ -55,8 +58,10 @@ starting the regression work. Do not assume a default sibling checkout.
    there.
 2. Choose the wrapper mode:
    - `compile_gate` for the archetype compiler timing check
-   - `diff_variations` for `projects.csv` coverage-only checks
-   - `diff_projects` for generated-project snapshot checks
+   - `diff_variations` for `projects.csv` coverage-only checks and the
+     `< 15s` variation timing gate
+   - `diff_projects` for generated-project snapshot checks, but only
+     after `diff_variations` passes
    - `all` when the scope is uncertain or the task needs every check
 3. Run
    `.agents/skills/helidon-archetype-regression/scripts/run-regression.sh`

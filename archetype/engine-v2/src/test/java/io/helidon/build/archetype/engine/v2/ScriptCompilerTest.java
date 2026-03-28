@@ -32,6 +32,7 @@ import org.junit.jupiter.api.Test;
 
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.EXPR_EVAL_ERROR;
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.EXPR_INCOMPATIBLE_OPERATOR;
+import static io.helidon.build.archetype.engine.v2.ScriptCompiler.EXPR_UNSUPPORTED_CONDITION;
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.EXPR_UNRESOLVED_VARIABLE;
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.Options.IGNORE_ERRORS;
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.Options.VALIDATE_ONLY;
@@ -203,6 +204,13 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testBranchSpecificInputPruning() {
+        Path outputDir = compile("compiler/branch-pruning", "main.xml");
+        assertThat(normalizeXml(outputDir.resolve("main.xml")),
+                is(normalizeXml("compiler/expected/branch-pruning.xml")));
+    }
+
+    @Test
     void testVariables1() {
         Path outputDir = compile("compiler/variables1", "main.xml", IGNORE_ERRORS);
         assertThat(normalizeXml(outputDir.resolve("main.xml")), is(normalizeXml("compiler/expected/variables1.xml")));
@@ -218,6 +226,12 @@ class ScriptCompilerTest {
     void testVariables3() {
         Path outputDir = compile("compiler/variables3", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")), is(normalizeXml("compiler/expected/variables3.xml")));
+    }
+
+    @Test
+    void testResidualListConditions() {
+        Path outputDir = compile("compiler/residual-list", "main.xml");
+        assertThat(normalizeXml(outputDir.resolve("main.xml")), is(normalizeXml("compiler/expected/residual-list.xml")));
     }
 
     @Test
@@ -323,6 +337,17 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testExpressionWithUnsupportedConditionShape() {
+        try {
+            compile("compiler/validate", "expression-unsupported-condition-shape.xml", VALIDATE_ONLY);
+            fail("An exception should have been thrown");
+        } catch (ValidationException ex) {
+            assertThat(ex.errors(), contains(List.of(
+                    containsString(EXPR_UNSUPPORTED_CONDITION))));
+        }
+    }
+
+    @Test
     void testExpressionWithUnresolvedVariable1() {
         try {
             compile("compiler/validate", "expression-unresolved-variable1.xml", VALIDATE_ONLY);
@@ -350,15 +375,13 @@ class ScriptCompilerTest {
     }
 
     @Test
-    void testExpressionWithUnresolvedVariable4() {
-        try {
-            compile("compiler/validate", "expression-unresolved-variable4.xml", VALIDATE_ONLY);
-            fail("An exception should have been thrown");
-        } catch (ValidationException ex) {
-            assertThat(ex.errors(), contains(List.of(
-                    containsString(EXPR_UNRESOLVED_VARIABLE),
-                    containsString(EXPR_UNRESOLVED_VARIABLE))));
-        }
+    void testExpressionWithGuardedListVariable() {
+        compile("compiler/validate", "expression-guarded-variable-list.xml", VALIDATE_ONLY);
+    }
+
+    @Test
+    void testExpressionWithGuardedBooleanVariable() {
+        compile("compiler/validate", "expression-guarded-variable-boolean.xml", VALIDATE_ONLY);
     }
 
     @Test
