@@ -348,6 +348,17 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testUnsupportedConditionWithGuardedVariablesDoesNotReportUnresolvedVariable() {
+        try {
+            compile("compiler/validate", "expression-unsupported-guarded-variable.xml", VALIDATE_ONLY);
+            fail("An exception should have been thrown");
+        } catch (ValidationException ex) {
+            assertThat(ex.errors(), contains(List.of(
+                    containsString(EXPR_UNSUPPORTED_CONDITION))));
+        }
+    }
+
+    @Test
     void testExpressionWithUnresolvedVariable1() {
         try {
             compile("compiler/validate", "expression-unresolved-variable1.xml", VALIDATE_ONLY);

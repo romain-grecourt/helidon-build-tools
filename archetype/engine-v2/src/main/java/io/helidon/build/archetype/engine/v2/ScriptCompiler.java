@@ -388,7 +388,6 @@ public class ScriptCompiler {
                 String ref = scope.key(variable);
 
                 boolean variableResolved = false;
-                Reachability refReachability = refReachabilityMap.get(ref);
                 Reachability requiredReachability = blockReachability;
                 Reachability variableDemand = variableDemands.get(ref);
                 if (variableDemand != null) {
@@ -396,6 +395,7 @@ public class ScriptCompiler {
                             ? variableDemand
                             : requiredReachability.and(variableDemand);
                 }
+                Reachability refReachability = refReachabilityMap.get(ref);
                 if (requiredReachability != null && refReachability != null) {
                     variableResolved = refReachability.contains(requiredReachability);
                 }
@@ -570,40 +570,9 @@ public class ScriptCompiler {
     }
 
     private Value<?> declaredValue0(Node node, String key) {
-        Node node0 = null;
-        Expression blockExpr = expression(node.parent());
-        Reachability blockReachability = reachability(node.parent());
-        for (Node n : declaredValues.getOrDefault(key, Set.of())) {
-            if (!attached(n)) {
-                continue;
-            }
-            if (node.id() > n.id()) {
-                Reachability refReachability = reachability(n);
-                if (blockReachability != null && refReachability != null) {
-                    Reachability overlap = blockReachability.and(refReachability);
-                    if (!overlap.isFalse()) {
-                        if (refReachability.contains(blockReachability)) {
-                            if (node0 == null || n.id() > node0.id()) {
-                                node0 = n;
-                            }
-                        } else if (node0 != null && n.id() > node0.id()) {
-                            node0 = null;
-                        }
-                    }
-                } else {
-                    // "relativize" the expression within the block
-                    Expression refExpr = blockExpr.relativize(expression(n));
-                    if (refExpr == Expression.TRUE) {
-                        if (node0 == null || n.id() > node0.id()) {
-                            node0 = n;
-                        }
-                    } else if (refExpr != Expression.FALSE) {
-                        if (node0 != null && n.id() > node0.id()) {
-                            node0 = null;
-                        }
-                    }
-                }
-            }
+        Node node0 = declaredValueByReachability(node, key);
+        if (node0 == null) {
+            node0 = declaredValueByExpression(node, key);
         }
         if (node0 != null) {
             return Value.typed(node0.value(), node0.kind().valueType());
@@ -618,29 +587,62 @@ public class ScriptCompiler {
     }
 
     private Value<?> declaredValueForInlining0(Node node, String key) {
-        Node node0 = null;
-        Expression blockExpr = expression(node.parent());
-        for (Node n : declaredValues.getOrDefault(key, Set.of())) {
-            if (!attached(n)) {
-                continue;
-            }
-            if (node.id() > n.id()) {
-                Expression refExpr = blockExpr.relativize(expression(n));
-                if (refExpr == Expression.TRUE) {
-                    if (node0 == null || n.id() > node0.id()) {
-                        node0 = n;
-                    }
-                } else if (refExpr != Expression.FALSE) {
-                    if (node0 != null && n.id() > node0.id()) {
-                        node0 = null;
-                    }
-                }
-            }
-        }
+        Node node0 = declaredValueByReachability(node, key);
         if (node0 != null) {
             return Value.typed(node0.value(), node0.kind().valueType());
         }
         return Value.empty();
+    }
+
+    private Node declaredValueByReachability(Node node, String key) {
+        Reachability blockReachability = reachability(node.parent());
+        if (blockReachability == null) {
+            return null;
+        }
+        Node node0 = null;
+        for (Node n : declaredValues.getOrDefault(key, Set.of())) {
+            if (!attached(n) || node.id() <= n.id()) {
+                continue;
+            }
+            Reachability refReachability = reachability(n);
+            if (refReachability == null) {
+                continue;
+            }
+            Reachability overlap = blockReachability.and(refReachability);
+            if (overlap.isFalse()) {
+                continue;
+            }
+            if (refReachability.contains(blockReachability)) {
+                if (node0 == null || n.id() > node0.id()) {
+                    node0 = n;
+                }
+            } else if (node0 != null && n.id() > node0.id()) {
+                node0 = null;
+            }
+        }
+        return node0;
+    }
+
+    private Node declaredValueByExpression(Node node, String key) {
+        Node node0 = null;
+        Expression blockExpr = expression(node.parent());
+        for (Node n : declaredValues.getOrDefault(key, Set.of())) {
+            if (!attached(n) || node.id() <= n.id()) {
+                continue;
+            }
+            // "relativize" the expression within the block
+            Expression refExpr = blockExpr.relativize(expression(n));
+            if (refExpr == Expression.TRUE) {
+                if (node0 == null || n.id() > node0.id()) {
+                    node0 = n;
+                }
+            } else if (refExpr != Expression.FALSE) {
+                if (node0 != null && n.id() > node0.id()) {
+                    node0 = null;
+                }
+            }
+        }
+        return node0;
     }
 
     private boolean attached(Node node) {
