@@ -200,6 +200,7 @@ public class ScriptCompiler {
     private final Map<Node, Map<String, Expression>> refs = new HashMap<>();
     private final Map<Node, Reachability> reachabilityByNode = new HashMap<>();
     private final Map<Node, Map<String, Reachability>> refReachabilityByNode = new HashMap<>();
+    private final Map<Node, Map<String, ConstantBindings>> refBindingsByNode = new HashMap<>();
     private final Map<String, InputDomain> domains = new LinkedHashMap<>();
     private final Map<String, Type> refTypes = new HashMap<>();
     private final Map<Node, Path> workDirs = new HashMap<>();
@@ -379,6 +380,7 @@ public class ScriptCompiler {
             Scope scope = scope(node);
             Reachability blockReachability = reachability(node.parent());
             Map<String, Reachability> refReachabilityMap = refReachabilityByNode.getOrDefault(node, Map.of());
+            Map<String, ConstantBindings> refBindings = refBindingsByNode.getOrDefault(node, Map.of());
             Map<String, Reachability> variableDemands = variableDemands(expr, scope, refReachabilityMap);
             Expression blockExpr = null;
             Map<String, Expression> refMap = null;
@@ -405,12 +407,22 @@ public class ScriptCompiler {
                         refMap = refs.getOrDefault(node, Map.of());
                     }
                     // reachability tracks declaration coverage, but it does not yet
-                    // capture every implied binding recovered by inlining presets and
+                    // capture every implied binding recovered from presets and
                     // defaults within the current block
                     Expression refExpr0 = refMap.getOrDefault(ref, Expression.FALSE);
                     Expression refExpr1 = blockExpr.relativize(refExpr0);
-                    Expression refExpr2 = inline(node, refExpr1);
-                    variableResolved = refExpr2 == Expression.TRUE;
+                    if (requiredReachability != null) {
+                        Reachability bindingReachability = translate(refExpr1, scope, refBindings,
+                                refReachabilityMap);
+                        if (bindingReachability != null) {
+                            variableResolved = bindingReachability.contains(requiredReachability);
+                        }
+                    }
+                    if (!variableResolved) {
+                        // keep the full inline fallback for residual unsupported cases
+                        Expression refExpr2 = inline(node, refExpr1);
+                        variableResolved = refExpr2 == Expression.TRUE;
+                    }
                 }
                 if (!variableResolved) {
                     resolved = false;
@@ -716,6 +728,15 @@ public class ScriptCompiler {
             }
         }
         return values;
+    }
+
+    private Map<String, ConstantBindings> snapshotBindings(Map<String, ConstantBindings> bindings) {
+        if (bindings.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, ConstantBindings> snapshot = new LinkedHashMap<>();
+        bindings.forEach((key, value) -> snapshot.put(key, value.copy()));
+        return Map.copyOf(snapshot);
     }
 
     private Expression normalize(Expression expr, Scope scope) {
@@ -1314,6 +1335,7 @@ public class ScriptCompiler {
                         node.expression(expr);
                         refs.put(node, Map.copyOf(currentRefs));
                         refReachabilityByNode.put(node, Map.copyOf(currentReachabilityByRef));
+                        refBindingsByNode.put(node, snapshotBindings(currentBindings));
                         Reachability conditionReachability = translate(expr, scope, currentBindings,
                                 currentReachabilityByRef);
                         nodeState = currentState.and(conditionReachability);
@@ -2226,6 +2248,15 @@ public class ScriptCompiler {
 
         Reachability defined() {
             return defined;
+        }
+
+        ConstantBindings copy() {
+            ConstantBindings copy = new ConstantBindings(type);
+            copy.defined = defined;
+            for (ConstantCase constantCase : cases) {
+                copy.cases.add(new ConstantCase(constantCase.value, constantCase.reachability));
+            }
+            return copy;
         }
 
         void add(Value<?> value, Reachability reachability) {
