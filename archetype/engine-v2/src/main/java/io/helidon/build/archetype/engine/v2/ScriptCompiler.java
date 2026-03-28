@@ -1350,9 +1350,7 @@ public class ScriptCompiler {
                         currentReachabilityByRef.compute(scope.key(),
                                 (k, v) -> v == null ? parentReachability : v.or(parentReachability));
                         if (currentState.isFalse()) {
-                            reachabilityByNode.put(node, falseReachability());
-                            reachabilityStack.push(ReachabilityState.of(falseReachability()));
-                            return false;
+                            return skipPrunedNode(node, currentState);
                         }
                     }
                     switch (node.kind()) {
@@ -1364,29 +1362,15 @@ public class ScriptCompiler {
                             break;
                         default:
                     }
-                    if (nodeState.supported() && nodeState.isFalse()) {
-                        reachabilityByNode.put(node, nodeState.reachability());
-                        reachabilityStack.push(nodeState);
-                        return false;
-                    }
-                    if (!nodeState.supported() && inputExpr == Expression.FALSE) {
-                        reachabilityByNode.put(node, falseReachability());
-                        reachabilityStack.push(ReachabilityState.of(falseReachability()));
-                        return false;
+                    if (shouldPrune(node, nodeState, inputExpr)) {
+                        return skipPrunedNode(node, nodeState);
                     }
                     break;
                 case INPUT_OPTION:
                     scopes.put(node, scope.key());
                     nodeState = currentState.and(optionReachability(node));
-                    if (nodeState.supported() && nodeState.isFalse()) {
-                        reachabilityByNode.put(node, nodeState.reachability());
-                        reachabilityStack.push(nodeState);
-                        return false;
-                    }
-                    if (!nodeState.supported() && inline(node, expression(node)) == Expression.FALSE) {
-                        reachabilityByNode.put(node, falseReachability());
-                        reachabilityStack.push(ReachabilityState.of(falseReachability()));
-                        return false;
+                    if (shouldPrune(node, nodeState, null)) {
+                        return skipPrunedNode(node, nodeState);
                     }
                     break;
                 case VARIABLE_TEXT:
@@ -1482,6 +1466,26 @@ public class ScriptCompiler {
             }
             reachabilityStack.pop();
             super.postVisit(node);
+        }
+
+        private boolean shouldPrune(Node node, ReachabilityState nodeState, Expression fallbackExpr) {
+            if (nodeState.supported()) {
+                return nodeState.isFalse();
+            }
+            // unsupported reachability still needs compatibility pruning via full inlining
+            return compatibilityPruned(node, fallbackExpr);
+        }
+
+        private boolean compatibilityPruned(Node node, Expression fallbackExpr) {
+            Expression expr = fallbackExpr != null ? fallbackExpr : inline(node, expression(node));
+            return expr == Expression.FALSE;
+        }
+
+        private boolean skipPrunedNode(Node node, ReachabilityState nodeState) {
+            Reachability reachability = nodeState.supported() ? nodeState.reachability() : falseReachability();
+            reachabilityByNode.put(node, reachability);
+            reachabilityStack.push(ReachabilityState.of(reachability));
+            return false;
         }
 
         void remove(Node node) {
