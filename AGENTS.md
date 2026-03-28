@@ -12,6 +12,40 @@ also live under paths such as `cli/tests/functional/src/it/projects/`.
 Generated outputs under `target/` and `target/it/` should not be edited
 or committed.
 
+## Local Codex State (`.ai`)
+
+Use a repo-root `.ai/` directory as the gitignored workspace for Codex
+state. Store plans, progress, tracking, distilled notes, and
+intermediate artifacts there instead of scattering them across the
+repo. Do not store source code, release assets, or secrets in `.ai/`.
+
+Always begin `.ai` discovery at `.ai/README.md`. That file is the
+router for the rest of the tree. When a new request might overlap prior
+work, check `.ai/README.md` proactively even if the user does not ask,
+then follow only the relevant links. Never recursively scan or
+bulk-read `.ai/`.
+
+Keep `.ai/` shallow and summarized:
+
+- every directory contains a `README.md` that explains purpose, child
+  layout, and read order;
+- `indexes/` contains small lookup files such as `tasks.md` and
+  `modules.md`;
+- `state/active/` lists in-flight work, `state/tasks/YYYY/` holds
+  active and recent task folders, and `state/archive/YYYY/` holds older
+  distilled task history;
+- each task folder uses a `README.md` router plus `meta.md`, `plan.md`,
+  `progress.md`, `decisions.md`, `handoff.md`, and optional `scratch/`;
+- `knowledge/` stores durable distilled notes; `artifacts/` and `tmp/`
+  store bulky or disposable intermediates.
+
+Favor summaries over raw output. Large command logs, diffs, generated
+reports, and scratch files go under `artifacts/` or `tmp/` and are
+referenced from task notes instead of copied into them. When closing or
+pausing work, update the relevant README files and indexes so future
+Codex sessions can find prior work quickly without loading unrelated
+files.
+
 ## Build, Test, and Development Commands
 
 Use JDK 17 and Maven 3.8.2+ for local work.
