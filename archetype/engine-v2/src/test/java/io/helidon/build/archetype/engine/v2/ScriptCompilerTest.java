@@ -229,6 +229,13 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testBooleanInputConditionDoesNotGenerateStubVariable() {
+        Path outputDir = compile("compiler/no-boolean-stubs", "main.xml");
+        assertThat(normalizeXml(outputDir.resolve("main.xml")),
+                is(normalizeXml("compiler/expected/no-boolean-stubs.xml")));
+    }
+
+    @Test
     void testResidualListConditions() {
         Path outputDir = compile("compiler/residual-list", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")), is(normalizeXml("compiler/expected/residual-list.xml")));

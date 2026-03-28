@@ -774,6 +774,27 @@ public class ScriptCompiler {
         return node == null ? trueReachability() : reachabilityByNode.get(node);
     }
 
+    private Reachability definitionReachability(Node node) {
+        switch (node.kind()) {
+            case INPUT_BOOLEAN:
+            case INPUT_ENUM:
+            case INPUT_LIST:
+            case INPUT_TEXT:
+                return reachability(node.parent());
+            case PRESET_BOOLEAN:
+            case PRESET_ENUM:
+            case PRESET_LIST:
+            case PRESET_TEXT:
+            case VARIABLE_BOOLEAN:
+            case VARIABLE_ENUM:
+            case VARIABLE_LIST:
+            case VARIABLE_TEXT:
+                return reachability(node);
+            default:
+                return null;
+        }
+    }
+
     private Expression reachabilityExpression(Reachability reachability, Scope scope) {
         return reachability.toExpression(scope).reduce();
     }
@@ -1958,12 +1979,8 @@ public class ScriptCompiler {
                 case INPUT_ENUM:
                 case INPUT_TEXT:
                 case INPUT_LIST:
-                    // NOTE: should substitute truthy expressions (E.g. ${flavor} == 'se' || ${flavor} == 'mp')
                     Node mirror = mirror(node);
-                    Scope scope = scope(mirror);
-                    Expression expr0 = expression(node.parent(), n -> scopeId(mirror(n)));
-                    Expression expr = expr0.inline(s -> declaredValue(mirror, scope.get(s).key()));
-                    Reachability reachability = translate(expr, scope, Map.of(), currentReachabilityByRef);
+                    Reachability reachability = definitionReachability(mirror);
                     if (reachability != null) {
                         currentReachabilityByRef.compute(scopeId(mirror),
                                 (k, v) -> v == null ? reachability : v.or(reachability));
