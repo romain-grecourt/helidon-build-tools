@@ -420,8 +420,11 @@ public class ScriptCompiler {
                         }
                     }
                     if (!variableResolved && (requiredReachability == null || bindingReachability == null)) {
-                        // keep the full inline fallback for residual unsupported cases
-                        Expression refExpr2 = inline(node, refExpr1);
+                        // keep a narrower reachability-only attempt before the residual inline fallback
+                        Expression refExpr2 = inlineCondition(node, refExpr1);
+                        if (refExpr2 != Expression.TRUE) {
+                            refExpr2 = inline(node, refExpr1);
+                        }
                         variableResolved = refExpr2 == Expression.TRUE;
                     }
                 }
