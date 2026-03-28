@@ -411,14 +411,15 @@ public class ScriptCompiler {
                     // defaults within the current block
                     Expression refExpr0 = refMap.getOrDefault(ref, Expression.FALSE);
                     Expression refExpr1 = blockExpr.relativize(refExpr0);
+                    Reachability bindingReachability = null;
                     if (requiredReachability != null) {
-                        Reachability bindingReachability = translate(refExpr1, scope, refBindings,
+                        bindingReachability = translate(refExpr1, scope, refBindings,
                                 refReachabilityMap);
                         if (bindingReachability != null) {
                             variableResolved = bindingReachability.contains(requiredReachability);
                         }
                     }
-                    if (!variableResolved) {
+                    if (!variableResolved && (requiredReachability == null || bindingReachability == null)) {
                         // keep the full inline fallback for residual unsupported cases
                         Expression refExpr2 = inline(node, refExpr1);
                         variableResolved = refExpr2 == Expression.TRUE;
