@@ -396,6 +396,11 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testExpressionWithGuardedVariableResolvedViaPresetBinding() {
+        compile("compiler/validate", "expression-guarded-variable-via-preset.xml", VALIDATE_ONLY);
+    }
+
+    @Test
     void testExpressionWithTypeMismatch1() {
         try {
             compile("compiler/validate", "expression-type-mismatch1.xml", VALIDATE_ONLY);

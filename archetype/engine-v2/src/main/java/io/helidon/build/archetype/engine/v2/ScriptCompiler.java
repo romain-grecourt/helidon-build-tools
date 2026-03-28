@@ -404,6 +404,9 @@ public class ScriptCompiler {
                         blockExpr = expression(node.parent());
                         refMap = refs.getOrDefault(node, Map.of());
                     }
+                    // reachability tracks declaration coverage, but it does not yet
+                    // capture every implied binding recovered by inlining presets and
+                    // defaults within the current block
                     Expression refExpr0 = refMap.getOrDefault(ref, Expression.FALSE);
                     Expression refExpr1 = blockExpr.relativize(refExpr0);
                     Expression refExpr2 = inline(node, refExpr1);
