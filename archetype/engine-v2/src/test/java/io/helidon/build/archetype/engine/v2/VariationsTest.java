@@ -311,11 +311,25 @@ class VariationsTest {
     }
 
     @Test
-    void testVariationsFailWhenProjectedCountExceedsMax() {
+    void testVariationsFailWhenIntermediateCountExceedsMax() {
         IllegalStateException ex = assertThrows(IllegalStateException.class,
                 () -> variations("variations", "boolean1.xml", List.of(), Map.of(), Map.of(), 1));
         assertThat(ex.getMessage(),
-                is("Projected variation count 2 exceeds the configured limit of 1"));
+                is("Intermediate variation row count 2 exceeds the configured limit of 1 while joining input 'colors'"));
+    }
+
+    @Test
+    void testVariationsIgnoreProjectionOverestimate() {
+        Variations expected = Variations.of(
+                Variations.entry(Map.of("advanced", "false", "mode", "basic")),
+                Variations.entry(Map.of("advanced", "true", "mode", "expert")));
+        Variations actual = variations("variations",
+                "projection-overestimate.xml",
+                List.of(),
+                Map.of(),
+                Map.of(),
+                2);
+        assertThat(actual, is(expected));
     }
 
     @Test

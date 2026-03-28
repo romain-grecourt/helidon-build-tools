@@ -295,10 +295,20 @@ install_current() {
 }
 
 generate_variations() {
-    local log_file
+    local log_file side
     log_file="$1"
+    side="$2"
 
     step "${CURRENT_MODE}: generating variation snapshot"
+    if [ "${side}" = "baseline" ]; then
+        run_timed_logged "${HELIDON_DIR}" "${log_file}" \
+            mvn -f archetypes/archetypes/pom.xml \
+                clean \
+                install \
+                -Darchetype.test.variationsOnly=true \
+                -Darchetype.test.maxVariations=-1
+        return
+    fi
     run_timed_logged "${HELIDON_DIR}" "${log_file}" \
         mvn -f archetypes/archetypes/pom.xml \
             clean \
@@ -307,10 +317,21 @@ generate_variations() {
 }
 
 generate_projects() {
-    local log_file
+    local log_file side
     log_file="$1"
+    side="$2"
 
     step "${CURRENT_MODE}: generating project snapshot"
+    if [ "${side}" = "baseline" ]; then
+        run_logged "${HELIDON_DIR}" "${log_file}" \
+            mvn -f archetypes/archetypes/pom.xml \
+                clean \
+                install \
+                -Darchetype.test.generateOnly=true \
+                -Darchetype.test.parallelGeneration=true \
+                -Darchetype.test.maxVariations=-1
+        return
+    fi
     run_logged "${HELIDON_DIR}" "${log_file}" \
         mvn -f archetypes/archetypes/pom.xml \
             clean \
@@ -503,7 +524,7 @@ run_diff_variations() {
     actual_snapshot="${snapshot_root}/actual"
 
     if ! install_baseline "${BASELINE_WORKTREE_DIR}" "${baseline_install_log}" "baseline (${BASELINE_REF})" \
-        || ! generate_variations "${baseline_generate_log}"; then
+        || ! generate_variations "${baseline_generate_log}" baseline; then
         print_diff_variations_summary "${status}" "${changed}" "${timing_ok}" \
             "${baseline_wall_seconds}" "${actual_wall_seconds}" "${snapshot_root}" "${compare_log}"
         return 1
@@ -515,7 +536,7 @@ run_diff_variations() {
 
     if ! copy_variations_snapshot "${baseline_snapshot}" \
         || ! install_current "${actual_install_log}" "current workspace" \
-        || ! generate_variations "${actual_generate_log}"; then
+        || ! generate_variations "${actual_generate_log}" current; then
         print_diff_variations_summary "${status}" "${changed}" "${timing_ok}" \
             "${baseline_wall_seconds}" "${actual_wall_seconds}" "${snapshot_root}" "${compare_log}"
         return 1
@@ -588,8 +609,8 @@ run_diff_projects_core() {
     actual_snapshot="${snapshot_root}/actual"
 
     if ! install_baseline "${BASELINE_WORKTREE_DIR}" "${baseline_install_log}" "baseline (${BASELINE_REF})" \
-        || ! generate_projects "${baseline_generate_log}" || ! copy_projects_snapshot "${baseline_snapshot}" \
-        || ! install_current "${actual_install_log}" "current workspace" || ! generate_projects "${actual_generate_log}" \
+        || ! generate_projects "${baseline_generate_log}" baseline || ! copy_projects_snapshot "${baseline_snapshot}" \
+        || ! install_current "${actual_install_log}" "current workspace" || ! generate_projects "${actual_generate_log}" current \
         || ! copy_projects_snapshot "${actual_snapshot}" \
         || ! run_helper_compare "${csv_log}" diff_csv "${baseline_snapshot}" "${actual_snapshot}"; then
         print_diff_projects_summary "${status}" "${changed}" "${csv_changed}" "${tree_changed}" \

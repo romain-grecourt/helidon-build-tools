@@ -102,7 +102,8 @@ Maven goal to test Helidon archetypes.
 | parallelGeneration| boolean | `false`                               | Whether to generate projects in parallel when generateOnly is enabled                             |
 | generateTests     | boolean | `true`                                | Whether to auto-compute input variations                                                          |
 | failOnUnbounded   | boolean | `false`                               | Whether to fail when computed variations include unbounded inputs                                 |
-| maxVariations     | long    | `-1`                                  | Maximum projected variation count to allow during computation, use `-1` for no limit              |
+| maxVariations     | long    | `-1`                                  | Exact number of merged variations expected after computation, use `-1` to disable the assertion   |
+| maxIntermediateVariations | long | `1000000`                       | Maximum actual pre-normalization intermediate variation rows to allow, use `-1` to disable the guard |
 | plansFile         | File    | `null`                                | XML file that defines the named plans used to generate the test projects                          |
 | externalDefaults  | Map     | `null`                                | External defaults to use when generating archetypes                                               |
 | externalValues    | Map     | `null`                                | External values to use when generating archetypes                                                 |
@@ -167,6 +168,11 @@ left-to-right, and local rules are appended after inherited rules.
 If `plansFile` is not configured, the plugin computes the full variation set from the archetype inputs and
 the configured external values/defaults. Use plans when you need a curated set of relevant scenarios instead of
 the full Cartesian product.
+
+When `plansFile` is configured, `maxVariations` applies to the final
+merged unique result across all plans, while
+`maxIntermediateVariations` applies inside each plan as the variation
+engine builds its pre-normalization intermediate working set.
 
 ### InvokerId
 

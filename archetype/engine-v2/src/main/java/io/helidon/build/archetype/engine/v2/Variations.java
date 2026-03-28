@@ -168,22 +168,25 @@ public final class Variations extends AbstractSet<Variations.Entry> {
      * @param filters          filters
      * @param externalValues   fixed external values
      * @param externalDefaults external defaults
-     * @param max              max projected number of variations
+     * @param maxIntermediateVariations max actual intermediate variation row
+     *                                 count
      * @return computed variations
-     * @throws IllegalStateException if the projected variation count exceeds max
+     * @throws IllegalStateException if the intermediate variation row count
+     *                               exceeds the configured limit
      */
     public static Variations compute(ScriptCompiler compiler,
                                      List<Expression> filters,
                                      Map<String, String> externalValues,
                                      Map<String, String> externalDefaults,
-                                     long max) {
+                                     long maxIntermediateVariations) {
 
         requireNonNull(compiler);
         requireNonNull(filters);
         requireNonNull(externalValues);
         requireNonNull(externalDefaults);
-        if (max < 0) {
-            throw new IllegalArgumentException("max must be >= 0");
+        if (maxIntermediateVariations < 0) {
+            throw new IllegalArgumentException(
+                    "maxIntermediateVariations must be >= 0");
         }
 
         Node sourceNode = compiler.sourceNode();
@@ -195,7 +198,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                 filters,
                 externalValues,
                 externalDefaults,
-                max));
+                maxIntermediateVariations));
         return new Variations(variations);
     }
 
@@ -416,7 +419,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         private final Map<String, Value.Type> inputTypes;
         private final Map<String, String> resolvedExternalValues;
         private final Map<String, String> resolvedExternalDefaults;
-        private final long max;
+        private final long maxIntermediateVariations;
 
         VisitorImpl(ScriptCompiler compiler,
                     Node sourceNode,
@@ -424,7 +427,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                     List<Expression> filters,
                     Map<String, String> externalValues,
                     Map<String, String> externalDefaults,
-                    long max) {
+                    long maxIntermediateVariations) {
             this.compiler = compiler;
             this.sourceNode = sourceNode;
             this.variations = variations;
@@ -434,7 +437,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             this.inputTypes = inputTypes();
             this.resolvedExternalValues = resolvedExternalValues();
             this.resolvedExternalDefaults = resolvedExternalDefaults();
-            this.max = max;
+            this.maxIntermediateVariations = maxIntermediateVariations;
         }
 
         @Override
@@ -594,12 +597,6 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                 for (int i = 0; i < tables.size(); i++) {
                     // pick the next table whose guard allows expansion
                     Join join = nextJoin(pending, available, merged);
-                    if (join.cost > max) {
-                        throw new IllegalStateException(String.format(
-                                "Projected variation count %d exceeds the configured limit of %d",
-                                join.cost,
-                                max));
-                    }
 
                     // remove the rows this join will expand
                     join.filtered.forEach(merged::remove);
@@ -622,32 +619,23 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                             merged.size());
 
                     // compute variations for the input
-                    List<Row> computed = new ArrayList<>();
                     if (join.filtered.isEmpty()) {
                         if (merged.isEmpty()) {
                             // use this table as the initial intermediate result
-                            computed.addAll(join.table.rows);
+                            for (Row row : join.table.rows) {
+                                mergeRow(node, join, merged, BitSets.copyOf(row.bits), row.expr);
+                            }
                         }
                     } else {
                         // combine each eligible intermediate row with each row from this table
                         for (Row row1 : join.table.rows) {
                             for (BitSet row2 : join.filtered) {
-                                computed.add(new Row(BitSets.or(BitSets.copyOf(row1.bits), row2), row1.expr));
+                                mergeRow(node,
+                                         join,
+                                         merged,
+                                         BitSets.or(BitSets.copyOf(row1.bits), row2),
+                                         row1.expr);
                             }
-                        }
-                    }
-
-                    // apply excludes
-                    for (Row row : computed) {
-                        if (join.table.expr == Expression.TRUE && row.expr == Expression.TRUE && filters.isEmpty()) {
-                            merged.add(row.bits);
-                            continue;
-                        }
-                        Map<String, String> vars = variation(row.bits);
-                        if (eval(join.table.node, join.table.expr, vars)
-                            && eval(join.table.node, row.expr, vars)
-                            && filter(node, vars)) {
-                            merged.add(row.bits);
                         }
                     }
                 }
@@ -665,6 +653,31 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                 long sortStartTime = System.currentTimeMillis();
                 variations.addAll(normalized);
                 logDuration(sortStartTime, "Sorted " + variations.size() + " variations");
+            }
+        }
+
+        void mergeRow(Node node, Join join, Set<BitSet> merged, BitSet bits, Expression rowExpr) {
+            if (join.table.expr == Expression.TRUE
+                && rowExpr == Expression.TRUE
+                && filters.isEmpty()) {
+                addMerged(merged, bits, join.table.id);
+                return;
+            }
+            Map<String, String> vars = variation(bits);
+            if (eval(join.table.node, join.table.expr, vars)
+                && eval(join.table.node, rowExpr, vars)
+                && filter(node, vars)) {
+                addMerged(merged, bits, join.table.id);
+            }
+        }
+
+        void addMerged(Set<BitSet> merged, BitSet bits, String inputId) {
+            if (merged.add(bits) && merged.size() > maxIntermediateVariations) {
+                throw new IllegalStateException(String.format(
+                        "Intermediate variation row count %d exceeds the configured limit of %d while joining input '%s'",
+                        merged.size(),
+                        maxIntermediateVariations,
+                        inputId));
             }
         }
 

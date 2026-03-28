@@ -248,11 +248,19 @@ public class IntegrationTestMojo extends AbstractMojo {
     private boolean failOnUnbounded;
 
     /**
-     * Maximum projected variation count to allow when computing variations.
-     * Use {@code -1} to disable the limit.
+     * Exact variation count expected after all plans are merged.
+     * Use {@code -1} to disable the assertion.
      */
     @Parameter(property = "archetype.test.maxVariations", defaultValue = "-1")
     private long maxVariations;
+
+    /**
+     * Maximum actual pre-normalization intermediate variation rows to allow
+     * while computing variations. Use {@code -1} to disable the guard.
+     */
+    @Parameter(property = "archetype.test.maxIntermediateVariations",
+               defaultValue = "1000000")
+    private long maxIntermediateVariations;
 
     /**
      * Test start index.
@@ -398,7 +406,13 @@ public class IntegrationTestMojo extends AbstractMojo {
         if (maxVariations < -1) {
             throw new MojoFailureException("Parameter 'maxVariations' must be -1 or greater");
         }
-        long max = maxVariations == -1 ? Long.MAX_VALUE : maxVariations;
+        if (maxIntermediateVariations < -1) {
+            throw new MojoFailureException(
+                    "Parameter 'maxIntermediateVariations' must be -1 or greater");
+        }
+        long max = maxIntermediateVariations == -1
+                ? Long.MAX_VALUE
+                : maxIntermediateVariations;
         try (FileSystem fs = newFileSystem(archetypeFile, this.getClass().getClassLoader())) {
             Path cwd = fs.getPath("/");
             ScriptCompiler compiler = new ScriptCompiler(() -> cwd.resolve("main.xml"), cwd);
@@ -412,6 +426,7 @@ public class IntegrationTestMojo extends AbstractMojo {
                             "Variations must be exhaustive, unbounded inputs: "
                             + String.join(", ", variations.unboundedInputs()));
                 }
+                assertExpectedVariationCount(maxVariations, variations);
                 return variations;
             } catch (IllegalStateException ex) {
                 throw new MojoFailureException(ex.getMessage());
@@ -421,7 +436,20 @@ public class IntegrationTestMojo extends AbstractMojo {
         }
     }
 
-    private Variations variations(ScriptCompiler compiler, List<VariationPlan> plans, long maxVariations) {
+    static void assertExpectedVariationCount(long expectedVariations,
+                                             Variations variations)
+            throws MojoFailureException {
+        if (expectedVariations != -1 && variations.size() != expectedVariations) {
+            throw new MojoFailureException(String.format(
+                    "Expected %d variations but found %d",
+                    expectedVariations,
+                    variations.size()));
+        }
+    }
+
+    private Variations variations(ScriptCompiler compiler,
+                                  List<VariationPlan> plans,
+                                  long maxIntermediateVariations) {
         List<Variations> computed = new ArrayList<>();
         for (VariationPlan plan : plans) {
             Log.info("");
@@ -435,7 +463,7 @@ public class IntegrationTestMojo extends AbstractMojo {
                     plan.filters(),
                     planValues,
                     planDefaults,
-                    maxVariations);
+                    maxIntermediateVariations);
             computed.add(computedPlan);
             Log.info("Variations: %d", computedPlan.size());
         }

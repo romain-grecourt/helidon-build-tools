@@ -140,7 +140,8 @@ The wrapper should:
 mvn -f archetypes/archetypes/pom.xml \
     clean \
     install \
-    -Darchetype.test.variationsOnly=true
+    -Darchetype.test.variationsOnly=true \
+    -Darchetype.test.maxVariations=-1
 ```
 
 4. Copy `target/tests/projects.csv` into the baseline snapshot directory.
@@ -184,7 +185,8 @@ mvn -f archetypes/archetypes/pom.xml \
     clean \
     install \
     -Darchetype.test.generateOnly=true \
-    -Darchetype.test.parallelGeneration=true
+    -Darchetype.test.parallelGeneration=true \
+    -Darchetype.test.maxVariations=-1
 ```
 
 5. Copy `target/tests/` into the baseline snapshot directory.
@@ -195,6 +197,10 @@ mvn -f archetypes/archetypes/pom.xml \
    `projects-diff.sh diff_projects`.
 If the helper fails, treat that as a regression workflow failure and report
 the helper output from the compare log.
+
+The baseline side disables `archetype.test.maxVariations` explicitly so
+cross-version comparisons still work when the Helidon POM already uses
+the newer exact-count semantics and the baseline build-tools do not.
 
 ## Mode: `all`
 

@@ -50,6 +50,10 @@ starting the regression work. Do not assume a default sibling checkout.
 - If the diff helper reports unexpected changes, inspect
   representative files manually before concluding that the change is
   real.
+- When the Helidon POM uses newer plugin-only assertions such as the
+  exact-count `maxVariations`, keep baseline generations comparable by
+  disabling those assertions on the baseline side of the wrapper rather
+  than renaming the product option again.
 
 ## Workflow
 
