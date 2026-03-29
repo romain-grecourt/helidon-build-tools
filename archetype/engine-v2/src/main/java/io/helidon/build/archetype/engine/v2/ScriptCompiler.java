@@ -1696,17 +1696,13 @@ public class ScriptCompiler {
             if (nodeState.supported()) {
                 return nodeState.isFalse();
             }
-            // unsupported reachability still needs compatibility pruning via full inlining
+            // unsupported reachability can still collapse through
+            // reachability-only condition inlining
             return compatibilityPruned(node);
         }
 
         private boolean compatibilityPruned(Node node) {
-            Expression expr = expression(node);
-            Expression inlined = inlineCondition(node, expr);
-            if (inlined != Expression.FALSE && inlined != Expression.TRUE) {
-                inlined = inline(node, expr);
-            }
-            return inlined == Expression.FALSE;
+            return inlineCondition(node, expression(node)) == Expression.FALSE;
         }
 
         private boolean skipPrunedNode(Node node, ReachabilityState nodeState) {
