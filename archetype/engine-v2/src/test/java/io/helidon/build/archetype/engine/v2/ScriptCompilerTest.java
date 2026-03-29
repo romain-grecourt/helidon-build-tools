@@ -32,6 +32,7 @@ import org.junit.jupiter.api.Test;
 
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.EXPR_EVAL_ERROR;
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.EXPR_INCOMPATIBLE_OPERATOR;
+import static io.helidon.build.archetype.engine.v2.ScriptCompiler.EXPR_TEXT_INPUT_CONTROL_FLOW;
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.EXPR_UNSUPPORTED_CONDITION;
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.EXPR_UNRESOLVED_VARIABLE;
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.Options.IGNORE_ERRORS;
@@ -39,6 +40,7 @@ import static io.helidon.build.archetype.engine.v2.ScriptCompiler.Options.VALIDA
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.INPUT_ALREADY_DECLARED;
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.INPUT_NOT_IN_STEP;
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.INPUT_OPTIONAL_NO_DEFAULT;
+import static io.helidon.build.archetype.engine.v2.ScriptCompiler.INPUT_TEXT_NESTED_VALUES;
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.INPUT_TYPE_MISMATCH;
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.OPTION_VALUE_ALREADY_DECLARED;
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.PRESET_TYPE_MISMATCH;
@@ -380,6 +382,42 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testExpressionWithDirectTextInputControlFlow() {
+        try {
+            compile("compiler/validate", "expression-text-input-direct.xml", VALIDATE_ONLY);
+            fail("An exception should have been thrown");
+        } catch (ValidationException ex) {
+            assertThat(ex.errors(), contains(List.of(
+                    containsString(EXPR_TEXT_INPUT_CONTROL_FLOW))));
+        }
+    }
+
+    @Test
+    void testExpressionWithTextInputDerivedValueControlFlow() {
+        try {
+            compile("compiler/validate", "expression-text-input-via-value.xml", VALIDATE_ONLY);
+            fail("An exception should have been thrown");
+        } catch (ValidationException ex) {
+            assertThat(ex.errors(), contains(List.of(
+                    containsString(EXPR_TEXT_INPUT_CONTROL_FLOW))));
+        }
+    }
+
+    @Test
+    void testExpressionWithTextInputDerivedDeclarationAvailability() {
+        try {
+            compile("compiler/validate",
+                    "expression-text-input-via-declaration.xml",
+                    VALIDATE_ONLY);
+            fail("An exception should have been thrown");
+        } catch (ValidationException ex) {
+            assertThat(ex.errors(), contains(List.of(
+                    containsString(EXPR_TEXT_INPUT_CONTROL_FLOW),
+                    containsString(EXPR_TEXT_INPUT_CONTROL_FLOW))));
+        }
+    }
+
+    @Test
     void testExpressionWithUnresolvedVariable1() {
         try {
             compile("compiler/validate", "expression-unresolved-variable1.xml", VALIDATE_ONLY);
@@ -437,13 +475,13 @@ class ScriptCompilerTest {
     }
 
     @Test
-    void testExpressionWithTypeMismatch1() {
+    void testExpressionWithBareTextInputControlFlow() {
         try {
             compile("compiler/validate", "expression-type-mismatch1.xml", VALIDATE_ONLY);
             fail("An exception should have been thrown");
         } catch (ValidationException ex) {
             assertThat(ex.errors(), contains(List.of(
-                    containsString(EXPR_EVAL_ERROR))));
+                    containsString(EXPR_TEXT_INPUT_CONTROL_FLOW))));
         }
     }
 
@@ -503,6 +541,23 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testTextInputRejectsNestedValues() {
+        Node sourceNode = Nodes.script(
+                Nodes.step("Text",
+                        Nodes.inputs(
+                                Nodes.inputText("name",
+                                        Nodes.inputs(
+                                                Nodes.inputBoolean("flag"))))));
+        try {
+            compile(sourceNode, VALIDATE_ONLY);
+            fail("An exception should have been thrown");
+        } catch (ValidationException ex) {
+            assertThat(ex.errors(), contains(List.of(
+                    containsString(INPUT_TEXT_NESTED_VALUES))));
+        }
+    }
+
+    @Test
     void testOptionValueAlreadyDeclared() {
         try {
             compile("compiler/validate", "option-value-already-declared.xml", VALIDATE_ONLY);
@@ -518,13 +573,37 @@ class ScriptCompilerTest {
         try (FileSystem fs = VirtualFileSystem.create(targetDir.resolve("test-classes"))) {
             Path cwd = fs.getPath(path);
             Path source = cwd.resolve(entrypoint).toAbsolutePath().normalize();
-            ScriptCompiler compiler = new ScriptCompiler(() -> source, cwd);
-            Path outputDir = unique(targetDir.resolve("compiler-ut"), fileName(cwd));
-            compiler.compile(List.of(features)).write(outputDir);
-            return outputDir;
+            return compile(Script.Source.of(source), cwd, features);
         } catch (IOException ex) {
             throw new UncheckedIOException(ex.getMessage(), ex);
         }
+    }
+
+    static Path compile(Node node, ScriptCompiler.Options... features) {
+        Path cwd = targetDir(ScriptCompilerTest.class).toAbsolutePath().normalize();
+        Path source = cwd.resolve("programmatic-script.xml");
+        Script.Source scriptSource = new Script.Source() {
+            @Override
+            public Node readScript(boolean readOnly, Script.Loader loader) {
+                return node.deepCopy();
+            }
+
+            @Override
+            public Path path() {
+                return source;
+            }
+        };
+        return compile(scriptSource, cwd, features);
+    }
+
+    private static Path compile(Script.Source source,
+                                Path cwd,
+                                ScriptCompiler.Options... features) {
+        Path targetDir = targetDir(ScriptCompilerTest.class);
+        ScriptCompiler compiler = new ScriptCompiler(source, cwd);
+        Path outputDir = unique(targetDir.resolve("compiler-ut"), fileName(cwd));
+        compiler.compile(List.of(features)).write(outputDir);
+        return outputDir;
     }
 
     static final Pattern XML_COMMENT = Pattern.compile("[^\\S\\r\\n]*<!--[^>]*-->\n", Pattern.DOTALL);

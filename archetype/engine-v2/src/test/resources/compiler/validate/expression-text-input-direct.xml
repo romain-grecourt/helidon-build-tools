@@ -20,9 +20,9 @@
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
 
-    <step name="text-external-default">
+    <step name="Text">
         <inputs>
-            <text id="name" name="Name"/>
+            <text id="name" name="Name" default="Foo"/>
             <boolean id="flag" name="Flag" if="${name} == 'Bar'"/>
         </inputs>
     </step>

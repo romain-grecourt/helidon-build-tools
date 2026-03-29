@@ -52,6 +52,7 @@ import io.helidon.build.common.Combinatorics;
 import io.helidon.build.common.InputStreams;
 import io.helidon.build.common.Lists;
 import io.helidon.build.common.Maps;
+import io.helidon.build.common.PropertyEvaluator;
 import io.helidon.build.common.SourcePath;
 import io.helidon.build.common.logging.Log;
 
@@ -188,7 +189,9 @@ public class ScriptCompiler {
     static final String INPUT_TYPE_MISMATCH = "Input is declared in another scope with a different type";
     static final String INPUT_OPTIONAL_NO_DEFAULT = "Input is optional but does not have a default value";
     static final String INPUT_NOT_IN_STEP = "Input is not nested within a step";
+    static final String INPUT_TEXT_NESTED_VALUES = "Text input cannot contain nested values or directives";
     static final String OPTION_VALUE_ALREADY_DECLARED = "Option value is already declared";
+    static final String EXPR_TEXT_INPUT_CONTROL_FLOW = "Expression depends on a user text input";
 
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final Map<Node, String> scopes = new HashMap<>();
@@ -203,6 +206,8 @@ public class ScriptCompiler {
     private final Map<Node, Map<String, ConstantBindings>> refBindingsByNode = new HashMap<>();
     private final Map<String, InputDomain> domains = new LinkedHashMap<>();
     private final Map<String, Type> refTypes = new HashMap<>();
+    private final Set<String> textInputRefs = new HashSet<>();
+    private final Map<String, Boolean> textInputProvenance = new HashMap<>();
     private final Map<Node, Path> workDirs = new HashMap<>();
     private final Set<String> errors = new LinkedHashSet<>();
     private final Node sourceNode;
@@ -269,6 +274,14 @@ public class ScriptCompiler {
      */
     public Set<String> errors() {
         return errors;
+    }
+
+    void validateOnly() {
+        init();
+        validate();
+        if (!errors.isEmpty()) {
+            throw new ValidationException(Lists.drain(errors));
+        }
     }
 
     Path cwd() {
@@ -374,6 +387,15 @@ public class ScriptCompiler {
                         default:
                     }
                 }
+            }
+
+            if (dependsOnTextInput(node, expr, new HashSet<>())) {
+                errors.add(String.format(
+                        "%s %s: '%s'",
+                        node.location(),
+                        EXPR_TEXT_INPUT_CONTROL_FLOW,
+                        expr.literal()));
+                continue;
             }
 
             boolean resolved = true;
@@ -489,6 +511,76 @@ public class ScriptCompiler {
         return false;
     }
 
+    private boolean dependsOnTextInput(Node node,
+                                       Expression expr,
+                                       Set<String> visitingRefs) {
+        Scope scope = scope(node);
+        for (String variable : expr.variables()) {
+            if (dependsOnTextInput(scope.key(variable), visitingRefs)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean dependsOnTextInput(String key, Set<String> visitingRefs) {
+        Boolean cached = textInputProvenance.get(key);
+        if (cached != null) {
+            return cached;
+        }
+        if (!visitingRefs.add(key)) {
+            return false;
+        }
+        boolean result = textInputRefs.contains(key);
+        if (!result) {
+            for (Node node : declaredValues.getOrDefault(key, Set.of())) {
+                if (attached(node) && declarationDependsOnTextInput(node, visitingRefs)) {
+                    result = true;
+                    break;
+                }
+            }
+        }
+        visitingRefs.remove(key);
+        textInputProvenance.put(key, result);
+        return result;
+    }
+
+    private boolean declarationDependsOnTextInput(Node node,
+                                                  Set<String> visitingRefs) {
+        for (Node ancestor = node.parent(); ancestor != null; ancestor = ancestor.parent()) {
+            if (ancestor.kind() == Kind.INPUT_TEXT) {
+                return true;
+            }
+            if (ancestor.kind() == Kind.CONDITION
+                    && dependsOnTextInput(ancestor, ancestor.expression(), visitingRefs)) {
+                return true;
+            }
+        }
+        if (node.value().type() != Type.STRING && node.value().type() != Type.DYNAMIC) {
+            return false;
+        }
+        String value = node.value().getString();
+        if (!value.contains("${")) {
+            return false;
+        }
+        try {
+            Scope scope = scope(node.parent());
+            Set<String> refs = new LinkedHashSet<>();
+            PropertyEvaluator.evaluate(value, var -> {
+                refs.add(scope.key(var));
+                return "";
+            });
+            for (String ref : refs) {
+                if (dependsOnTextInput(ref, visitingRefs)) {
+                    return true;
+                }
+            }
+        } catch (RuntimeException ex) {
+            return false;
+        }
+        return false;
+    }
+
     private void validateOptions() {
         Map<Node, Set<Node>> options = new HashMap<>();
         for (Node option : sourceNode.traverse(Kind.INPUT_OPTION::equals)) {
@@ -530,6 +622,13 @@ public class ScriptCompiler {
                         break;
                     default:
                 }
+            }
+
+            if (input.kind() == Kind.INPUT_TEXT && !input.children().isEmpty()) {
+                errors.add(String.format("%s %s: '%s'",
+                        input.location(),
+                        INPUT_TEXT_NESTED_VALUES,
+                        scope.key()));
             }
 
             if (input.ancestor(Kind.STEP::equals).isEmpty()) {
@@ -1367,6 +1466,13 @@ public class ScriptCompiler {
                     break;
                 case CONDITION:
                     scopes.put(node, scope.key());
+                    if (dependsOnTextInput(node, node.expression(), new HashSet<>())) {
+                        errors.add(String.format(
+                                "%s %s: '%s'",
+                                node.location(),
+                                EXPR_TEXT_INPUT_CONTROL_FLOW,
+                                node.expression().literal()));
+                    }
                     Expression expr = inlineCondition(node, node.expression());
                     if (expr != Expression.FALSE) {
                         node.expression(expr);
@@ -1401,6 +1507,9 @@ public class ScriptCompiler {
                     scope = ctx.pushScope(s -> s.getOrCreate(node));
                     scopes.put(node, scope.key());
                     refTypes.putIfAbsent(scope.key(), node.kind().valueType());
+                    if (node.kind() == Kind.INPUT_TEXT) {
+                        textInputRefs.add(scope.key());
+                    }
                     registerDomain(node, scope.key());
                     currentRefs.compute(scope.key(), (k, v) -> expression(node.parent()).or(v).reduce());
                     if (currentState.supported()) {

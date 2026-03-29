@@ -26,14 +26,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import io.helidon.build.archetype.engine.v2.ScriptCompiler.ValidationException;
 import io.helidon.build.common.VirtualFileSystem;
 import io.helidon.build.common.xml.XMLElement;
 
 import org.junit.jupiter.api.Test;
 
+import static io.helidon.build.archetype.engine.v2.ScriptCompiler.EXPR_TEXT_INPUT_CONTROL_FLOW;
 import static io.helidon.build.common.test.utils.TestFiles.targetDir;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -181,15 +184,11 @@ class VariationsTest {
     }
 
     @Test
-    void testVariationEntriesTextWithExternalDefaultRetainDependentBranches() {
-        Variations expected = Variations.of(
-                Variations.entry(Map.of("name", "Bar", "flag", "false"), Set.of("name")),
-                Variations.entry(Map.of("name", "Bar", "flag", "true"), Set.of("name")));
-        Variations actual = variations("variations", "text-external-default.xml", List.of(),
-                Map.of(), Map.of("name", "Bar"), Long.MAX_VALUE);
-        assertThat(actual, is(expected));
-        assertThat(actual.exhaustive(), is(false));
-        assertThat(actual.unboundedInputs(), contains("name"));
+    void testVariationsFixtureWithTextInputControlFlowFailsCompilerValidation() {
+        ValidationException ex = assertThrows(ValidationException.class,
+                () -> validate("variations", "text-external-default.xml"));
+        assertThat(ex.errors(), contains(List.of(
+                containsString(EXPR_TEXT_INPUT_CONTROL_FLOW))));
     }
 
     @Test
@@ -359,6 +358,18 @@ class VariationsTest {
             Path source = cwd.resolve(entrypoint).toAbsolutePath().normalize();
             ScriptCompiler compiler = new ScriptCompiler(() -> source, cwd);
             return Variations.compute(compiler, filters, externalValues, externalDefaults, max);
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex.getMessage(), ex);
+        }
+    }
+
+    static void validate(String path, String entrypoint) {
+        Path targetDir = targetDir(VariationsTest.class);
+        try (FileSystem fs = VirtualFileSystem.create(targetDir.resolve("test-classes"))) {
+            Path cwd = fs.getPath(path);
+            Path source = cwd.resolve(entrypoint).toAbsolutePath().normalize();
+            ScriptCompiler compiler = new ScriptCompiler(() -> source, cwd);
+            compiler.validateOnly();
         } catch (IOException ex) {
             throw new UncheckedIOException(ex.getMessage(), ex);
         }

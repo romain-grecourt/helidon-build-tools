@@ -801,7 +801,10 @@
         <xs:annotation>
             <xs:documentation source="version">2.0</xs:documentation>
             <xs:documentation source="description">
-                A text user input.
+                A scalar leaf text user input. Text inputs can provide
+                substitution data and optional help, but cannot contain
+                nested values or directives or be used for control
+                flow.
             </xs:documentation>
         </xs:annotation>
         <xs:sequence>
