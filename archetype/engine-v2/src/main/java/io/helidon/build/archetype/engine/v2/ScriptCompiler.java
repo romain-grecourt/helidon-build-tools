@@ -1502,8 +1502,12 @@ public class ScriptCompiler {
         }
 
         private boolean compatibilityPruned(Node node) {
-            Expression expr = inline(node, expression(node));
-            return expr == Expression.FALSE;
+            Expression expr = expression(node);
+            Expression inlined = inlineCondition(node, expr);
+            if (inlined != Expression.FALSE && inlined != Expression.TRUE) {
+                inlined = inline(node, expr);
+            }
+            return inlined == Expression.FALSE;
         }
 
         private boolean skipPrunedNode(Node node, ReachabilityState nodeState) {
