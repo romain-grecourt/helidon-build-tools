@@ -460,6 +460,13 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testExpressionWithGuardedVariableResolvedViaTextDeclaration() {
+        compile("compiler/validate",
+                "expression-guarded-variable-via-text-declaration.xml",
+                VALIDATE_ONLY);
+    }
+
+    @Test
     void testExpressionWithGuardedVariableResolvedViaUnsupportedDeclaration() {
         try {
             compile("compiler/validate",

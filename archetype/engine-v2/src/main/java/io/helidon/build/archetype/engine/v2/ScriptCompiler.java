@@ -481,7 +481,7 @@ public class ScriptCompiler {
                             ex.getMessage()));
                     continue;
                 }
-                if (compatible && translate(expr, scope, Map.of(), refReachabilityMap) == null) {
+                if (compatible && translate(expr, scope, refBindings, refReachabilityMap) == null) {
                     errors.add(String.format(
                             "%s %s: '%s'",
                             node.location(),
