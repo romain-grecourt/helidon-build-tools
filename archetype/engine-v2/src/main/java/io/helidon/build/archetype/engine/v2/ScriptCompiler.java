@@ -1323,9 +1323,6 @@ public class ScriptCompiler {
                 case INPUT_BOOLEAN:
                     expr = expr.and(Expression.create(String.format("${%s}", key.apply(n))));
                     break;
-                case INPUT_TEXT:
-                    expr = expr.and(Expression.create(String.format("${%s} != ''", key.apply(n))));
-                    break;
                 case INPUT_OPTION:
                     Node input = n.ancestor(Kind::isInput).orElseThrow();
                     switch (input.kind()) {
@@ -1523,9 +1520,6 @@ public class ScriptCompiler {
                     switch (node.kind()) {
                         case INPUT_BOOLEAN:
                             nodeState = currentState.and(Reachability.scalar(scope.key(), Set.of("true"), domains));
-                            break;
-                        case INPUT_TEXT:
-                            nodeState = ReachabilityState.unsupported();
                             break;
                         default:
                     }

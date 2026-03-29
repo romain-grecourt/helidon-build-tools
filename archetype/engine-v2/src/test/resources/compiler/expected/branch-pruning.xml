@@ -41,6 +41,7 @@
                 <option name="Multipart" value="multipart"/>
             </list>
             <boolean id="feature" name="Feature"/>
+            <text id="name" name="Name"/>
         </inputs>
     </step>
 </archetype-script>

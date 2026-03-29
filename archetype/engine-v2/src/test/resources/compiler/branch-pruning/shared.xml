@@ -26,6 +26,7 @@
                 <option name="Multipart" value="multipart" if="${app-type} == 'custom'"/>
             </list>
             <boolean id="feature" name="Feature" if="${app-type} == 'custom'"/>
+            <text id="name" name="Name" if="${app-type} == 'custom'"/>
         </inputs>
     </step>
 </archetype-script>
