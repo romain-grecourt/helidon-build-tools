@@ -450,9 +450,18 @@ public class ScriptCompiler {
                         // keep a narrower reachability-only attempt before the residual inline fallback
                         Expression refExpr2 = inlineCondition(node, refExpr1);
                         if (refExpr2 != Expression.TRUE && refExpr2 != Expression.FALSE) {
-                            refExpr2 = inline(node, refExpr1);
+                            if (requiredReachability != null) {
+                                Reachability inlinedReachability = translate(refExpr2, scope,
+                                        refBindings, refReachabilityMap);
+                                if (inlinedReachability != null) {
+                                    variableResolved = inlinedReachability.contains(requiredReachability);
+                                }
+                            }
+                            if (!variableResolved) {
+                                refExpr2 = inline(node, refExpr1);
+                            }
                         }
-                        variableResolved = refExpr2 == Expression.TRUE;
+                        variableResolved = variableResolved || refExpr2 == Expression.TRUE;
                     }
                 }
                 if (!variableResolved) {

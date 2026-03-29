@@ -482,6 +482,19 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testExpressionWithGuardedVariableResolvedViaInlinedUnsupportedAlias() {
+        try {
+            compile("compiler/validate",
+                    "expression-guarded-variable-via-inlined-unsupported-alias.xml",
+                    VALIDATE_ONLY);
+            fail("An exception should have been thrown");
+        } catch (ValidationException ex) {
+            assertThat(ex.errors(), contains(List.of(
+                    containsString(EXPR_UNSUPPORTED_CONDITION))));
+        }
+    }
+
+    @Test
     void testExpressionWithBareTextInputControlFlow() {
         try {
             compile("compiler/validate", "expression-type-mismatch1.xml", VALIDATE_ONLY);
