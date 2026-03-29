@@ -199,6 +199,7 @@ public class ScriptCompiler {
     private final Map<String, Set<Node>> declaredValues = new HashMap<>();
     private final Map<Node, Map<String, Value<?>>> declaredValueCache = new IdentityHashMap<>();
     private final Map<Node, Map<String, Value<?>>> inlineDeclaredValueCache = new IdentityHashMap<>();
+    private final Map<Node, Map<String, Value<?>>> validationDeclaredValueCache = new IdentityHashMap<>();
     private final Map<Node, Expression> expressions = new HashMap<>();
     private final Map<Node, Map<String, Expression>> refs = new HashMap<>();
     private final Map<Node, Reachability> reachabilityByNode = new HashMap<>();
@@ -450,11 +451,13 @@ public class ScriptCompiler {
                         // keep a narrower reachability-only attempt before the residual inline fallback
                         Expression refExpr2 = inlineCondition(node, refExpr1);
                         if (refExpr2 != Expression.TRUE && refExpr2 != Expression.FALSE) {
-                            if (requiredReachability != null) {
-                                Reachability inlinedReachability = translate(refExpr2, scope,
-                                        refBindings, refReachabilityMap);
-                                if (inlinedReachability != null) {
-                                    variableResolved = inlinedReachability.contains(requiredReachability);
+                            variableResolved = translatedContains(refExpr2, requiredReachability, scope,
+                                    refBindings, refReachabilityMap);
+                            if (!variableResolved) {
+                                refExpr2 = inline(node, refExpr2, this::declaredValueForValidation);
+                                if (refExpr2 != Expression.TRUE && refExpr2 != Expression.FALSE) {
+                                    variableResolved = translatedContains(refExpr2, requiredReachability, scope,
+                                            refBindings, refReachabilityMap);
                                 }
                             }
                             if (!variableResolved) {
@@ -505,6 +508,18 @@ public class ScriptCompiler {
                                                       Scope scope,
                                                       Map<String, Reachability> definitions) {
         return new VariableDemandAnalyzer(scope, definitions).analyze(expr);
+    }
+
+    private boolean translatedContains(Expression expr,
+                                       Reachability requiredReachability,
+                                       Scope scope,
+                                       Map<String, ConstantBindings> bindings,
+                                       Map<String, Reachability> definitions) {
+        if (requiredReachability == null) {
+            return false;
+        }
+        Reachability translated = translate(expr, scope, bindings, definitions);
+        return translated != null && translated.contains(requiredReachability);
     }
 
     private boolean missingValidationCoverage(Expression expr,
@@ -737,6 +752,48 @@ public class ScriptCompiler {
             return Value.typed(node0.value(), node0.kind().valueType());
         }
         return Value.empty();
+    }
+
+    private Value<?> declaredValueForValidation(Node node, String key) {
+        return validationDeclaredValueCache
+                .computeIfAbsent(node, n -> new HashMap<>())
+                .computeIfAbsent(key, k -> declaredValueForValidation0(node, k));
+    }
+
+    private Value<?> declaredValueForValidation0(Node node, String key) {
+        Node node0 = declaredValueByReachability(node, key);
+        if (node0 != null) {
+            return Value.typed(node0.value(), node0.kind().valueType());
+        }
+        if (!requiresExpressionDeclarationLookup(node, key)) {
+            return Value.empty();
+        }
+        node0 = declaredValueByExpression(node, key);
+        if (node0 == null) {
+            return Value.empty();
+        }
+        Value<?> value = literalDeclaredValue(node0);
+        return value != null ? value : Value.empty();
+    }
+
+    private Value<?> literalDeclaredValue(Node node) {
+        Value<?> value = constantValue(node);
+        if (value == null) {
+            return null;
+        }
+        switch (value.type()) {
+            case STRING:
+                return value.getString().contains("${") ? null : value;
+            case LIST:
+                for (String item : value.getList()) {
+                    if (item.contains("${")) {
+                        return null;
+                    }
+                }
+                return value;
+            default:
+                return value;
+        }
     }
 
     private Node declaredValueByReachability(Node node, String key) {
