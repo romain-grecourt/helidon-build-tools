@@ -759,10 +759,7 @@ public class ScriptCompiler {
         if (node0 != null) {
             return Value.typed(node0.value(), node0.kind().valueType());
         }
-        if (!requiresExpressionDeclarationLookup(node, key)) {
-            return Value.empty();
-        }
-        node0 = declaredValueByExpression(node, key);
+        node0 = declaredValueByCondition(node, key);
         if (node0 == null) {
             return Value.empty();
         }
@@ -819,15 +816,15 @@ public class ScriptCompiler {
         return node0;
     }
 
-    private Node declaredValueByExpression(Node node, String key) {
+    private Node declaredValueByCondition(Node node, String key) {
         Node node0 = null;
         Expression blockExpr = expression(node.parent());
         for (Node n : declaredValues.getOrDefault(key, Set.of())) {
             if (!attached(n) || node.id() <= n.id()) {
                 continue;
             }
-            // "relativize" the expression within the block
-            Expression refExpr = blockExpr.relativize(expression(n));
+            Expression refExpr = blockExpr.relativize(expression(n.parent()));
+            refExpr = inlineCondition(node, refExpr);
             if (refExpr == Expression.TRUE) {
                 if (node0 == null || n.id() > node0.id()) {
                     node0 = n;
@@ -839,21 +836,6 @@ public class ScriptCompiler {
             }
         }
         return node0;
-    }
-
-    private boolean requiresExpressionDeclarationLookup(Node node, String key) {
-        if (reachability(node.parent()) == null) {
-            return true;
-        }
-        for (Node n : declaredValues.getOrDefault(key, Set.of())) {
-            if (!attached(n) || node.id() <= n.id()) {
-                continue;
-            }
-            if (reachability(n) == null) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private boolean attached(Node node) {
