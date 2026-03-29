@@ -608,7 +608,7 @@ public class ScriptCompiler {
 
     private Value<?> declaredValue0(Node node, String key) {
         Node node0 = declaredValueByReachability(node, key);
-        if (node0 == null) {
+        if (node0 == null && requiresExpressionDeclarationLookup(node, key)) {
             node0 = declaredValueByExpression(node, key);
         }
         if (node0 != null) {
@@ -680,6 +680,21 @@ public class ScriptCompiler {
             }
         }
         return node0;
+    }
+
+    private boolean requiresExpressionDeclarationLookup(Node node, String key) {
+        if (reachability(node.parent()) == null) {
+            return true;
+        }
+        for (Node n : declaredValues.getOrDefault(key, Set.of())) {
+            if (!attached(n) || node.id() <= n.id()) {
+                continue;
+            }
+            if (reachability(n) == null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean attached(Node node) {
