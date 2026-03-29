@@ -460,9 +460,6 @@ public class ScriptCompiler {
                                             refBindings, refReachabilityMap);
                                 }
                             }
-                            if (!variableResolved) {
-                                refExpr2 = inline(node, refExpr1);
-                            }
                         }
                         variableResolved = variableResolved || refExpr2 == Expression.TRUE;
                     }
