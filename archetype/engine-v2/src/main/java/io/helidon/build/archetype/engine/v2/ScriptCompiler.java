@@ -419,10 +419,15 @@ public class ScriptCompiler {
                             variableResolved = bindingReachability.contains(requiredReachability);
                         }
                     }
-                    if (!variableResolved && (requiredReachability == null || bindingReachability == null)) {
+                    boolean missingCoverage = missingValidationCoverage(refExpr1, scope,
+                            refBindings, refReachabilityMap);
+                    if (!variableResolved
+                            && (requiredReachability == null
+                            || bindingReachability == null
+                            || missingCoverage)) {
                         // keep a narrower reachability-only attempt before the residual inline fallback
                         Expression refExpr2 = inlineCondition(node, refExpr1);
-                        if (refExpr2 != Expression.TRUE) {
+                        if (refExpr2 != Expression.TRUE && refExpr2 != Expression.FALSE) {
                             refExpr2 = inline(node, refExpr1);
                         }
                         variableResolved = refExpr2 == Expression.TRUE;
@@ -469,6 +474,19 @@ public class ScriptCompiler {
                                                       Scope scope,
                                                       Map<String, Reachability> definitions) {
         return new VariableDemandAnalyzer(scope, definitions).analyze(expr);
+    }
+
+    private boolean missingValidationCoverage(Expression expr,
+                                              Scope scope,
+                                              Map<String, ConstantBindings> bindings,
+                                              Map<String, Reachability> definitions) {
+        for (String variable : expr.variables()) {
+            String key = scope.key(variable);
+            if (!bindings.containsKey(key) && !definitions.containsKey(key)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void validateOptions() {
