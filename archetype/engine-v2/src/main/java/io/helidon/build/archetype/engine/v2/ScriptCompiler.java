@@ -728,9 +728,6 @@ public class ScriptCompiler {
 
     private Value<?> declaredValue0(Node node, String key) {
         Node node0 = declaredValueByReachability(node, key);
-        if (node0 == null && requiresExpressionDeclarationLookup(node, key)) {
-            node0 = declaredValueByExpression(node, key);
-        }
         if (node0 != null) {
             return Value.typed(node0.value(), node0.kind().valueType());
         }
