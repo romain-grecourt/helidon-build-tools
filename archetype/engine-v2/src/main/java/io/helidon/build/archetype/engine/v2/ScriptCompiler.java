@@ -201,7 +201,7 @@ public class ScriptCompiler {
     private final Map<Node, Map<String, Value<?>>> inlineDeclaredValueCache = new IdentityHashMap<>();
     private final Map<Node, Map<String, Value<?>>> validationDeclaredValueCache = new IdentityHashMap<>();
     private final Map<Node, Expression> expressions = new HashMap<>();
-    private final Map<Node, Map<String, Expression>> refs = new HashMap<>();
+    private final Map<String, Set<Node>> definedRefs = new HashMap<>();
     private final Map<Node, Reachability> reachabilityByNode = new HashMap<>();
     private final Map<Node, Map<String, Reachability>> refReachabilityByNode = new HashMap<>();
     private final Map<Node, Map<String, ConstantBindings>> refBindingsByNode = new HashMap<>();
@@ -406,7 +406,6 @@ public class ScriptCompiler {
             Map<String, ConstantBindings> refBindings = refBindingsByNode.getOrDefault(node, Map.of());
             Map<String, Reachability> variableDemands = variableDemands(expr, scope, refReachabilityMap);
             Expression blockExpr = null;
-            Map<String, Expression> refMap = null;
             for (String variable : expr.variables()) {
 
                 // normalized variable
@@ -436,13 +435,12 @@ public class ScriptCompiler {
                 if (!variableResolved) {
                     if (blockExpr == null) {
                         blockExpr = expression(node.parent());
-                        refMap = refs.getOrDefault(node, Map.of());
                     }
-                    Expression refExpr1 = blockExpr.relativize(refMap.getOrDefault(ref, Expression.FALSE));
+                    Expression refExpr1 = blockExpr.relativize(definitionExpression(node, ref));
                     boolean missingCoverage = missingValidationCoverage(refExpr1, scope,
                             refBindings, refReachabilityMap);
                     if (bindingReachability == null || missingCoverage) {
-                        // keep block-relative refs recovery only for unsupported residual shapes
+                        // keep block-relative recovery only for unsupported residual shapes
                         Expression refExpr2 = inlineCondition(node, refExpr1);
                         if (refExpr2 != Expression.TRUE && refExpr2 != Expression.FALSE) {
                             variableResolved = translatedContains(refExpr2, requiredReachability, scope,
@@ -526,6 +524,17 @@ public class ScriptCompiler {
             return expr;
         }
         return new Expression(List.of(Token.of(value)), false).reduce();
+    }
+
+    private Expression definitionExpression(Node node, String key) {
+        Expression expr = Expression.FALSE;
+        for (Node definition : definedRefs.getOrDefault(key, Set.of())) {
+            if (!attached(definition) || node.id() <= definition.id()) {
+                continue;
+            }
+            expr = expr.or(expression(definition.parent())).reduce();
+        }
+        return expr;
     }
 
     private boolean missingValidationCoverage(Expression expr,
@@ -1484,7 +1493,6 @@ public class ScriptCompiler {
 
     private final class RefsInvoker extends ScriptInvoker {
 
-        private final Map<String, Expression> currentRefs = new HashMap<>();
         private final Map<String, Reachability> currentReachabilityByRef = new HashMap<>();
         private final Map<String, ConstantBindings> currentBindings = new HashMap<>();
         private final Deque<ReachabilityState> reachabilityStack = new ArrayDeque<>(
@@ -1524,7 +1532,6 @@ public class ScriptCompiler {
                     Expression expr = inlineCondition(node, node.expression());
                     if (expr != Expression.FALSE) {
                         node.expression(expr);
-                        refs.put(node, Map.copyOf(currentRefs));
                         refReachabilityByNode.put(node, Map.copyOf(currentReachabilityByRef));
                         refBindingsByNode.put(node, snapshotBindings(currentBindings));
                         Reachability conditionReachability = translate(expr, scope, currentBindings,
@@ -1554,12 +1561,12 @@ public class ScriptCompiler {
                 case INPUT_ENUM:
                     scope = ctx.pushScope(s -> s.getOrCreate(node));
                     scopes.put(node, scope.key());
+                    definedRefs.computeIfAbsent(scope.key(), k -> new LinkedHashSet<>()).add(node);
                     refTypes.putIfAbsent(scope.key(), node.kind().valueType());
                     if (node.kind() == Kind.INPUT_TEXT) {
                         textInputRefs.add(scope.key());
                     }
                     registerDomain(node, scope.key());
-                    currentRefs.compute(scope.key(), (k, v) -> expression(node.parent()).or(v).reduce());
                     if (currentState.supported()) {
                         Reachability parentReachability = currentState.reachability();
                         currentReachabilityByRef.compute(scope.key(),
@@ -1595,10 +1602,10 @@ public class ScriptCompiler {
                 case PRESET_LIST:
                     scope = scope.getOrCreate("~" + Context.Key.normalize(node.attribute("path").getString()));
                     scopes.put(node, scope.key());
+                    definedRefs.computeIfAbsent(scope.key(), k -> new LinkedHashSet<>()).add(node);
                     declaredValues.computeIfAbsent(scope.key(), k -> new LinkedHashSet<>()).add(node);
                     refTypes.putIfAbsent(scope.key(), node.kind().valueType());
                     registerImplicitDomain(scope.key(), node.kind().valueType());
-                    currentRefs.compute(scope.key(), (k, v) -> expression(node.parent()).or(v).reduce());
                     if (currentState.supported()) {
                         Reachability parentReachability = currentState.reachability();
                         currentReachabilityByRef.compute(scope.key(),
