@@ -882,6 +882,16 @@ public class ScriptCompiler {
         return reachability != null ? reachabilityExpression(reachability, scope) : normalize(expression(node), scope);
     }
 
+    private Expression renderedCondition(Node node) {
+        Expression expr = Expression.TRUE;
+        for (Node n = node.parent(); n != null; n = n.parent()) {
+            if (n.kind() == Kind.CONDITION) {
+                expr = expr.and(n.expression());
+            }
+        }
+        return expr.reduce();
+    }
+
     private Reachability translate(Expression expr,
                                    Scope scope,
                                    Map<String, ConstantBindings> bindings,
@@ -2206,7 +2216,7 @@ public class ScriptCompiler {
                             } else {
                                 Node p = first.parent();
                                 if (p.kind() == Kind.CONDITION) {
-                                    p.expression(p.expression().or(expression(step)));
+                                    p.expression(p.expression().or(renderedCondition(step)));
                                 }
                                 step.remove();
                             }
