@@ -424,31 +424,25 @@ public class ScriptCompiler {
                 if (requiredReachability != null && refReachability != null) {
                     variableResolved = refReachability.contains(requiredReachability);
                 }
+                Reachability bindingReachability = null;
+                if (!variableResolved && requiredReachability != null && refReachability != null) {
+                    // replay constant bindings against the recorded definition reachability first
+                    bindingReachability = translate(reachabilityExpression(refReachability, scope),
+                            scope, refBindings, refReachabilityMap);
+                    if (bindingReachability != null) {
+                        variableResolved = bindingReachability.contains(requiredReachability);
+                    }
+                }
                 if (!variableResolved) {
                     if (blockExpr == null) {
                         blockExpr = expression(node.parent());
                         refMap = refs.getOrDefault(node, Map.of());
                     }
-                    // reachability tracks declaration coverage, but it does not yet
-                    // capture every implied binding recovered from presets and
-                    // defaults within the current block
-                    Expression refExpr0 = refMap.getOrDefault(ref, Expression.FALSE);
-                    Expression refExpr1 = blockExpr.relativize(refExpr0);
-                    Reachability bindingReachability = null;
-                    if (requiredReachability != null) {
-                        bindingReachability = translate(refExpr1, scope, refBindings,
-                                refReachabilityMap);
-                        if (bindingReachability != null) {
-                            variableResolved = bindingReachability.contains(requiredReachability);
-                        }
-                    }
+                    Expression refExpr1 = blockExpr.relativize(refMap.getOrDefault(ref, Expression.FALSE));
                     boolean missingCoverage = missingValidationCoverage(refExpr1, scope,
                             refBindings, refReachabilityMap);
-                    if (!variableResolved
-                            && (requiredReachability == null
-                            || bindingReachability == null
-                            || missingCoverage)) {
-                        // keep a narrower reachability-only attempt before the residual inline fallback
+                    if (bindingReachability == null || missingCoverage) {
+                        // keep block-relative refs recovery only for unsupported residual shapes
                         Expression refExpr2 = inlineCondition(node, refExpr1);
                         if (refExpr2 != Expression.TRUE && refExpr2 != Expression.FALSE) {
                             variableResolved = translatedContains(refExpr2, requiredReachability, scope,
