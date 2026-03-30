@@ -760,6 +760,44 @@ public class ScriptCompiler {
         return inline(node, expr);
     }
 
+    private boolean prunedByReachability(Node node) {
+        Scope scope = scope(node);
+        Expression expr = normalize(expression(node), scope);
+        Map<String, Reachability> definitions = refReachabilityByNode.getOrDefault(node, Map.of());
+        Map<String, ConstantBindings> bindings = refBindingsByNode.getOrDefault(node, Map.of());
+        if (node.kind().isInput()) {
+            String key = scopeId(node);
+            definitions = withoutKey(definitions, key);
+            bindings = withoutKey(bindings, key);
+        }
+        Reachability translated = translate(expr, scope, bindings, definitions);
+        if (translated != null) {
+            return translated.isFalse();
+        }
+        SupportedTerms terms = supportedTerms(expr, scope, bindings, definitions);
+        return terms.hasSupportedTerms && terms.supported.isFalse();
+    }
+
+    private void reportBooleanInlineError(Node node) {
+        if (node.kind() != Kind.INPUT_BOOLEAN) {
+            return;
+        }
+        String key = scopeId(node);
+        Value<?> value = declaredValue(node, key);
+        if (value.type() != Type.EMPTY && value.type() != Type.BOOLEAN) {
+            inline(node, Expression.create(String.format("${%s}", key)));
+        }
+    }
+
+    private <T> Map<String, T> withoutKey(Map<String, T> values, String key) {
+        if (key == null || !values.containsKey(key)) {
+            return values;
+        }
+        Map<String, T> filtered = new LinkedHashMap<>(values);
+        filtered.remove(key);
+        return Map.copyOf(filtered);
+    }
+
     private Map<String, Value<?>> path(Node node) {
         return paths.computeIfAbsent(node.parent(), this::path0);
     }
@@ -930,11 +968,18 @@ public class ScriptCompiler {
     }
 
     private SupportedTerms supportedTerms(Expression expr, Scope scope) {
+        return supportedTerms(expr, scope, Map.of(), Map.of());
+    }
+
+    private SupportedTerms supportedTerms(Expression expr,
+                                         Scope scope,
+                                         Map<String, ConstantBindings> bindings,
+                                         Map<String, Reachability> definitions) {
         Reachability supported = trueReachability();
         Expression unsupported = Expression.TRUE;
         boolean hasSupportedTerms = false;
         for (Expression term : conjunctionTerms(expr)) {
-            Reachability termReachability = translate(term, scope, Map.of(), Map.of());
+            Reachability termReachability = translate(term, scope, bindings, definitions);
             if (termReachability != null) {
                 supported = supported.and(termReachability);
                 hasSupportedTerms = true;
@@ -1469,6 +1514,11 @@ public class ScriptCompiler {
             super(ctx);
         }
 
+        private void snapshotNodeContext(Node node) {
+            refReachabilityByNode.put(node, Map.copyOf(currentReachabilityByRef));
+            refBindingsByNode.put(node, snapshotBindings(currentBindings));
+        }
+
         @Override
         public boolean visit(Node node) {
             node.id(nextId++);
@@ -1487,6 +1537,7 @@ public class ScriptCompiler {
                     break;
                 case CONDITION:
                     scopes.put(node, scope.key());
+                    snapshotNodeContext(node);
                     if (dependsOnTextInput(node, node.expression(), new HashSet<>())) {
                         errors.add(String.format(
                                 "%s %s: '%s'",
@@ -1497,8 +1548,6 @@ public class ScriptCompiler {
                     Expression expr = inlineCondition(node, node.expression());
                     if (expr != Expression.FALSE) {
                         node.expression(expr);
-                        refReachabilityByNode.put(node, Map.copyOf(currentReachabilityByRef));
-                        refBindingsByNode.put(node, snapshotBindings(currentBindings));
                         Reachability conditionReachability = translate(expr, scope, currentBindings,
                                 currentReachabilityByRef);
                         nodeState = currentState.and(conditionReachability);
@@ -1526,6 +1575,7 @@ public class ScriptCompiler {
                 case INPUT_ENUM:
                     scope = ctx.pushScope(s -> s.getOrCreate(node));
                     scopes.put(node, scope.key());
+                    snapshotNodeContext(node);
                     definedRefs.computeIfAbsent(scope.key(), k -> new LinkedHashSet<>()).add(node);
                     refTypes.putIfAbsent(scope.key(), node.kind().valueType());
                     if (node.kind() == Kind.INPUT_TEXT) {
@@ -1552,6 +1602,7 @@ public class ScriptCompiler {
                     break;
                 case INPUT_OPTION:
                     scopes.put(node, scope.key());
+                    snapshotNodeContext(node);
                     nodeState = currentState.and(optionReachability(node));
                     if (shouldPrune(node, nodeState)) {
                         return skipPrunedNode(node, nodeState);
@@ -1613,9 +1664,15 @@ public class ScriptCompiler {
                     }
                     break;
                 case INPUT_BOOLEAN:
+                    reportBooleanInlineError(node);
+                    if (prunedByReachability(node)) {
+                        remove(node);
+                        node.ancestor(Kind.STEP::equals).ifPresent(modifiedSteps::add);
+                    }
+                    ctx.popScope();
+                    break;
                 case INPUT_TEXT:
-                    Expression expr = inline(node, expression(node));
-                    if (expr == Expression.FALSE) {
+                    if (prunedByReachability(node)) {
                         remove(node);
                         node.ancestor(Kind.STEP::equals).ifPresent(modifiedSteps::add);
                     }
@@ -1623,16 +1680,14 @@ public class ScriptCompiler {
                     break;
                 case INPUT_LIST:
                 case INPUT_ENUM:
-                    expr = inline(node, expression(node));
-                    if (expr == Expression.FALSE || node.children().isEmpty()) {
+                    if (prunedByReachability(node) || node.children().isEmpty()) {
                         remove(node);
                         node.ancestor(Kind.STEP::equals).ifPresent(modifiedSteps::add);
                     }
                     ctx.popScope();
                     break;
                 case INPUT_OPTION:
-                    expr = inline(node, expression(node));
-                    if (expr == Expression.FALSE) {
+                    if (prunedByReachability(node)) {
                         remove(node);
                     }
                     break;
