@@ -104,6 +104,20 @@ mvn -pl maven-plugins/helidon-archetype-maven-plugin \
 Run that once from the baseline worktree before baseline generation and
 again from the current workspace before the actual generation.
 
+## Helidon Version Override
+
+Helidon archetype checkouts usually pin
+`version.plugin.helidon-build-tools` to a released version such as
+`4.0.26`. The wrapper must override that property on every Helidon
+Maven invocation so the generation run uses the build-tools version
+just installed into `~/.m2`.
+
+- Baseline-side Helidon runs must use the baseline worktree version.
+- Current-side Helidon runs must use the current workspace version.
+
+Without that override, the wrapper compares released build-tools
+artifacts instead of the local workspace changes.
+
 ## Mode: `compile_gate`
 
 Use this mode to check compiler complexity.
@@ -115,6 +129,7 @@ The wrapper should:
 
 ```sh
 mvn -f archetypes/archetypes/pom.xml \
+    -Dversion.plugin.helidon-build-tools=<current-workspace-version> \
     compile \
     -e \
     -Dhelidon.build.archetype.engine.v2.debugReduction=true
@@ -138,6 +153,7 @@ The wrapper should:
 
 ```sh
 mvn -f archetypes/archetypes/pom.xml \
+    -Dversion.plugin.helidon-build-tools=<baseline-version> \
     clean \
     install \
     -Darchetype.test.variationsOnly=true \
@@ -147,6 +163,8 @@ mvn -f archetypes/archetypes/pom.xml \
 4. Copy `target/tests/projects.csv` into the baseline snapshot directory.
 5. Install the current workspace into `~/.m2`.
 6. Re-run the same generation command.
+   Use `<current-workspace-version>` for the
+   `version.plugin.helidon-build-tools` override on the actual side.
 7. Copy `target/tests/projects.csv` into the actual snapshot directory.
 8. Compare the copied snapshots with:
 
@@ -182,6 +200,7 @@ The wrapper should:
 
 ```sh
 mvn -f archetypes/archetypes/pom.xml \
+    -Dversion.plugin.helidon-build-tools=<baseline-version> \
     clean \
     install \
     -Darchetype.test.generateOnly=true \
@@ -192,6 +211,8 @@ mvn -f archetypes/archetypes/pom.xml \
 5. Copy `target/tests/` into the baseline snapshot directory.
 6. Install the current workspace into `~/.m2`.
 7. Re-run the same generation command.
+   Use `<current-workspace-version>` for the
+   `version.plugin.helidon-build-tools` override on the actual side.
 8. Copy `target/tests/` into the actual snapshot directory.
 9. Compare the copied snapshots with `projects-diff.sh diff_csv` and
    `projects-diff.sh diff_projects`.

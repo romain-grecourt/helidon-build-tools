@@ -43,6 +43,11 @@ starting the regression work. Do not assume a default sibling checkout.
   instead of retyping the Maven commands by hand.
 - Reinstall the intended build-tools version before every generation. Do not
   assume `~/.m2` still contains the right engine-v2 build.
+- Helidon archetype checkouts usually pin
+  `version.plugin.helidon-build-tools` to a released version. Make the
+  wrapper override that property to the installed baseline/current
+  build-tools version for every Helidon Maven invocation, or the run
+  will exercise the released plugin instead of the workspace build.
 - Snapshot `target/tests` or `projects.csv` before the next
   generation. Re-runs overwrite the previous result.
 - Restore the modified build-tools install at the end so the

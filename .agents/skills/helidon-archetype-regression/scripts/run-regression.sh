@@ -123,6 +123,43 @@ resolve_state_root() {
     STATE_ROOT="${PWD}/${STATE_ROOT}"
 }
 
+project_version() {
+    local project_dir
+    project_dir="$1"
+
+    awk '
+        /<parent>/ {
+            in_parent = 1
+            next
+        }
+        /<\/parent>/ {
+            in_parent = 0
+            next
+        }
+        !in_parent && /<version>/ {
+            line = $0
+            sub(/^.*<version>/, "", line)
+            sub(/<\/version>.*$/, "", line)
+            print line
+            exit
+        }
+    ' "${project_dir}/pom.xml"
+}
+
+helidon_build_tools_version_for_side() {
+    case "$1" in
+    baseline)
+        printf "%s\n" "${BASELINE_BUILD_TOOLS_VERSION}"
+        ;;
+    current)
+        printf "%s\n" "${CURRENT_BUILD_TOOLS_VERSION}"
+        ;;
+    *)
+        return 1
+        ;;
+    esac
+}
+
 validate_threshold() {
     local flag value
     flag="$1"
@@ -160,6 +197,9 @@ validate_paths() {
     validate_threshold "--threshold-seconds" "${THRESHOLD_SECONDS}"
     validate_threshold "--variations-threshold-seconds" "${VARIATIONS_THRESHOLD_SECONDS}"
     resolve_state_root
+    CURRENT_BUILD_TOOLS_VERSION="$(project_version "${WORKSPACE_DIR}")"
+    [ -n "${CURRENT_BUILD_TOOLS_VERSION}" ] \
+        || die "cannot resolve current workspace version from ${WORKSPACE_DIR}/pom.xml"
 
     if [ "${MODE}" = "diff_variations" ] || [ "${MODE}" = "diff_projects" ] || [ "${MODE}" = "all" ]; then
         baseline_sha="$(git -C "${WORKSPACE_DIR}" rev-parse --verify \
@@ -253,17 +293,25 @@ ensure_baseline_worktree() {
             2>/dev/null || true)"
         if [ -n "${current_sha}" ] && [ "${current_sha}" = "${BASELINE_SHA}" ]; then
             step "state: reusing baseline worktree ${BASELINE_WORKTREE_DIR}"
-            return 0
+        else
+            git -C "${WORKSPACE_DIR}" worktree remove --force \
+                "${BASELINE_WORKTREE_DIR}" >/dev/null 2>&1 || true
+            rm -rf "${BASELINE_WORKTREE_DIR}" || return 1
+            step "state: preparing baseline worktree at ${BASELINE_REF}"
+            run_logged "${WORKSPACE_DIR}" "${BASELINE_WORKTREE_LOG}" \
+                git worktree add --detach "${BASELINE_WORKTREE_DIR}" "${BASELINE_REF}" \
+                || return 1
         fi
-
-        git -C "${WORKSPACE_DIR}" worktree remove --force \
-            "${BASELINE_WORKTREE_DIR}" >/dev/null 2>&1 || true
-        rm -rf "${BASELINE_WORKTREE_DIR}" || return 1
+    else
+        step "state: preparing baseline worktree at ${BASELINE_REF}"
+        run_logged "${WORKSPACE_DIR}" "${BASELINE_WORKTREE_LOG}" \
+            git worktree add --detach "${BASELINE_WORKTREE_DIR}" "${BASELINE_REF}" \
+            || return 1
     fi
 
-    step "state: preparing baseline worktree at ${BASELINE_REF}"
-    run_logged "${WORKSPACE_DIR}" "${BASELINE_WORKTREE_LOG}" \
-        git worktree add --detach "${BASELINE_WORKTREE_DIR}" "${BASELINE_REF}"
+    BASELINE_BUILD_TOOLS_VERSION="$(project_version "${BASELINE_WORKTREE_DIR}")"
+    [ -n "${BASELINE_BUILD_TOOLS_VERSION}" ] \
+        || die "cannot resolve baseline version from ${BASELINE_WORKTREE_DIR}/pom.xml"
 }
 
 install_build_tools() {
@@ -295,14 +343,17 @@ install_current() {
 }
 
 generate_variations() {
-    local log_file side
+    local build_tools_version log_file side
     log_file="$1"
     side="$2"
+    build_tools_version="$(helidon_build_tools_version_for_side "${side}")" \
+        || return 1
 
     step "${CURRENT_MODE}: generating variation snapshot"
     if [ "${side}" = "baseline" ]; then
         run_timed_logged "${HELIDON_DIR}" "${log_file}" \
             mvn -f archetypes/archetypes/pom.xml \
+                -Dversion.plugin.helidon-build-tools="${build_tools_version}" \
                 clean \
                 install \
                 -Darchetype.test.variationsOnly=true \
@@ -311,20 +362,24 @@ generate_variations() {
     fi
     run_timed_logged "${HELIDON_DIR}" "${log_file}" \
         mvn -f archetypes/archetypes/pom.xml \
+            -Dversion.plugin.helidon-build-tools="${build_tools_version}" \
             clean \
             install \
             -Darchetype.test.variationsOnly=true
 }
 
 generate_projects() {
-    local log_file side
+    local build_tools_version log_file side
     log_file="$1"
     side="$2"
+    build_tools_version="$(helidon_build_tools_version_for_side "${side}")" \
+        || return 1
 
     step "${CURRENT_MODE}: generating project snapshot"
     if [ "${side}" = "baseline" ]; then
         run_logged "${HELIDON_DIR}" "${log_file}" \
             mvn -f archetypes/archetypes/pom.xml \
+                -Dversion.plugin.helidon-build-tools="${build_tools_version}" \
                 clean \
                 install \
                 -Darchetype.test.generateOnly=true \
@@ -334,6 +389,7 @@ generate_projects() {
     fi
     run_logged "${HELIDON_DIR}" "${log_file}" \
         mvn -f archetypes/archetypes/pom.xml \
+            -Dversion.plugin.helidon-build-tools="${build_tools_version}" \
             clean \
             install \
             -Darchetype.test.generateOnly=true \
@@ -476,6 +532,7 @@ run_compile_gate() {
     step "${CURRENT_MODE}: timing Helidon archetype compile"
     if ! run_timed_logged "${HELIDON_DIR}" "${timing_log}" \
         mvn -f archetypes/archetypes/pom.xml \
+            -Dversion.plugin.helidon-build-tools="${CURRENT_BUILD_TOOLS_VERSION}" \
             compile \
             -e \
             -Dhelidon.build.archetype.engine.v2.debugReduction=true; then
@@ -831,6 +888,8 @@ HELIDON_POM=""
 HELPER_SCRIPT=""
 HELIDON_TARGET_DIR=""
 LOCAL_M2_REPO="${HOME}/.m2"
+CURRENT_BUILD_TOOLS_VERSION=""
+BASELINE_BUILD_TOOLS_VERSION=""
 WORKSPACE_DIR="$(git -C "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" \
     rev-parse --show-toplevel 2>/dev/null)" \
     || die "run-regression.sh must live inside a git checkout"
