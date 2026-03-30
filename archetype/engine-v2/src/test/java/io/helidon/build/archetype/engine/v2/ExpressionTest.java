@@ -735,6 +735,16 @@ class ExpressionTest {
     }
 
     @Test
+    void testRelativizeWithTruth() {
+        Expression rendered = expr("${app-type} != 'quickstart'");
+        Expression source = expr("${app-type} == 'custom' && ${left} == ${right}");
+        Expression truth = expr("${app-type} == 'custom' || ${app-type} == 'quickstart'");
+
+        assertThat(rendered.relativize(source), is(source));
+        assertThat(rendered.relativize(source, truth), is(expr("${left} == ${right}")));
+    }
+
+    @Test
     void testInline() {
         assertThat(expr("${v1}").inline(s -> Value.TRUE), is(expr("true")));
         assertThat(expr("${v1}").inline(s -> Value.FALSE), is(expr("false")));

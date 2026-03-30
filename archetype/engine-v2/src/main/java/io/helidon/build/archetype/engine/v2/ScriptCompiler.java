@@ -892,6 +892,26 @@ public class ScriptCompiler {
         return expr.reduce();
     }
 
+    private Expression domainTruth(Expression... expressions) {
+        Set<String> variables = new TreeSet<>();
+        for (Expression expression : expressions) {
+            variables.addAll(expression.variables());
+        }
+        Expression truth = Expression.TRUE;
+        for (String variable : variables) {
+            InputDomain domain = domains.get(variable);
+            if (domain == null || domain.kind != InputDomain.Kind.SCALAR || domain.isBoolean()) {
+                continue;
+            }
+            Expression allowed = Expression.FALSE;
+            for (String value : domain.scalarValues) {
+                allowed = allowed.or(Expression.create(String.format("${%s} == '%s'", variable, value)));
+            }
+            truth = truth.and(allowed.reduce());
+        }
+        return truth.reduce();
+    }
+
     private Reachability translate(Expression expr,
                                    Scope scope,
                                    Map<String, ConstantBindings> bindings,
@@ -1730,7 +1750,9 @@ public class ScriptCompiler {
             if (blockReachability != null && nodeReachability != null) {
                 expr = residualExpression(nodeReachability, blockReachability, scope);
             } else {
-                expr = normalize(expression(block).relativize(expression(node.parent())), scope);
+                Expression blockExpr = renderedCondition(blockCopy);
+                Expression nodeExpr = normalize(expression(node.parent()), scope);
+                expr = blockExpr.relativize(nodeExpr, domainTruth(blockExpr, nodeExpr));
             }
 
             // create copy

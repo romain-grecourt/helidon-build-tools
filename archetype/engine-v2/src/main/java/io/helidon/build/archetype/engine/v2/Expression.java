@@ -343,6 +343,13 @@ public final class Expression implements Comparable<Expression> {
         return and(expr).reduce().sub(this);
     }
 
+    Expression relativize(Expression expr, Expression truth) {
+        if (truth == TRUE) {
+            return relativize(expr);
+        }
+        return and(expr).reduce(truth).sub(and(truth).reduce(truth));
+    }
+
     /**
      * Substitute an expression from this expression.
      *
