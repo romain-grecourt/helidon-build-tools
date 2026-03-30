@@ -454,7 +454,7 @@ public class ScriptCompiler {
                             variableResolved = translatedContains(refExpr2, requiredReachability, scope,
                                     refBindings, refReachabilityMap);
                             if (!variableResolved) {
-                                refExpr2 = inline(node, refExpr2, this::declaredValueForValidation);
+                                refExpr2 = inlineValidationVariable(node, refExpr2);
                                 if (refExpr2 != Expression.TRUE && refExpr2 != Expression.FALSE) {
                                     variableResolved = translatedContains(refExpr2, requiredReachability, scope,
                                             refBindings, refReachabilityMap);
@@ -517,6 +517,21 @@ public class ScriptCompiler {
         }
         Reachability translated = translate(expr, scope, bindings, definitions);
         return translated != null && translated.contains(requiredReachability);
+    }
+
+    private Expression inlineValidationVariable(Node node, Expression expr) {
+        if (expr.tokens().size() != 1) {
+            return expr;
+        }
+        Token token = expr.tokens().get(0);
+        if (!token.isVariable()) {
+            return expr;
+        }
+        Value<?> value = declaredValueForValidation(node, scope(node).key(token.variable()));
+        if (value == null || !value.isPresent()) {
+            return expr;
+        }
+        return new Expression(List.of(Token.of(value)), false).reduce();
     }
 
     private boolean missingValidationCoverage(Expression expr,
