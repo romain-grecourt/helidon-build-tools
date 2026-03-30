@@ -199,7 +199,6 @@ public class ScriptCompiler {
     private final Map<String, Set<Node>> declaredValues = new HashMap<>();
     private final Map<Node, Map<String, Value<?>>> declaredValueCache = new IdentityHashMap<>();
     private final Map<Node, Map<String, Value<?>>> inlineDeclaredValueCache = new IdentityHashMap<>();
-    private final Map<Node, Map<String, Value<?>>> validationDeclaredValueCache = new IdentityHashMap<>();
     private final Map<Node, Expression> expressions = new HashMap<>();
     private final Map<String, Set<Node>> definedRefs = new HashMap<>();
     private final Map<Node, Reachability> reachabilityByNode = new HashMap<>();
@@ -718,45 +717,6 @@ public class ScriptCompiler {
         return Value.empty();
     }
 
-    private Value<?> declaredValueForValidation(Node node, String key) {
-        return validationDeclaredValueCache
-                .computeIfAbsent(node, n -> new HashMap<>())
-                .computeIfAbsent(key, k -> declaredValueForValidation0(node, k));
-    }
-
-    private Value<?> declaredValueForValidation0(Node node, String key) {
-        Node node0 = declaredValueByReachability(node, key);
-        if (node0 != null) {
-            return Value.typed(node0.value(), node0.kind().valueType());
-        }
-        node0 = declaredValueByCondition(node, key);
-        if (node0 == null) {
-            return Value.empty();
-        }
-        Value<?> value = literalDeclaredValue(node0);
-        return value != null ? value : Value.empty();
-    }
-
-    private Value<?> literalDeclaredValue(Node node) {
-        Value<?> value = constantValue(node);
-        if (value == null) {
-            return null;
-        }
-        switch (value.type()) {
-            case STRING:
-                return value.getString().contains("${") ? null : value;
-            case LIST:
-                for (String item : value.getList()) {
-                    if (item.contains("${")) {
-                        return null;
-                    }
-                }
-                return value;
-            default:
-                return value;
-        }
-    }
-
     private Node declaredValueByReachability(Node node, String key) {
         Reachability blockReachability = reachability(node.parent());
         if (blockReachability == null) {
@@ -781,28 +741,6 @@ public class ScriptCompiler {
                 }
             } else if (node0 != null && n.id() > node0.id()) {
                 node0 = null;
-            }
-        }
-        return node0;
-    }
-
-    private Node declaredValueByCondition(Node node, String key) {
-        Node node0 = null;
-        Expression blockExpr = expression(node.parent());
-        for (Node n : declaredValues.getOrDefault(key, Set.of())) {
-            if (!attached(n) || node.id() <= n.id()) {
-                continue;
-            }
-            Expression refExpr = blockExpr.relativize(expression(n.parent()));
-            refExpr = inlineCondition(node, refExpr);
-            if (refExpr == Expression.TRUE) {
-                if (node0 == null || n.id() > node0.id()) {
-                    node0 = n;
-                }
-            } else if (refExpr != Expression.FALSE) {
-                if (node0 != null && n.id() > node0.id()) {
-                    node0 = null;
-                }
             }
         }
         return node0;
