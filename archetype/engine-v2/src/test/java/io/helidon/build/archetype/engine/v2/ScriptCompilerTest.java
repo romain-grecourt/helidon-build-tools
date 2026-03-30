@@ -495,6 +495,20 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testExpressionWithGuardedVariableResolvedViaUnsupportedAvailability() {
+        try {
+            compile("compiler/validate",
+                    "expression-guarded-variable-via-unsupported-availability.xml",
+                    VALIDATE_ONLY);
+            fail("An exception should have been thrown");
+        } catch (ValidationException ex) {
+            assertThat(ex.errors().size(), is(2));
+            assertThat(ex.errors().get(0), containsString(EXPR_UNSUPPORTED_CONDITION));
+            assertThat(ex.errors().get(1), containsString(EXPR_UNSUPPORTED_CONDITION));
+        }
+    }
+
+    @Test
     void testExpressionWithBareTextInputControlFlow() {
         try {
             compile("compiler/validate", "expression-type-mismatch1.xml", VALIDATE_ONLY);

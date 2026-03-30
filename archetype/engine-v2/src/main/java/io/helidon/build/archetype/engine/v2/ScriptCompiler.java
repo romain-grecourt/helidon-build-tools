@@ -405,7 +405,6 @@ public class ScriptCompiler {
             Map<String, Reachability> refReachabilityMap = refReachabilityByNode.getOrDefault(node, Map.of());
             Map<String, ConstantBindings> refBindings = refBindingsByNode.getOrDefault(node, Map.of());
             Map<String, Reachability> variableDemands = variableDemands(expr, scope, refReachabilityMap);
-            Expression blockExpr = null;
             for (String variable : expr.variables()) {
 
                 // normalized variable
@@ -432,29 +431,11 @@ public class ScriptCompiler {
                         variableResolved = bindingReachability.contains(requiredReachability);
                     }
                 }
-                if (!variableResolved) {
-                    if (blockExpr == null) {
-                        blockExpr = expression(node.parent());
-                    }
-                    Expression refExpr1 = blockExpr.relativize(definitionExpression(node, ref));
-                    boolean missingCoverage = missingValidationCoverage(refExpr1, scope,
-                            refBindings, refReachabilityMap);
-                    if (bindingReachability == null || missingCoverage) {
-                        // keep block-relative recovery only for unsupported residual shapes
-                        Expression refExpr2 = inlineCondition(node, refExpr1);
-                        if (refExpr2 != Expression.TRUE && refExpr2 != Expression.FALSE) {
-                            variableResolved = translatedContains(refExpr2, requiredReachability, scope,
-                                    refBindings, refReachabilityMap);
-                            if (!variableResolved) {
-                                refExpr2 = inlineValidationVariable(node, refExpr2);
-                                if (refExpr2 != Expression.TRUE && refExpr2 != Expression.FALSE) {
-                                    variableResolved = translatedContains(refExpr2, requiredReachability, scope,
-                                            refBindings, refReachabilityMap);
-                                }
-                            }
-                        }
-                        variableResolved = variableResolved || refExpr2 == Expression.TRUE;
-                    }
+                if (!variableResolved && bindingReachability == null) {
+                    // unsupported residual shapes still need a prior declaration
+                    // check so they report EXPR_UNSUPPORTED_CONDITION instead of
+                    // EXPR_UNRESOLVED_VARIABLE.
+                    variableResolved = hasPriorDefinition(node, ref);
                 }
                 if (!variableResolved) {
                     resolved = false;
@@ -511,41 +492,12 @@ public class ScriptCompiler {
         return translated != null && translated.contains(requiredReachability);
     }
 
-    private Expression inlineValidationVariable(Node node, Expression expr) {
-        if (expr.tokens().size() != 1) {
-            return expr;
-        }
-        Token token = expr.tokens().get(0);
-        if (!token.isVariable()) {
-            return expr;
-        }
-        Value<?> value = declaredValueForValidation(node, scope(node).key(token.variable()));
-        if (value == null || !value.isPresent()) {
-            return expr;
-        }
-        return new Expression(List.of(Token.of(value)), false).reduce();
-    }
-
-    private Expression definitionExpression(Node node, String key) {
-        Expression expr = Expression.FALSE;
+    private boolean hasPriorDefinition(Node node, String key) {
         for (Node definition : definedRefs.getOrDefault(key, Set.of())) {
             if (!attached(definition) || node.id() <= definition.id()) {
                 continue;
             }
-            expr = expr.or(expression(definition.parent())).reduce();
-        }
-        return expr;
-    }
-
-    private boolean missingValidationCoverage(Expression expr,
-                                              Scope scope,
-                                              Map<String, ConstantBindings> bindings,
-                                              Map<String, Reachability> definitions) {
-        for (String variable : expr.variables()) {
-            String key = scope.key(variable);
-            if (!bindings.containsKey(key) && !definitions.containsKey(key)) {
-                return true;
-            }
+            return true;
         }
         return false;
     }
