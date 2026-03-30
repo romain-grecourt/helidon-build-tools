@@ -912,9 +912,92 @@ public class ScriptCompiler {
         return truth.reduce();
     }
 
-    private Expression relativizeRenderedCondition(Expression blockExpr, Expression nodeExpr) {
+    private Expression relativizeRenderedCondition(Expression blockExpr,
+                                                  Expression nodeExpr,
+                                                  Scope scope,
+                                                  Reachability blockReachability) {
+        Reachability baseReachability = blockReachability;
+        if (baseReachability == null) {
+            SupportedTerms blockTerms = supportedTerms(blockExpr, scope);
+            if (blockTerms.fullySupported()) {
+                baseReachability = blockTerms.supported;
+            }
+        }
+        if (baseReachability != null) {
+            SupportedTerms nodeTerms = supportedTerms(nodeExpr, scope);
+            Expression residual = nodeTerms.unsupported;
+            if (nodeTerms.hasSupportedTerms) {
+                residual = residualExpression(nodeTerms.supported, baseReachability, scope).and(residual);
+            }
+            return residual.reduce();
+        }
+        return relativizeRenderedConditionByTruth(blockExpr, nodeExpr);
+    }
+
+    private Expression relativizeRenderedConditionByTruth(Expression blockExpr, Expression nodeExpr) {
         Expression truth = domainTruth(blockExpr, nodeExpr);
         return blockExpr.and(nodeExpr).reduce(truth).sub(blockExpr.and(truth).reduce(truth));
+    }
+
+    private SupportedTerms supportedTerms(Expression expr, Scope scope) {
+        Reachability supported = trueReachability();
+        Expression unsupported = Expression.TRUE;
+        boolean hasSupportedTerms = false;
+        for (Expression term : conjunctionTerms(expr)) {
+            Reachability termReachability = translate(term, scope, Map.of(), Map.of());
+            if (termReachability != null) {
+                supported = supported.and(termReachability);
+                hasSupportedTerms = true;
+            } else {
+                unsupported = unsupported.and(term);
+            }
+        }
+        return new SupportedTerms(supported, unsupported.reduce(), hasSupportedTerms);
+    }
+
+    private List<Expression> conjunctionTerms(Expression expr) {
+        List<String> literals = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        String literal = expr.literal();
+        int depth = 0;
+        boolean quoted = false;
+        for (int i = 0; i < literal.length(); i++) {
+            char ch = literal.charAt(i);
+            if (ch == '\'') {
+                quoted = !quoted;
+                current.append(ch);
+                continue;
+            }
+            if (!quoted) {
+                if (ch == '(') {
+                    depth++;
+                } else if (ch == ')') {
+                    if (depth == 0) {
+                        return List.of(expr);
+                    }
+                    depth--;
+                } else if (depth == 0 && ch == '&' && i + 1 < literal.length() && literal.charAt(i + 1) == '&') {
+                    String term = current.toString().trim();
+                    if (term.isEmpty()) {
+                        return List.of(expr);
+                    }
+                    literals.add(term);
+                    current.setLength(0);
+                    i++;
+                    continue;
+                }
+            }
+            current.append(ch);
+        }
+        if (quoted || depth != 0) {
+            return List.of(expr);
+        }
+        String term = current.toString().trim();
+        if (term.isEmpty()) {
+            return List.of(expr);
+        }
+        literals.add(term);
+        return Lists.map(literals, Expression::create);
     }
 
     private Reachability translate(Expression expr,
@@ -1757,7 +1840,7 @@ public class ScriptCompiler {
             } else {
                 Expression blockExpr = renderedCondition(blockCopy);
                 Expression nodeExpr = normalize(expression(node.parent()), scope);
-                expr = relativizeRenderedCondition(blockExpr, nodeExpr);
+                expr = relativizeRenderedCondition(blockExpr, nodeExpr, scope, blockReachability);
             }
 
             // create copy
@@ -2671,6 +2754,22 @@ public class ScriptCompiler {
             private Value(io.helidon.build.archetype.engine.v2.Value<?> value) {
                 this.value = value;
             }
+        }
+    }
+
+    private final class SupportedTerms {
+        private final Reachability supported;
+        private final Expression unsupported;
+        private final boolean hasSupportedTerms;
+
+        private SupportedTerms(Reachability supported, Expression unsupported, boolean hasSupportedTerms) {
+            this.supported = supported;
+            this.unsupported = unsupported;
+            this.hasSupportedTerms = hasSupportedTerms;
+        }
+
+        private boolean fullySupported() {
+            return unsupported == Expression.TRUE;
         }
     }
 
