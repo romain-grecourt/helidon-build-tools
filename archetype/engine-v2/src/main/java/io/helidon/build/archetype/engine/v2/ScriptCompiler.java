@@ -198,7 +198,6 @@ public class ScriptCompiler {
     private final Map<Node, Map<String, Value<?>>> paths = new HashMap<>();
     private final Map<String, Set<Node>> declaredValues = new HashMap<>();
     private final Map<Node, Map<String, Value<?>>> declaredValueCache = new IdentityHashMap<>();
-    private final Map<Node, Map<String, Value<?>>> inlineDeclaredValueCache = new IdentityHashMap<>();
     private final Map<Node, Expression> expressions = new HashMap<>();
     private final Map<String, Set<Node>> definedRefs = new HashMap<>();
     private final Map<Node, Reachability> reachabilityByNode = new HashMap<>();
@@ -479,18 +478,6 @@ public class ScriptCompiler {
         return new VariableDemandAnalyzer(scope, definitions).analyze(expr);
     }
 
-    private boolean translatedContains(Expression expr,
-                                       Reachability requiredReachability,
-                                       Scope scope,
-                                       Map<String, ConstantBindings> bindings,
-                                       Map<String, Reachability> definitions) {
-        if (requiredReachability == null) {
-            return false;
-        }
-        Reachability translated = translate(expr, scope, bindings, definitions);
-        return translated != null && translated.contains(requiredReachability);
-    }
-
     private boolean hasPriorDefinition(Node node, String key) {
         for (Node definition : definedRefs.getOrDefault(key, Set.of())) {
             if (!attached(definition) || node.id() <= definition.id()) {
@@ -703,20 +690,6 @@ public class ScriptCompiler {
         return Value.empty();
     }
 
-    private Value<?> declaredValueForInlining(Node node, String key) {
-        return inlineDeclaredValueCache
-                .computeIfAbsent(node, n -> new HashMap<>())
-                .computeIfAbsent(key, k -> declaredValueForInlining0(node, k));
-    }
-
-    private Value<?> declaredValueForInlining0(Node node, String key) {
-        Node node0 = declaredValueByReachability(node, key);
-        if (node0 != null) {
-            return Value.typed(node0.value(), node0.kind().valueType());
-        }
-        return Value.empty();
-    }
-
     private Node declaredValueByReachability(Node node, String key) {
         Reachability blockReachability = reachability(node.parent());
         if (blockReachability == null) {
@@ -762,16 +735,6 @@ public class ScriptCompiler {
     }
 
     private Expression inline(Node node, Expression expr) {
-        return inline(node, expr, this::declaredValue);
-    }
-
-    private Expression inlineCondition(Node node, Expression expr) {
-        return inline(node, expr, this::declaredValueForInlining);
-    }
-
-    private Expression inline(Node node,
-                              Expression expr,
-                              BiFunction<Node, String, Value<?>> declaredValueResolver) {
         try {
             Scope scope = scope(node);
             Map<String, Value<?>> values = path(node);
@@ -779,7 +742,7 @@ public class ScriptCompiler {
                 String key = scope.get(s).key();
                 Value<?> value = values.get(key);
                 if (value == null) {
-                    value = declaredValueResolver.apply(node, key);
+                    value = declaredValue(node, key);
                 }
                 return value;
             });
@@ -791,6 +754,10 @@ public class ScriptCompiler {
                     ex.getMessage()));
             return expr;
         }
+    }
+
+    private Expression inlineCondition(Node node, Expression expr) {
+        return inline(node, expr);
     }
 
     private Map<String, Value<?>> path(Node node) {
@@ -2268,10 +2235,6 @@ public class ScriptCompiler {
             return reachability == null ? UNSUPPORTED : new ReachabilityState(reachability);
         }
 
-        static ReachabilityState unsupported() {
-            return UNSUPPORTED;
-        }
-
         boolean supported() {
             return reachability != null;
         }
@@ -2286,7 +2249,7 @@ public class ScriptCompiler {
 
         ReachabilityState and(Reachability other) {
             if (!supported() || other == null) {
-                return unsupported();
+                return UNSUPPORTED;
             }
             return of(reachability.and(other));
         }
