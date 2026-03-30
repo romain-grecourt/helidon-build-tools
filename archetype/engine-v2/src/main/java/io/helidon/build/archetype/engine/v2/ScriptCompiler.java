@@ -892,26 +892,6 @@ public class ScriptCompiler {
         return expr.reduce();
     }
 
-    private Expression domainTruth(Expression... expressions) {
-        Set<String> variables = new TreeSet<>();
-        for (Expression expression : expressions) {
-            variables.addAll(expression.variables());
-        }
-        Expression truth = Expression.TRUE;
-        for (String variable : variables) {
-            InputDomain domain = domains.get(variable);
-            if (domain == null || domain.kind != InputDomain.Kind.SCALAR || domain.isBoolean()) {
-                continue;
-            }
-            Expression allowed = Expression.FALSE;
-            for (String value : domain.scalarValues) {
-                allowed = allowed.or(Expression.create(String.format("${%s} == '%s'", variable, value)));
-            }
-            truth = truth.and(allowed.reduce());
-        }
-        return truth.reduce();
-    }
-
     private Expression relativizeRenderedCondition(Expression blockExpr,
                                                   Expression nodeExpr,
                                                   Scope scope,
@@ -927,10 +907,7 @@ public class ScriptCompiler {
                 nodeTerms,
                 baseReachability,
                 scope);
-        if (blockTerms.unsupported == Expression.TRUE || renderedConditionEquivalent(blockExpr, nodeExpr, residual)) {
-            return residual.reduce();
-        }
-        return relativizeRenderedConditionByTruth(blockExpr, nodeExpr);
+        return residual.reduce();
     }
 
     private Expression relativizeRenderedConditionBySupportedTerms(SupportedTerms blockTerms,
@@ -950,25 +927,6 @@ public class ScriptCompiler {
             residual = residualExpression(nodeTerms.supported, baseReachability, scope).and(residual);
         }
         return residual.reduce();
-    }
-
-    private Expression relativizeRenderedConditionByTruth(Expression blockExpr, Expression nodeExpr) {
-        Expression truth = domainTruth(blockExpr, nodeExpr);
-        return blockExpr.and(nodeExpr).reduce(truth).sub(blockExpr.and(truth).reduce(truth));
-    }
-
-    private boolean renderedConditionEquivalent(Expression blockExpr, Expression nodeExpr, Expression residual) {
-        Expression truth = domainTruth(blockExpr, nodeExpr, residual);
-        Expression expected = blockExpr.and(nodeExpr).reduce(truth);
-        Expression actual = blockExpr.and(residual).reduce(truth);
-        if (expected.equals(actual)) {
-            return true;
-        }
-        if (expected == Expression.FALSE || actual == Expression.FALSE) {
-            return false;
-        }
-        return expected.sub(actual) == Expression.TRUE
-                && actual.sub(expected) == Expression.TRUE;
     }
 
     private SupportedTerms supportedTerms(Expression expr, Scope scope) {
