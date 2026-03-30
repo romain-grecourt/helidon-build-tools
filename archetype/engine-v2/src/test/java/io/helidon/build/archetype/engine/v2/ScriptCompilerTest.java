@@ -220,6 +220,13 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testUnsupportedParentConditionStillRelativizesBranchSpecificInputs() {
+        Path outputDir = compile("compiler/unsupported-block-pruning", "main.xml", IGNORE_ERRORS);
+        assertThat(normalizeXml(outputDir.resolve("main.xml")),
+                is(normalizeXml("compiler/expected/unsupported-block-pruning.xml")));
+    }
+
+    @Test
     void testConstantVariableConditionUsesInputReachability() {
         Path outputDir = compile("compiler/preset-condition", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")),

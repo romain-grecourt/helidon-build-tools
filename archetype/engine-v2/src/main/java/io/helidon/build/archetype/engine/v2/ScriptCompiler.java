@@ -916,27 +916,59 @@ public class ScriptCompiler {
                                                   Expression nodeExpr,
                                                   Scope scope,
                                                   Reachability blockReachability) {
+        SupportedTerms blockTerms = supportedTerms(blockExpr, scope);
         Reachability baseReachability = blockReachability;
-        if (baseReachability == null) {
-            SupportedTerms blockTerms = supportedTerms(blockExpr, scope);
-            if (blockTerms.fullySupported()) {
-                baseReachability = blockTerms.supported;
-            }
+        if (baseReachability == null && blockTerms.fullySupported()) {
+            baseReachability = blockTerms.supported;
         }
-        if (baseReachability != null) {
-            SupportedTerms nodeTerms = supportedTerms(nodeExpr, scope);
-            Expression residual = nodeTerms.unsupported;
-            if (nodeTerms.hasSupportedTerms) {
-                residual = residualExpression(nodeTerms.supported, baseReachability, scope).and(residual);
-            }
+        SupportedTerms nodeTerms = supportedTerms(nodeExpr, scope);
+        Expression residual = relativizeRenderedConditionBySupportedTerms(
+                blockTerms,
+                nodeTerms,
+                baseReachability,
+                scope);
+        if (blockTerms.unsupported == Expression.TRUE || renderedConditionEquivalent(blockExpr, nodeExpr, residual)) {
             return residual.reduce();
         }
         return relativizeRenderedConditionByTruth(blockExpr, nodeExpr);
     }
 
+    private Expression relativizeRenderedConditionBySupportedTerms(SupportedTerms blockTerms,
+                                                                   SupportedTerms nodeTerms,
+                                                                   Reachability blockReachability,
+                                                                   Scope scope) {
+        Reachability baseReachability = blockReachability != null
+                ? blockReachability
+                : blockTerms.hasSupportedTerms
+                        ? blockTerms.supported
+                        : trueReachability();
+        Expression residual = nodeTerms.unsupported;
+        if (blockTerms.unsupported != Expression.TRUE && residual != Expression.TRUE) {
+            residual = residual.sub(blockTerms.unsupported);
+        }
+        if (nodeTerms.hasSupportedTerms) {
+            residual = residualExpression(nodeTerms.supported, baseReachability, scope).and(residual);
+        }
+        return residual.reduce();
+    }
+
     private Expression relativizeRenderedConditionByTruth(Expression blockExpr, Expression nodeExpr) {
         Expression truth = domainTruth(blockExpr, nodeExpr);
         return blockExpr.and(nodeExpr).reduce(truth).sub(blockExpr.and(truth).reduce(truth));
+    }
+
+    private boolean renderedConditionEquivalent(Expression blockExpr, Expression nodeExpr, Expression residual) {
+        Expression truth = domainTruth(blockExpr, nodeExpr, residual);
+        Expression expected = blockExpr.and(nodeExpr).reduce(truth);
+        Expression actual = blockExpr.and(residual).reduce(truth);
+        if (expected.equals(actual)) {
+            return true;
+        }
+        if (expected == Expression.FALSE || actual == Expression.FALSE) {
+            return false;
+        }
+        return expected.sub(actual) == Expression.TRUE
+                && actual.sub(expected) == Expression.TRUE;
     }
 
     private SupportedTerms supportedTerms(Expression expr, Scope scope) {
