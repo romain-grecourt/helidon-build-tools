@@ -912,6 +912,11 @@ public class ScriptCompiler {
         return truth.reduce();
     }
 
+    private Expression relativizeRenderedCondition(Expression blockExpr, Expression nodeExpr) {
+        Expression truth = domainTruth(blockExpr, nodeExpr);
+        return blockExpr.and(nodeExpr).reduce(truth).sub(blockExpr.and(truth).reduce(truth));
+    }
+
     private Reachability translate(Expression expr,
                                    Scope scope,
                                    Map<String, ConstantBindings> bindings,
@@ -1752,7 +1757,7 @@ public class ScriptCompiler {
             } else {
                 Expression blockExpr = renderedCondition(blockCopy);
                 Expression nodeExpr = normalize(expression(node.parent()), scope);
-                expr = blockExpr.relativize(nodeExpr, domainTruth(blockExpr, nodeExpr));
+                expr = relativizeRenderedCondition(blockExpr, nodeExpr);
             }
 
             // create copy
