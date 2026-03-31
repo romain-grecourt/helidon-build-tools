@@ -390,18 +390,21 @@ public class ScriptCompiler {
         for (Node node : sourceNode.traverse(Kind.CONDITION::equals)) {
             Expression expr = node.expression();
             Scope scope = scope(node);
-            ExpressionMetadata metadata = expressionMetadata(expr, scope);
-            boolean compatible = metadata.incompatibleOperators().isEmpty();
+            Reachability blockReachability = reachability(node.parent());
+            Map<String, Reachability> refReachabilityMap = refReachabilityByNode.getOrDefault(node, Map.of());
+            Map<String, ConstantBindings> refBindings = refBindingsByNode.getOrDefault(node, Map.of());
+            ExpressionAnalysis analysis = analyze(expr, scope, refBindings, refReachabilityMap);
+            boolean compatible = analysis.incompatibleOperators().isEmpty();
 
             // check operators compatibility
-            for (Expression.Operator operator : metadata.incompatibleOperators()) {
+            for (Expression.Operator operator : analysis.incompatibleOperators()) {
                 errors.add(String.format("%s %s: '%s'",
                         node.location(),
                         EXPR_INCOMPATIBLE_OPERATOR,
                         operator.symbol()));
             }
 
-            if (dependsOnTextInput(metadata.refs(), new HashSet<>())) {
+            if (dependsOnTextInput(analysis.refs(), new HashSet<>())) {
                 errors.add(String.format(
                         "%s %s: '%s'",
                         node.location(),
@@ -411,12 +414,8 @@ public class ScriptCompiler {
             }
 
             boolean resolved = true;
-            Reachability blockReachability = reachability(node.parent());
-            Map<String, Reachability> refReachabilityMap = refReachabilityByNode.getOrDefault(node, Map.of());
-            Map<String, ConstantBindings> refBindings = refBindingsByNode.getOrDefault(node, Map.of());
-            ExpressionAnalysis analysis = analyze(expr, scope, refBindings, refReachabilityMap);
             Map<String, Reachability> variableDemands = analysis.variableDemands();
-            for (Entry<String, String> variable : metadata.variables().entrySet()) {
+            for (Entry<String, String> variable : analysis.variables().entrySet()) {
                 String ref = variable.getValue();
 
                 boolean variableResolved = false;
@@ -605,7 +604,8 @@ public class ScriptCompiler {
             }
             if (ancestor.kind() == Kind.CONDITION) {
                 Scope scope = scope(ancestor);
-                if (dependsOnTextInput(expressionMetadata(ancestor.expression(), scope).refs(), visitingRefs)) {
+                ExpressionAnalysis analysis = analyze(ancestor.expression(), scope, Map.of(), Map.of());
+                if (dependsOnTextInput(analysis.refs(), visitingRefs)) {
                     return true;
                 }
             }
@@ -926,20 +926,6 @@ public class ScriptCompiler {
         }).reduce();
     }
 
-    private ExpressionMetadata expressionMetadata(Expression expr, Scope scope) {
-        Map<String, String> variables = new LinkedHashMap<>();
-        List<Expression.Operator> incompatibleOperators = new ArrayList<>();
-        for (Token token : expr.tokens()) {
-            if (token.isVariable()) {
-                String variable = token.variable();
-                variables.putIfAbsent(variable, scope.key(variable));
-            } else if (token.isOperator() && incompatibleOperator(token.operator())) {
-                incompatibleOperators.add(token.operator());
-            }
-        }
-        return new ExpressionMetadata(Map.copyOf(variables), List.copyOf(incompatibleOperators));
-    }
-
     private boolean incompatibleOperator(Expression.Operator operator) {
         switch (operator) {
             case AS_INT:
@@ -1191,7 +1177,10 @@ public class ScriptCompiler {
         }
 
         ExpressionAnalysis analyze(Expression expr) {
+            Map<String, String> variables = new LinkedHashMap<>();
+            List<Expression.Operator> incompatibleOperators = new ArrayList<>();
             Deque<AnalysisTerm> stack = new ArrayDeque<>();
+            boolean compatible = true;
             try {
                 for (Token token : expr.tokens()) {
                     if (token.isOperand()) {
@@ -1199,7 +1188,16 @@ public class ScriptCompiler {
                         continue;
                     }
                     if (token.isVariable()) {
-                        stack.push(new AnalysisRef(scope.key(token.variable())));
+                        String variable = token.variable();
+                        String key = scope.key(variable);
+                        variables.putIfAbsent(variable, key);
+                        stack.push(new AnalysisRef(key));
+                        continue;
+                    }
+                    if (incompatibleOperator(token.operator())) {
+                        compatible = false;
+                        incompatibleOperators.add(token.operator());
+                        stack.push(unsupportedOperation(token.operator(), stack));
                         continue;
                     }
                     switch (token.operator()) {
@@ -1222,18 +1220,39 @@ public class ScriptCompiler {
                             stack.push(contains(stack.pop(), stack.pop()));
                             break;
                         default:
-                            return ExpressionAnalysis.unsupported();
+                            return ExpressionAnalysis.unsupported(variables, incompatibleOperators);
                     }
                 }
-                if (stack.size() != 1) {
-                    return ExpressionAnalysis.unsupported();
+                if (stack.size() != 1 || !compatible) {
+                    return ExpressionAnalysis.unsupported(variables, incompatibleOperators);
                 }
                 Map<String, Reachability> demands = new HashMap<>();
                 AnalysisBoolean result = booleanTerm(stack.pop());
                 result.collect(trueReachability(), demands);
-                return new ExpressionAnalysis(result.translatedTruthy, Map.copyOf(demands));
+                return new ExpressionAnalysis(result.translatedTruthy,
+                        Map.copyOf(demands),
+                        Map.copyOf(variables),
+                        List.copyOf(incompatibleOperators));
             } catch (RuntimeException ex) {
-                return ExpressionAnalysis.unsupported();
+                return ExpressionAnalysis.unsupported(variables, incompatibleOperators);
+            }
+        }
+
+        private AnalysisTerm unsupportedOperation(Expression.Operator operator,
+                                                  Deque<AnalysisTerm> stack) {
+            switch (operator) {
+                case AS_INT:
+                case AS_LIST:
+                case AS_STRING:
+                case SIZEOF:
+                    return new AnalysisOpaque(stack.pop());
+                case GREATER_THAN:
+                case GREATER_OR_EQUAL:
+                case LOWER_THAN:
+                case LOWER_OR_EQUAL:
+                    return new AnalysisOpaque(stack.pop(), stack.pop());
+                default:
+                    throw new IllegalStateException("Unsupported operator: " + operator);
             }
         }
 
@@ -1256,7 +1275,7 @@ public class ScriptCompiler {
                         demandBooleanReachability(key),
                         term::collect);
             }
-            throw new IllegalStateException("Unsupported analysis term: " + term);
+            return new AnalysisBoolean(null, null, term::collect);
         }
 
         private AnalysisBoolean equality(AnalysisTerm right, AnalysisTerm left, boolean negate) {
@@ -1545,6 +1564,21 @@ public class ScriptCompiler {
             }
         }
 
+        private final class AnalysisOpaque extends AnalysisTerm {
+            private final List<AnalysisTerm> terms;
+
+            private AnalysisOpaque(AnalysisTerm... terms) {
+                this.terms = List.of(terms);
+            }
+
+            @Override
+            void collect(Reachability demand, Map<String, Reachability> output) {
+                for (AnalysisTerm term : terms) {
+                    term.collect(demand, output);
+                }
+            }
+        }
+
         private final class AnalysisBoolean extends AnalysisTerm {
             private final Reachability translatedTruthy;
             private final Reachability demandTruthy;
@@ -1602,18 +1636,27 @@ public class ScriptCompiler {
     }
 
     private static final class ExpressionAnalysis {
-        private static final ExpressionAnalysis UNSUPPORTED = new ExpressionAnalysis(null, Map.of());
-
         private final Reachability reachability;
         private final Map<String, Reachability> variableDemands;
+        private final Map<String, String> variables;
+        private final List<Expression.Operator> incompatibleOperators;
 
-        private ExpressionAnalysis(Reachability reachability, Map<String, Reachability> variableDemands) {
+        private ExpressionAnalysis(Reachability reachability,
+                                   Map<String, Reachability> variableDemands,
+                                   Map<String, String> variables,
+                                   List<Expression.Operator> incompatibleOperators) {
             this.reachability = reachability;
             this.variableDemands = variableDemands;
+            this.variables = variables;
+            this.incompatibleOperators = incompatibleOperators;
         }
 
-        private static ExpressionAnalysis unsupported() {
-            return UNSUPPORTED;
+        private static ExpressionAnalysis unsupported(Map<String, String> variables,
+                                                      List<Expression.Operator> incompatibleOperators) {
+            return new ExpressionAnalysis(null,
+                    Map.of(),
+                    Map.copyOf(variables),
+                    List.copyOf(incompatibleOperators));
         }
 
         private Reachability reachability() {
@@ -1622,17 +1665,6 @@ public class ScriptCompiler {
 
         private Map<String, Reachability> variableDemands() {
             return variableDemands;
-        }
-    }
-
-    private static final class ExpressionMetadata {
-        private final Map<String, String> variables;
-        private final List<Expression.Operator> incompatibleOperators;
-
-        private ExpressionMetadata(Map<String, String> variables,
-                                   List<Expression.Operator> incompatibleOperators) {
-            this.variables = variables;
-            this.incompatibleOperators = incompatibleOperators;
         }
 
         private Map<String, String> variables() {
@@ -1850,16 +1882,15 @@ public class ScriptCompiler {
                     scopes.put(node, scope.key());
                     snapshotNodeContext(node);
                     Expression expr = node.expression();
-                    ExpressionMetadata metadata = expressionMetadata(expr, scope);
-                    if (dependsOnTextInput(metadata.refs(), new HashSet<>())) {
+                    ExpressionAnalysis analysis = analyze(expr, scope, currentBindings, currentReachabilityByRef);
+                    if (dependsOnTextInput(analysis.refs(), new HashSet<>())) {
                         errors.add(String.format(
                                 "%s %s: '%s'",
                                 node.location(),
                                 EXPR_TEXT_INPUT_CONTROL_FLOW,
                                 expr.literal()));
                     }
-                    Reachability conditionReachability = translate(expr, scope, currentBindings,
-                            currentReachabilityByRef);
+                    Reachability conditionReachability = analysis.reachability();
                     if (conditionReachability == null) {
                         // keep unsupported residuals on the reachability path
                         // by subtracting any supported terms from the current branch state
