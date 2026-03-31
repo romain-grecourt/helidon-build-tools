@@ -1843,12 +1843,14 @@ public class ScriptCompiler {
     private class InputVisitor implements Node.Visitor {
         private final Deque<Node> stack = new ArrayDeque<>();
         private final Map<Node, Node> mirrors;
+        private final Map<Node, Expression> renderedConditions = new IdentityHashMap<>();
         private final Image image;
 
         InputVisitor(Image image, Map<Node, Node> mirrors) {
             this.image = image;
             this.mirrors = mirrors;
             this.stack.push(image.node);
+            this.renderedConditions.put(image.node, Expression.TRUE);
         }
 
         @Override
@@ -1984,6 +1986,7 @@ public class ScriptCompiler {
             Node block = mirrors.get(blockCopy);
 
             Scope scope = scope(block);
+            Expression blockExpr = renderedCondition(blockCopy);
 
             // "relativize" the expression within the block
             Reachability blockReachability = reachability(block);
@@ -1992,7 +1995,6 @@ public class ScriptCompiler {
             if (blockReachability != null && nodeReachability != null) {
                 expr = residualExpression(nodeReachability, blockReachability, scope);
             } else {
-                Expression blockExpr = renderedCondition(blockCopy);
                 Expression nodeExpr = normalize(expression(node.parent()), scope);
                 expr = relativizeRenderedCondition(blockExpr, nodeExpr, scope, blockReachability);
             }
@@ -2000,10 +2002,19 @@ public class ScriptCompiler {
             // create copy
             Node copy = node.copy();
             appender.accept(blockCopy, copy.wrap(expr));
+            renderedConditions.put(copy, blockExpr.and(expr).reduce());
 
             mirrors.put(node, copy);
             mirrors.put(copy, node);
             return copy;
+        }
+
+        private Expression renderedCondition(Node node) {
+            Expression expr = renderedConditions.get(node);
+            if (expr != null) {
+                return expr;
+            }
+            throw new IllegalStateException("Rendered condition not found: " + node);
         }
 
         Node mirror(Node node) {
