@@ -298,15 +298,17 @@ public class ScriptCompiler {
         Map<Node, Node> mirrors = new HashMap<>();
         Map<Node, Expression> renderedConditions = new IdentityHashMap<>();
         Map<Node, Reachability> blockReachabilities = new IdentityHashMap<>();
+        Map<Node, Set<String>> conditionRefs = new IdentityHashMap<>();
         mirrors.put(sourceNode, image.node);
         mirrors.put(image.node, sourceNode);
         renderedConditions.put(image.node, Expression.TRUE);
         blockReachabilities.put(image.node, trueReachability());
-        sourceNode.visit(new InputVisitor(image, mirrors, renderedConditions, blockReachabilities)); // render inputs
+        sourceNode.visit(new InputVisitor(image, mirrors, renderedConditions, blockReachabilities, conditionRefs));
+        // render inputs
         if (!options.contains(Options.NO_OUTPUT)) {
-            sourceNode.visit(new OutputVisitor(image)); // render outputs
+            sourceNode.visit(new OutputVisitor(image, conditionRefs)); // render outputs
         }
-        image.node.visit(new StubsVisitor(mirrors, blockReachabilities)); // render stubs
+        image.node.visit(new StubsVisitor(mirrors, blockReachabilities, conditionRefs)); // render stubs
         image.node.visit(new DedupVisitor(renderedConditions)); // de-dup steps
     }
 
@@ -1022,9 +1024,18 @@ public class ScriptCompiler {
         return reachability.toExpression(scope).reduce(base.toExpression(scope));
     }
 
-    private Expression compiledExpression(Node node, Scope scope) {
-        Reachability reachability = reachability(node);
-        return reachability != null ? reachabilityExpression(reachability, scope) : normalize(expression(node), scope);
+    private void rememberConditionRefs(Node node,
+                                       Expression expr,
+                                       Map<Node, Set<String>> conditionRefs) {
+        if (node.kind() == Kind.CONDITION) {
+            conditionRefs.put(node, Set.copyOf(expr.variables()));
+        }
+    }
+
+    private void rememberConditionRefs(Node node, Map<Node, Set<String>> conditionRefs) {
+        if (node.kind() == Kind.CONDITION) {
+            conditionRefs.put(node, Set.copyOf(node.expression().variables()));
+        }
     }
 
     private Expression relativizeRenderedCondition(Expression blockExpr,
@@ -1839,16 +1850,19 @@ public class ScriptCompiler {
         private final Map<Node, Node> mirrors;
         private final Map<Node, Expression> renderedConditions;
         private final Map<Node, Reachability> blockReachabilities;
+        private final Map<Node, Set<String>> conditionRefs;
         private final Image image;
 
         InputVisitor(Image image,
                      Map<Node, Node> mirrors,
                      Map<Node, Expression> renderedConditions,
-                     Map<Node, Reachability> blockReachabilities) {
+                     Map<Node, Reachability> blockReachabilities,
+                     Map<Node, Set<String>> conditionRefs) {
             this.image = image;
             this.mirrors = mirrors;
             this.renderedConditions = renderedConditions;
             this.blockReachabilities = blockReachabilities;
+            this.conditionRefs = conditionRefs;
             this.stack.push(image.node);
         }
 
@@ -2000,7 +2014,9 @@ public class ScriptCompiler {
 
             // create copy
             Node copy = node.copy();
-            appender.accept(blockCopy, copy.wrap(expr));
+            Node wrappedCopy = copy.wrap(expr);
+            appender.accept(blockCopy, wrappedCopy);
+            rememberConditionRefs(wrappedCopy, expr, conditionRefs);
             renderedConditions.put(copy, blockExpr.and(expr).reduce());
             if (node.kind().isBlock()) {
                 blockReachabilities.put(copy, reachability(node));
@@ -2033,10 +2049,12 @@ public class ScriptCompiler {
         private final Map<String, Map<List<FileOp>, Reachability>> fileOps = new HashMap<>();
         private final Set<FileObject> files = new TreeSet<>();
         private final Set<FileObject> templates = new TreeSet<>();
+        private final Map<Node, Set<String>> conditionRefs;
         private final Image image;
 
-        private OutputVisitor(Image image) {
+        private OutputVisitor(Image image, Map<Node, Set<String>> conditionRefs) {
             this.image = image;
+            this.conditionRefs = conditionRefs;
         }
 
         @Override
@@ -2229,7 +2247,10 @@ public class ScriptCompiler {
                 Node includes = Nodes.includes();
                 for (FileObject f : group) {
                     if (f.expression != Expression.FALSE) {
-                        includes.append(Nodes.include(f.checksum).wrap(f.expression));
+                        Node include = Nodes.include(f.checksum);
+                        Node wrappedInclude = include.wrap(f.expression);
+                        rememberConditionRefs(wrappedInclude, f.expression, conditionRefs);
+                        includes.append(wrappedInclude);
                     }
                 }
                 // add an empty include to avoid matching all blobs
@@ -2271,7 +2292,10 @@ public class ScriptCompiler {
                         throw new IllegalStateException("Unresolved cwd");
                     }
                     Scope scope = scope(node);
-                    Expression expr = compiledExpression(node, scope);
+                    Reachability nodeReachability = reachability(node);
+                    Expression expr = nodeReachability != null
+                            ? reachabilityExpression(nodeReachability, scope)
+                            : normalize(expression(node), scope);
                     if (expr != Expression.FALSE) {
                         Node copy = node.deepCopy();
                         for (Node n : copy.traverse(Kind.MODEL_VALUE::equals)) {
@@ -2300,7 +2324,12 @@ public class ScriptCompiler {
                                 }
                             }
                         }
-                        nodes.add(copy.wrap(expr));
+                        for (Node condition : copy.traverse(Kind.CONDITION::equals)) {
+                            rememberConditionRefs(condition, conditionRefs);
+                        }
+                        Node wrappedCopy = copy.wrap(expr);
+                        rememberConditionRefs(wrappedCopy, expr, conditionRefs);
+                        nodes.add(wrappedCopy);
                     }
                 }
             }
@@ -2321,10 +2350,14 @@ public class ScriptCompiler {
         private final Map<Node, Map<String, Reachability>> reachabilityRefs = new LinkedHashMap<>();
         private final Map<Node, Node> mirrors;
         private final Map<Node, Reachability> blockReachabilities;
+        private final Map<Node, Set<String>> conditionRefs;
 
-        StubsVisitor(Map<Node, Node> mirrors, Map<Node, Reachability> blockReachabilities) {
+        StubsVisitor(Map<Node, Node> mirrors,
+                     Map<Node, Reachability> blockReachabilities,
+                     Map<Node, Set<String>> conditionRefs) {
             this.mirrors = mirrors;
             this.blockReachabilities = blockReachabilities;
+            this.conditionRefs = conditionRefs;
         }
 
         @Override
@@ -2428,7 +2461,10 @@ public class ScriptCompiler {
         }
 
         List<Node> resolveStubs(Node node, Map<String, Reachability> reachabilitySnapshot) {
-            Set<String> variables = node.expression().variables();
+            Set<String> variables = conditionRefs.get(node);
+            if (variables == null) {
+                throw new IllegalStateException("Condition refs not found: " + node);
+            }
             if (variables.isEmpty()) {
                 return List.of();
             }
