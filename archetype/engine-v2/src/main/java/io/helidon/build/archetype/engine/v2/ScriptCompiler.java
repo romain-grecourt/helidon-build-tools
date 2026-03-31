@@ -756,8 +756,51 @@ public class ScriptCompiler {
         }
     }
 
-    private Expression inlineCondition(Node node, Expression expr) {
-        return inline(node, expr);
+    private Expression relativizeUnsupportedCondition(Node node,
+                                                      Expression expr,
+                                                      ReachabilityState currentState,
+                                                      Scope scope,
+                                                      Map<String, ConstantBindings> bindings,
+                                                      Map<String, Reachability> definitions) {
+        SupportedTerms terms = supportedTerms(expr, scope, bindings, definitions);
+        if (!terms.hasSupportedTerms) {
+            return expr;
+        }
+        Reachability knownReachability = conditionReachability(node, currentState);
+        return residualExpression(terms.supported, knownReachability, scope)
+                .and(terms.unsupported)
+                .reduce();
+    }
+
+    private Reachability conditionReachability(Node node, ReachabilityState currentState) {
+        Reachability knownReachability = currentState.reachability();
+        Reachability pathReachability = pathReachability(node);
+        if (knownReachability == null) {
+            return pathReachability;
+        }
+        return knownReachability.and(pathReachability);
+    }
+
+    private Reachability pathReachability(Node node) {
+        Reachability reachability = trueReachability();
+        for (Entry<String, Value<?>> entry : path(node).entrySet()) {
+            Reachability valueReachability = valueReachability(entry.getKey(), entry.getValue());
+            if (valueReachability != null) {
+                reachability = reachability.and(valueReachability);
+            }
+        }
+        return reachability;
+    }
+
+    private Reachability valueReachability(String key, Value<?> value) {
+        String scalarValue = scalarLiteral(value);
+        if (scalarValue != null) {
+            return Reachability.scalar(key, Set.of(scalarValue), domains);
+        }
+        if (value.type() == Type.LIST) {
+            return Reachability.listContains(key, new TreeSet<>(value.getList()), domains);
+        }
+        return null;
     }
 
     private boolean prunedByReachability(Node node) {
@@ -1549,9 +1592,10 @@ public class ScriptCompiler {
                     Reachability conditionReachability = translate(expr, scope, currentBindings,
                             currentReachabilityByRef);
                     if (conditionReachability == null) {
-                        // supported shapes can stay on the reachability path;
-                        // keep inlining only as a compatibility fallback for unsupported expressions
-                        expr = inlineCondition(node, expr);
+                        // keep unsupported residuals on the reachability path
+                        // by subtracting any supported terms from the current branch state
+                        expr = relativizeUnsupportedCondition(node, expr, currentState, scope,
+                                currentBindings, currentReachabilityByRef);
                         conditionReachability = translate(expr, scope, currentBindings, currentReachabilityByRef);
                     }
                     if (expr != Expression.FALSE) {
