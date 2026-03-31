@@ -1644,35 +1644,36 @@ public class ScriptCompiler {
     private Expression expression(Node node, Function<Node, String> key) {
         Expression expr = Expression.TRUE;
         for (Node n = node; n != null; n = n.parent()) {
-            switch (n.kind()) {
-                case CONDITION:
-                    expr = expr.and(n.expression());
-                    break;
-                case INPUT_BOOLEAN:
-                    expr = expr.and(Expression.create(String.format("${%s}", key.apply(n))));
-                    break;
-                case INPUT_OPTION:
-                    Node input = n.ancestor(Kind::isInput).orElseThrow();
-                    switch (input.kind()) {
-                        case INPUT_ENUM:
-                            expr = expr.and(Expression.create(String.format(
-                                    "${%s} == '%s'",
-                                    key.apply(input),
-                                    n.value().getString())));
-                            break;
-                        case INPUT_LIST:
-                            expr = expr.and(Expression.create(String.format(
-                                    "${%s} contains '%s'",
-                                    key.apply(input),
-                                    n.value().getString())));
-                            break;
-                        default:
-                    }
-                    break;
-                default:
-            }
+            expr = expr.and(expressionContribution(n, key));
         }
         return expr.reduce();
+    }
+
+    private Expression expressionContribution(Node node, Function<Node, String> key) {
+        switch (node.kind()) {
+            case CONDITION:
+                return node.expression();
+            case INPUT_BOOLEAN:
+                return Expression.create(String.format("${%s}", key.apply(node)));
+            case INPUT_OPTION:
+                Node input = node.ancestor(Kind::isInput).orElseThrow();
+                switch (input.kind()) {
+                    case INPUT_ENUM:
+                        return Expression.create(String.format(
+                                "${%s} == '%s'",
+                                key.apply(input),
+                                node.value().getString()));
+                    case INPUT_LIST:
+                        return Expression.create(String.format(
+                                "${%s} contains '%s'",
+                                key.apply(input),
+                                node.value().getString()));
+                    default:
+                        return Expression.TRUE;
+                }
+            default:
+                return Expression.TRUE;
+        }
     }
 
     private final class InlineInvoker extends ScriptInvoker {
@@ -1763,6 +1764,7 @@ public class ScriptCompiler {
 
         private final Map<String, Reachability> currentReachabilityByRef = new HashMap<>();
         private final Map<String, ConstantBindings> currentBindings = new HashMap<>();
+        private final Map<Node, Expression> pathExpressions = new IdentityHashMap<>();
         private final Deque<ReachabilityState> reachabilityStack = new ArrayDeque<>(
                 List.of(ReachabilityState.of(trueReachability())));
         private final Set<Node> modifiedSteps = new HashSet<>();
@@ -1777,6 +1779,20 @@ public class ScriptCompiler {
             refBindingsByNode.put(node, snapshotBindings(currentBindings));
         }
 
+        private void cacheExpression(Node node) {
+            Expression parentExpression = node.parent() == null
+                    ? Expression.TRUE
+                    : pathExpressions.get(node.parent());
+            if (parentExpression == null) {
+                throw new IllegalStateException("Missing cached expression for parent: " + node.parent());
+            }
+            // Keep the accepted post-visit pruning logic, but carry the exact
+            // node expression forward instead of rebuilding it later.
+            Expression expr = parentExpression.and(expressionContribution(node, ScriptCompiler.this::scopeId)).reduce();
+            pathExpressions.put(node, expr);
+            expressions.put(node, expr);
+        }
+
         @Override
         public boolean visit(Node node) {
             node.id(nextId++);
@@ -1787,6 +1803,7 @@ public class ScriptCompiler {
                 case SOURCE:
                 case EXEC:
                     scopes.put(node, scope.key());
+                    cacheExpression(node);
                     if (node.attribute("url").isPresent()) {
                         // skip url invocation
                         reachabilityStack.push(nodeState);
@@ -1815,9 +1832,11 @@ public class ScriptCompiler {
                     }
                     if (expr != Expression.FALSE) {
                         node.expression(expr);
+                        cacheExpression(node);
                         nodeState = currentState.and(conditionReachability);
                         if (nodeState.isFalse()) {
                             node.expression(Expression.FALSE);
+                            cacheExpression(node);
                             reachabilityByNode.put(node, nodeState.reachability());
                             reachabilityStack.push(nodeState);
                             return false;
@@ -1831,6 +1850,7 @@ public class ScriptCompiler {
                     // condition is always false
                     // skip traversal and prune (postVisit)
                     node.expression(Expression.FALSE);
+                    cacheExpression(node);
                     reachabilityByNode.put(node, falseReachability());
                     reachabilityStack.push(ReachabilityState.of(falseReachability()));
                     return false;
@@ -1901,6 +1921,7 @@ public class ScriptCompiler {
                     if (nodeState.supported()) {
                         reachabilityByNode.put(node, nodeState.reachability());
                     }
+                    cacheExpression(node);
                     reachabilityStack.push(nodeState);
                     return true;
                 default:
@@ -1908,6 +1929,7 @@ public class ScriptCompiler {
             if (nodeState.supported()) {
                 reachabilityByNode.put(node, nodeState.reachability());
             }
+            cacheExpression(node);
             reachabilityStack.push(nodeState);
             return super.visit(node);
         }
@@ -1982,6 +2004,7 @@ public class ScriptCompiler {
         private boolean skipPrunedNode(Node node, ReachabilityState nodeState) {
             Reachability reachability = nodeState.supported() ? nodeState.reachability() : falseReachability();
             reachabilityByNode.put(node, reachability);
+            cacheExpression(node);
             reachabilityStack.push(ReachabilityState.of(reachability));
             return false;
         }
