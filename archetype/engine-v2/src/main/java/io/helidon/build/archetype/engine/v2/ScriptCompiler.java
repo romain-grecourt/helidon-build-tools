@@ -296,14 +296,18 @@ public class ScriptCompiler {
 
     private void compile(Image image) {
         Map<Node, Node> mirrors = new HashMap<>();
+        Map<Node, Expression> renderedConditions = new IdentityHashMap<>();
+        Map<Node, Reachability> blockReachabilities = new IdentityHashMap<>();
         mirrors.put(sourceNode, image.node);
         mirrors.put(image.node, sourceNode);
-        sourceNode.visit(new InputVisitor(image, mirrors)); // render inputs
+        renderedConditions.put(image.node, Expression.TRUE);
+        blockReachabilities.put(image.node, trueReachability());
+        sourceNode.visit(new InputVisitor(image, mirrors, renderedConditions, blockReachabilities)); // render inputs
         if (!options.contains(Options.NO_OUTPUT)) {
             sourceNode.visit(new OutputVisitor(image)); // render outputs
         }
-        image.node.visit(new StubsVisitor(mirrors)); // render stubs
-        image.node.visit(new DedupVisitor()); // de-dup steps
+        image.node.visit(new StubsVisitor(mirrors, blockReachabilities)); // render stubs
+        image.node.visit(new DedupVisitor(renderedConditions)); // de-dup steps
     }
 
     private void validate() {
@@ -1021,16 +1025,6 @@ public class ScriptCompiler {
     private Expression compiledExpression(Node node, Scope scope) {
         Reachability reachability = reachability(node);
         return reachability != null ? reachabilityExpression(reachability, scope) : normalize(expression(node), scope);
-    }
-
-    private Expression renderedCondition(Node node) {
-        Expression expr = Expression.TRUE;
-        for (Node n = node.parent(); n != null; n = n.parent()) {
-            if (n.kind() == Kind.CONDITION) {
-                expr = expr.and(n.expression());
-            }
-        }
-        return expr.reduce();
     }
 
     private Expression relativizeRenderedCondition(Expression blockExpr,
@@ -1843,14 +1837,19 @@ public class ScriptCompiler {
     private class InputVisitor implements Node.Visitor {
         private final Deque<Node> stack = new ArrayDeque<>();
         private final Map<Node, Node> mirrors;
-        private final Map<Node, Expression> renderedConditions = new IdentityHashMap<>();
+        private final Map<Node, Expression> renderedConditions;
+        private final Map<Node, Reachability> blockReachabilities;
         private final Image image;
 
-        InputVisitor(Image image, Map<Node, Node> mirrors) {
+        InputVisitor(Image image,
+                     Map<Node, Node> mirrors,
+                     Map<Node, Expression> renderedConditions,
+                     Map<Node, Reachability> blockReachabilities) {
             this.image = image;
             this.mirrors = mirrors;
+            this.renderedConditions = renderedConditions;
+            this.blockReachabilities = blockReachabilities;
             this.stack.push(image.node);
-            this.renderedConditions.put(image.node, Expression.TRUE);
         }
 
         @Override
@@ -2003,6 +2002,9 @@ public class ScriptCompiler {
             Node copy = node.copy();
             appender.accept(blockCopy, copy.wrap(expr));
             renderedConditions.put(copy, blockExpr.and(expr).reduce());
+            if (node.kind().isBlock()) {
+                blockReachabilities.put(copy, reachability(node));
+            }
 
             mirrors.put(node, copy);
             mirrors.put(copy, node);
@@ -2318,9 +2320,11 @@ public class ScriptCompiler {
         private final Map<String, Reachability> currentReachabilityByRef = new HashMap<>();
         private final Map<Node, Map<String, Reachability>> reachabilityRefs = new LinkedHashMap<>();
         private final Map<Node, Node> mirrors;
+        private final Map<Node, Reachability> blockReachabilities;
 
-        StubsVisitor(Map<Node, Node> mirrors) {
+        StubsVisitor(Map<Node, Node> mirrors, Map<Node, Reachability> blockReachabilities) {
             this.mirrors = mirrors;
+            this.blockReachabilities = blockReachabilities;
         }
 
         @Override
@@ -2431,9 +2435,8 @@ public class ScriptCompiler {
 
             List<Node> nodes = new ArrayList<>();
             Node block = node.ancestor(Kind::isBlock).orElseThrow();
-            Scope scope = ctx.scope().get("~" + scopes.getOrDefault(mirror(block), ""));
-            Expression blockExpr = expression(block, n -> scopeId(mirror(n)));
-            Reachability blockReachability = translate(blockExpr, scope, Map.of(), reachabilitySnapshot);
+            Scope scope = scope(mirror(block));
+            Reachability blockReachability = blockReachability(block);
             if (blockReachability == null) {
                 // validation already reports unsupported condition shapes; do not reintroduce expression fallback here
                 return List.of();
@@ -2454,6 +2457,13 @@ public class ScriptCompiler {
             return nodes;
         }
 
+        Reachability blockReachability(Node node) {
+            if (blockReachabilities.containsKey(node)) {
+                return blockReachabilities.get(node);
+            }
+            throw new IllegalStateException("Block reachability not found: " + node);
+        }
+
         Node mirror(Node node) {
             Node mirror = mirrors.get(node);
             if (mirror != null) {
@@ -2467,6 +2477,11 @@ public class ScriptCompiler {
     private final class DedupVisitor implements Node.Visitor {
 
         private final Map<String, List<Node>> steps = new LinkedHashMap<>();
+        private final Map<Node, Expression> renderedConditions;
+
+        private DedupVisitor(Map<Node, Expression> renderedConditions) {
+            this.renderedConditions = renderedConditions;
+        }
 
         @Override
         public boolean visit(Node node) {
@@ -2499,6 +2514,14 @@ public class ScriptCompiler {
                     }
                 }
             }
+        }
+
+        private Expression renderedCondition(Node node) {
+            Expression expr = renderedConditions.get(node);
+            if (expr != null) {
+                return expr;
+            }
+            throw new IllegalStateException("Rendered condition not found: " + node);
         }
     }
 

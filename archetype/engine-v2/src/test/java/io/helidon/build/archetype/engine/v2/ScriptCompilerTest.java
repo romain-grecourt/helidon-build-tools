@@ -213,6 +213,46 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testDuplicateDiscreteStepsPreserveMergedCondition() {
+        Path outputDir = compile(
+                Nodes.script(
+                        Nodes.step("App Type",
+                                Nodes.inputs(
+                                        Nodes.inputEnum("app-type", b -> {
+                                            b.attribute("name", "App Type");
+                                            b.attribute("global", "true");
+                                        },
+                                                Nodes.inputOption("Quickstart", "quickstart",
+                                                        Nodes.step("Shared",
+                                                                Nodes.inputs(
+                                                                        Nodes.inputBoolean("feature",
+                                                                                b -> b.attribute("name",
+                                                                                        "Feature"))))),
+                                                Nodes.inputOption("Database", "database",
+                                                        Nodes.step("Shared",
+                                                                Nodes.inputs(
+                                                                        Nodes.inputBoolean("feature",
+                                                                                b -> b.attribute("name",
+                                                                                        "Feature"))))),
+                                                Nodes.inputOption("Custom", "custom"))))));
+        Node output = Script.load(outputDir.resolve("main.xml"));
+        List<Node> sharedSteps = new java.util.ArrayList<>();
+        for (Node step : output.traverse(kind -> kind == Node.Kind.STEP)) {
+            if ("Shared".equals(step.attribute("name").getString())) {
+                sharedSteps.add(step);
+            }
+        }
+        assertThat(sharedSteps.size(), is(1));
+        Node shared = sharedSteps.get(0);
+        assertThat(shared.parent().kind(), is(Node.Kind.CONDITION));
+        String condition = shared.parent().expression().literal().replaceAll("\\s+", " ").trim();
+        boolean merged = condition.equals("${app-type} != 'custom'")
+                || condition.equals("${app-type} == 'quickstart' || ${app-type} == 'database'")
+                || condition.equals("${app-type} == 'database' || ${app-type} == 'quickstart'");
+        assertThat(merged, is(true));
+    }
+
+    @Test
     void testUnsupportedConditionStillPrunesBranchSpecificInputs() {
         Path outputDir = compile("compiler/unsupported-pruning", "main.xml", IGNORE_ERRORS);
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
