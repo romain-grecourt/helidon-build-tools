@@ -307,12 +307,32 @@ public class ScriptCompiler {
     }
 
     private void validate() {
+        validateBooleanInputDeclarations();
         validatePresets();
         validateInputTypes();
         validateExpressions();
         validateOptions();
         validateInputs();
         validateSteps();
+    }
+
+    private void validateBooleanInputDeclarations() {
+        for (Node node : sourceNode.traverse(Kind.INPUT_BOOLEAN::equals)) {
+            String key = scopeId(node);
+            Value<?> value = declaredValue(node, key);
+            if (value.type() == Type.EMPTY || value.type() == Type.BOOLEAN) {
+                continue;
+            }
+            try {
+                value.getBoolean();
+            } catch (RuntimeException ex) {
+                errors.add(String.format(
+                        "%s %s: '%s'",
+                        node.location(),
+                        EXPR_EVAL_ERROR,
+                        ex.getMessage()));
+            }
+        }
     }
 
     private void validatePresets() {
@@ -734,28 +754,6 @@ public class ScriptCompiler {
         return false;
     }
 
-    private Expression inline(Node node, Expression expr) {
-        try {
-            Scope scope = scope(node);
-            Map<String, Value<?>> values = path(node);
-            return expr.inline(s -> {
-                String key = scope.get(s).key();
-                Value<?> value = values.get(key);
-                if (value == null) {
-                    value = declaredValue(node, key);
-                }
-                return value;
-            });
-        } catch (RuntimeException ex) {
-            errors.add(String.format(
-                    "%s %s: '%s'",
-                    node.location(),
-                    EXPR_EVAL_ERROR,
-                    ex.getMessage()));
-            return expr;
-        }
-    }
-
     private Expression relativizeUnsupportedCondition(Node node,
                                                       Expression expr,
                                                       ReachabilityState currentState,
@@ -819,17 +817,6 @@ public class ScriptCompiler {
         }
         SupportedTerms terms = supportedTerms(expr, scope, bindings, definitions);
         return terms.hasSupportedTerms && terms.supported.isFalse();
-    }
-
-    private void reportBooleanInlineError(Node node) {
-        if (node.kind() != Kind.INPUT_BOOLEAN) {
-            return;
-        }
-        String key = scopeId(node);
-        Value<?> value = declaredValue(node, key);
-        if (value.type() != Type.EMPTY && value.type() != Type.BOOLEAN) {
-            inline(node, Expression.create(String.format("${%s}", key)));
-        }
     }
 
     private <T> Map<String, T> withoutKey(Map<String, T> values, String key) {
@@ -1714,7 +1701,6 @@ public class ScriptCompiler {
                     }
                     break;
                 case INPUT_BOOLEAN:
-                    reportBooleanInlineError(node);
                     if (prunedByReachability(node)) {
                         remove(node);
                         node.ancestor(Kind.STEP::equals).ifPresent(modifiedSteps::add);
