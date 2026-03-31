@@ -389,32 +389,19 @@ public class ScriptCompiler {
     private void validateExpressions() {
         for (Node node : sourceNode.traverse(Kind.CONDITION::equals)) {
             Expression expr = node.expression();
-            boolean compatible = true;
+            Scope scope = scope(node);
+            ExpressionMetadata metadata = expressionMetadata(expr, scope);
+            boolean compatible = metadata.incompatibleOperators().isEmpty();
 
             // check operators compatibility
-            for (Token token : expr.tokens()) {
-                if (token.isOperator()) {
-                    switch (token.operator()) {
-                        case AS_INT:
-                        case AS_LIST:
-                        case AS_STRING:
-                        case SIZEOF:
-                        case GREATER_THAN:
-                        case GREATER_OR_EQUAL:
-                        case LOWER_THAN:
-                        case LOWER_OR_EQUAL:
-                            compatible = false;
-                            errors.add(String.format("%s %s: '%s'",
-                                    node.location(),
-                                    EXPR_INCOMPATIBLE_OPERATOR,
-                                    token.operator().symbol()));
-                            break;
-                        default:
-                    }
-                }
+            for (Expression.Operator operator : metadata.incompatibleOperators()) {
+                errors.add(String.format("%s %s: '%s'",
+                        node.location(),
+                        EXPR_INCOMPATIBLE_OPERATOR,
+                        operator.symbol()));
             }
 
-            if (dependsOnTextInput(node, expr, new HashSet<>())) {
+            if (dependsOnTextInput(metadata.refs(), new HashSet<>())) {
                 errors.add(String.format(
                         "%s %s: '%s'",
                         node.location(),
@@ -424,16 +411,13 @@ public class ScriptCompiler {
             }
 
             boolean resolved = true;
-            Scope scope = scope(node);
             Reachability blockReachability = reachability(node.parent());
             Map<String, Reachability> refReachabilityMap = refReachabilityByNode.getOrDefault(node, Map.of());
             Map<String, ConstantBindings> refBindings = refBindingsByNode.getOrDefault(node, Map.of());
             ExpressionAnalysis analysis = analyze(expr, scope, refBindings, refReachabilityMap);
             Map<String, Reachability> variableDemands = analysis.variableDemands();
-            for (String variable : expr.variables()) {
-
-                // normalized variable
-                String ref = scope.key(variable);
+            for (Entry<String, String> variable : metadata.variables().entrySet()) {
+                String ref = variable.getValue();
 
                 boolean variableResolved = false;
                 Reachability requiredReachability = blockReachability;
@@ -467,7 +451,7 @@ public class ScriptCompiler {
                     errors.add(String.format("%s %s: '%s'",
                             node.location(),
                             EXPR_UNRESOLVED_VARIABLE,
-                            variable));
+                            variable.getKey()));
                 }
             }
 
@@ -582,12 +566,9 @@ public class ScriptCompiler {
         return false;
     }
 
-    private boolean dependsOnTextInput(Node node,
-                                       Expression expr,
-                                       Set<String> visitingRefs) {
-        Scope scope = scope(node);
-        for (String variable : expr.variables()) {
-            if (dependsOnTextInput(scope.key(variable), visitingRefs)) {
+    private boolean dependsOnTextInput(Iterable<String> refs, Set<String> visitingRefs) {
+        for (String ref : refs) {
+            if (dependsOnTextInput(ref, visitingRefs)) {
                 return true;
             }
         }
@@ -622,9 +603,11 @@ public class ScriptCompiler {
             if (ancestor.kind() == Kind.INPUT_TEXT) {
                 return true;
             }
-            if (ancestor.kind() == Kind.CONDITION
-                    && dependsOnTextInput(ancestor, ancestor.expression(), visitingRefs)) {
-                return true;
+            if (ancestor.kind() == Kind.CONDITION) {
+                Scope scope = scope(ancestor);
+                if (dependsOnTextInput(expressionMetadata(ancestor.expression(), scope).refs(), visitingRefs)) {
+                    return true;
+                }
             }
         }
         if (node.value().type() != Type.STRING && node.value().type() != Type.DYNAMIC) {
@@ -941,6 +924,36 @@ public class ScriptCompiler {
             }
             return t;
         }).reduce();
+    }
+
+    private ExpressionMetadata expressionMetadata(Expression expr, Scope scope) {
+        Map<String, String> variables = new LinkedHashMap<>();
+        List<Expression.Operator> incompatibleOperators = new ArrayList<>();
+        for (Token token : expr.tokens()) {
+            if (token.isVariable()) {
+                String variable = token.variable();
+                variables.putIfAbsent(variable, scope.key(variable));
+            } else if (token.isOperator() && incompatibleOperator(token.operator())) {
+                incompatibleOperators.add(token.operator());
+            }
+        }
+        return new ExpressionMetadata(Map.copyOf(variables), List.copyOf(incompatibleOperators));
+    }
+
+    private boolean incompatibleOperator(Expression.Operator operator) {
+        switch (operator) {
+            case AS_INT:
+            case AS_LIST:
+            case AS_STRING:
+            case SIZEOF:
+            case GREATER_THAN:
+            case GREATER_OR_EQUAL:
+            case LOWER_THAN:
+            case LOWER_OR_EQUAL:
+                return true;
+            default:
+                return false;
+        }
     }
 
     private void registerDomain(Node node, String key) {
@@ -1612,6 +1625,29 @@ public class ScriptCompiler {
         }
     }
 
+    private static final class ExpressionMetadata {
+        private final Map<String, String> variables;
+        private final List<Expression.Operator> incompatibleOperators;
+
+        private ExpressionMetadata(Map<String, String> variables,
+                                   List<Expression.Operator> incompatibleOperators) {
+            this.variables = variables;
+            this.incompatibleOperators = incompatibleOperators;
+        }
+
+        private Map<String, String> variables() {
+            return variables;
+        }
+
+        private Set<String> refs() {
+            return new LinkedHashSet<>(variables.values());
+        }
+
+        private List<Expression.Operator> incompatibleOperators() {
+            return incompatibleOperators;
+        }
+    }
+
     private String scalarLiteral(Value<?> value) {
         switch (value.type()) {
             case STRING:
@@ -1813,14 +1849,15 @@ public class ScriptCompiler {
                 case CONDITION:
                     scopes.put(node, scope.key());
                     snapshotNodeContext(node);
-                    if (dependsOnTextInput(node, node.expression(), new HashSet<>())) {
+                    Expression expr = node.expression();
+                    ExpressionMetadata metadata = expressionMetadata(expr, scope);
+                    if (dependsOnTextInput(metadata.refs(), new HashSet<>())) {
                         errors.add(String.format(
                                 "%s %s: '%s'",
                                 node.location(),
                                 EXPR_TEXT_INPUT_CONTROL_FLOW,
-                                node.expression().literal()));
+                                expr.literal()));
                     }
-                    Expression expr = node.expression();
                     Reachability conditionReachability = translate(expr, scope, currentBindings,
                             currentReachabilityByRef);
                     if (conditionReachability == null) {
