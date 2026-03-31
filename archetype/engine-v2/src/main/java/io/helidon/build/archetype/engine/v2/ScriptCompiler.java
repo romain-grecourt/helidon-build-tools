@@ -428,7 +428,8 @@ public class ScriptCompiler {
             Reachability blockReachability = reachability(node.parent());
             Map<String, Reachability> refReachabilityMap = refReachabilityByNode.getOrDefault(node, Map.of());
             Map<String, ConstantBindings> refBindings = refBindingsByNode.getOrDefault(node, Map.of());
-            Map<String, Reachability> variableDemands = variableDemands(expr, scope, refReachabilityMap);
+            ExpressionAnalysis analysis = analyze(expr, scope, refBindings, refReachabilityMap);
+            Map<String, Reachability> variableDemands = analysis.variableDemands();
             for (String variable : expr.variables()) {
 
                 // normalized variable
@@ -481,7 +482,7 @@ public class ScriptCompiler {
                             evalError));
                     continue;
                 }
-                if (compatible && translate(expr, scope, refBindings, refReachabilityMap) == null) {
+                if (compatible && analysis.reachability() == null) {
                     errors.add(String.format(
                             "%s %s: '%s'",
                             node.location(),
@@ -569,12 +570,6 @@ public class ScriptCompiler {
     private Value<?> validationValue(Scope scope, String variable) {
         Type type = refTypes.getOrDefault(scope.key(variable), Type.EMPTY);
         return Value.typed(type);
-    }
-
-    private Map<String, Reachability> variableDemands(Expression expr,
-                                                      Scope scope,
-                                                      Map<String, Reachability> definitions) {
-        return new VariableDemandAnalyzer(scope, definitions).analyze(expr);
     }
 
     private boolean hasPriorDefinition(Node node, String key) {
@@ -1143,11 +1138,18 @@ public class ScriptCompiler {
         return Lists.map(literals, Expression::create);
     }
 
+    private ExpressionAnalysis analyze(Expression expr,
+                                       Scope scope,
+                                       Map<String, ConstantBindings> bindings,
+                                       Map<String, Reachability> definitions) {
+        return new ExpressionAnalyzer(scope, bindings, definitions).analyze(expr);
+    }
+
     private Reachability translate(Expression expr,
                                    Scope scope,
                                    Map<String, ConstantBindings> bindings,
                                    Map<String, Reachability> definitions) {
-        return new ReachabilityTranslator(scope, bindings, definitions).translate(expr);
+        return analyze(expr, scope, bindings, definitions).reachability();
     }
 
     private Value<?> constantValue(Node node) {
@@ -1162,25 +1164,29 @@ public class ScriptCompiler {
         }
     }
 
-    private final class VariableDemandAnalyzer {
+    private final class ExpressionAnalyzer {
         private final Scope scope;
+        private final Map<String, ConstantBindings> bindings;
         private final Map<String, Reachability> definitions;
 
-        private VariableDemandAnalyzer(Scope scope, Map<String, Reachability> definitions) {
+        private ExpressionAnalyzer(Scope scope,
+                                   Map<String, ConstantBindings> bindings,
+                                   Map<String, Reachability> definitions) {
             this.scope = scope;
+            this.bindings = bindings;
             this.definitions = definitions;
         }
 
-        Map<String, Reachability> analyze(Expression expr) {
-            Deque<DemandTerm> stack = new ArrayDeque<>();
+        ExpressionAnalysis analyze(Expression expr) {
+            Deque<AnalysisTerm> stack = new ArrayDeque<>();
             try {
                 for (Token token : expr.tokens()) {
                     if (token.isOperand()) {
-                        stack.push(new DemandValue(token.operand()));
+                        stack.push(new AnalysisValue(token.operand()));
                         continue;
                     }
                     if (token.isVariable()) {
-                        stack.push(new DemandRef(scope.key(token.variable())));
+                        stack.push(new AnalysisRef(scope.key(token.variable())));
                         continue;
                     }
                     switch (token.operator()) {
@@ -1203,87 +1209,108 @@ public class ScriptCompiler {
                             stack.push(contains(stack.pop(), stack.pop()));
                             break;
                         default:
-                            return Map.of();
+                            return ExpressionAnalysis.unsupported();
                     }
                 }
                 if (stack.size() != 1) {
-                    return Map.of();
+                    return ExpressionAnalysis.unsupported();
                 }
                 Map<String, Reachability> demands = new HashMap<>();
-                booleanTerm(stack.pop()).collect(trueReachability(), demands);
-                return demands;
+                AnalysisBoolean result = booleanTerm(stack.pop());
+                result.collect(trueReachability(), demands);
+                return new ExpressionAnalysis(result.translatedTruthy, Map.copyOf(demands));
             } catch (RuntimeException ex) {
-                return Map.of();
+                return ExpressionAnalysis.unsupported();
             }
         }
 
-        private DemandBoolean booleanTerm(DemandTerm term) {
-            if (term instanceof DemandBoolean) {
-                return (DemandBoolean) term;
+        private AnalysisBoolean booleanTerm(AnalysisTerm term) {
+            if (term instanceof AnalysisBoolean) {
+                return (AnalysisBoolean) term;
             }
-            if (term instanceof DemandValue) {
-                Value<?> value = ((DemandValue) term).value;
+            if (term instanceof AnalysisValue) {
+                Value<?> value = ((AnalysisValue) term).value;
                 if (value.type() == Type.BOOLEAN) {
-                    return new DemandBoolean(value.getBoolean() ? trueReachability() : falseReachability(),
-                            (demand, output) -> {
-                            });
+                    Reachability truthy = value.getBoolean() ? trueReachability() : falseReachability();
+                    return new AnalysisBoolean(truthy, truthy, (demand, output) -> {
+                    });
                 }
-                return new DemandBoolean(null, term::collect);
+                return new AnalysisBoolean(null, null, term::collect);
             }
-            if (term instanceof DemandRef) {
-                String key = ((DemandRef) term).key;
-                return new DemandBoolean(booleanReachability(key), term::collect);
+            if (term instanceof AnalysisRef) {
+                String key = ((AnalysisRef) term).key;
+                return new AnalysisBoolean(translatedBooleanReachability(key),
+                        demandBooleanReachability(key),
+                        term::collect);
             }
-            throw new IllegalStateException("Unsupported demand term: " + term);
+            throw new IllegalStateException("Unsupported analysis term: " + term);
         }
 
-        private DemandBoolean equality(DemandTerm right, DemandTerm left, boolean negate) {
-            Reachability reachability = equality(left, right);
-            if (negate && reachability != null) {
-                reachability = trueReachability().subtract(reachability);
+        private AnalysisBoolean equality(AnalysisTerm right, AnalysisTerm left, boolean negate) {
+            Reachability translatedTruthy = translatedEquality(left, right);
+            Reachability demandTruthy = demandEquality(left, right);
+            if (negate) {
+                translatedTruthy = negate(translatedTruthy);
+                demandTruthy = negate(demandTruthy);
             }
-            return new DemandBoolean(reachability, (demand, output) -> {
+            return new AnalysisBoolean(translatedTruthy, demandTruthy, (demand, output) -> {
                 left.collect(demand, output);
                 right.collect(demand, output);
             });
         }
 
-        private Reachability equality(DemandTerm left, DemandTerm right) {
-            if (left instanceof DemandValue && right instanceof DemandValue) {
-                return Value.isEqual(((DemandValue) left).value, ((DemandValue) right).value)
+        private Reachability translatedEquality(AnalysisTerm left, AnalysisTerm right) {
+            if (left instanceof AnalysisValue && right instanceof AnalysisValue) {
+                return Value.isEqual(((AnalysisValue) left).value, ((AnalysisValue) right).value)
                         ? trueReachability()
                         : falseReachability();
             }
-            if (left instanceof DemandRef && right instanceof DemandValue) {
-                return equality(((DemandRef) left).key, ((DemandValue) right).value);
+            if (left instanceof AnalysisRef && right instanceof AnalysisValue) {
+                return translatedEquality(((AnalysisRef) left).key, ((AnalysisValue) right).value);
             }
-            if (left instanceof DemandValue && right instanceof DemandRef) {
-                return equality(((DemandRef) right).key, ((DemandValue) left).value);
+            if (left instanceof AnalysisValue && right instanceof AnalysisRef) {
+                return translatedEquality(((AnalysisRef) right).key, ((AnalysisValue) left).value);
             }
             return null;
         }
 
-        private DemandBoolean contains(DemandTerm right, DemandTerm left) {
-            Reachability reachability = containsReachability(left, right);
-            return new DemandBoolean(reachability, (demand, output) -> {
+        private Reachability demandEquality(AnalysisTerm left, AnalysisTerm right) {
+            if (left instanceof AnalysisValue && right instanceof AnalysisValue) {
+                return Value.isEqual(((AnalysisValue) left).value, ((AnalysisValue) right).value)
+                        ? trueReachability()
+                        : falseReachability();
+            }
+            if (left instanceof AnalysisRef && right instanceof AnalysisValue) {
+                return demandEquality(((AnalysisRef) left).key, ((AnalysisValue) right).value);
+            }
+            if (left instanceof AnalysisValue && right instanceof AnalysisRef) {
+                return demandEquality(((AnalysisRef) right).key, ((AnalysisValue) left).value);
+            }
+            return null;
+        }
+
+        private AnalysisBoolean contains(AnalysisTerm right, AnalysisTerm left) {
+            Reachability translatedTruthy = translatedContains(left, right);
+            Reachability demandTruthy = demandContains(left, right);
+            return new AnalysisBoolean(translatedTruthy, demandTruthy, (demand, output) -> {
                 left.collect(demand, output);
                 right.collect(demand, output);
             });
         }
 
-        private Reachability containsReachability(DemandTerm left, DemandTerm right) {
-            if (left instanceof DemandRef && right instanceof DemandValue) {
-                return listContains(((DemandRef) left).key, ((DemandValue) right).value);
+        private Reachability translatedContains(AnalysisTerm left, AnalysisTerm right) {
+            if (left instanceof AnalysisRef && right instanceof AnalysisValue) {
+                return translatedListContains(((AnalysisRef) left).key, ((AnalysisValue) right).value);
             }
-            if (left instanceof DemandValue && right instanceof DemandRef) {
-                Value<?> value = ((DemandValue) left).value;
+            if (left instanceof AnalysisValue && right instanceof AnalysisRef) {
+                Value<?> value = ((AnalysisValue) left).value;
                 if (value.type() == Type.LIST) {
-                    return scalarAny(((DemandRef) right).key, new TreeSet<>(value.getList()));
+                    return translatedScalarAny(((AnalysisRef) right).key, new TreeSet<>(value.getList()));
                 }
             }
-            if (left instanceof DemandValue && right instanceof DemandValue) {
-                Value<?> leftValue = ((DemandValue) left).value;
-                Value<?> rightValue = ((DemandValue) right).value;
+            if (left instanceof AnalysisValue && right instanceof AnalysisValue) {
+                Value<?> leftValue = ((AnalysisValue) left).value;
+                Value<?> rightValue = ((AnalysisValue) right).value;
                 if (leftValue.type() == Type.LIST) {
                     Set<String> required = containsValues(rightValue);
                     if (required != null) {
@@ -1295,7 +1322,46 @@ public class ScriptCompiler {
             return null;
         }
 
-        private Reachability booleanReachability(String key) {
+        private Reachability demandContains(AnalysisTerm left, AnalysisTerm right) {
+            if (left instanceof AnalysisRef && right instanceof AnalysisValue) {
+                return demandListContains(((AnalysisRef) left).key, ((AnalysisValue) right).value);
+            }
+            if (left instanceof AnalysisValue && right instanceof AnalysisRef) {
+                Value<?> value = ((AnalysisValue) left).value;
+                if (value.type() == Type.LIST) {
+                    return demandScalarAny(((AnalysisRef) right).key, new TreeSet<>(value.getList()));
+                }
+            }
+            if (left instanceof AnalysisValue && right instanceof AnalysisValue) {
+                Value<?> leftValue = ((AnalysisValue) left).value;
+                Value<?> rightValue = ((AnalysisValue) right).value;
+                if (leftValue.type() == Type.LIST) {
+                    Set<String> required = containsValues(rightValue);
+                    if (required != null) {
+                        Set<String> values = new HashSet<>(leftValue.getList());
+                        return values.containsAll(required) ? trueReachability() : falseReachability();
+                    }
+                }
+            }
+            return null;
+        }
+
+        private Reachability translatedBooleanReachability(String key) {
+            ConstantBindings binding = bindings.get(key);
+            if (binding != null) {
+                if (binding.type != Type.BOOLEAN) {
+                    return null;
+                }
+            } else {
+                InputDomain domain = domains.get(key);
+                if (domain == null || !domain.isBoolean()) {
+                    return null;
+                }
+            }
+            return translatedEquality(key, Value.TRUE);
+        }
+
+        private Reachability demandBooleanReachability(String key) {
             InputDomain domain = domains.get(key);
             if (domain == null || !domain.isBoolean()) {
                 return null;
@@ -1305,7 +1371,14 @@ public class ScriptCompiler {
             return defined == null ? raw : defined.and(raw);
         }
 
-        private Reachability equality(String key, Value<?> value) {
+        private Reachability translatedEquality(String key, Value<?> value) {
+            ConstantBindings binding = bindings.get(key);
+            Reachability bound = binding != null ? binding.match(value) : null;
+            Reachability raw = rawEquality(key, value);
+            return combine(key, bound, raw);
+        }
+
+        private Reachability demandEquality(String key, Value<?> value) {
             Reachability raw = rawEquality(key, value);
             Reachability defined = definitions.get(key);
             if (raw == null) {
@@ -1314,7 +1387,14 @@ public class ScriptCompiler {
             return defined == null ? raw : defined.and(raw);
         }
 
-        private Reachability scalarAny(String key, Set<String> values) {
+        private Reachability translatedScalarAny(String key, Set<String> values) {
+            ConstantBindings binding = bindings.get(key);
+            Reachability bound = binding != null ? binding.scalarAny(values) : null;
+            Reachability raw = rawScalarAny(key, values);
+            return combine(key, bound, raw);
+        }
+
+        private Reachability demandScalarAny(String key, Set<String> values) {
             Reachability raw = rawScalarAny(key, values);
             Reachability defined = definitions.get(key);
             if (raw == null) {
@@ -1323,7 +1403,18 @@ public class ScriptCompiler {
             return defined == null ? raw : defined.and(raw);
         }
 
-        private Reachability listContains(String key, Value<?> value) {
+        private Reachability translatedListContains(String key, Value<?> value) {
+            Set<String> required = containsValues(value);
+            if (required == null) {
+                return null;
+            }
+            ConstantBindings binding = bindings.get(key);
+            Reachability bound = binding != null ? binding.listContains(required) : null;
+            Reachability raw = rawListContains(key, required);
+            return combine(key, bound, raw);
+        }
+
+        private Reachability demandListContains(String key, Value<?> value) {
             Set<String> required = containsValues(value);
             if (required == null) {
                 return null;
@@ -1334,6 +1425,23 @@ public class ScriptCompiler {
                 return null;
             }
             return defined == null ? raw : defined.and(raw);
+        }
+
+        private Reachability combine(String key, Reachability bound, Reachability raw) {
+            ConstantBindings binding = bindings.get(key);
+            Reachability defined = definitions.get(key);
+            if (binding == null) {
+                if (raw == null) {
+                    return bound;
+                }
+                return defined == null ? raw : defined.and(raw);
+            }
+            if (raw == null) {
+                return bound;
+            }
+            Reachability available = defined == null ? trueReachability() : defined;
+            Reachability unresolved = available.subtract(binding.defined()).and(raw);
+            return bound == null ? unresolved : bound.or(unresolved);
         }
 
         private Reachability rawEquality(String key, Value<?> value) {
@@ -1391,14 +1499,18 @@ public class ScriptCompiler {
             output.compute(key, (k, current) -> current == null ? demand : current.or(demand));
         }
 
-        private abstract class DemandTerm {
+        private Reachability negate(Reachability reachability) {
+            return reachability == null ? null : trueReachability().subtract(reachability);
+        }
+
+        private abstract class AnalysisTerm {
             abstract void collect(Reachability demand, Map<String, Reachability> output);
         }
 
-        private final class DemandValue extends DemandTerm {
+        private final class AnalysisValue extends AnalysisTerm {
             private final Value<?> value;
 
-            private DemandValue(Value<?> value) {
+            private AnalysisValue(Value<?> value) {
                 this.value = value;
             }
 
@@ -1407,10 +1519,10 @@ public class ScriptCompiler {
             }
         }
 
-        private final class DemandRef extends DemandTerm {
+        private final class AnalysisRef extends AnalysisTerm {
             private final String key;
 
-            private DemandRef(String key) {
+            private AnalysisRef(String key) {
                 this.key = key;
             }
 
@@ -1420,37 +1532,51 @@ public class ScriptCompiler {
             }
         }
 
-        private final class DemandBoolean extends DemandTerm {
-            private final Reachability truthy;
+        private final class AnalysisBoolean extends AnalysisTerm {
+            private final Reachability translatedTruthy;
+            private final Reachability demandTruthy;
             private final BiConsumer<Reachability, Map<String, Reachability>> collector;
 
-            private DemandBoolean(Reachability truthy,
-                                  BiConsumer<Reachability, Map<String, Reachability>> collector) {
-                this.truthy = truthy;
+            private AnalysisBoolean(Reachability translatedTruthy,
+                                    Reachability demandTruthy,
+                                    BiConsumer<Reachability, Map<String, Reachability>> collector) {
+                this.translatedTruthy = translatedTruthy;
+                this.demandTruthy = demandTruthy;
                 this.collector = collector;
             }
 
-            DemandBoolean negate() {
-                Reachability reachability = truthy == null ? null : trueReachability().subtract(truthy);
-                return new DemandBoolean(reachability, collector);
+            AnalysisBoolean negate() {
+                return new AnalysisBoolean(ExpressionAnalyzer.this.negate(translatedTruthy),
+                        ExpressionAnalyzer.this.negate(demandTruthy),
+                        collector);
             }
 
-            DemandBoolean and(DemandBoolean left) {
-                Reachability reachability = left.truthy == null || truthy == null ? null : left.truthy.and(truthy);
-                return new DemandBoolean(reachability, (demand, output) -> {
+            AnalysisBoolean and(AnalysisBoolean left) {
+                Reachability translatedReachability = left.translatedTruthy == null || translatedTruthy == null
+                        ? null
+                        : left.translatedTruthy.and(translatedTruthy);
+                Reachability demandReachability = left.demandTruthy == null || demandTruthy == null
+                        ? null
+                        : left.demandTruthy.and(demandTruthy);
+                return new AnalysisBoolean(translatedReachability, demandReachability, (demand, output) -> {
                     left.collect(demand, output);
-                    Reachability rightDemand = left.truthy == null ? demand : demand.and(left.truthy);
+                    Reachability rightDemand = left.demandTruthy == null ? demand : demand.and(left.demandTruthy);
                     collect(rightDemand, output);
                 });
             }
 
-            DemandBoolean or(DemandBoolean left) {
-                Reachability reachability = left.truthy == null || truthy == null ? null : left.truthy.or(truthy);
-                return new DemandBoolean(reachability, (demand, output) -> {
+            AnalysisBoolean or(AnalysisBoolean left) {
+                Reachability translatedReachability = left.translatedTruthy == null || translatedTruthy == null
+                        ? null
+                        : left.translatedTruthy.or(translatedTruthy);
+                Reachability demandReachability = left.demandTruthy == null || demandTruthy == null
+                        ? null
+                        : left.demandTruthy.or(demandTruthy);
+                return new AnalysisBoolean(translatedReachability, demandReachability, (demand, output) -> {
                     left.collect(demand, output);
-                    Reachability rightDemand = left.truthy == null
+                    Reachability rightDemand = left.demandTruthy == null
                             ? demand
-                            : demand.and(trueReachability().subtract(left.truthy));
+                            : demand.and(trueReachability().subtract(left.demandTruthy));
                     collect(rightDemand, output);
                 });
             }
@@ -1459,6 +1585,30 @@ public class ScriptCompiler {
             public void collect(Reachability demand, Map<String, Reachability> output) {
                 collector.accept(demand, output);
             }
+        }
+    }
+
+    private static final class ExpressionAnalysis {
+        private static final ExpressionAnalysis UNSUPPORTED = new ExpressionAnalysis(null, Map.of());
+
+        private final Reachability reachability;
+        private final Map<String, Reachability> variableDemands;
+
+        private ExpressionAnalysis(Reachability reachability, Map<String, Reachability> variableDemands) {
+            this.reachability = reachability;
+            this.variableDemands = variableDemands;
+        }
+
+        private static ExpressionAnalysis unsupported() {
+            return UNSUPPORTED;
+        }
+
+        private Reachability reachability() {
+            return reachability;
+        }
+
+        private Map<String, Reachability> variableDemands() {
+            return variableDemands;
         }
     }
 
@@ -2719,265 +2869,6 @@ public class ScriptCompiler {
         private ConstantCase(Value<?> value, Reachability reachability) {
             this.value = value;
             this.reachability = reachability;
-        }
-    }
-
-    private final class ReachabilityTranslator {
-        private final Scope scope;
-        private final Map<String, ConstantBindings> bindings;
-        private final Map<String, Reachability> definitions;
-
-        private ReachabilityTranslator(Scope scope,
-                                      Map<String, ConstantBindings> bindings,
-                                      Map<String, Reachability> definitions) {
-            this.scope = scope;
-            this.bindings = bindings;
-            this.definitions = definitions;
-        }
-
-        Reachability translate(Expression expr) {
-            Deque<TranslationTerm> stack = new ArrayDeque<>();
-            try {
-                for (Token token : expr.tokens()) {
-                    if (token.isOperand()) {
-                        stack.push(new TranslationTerm.Value(token.operand()));
-                        continue;
-                    }
-                    if (token.isVariable()) {
-                        stack.push(new TranslationTerm.Ref(scope.key(token.variable())));
-                        continue;
-                    }
-                    switch (token.operator()) {
-                        case NOT:
-                            Reachability negated = booleanReachability(stack.pop());
-                            if (negated == null) {
-                                return null;
-                            }
-                            stack.push(new TranslationTerm.Boolean(trueReachability().subtract(negated)));
-                            break;
-                        case AND:
-                        case OR:
-                            Reachability right = booleanReachability(stack.pop());
-                            Reachability left = booleanReachability(stack.pop());
-                            if (left == null || right == null) {
-                                return null;
-                            }
-                            stack.push(new TranslationTerm.Boolean(token.operator() == Expression.Operator.AND
-                                    ? left.and(right)
-                                    : left.or(right)));
-                            break;
-                        case EQUAL:
-                        case NOT_EQUAL:
-                            Reachability equality = equality(stack.pop(), stack.pop());
-                            if (equality == null) {
-                                return null;
-                            }
-                            stack.push(new TranslationTerm.Boolean(token.operator() == Expression.Operator.NOT_EQUAL
-                                    ? trueReachability().subtract(equality)
-                                    : equality));
-                            break;
-                        case CONTAINS:
-                            Reachability contains = contains(stack.pop(), stack.pop());
-                            if (contains == null) {
-                                return null;
-                            }
-                            stack.push(new TranslationTerm.Boolean(contains));
-                            break;
-                        default:
-                            return null;
-                    }
-                }
-                if (stack.size() != 1) {
-                    return null;
-                }
-                return booleanReachability(stack.pop());
-            } catch (RuntimeException ex) {
-                return null;
-            }
-        }
-
-        private Reachability booleanReachability(TranslationTerm term) {
-            if (term instanceof TranslationTerm.Boolean) {
-                return ((TranslationTerm.Boolean) term).reachability;
-            }
-            if (term instanceof TranslationTerm.Value) {
-                Value<?> value = ((TranslationTerm.Value) term).value;
-                if (value.type() == Type.BOOLEAN) {
-                    return value.getBoolean() ? trueReachability() : falseReachability();
-                }
-                return null;
-            }
-            if (term instanceof TranslationTerm.Ref) {
-                String key = ((TranslationTerm.Ref) term).key;
-                ConstantBindings binding = bindings.get(key);
-                if (binding != null) {
-                    if (binding.type != Type.BOOLEAN) {
-                        return null;
-                    }
-                } else {
-                    InputDomain domain = domains.get(key);
-                    if (domain == null || !domain.isBoolean()) {
-                        return null;
-                    }
-                }
-                return equality(key, Value.TRUE);
-            }
-            return null;
-        }
-
-        private Reachability equality(TranslationTerm right, TranslationTerm left) {
-            if (left instanceof TranslationTerm.Value && right instanceof TranslationTerm.Value) {
-                return Value.isEqual(((TranslationTerm.Value) left).value, ((TranslationTerm.Value) right).value)
-                        ? trueReachability()
-                        : falseReachability();
-            }
-            if (left instanceof TranslationTerm.Ref && right instanceof TranslationTerm.Value) {
-                return equality(((TranslationTerm.Ref) left).key, ((TranslationTerm.Value) right).value);
-            }
-            if (left instanceof TranslationTerm.Value && right instanceof TranslationTerm.Ref) {
-                return equality(((TranslationTerm.Ref) right).key, ((TranslationTerm.Value) left).value);
-            }
-            return null;
-        }
-
-        private Reachability contains(TranslationTerm right, TranslationTerm left) {
-            if (left instanceof TranslationTerm.Ref && right instanceof TranslationTerm.Value) {
-                return listContains(((TranslationTerm.Ref) left).key, ((TranslationTerm.Value) right).value);
-            }
-            if (left instanceof TranslationTerm.Value && right instanceof TranslationTerm.Ref) {
-                Value<?> value = ((TranslationTerm.Value) left).value;
-                if (value.type() == Type.LIST) {
-                    return scalarAny(((TranslationTerm.Ref) right).key, new TreeSet<>(value.getList()));
-                }
-            }
-            if (left instanceof TranslationTerm.Value && right instanceof TranslationTerm.Value) {
-                Value<?> leftValue = ((TranslationTerm.Value) left).value;
-                Value<?> rightValue = ((TranslationTerm.Value) right).value;
-                if (leftValue.type() == Type.LIST) {
-                    Set<String> required = containsValues(rightValue);
-                    if (required != null) {
-                        Set<String> values = new HashSet<>(leftValue.getList());
-                        return values.containsAll(required) ? trueReachability() : falseReachability();
-                    }
-                }
-            }
-            return null;
-        }
-
-        private Reachability equality(String key, Value<?> value) {
-            ConstantBindings binding = bindings.get(key);
-            Reachability bound = binding != null ? binding.match(value) : null;
-            Reachability raw = rawEquality(key, value);
-            return combine(key, bound, raw);
-        }
-
-        private Reachability scalarAny(String key, Set<String> values) {
-            ConstantBindings binding = bindings.get(key);
-            Reachability bound = binding != null ? binding.scalarAny(values) : null;
-            Reachability raw = rawScalarAny(key, values);
-            return combine(key, bound, raw);
-        }
-
-        private Reachability listContains(String key, Value<?> value) {
-            Set<String> required = containsValues(value);
-            if (required == null) {
-                return null;
-            }
-            ConstantBindings binding = bindings.get(key);
-            Reachability bound = binding != null ? binding.listContains(required) : null;
-            Reachability raw = rawListContains(key, required);
-            return combine(key, bound, raw);
-        }
-
-        private Reachability combine(String key, Reachability bound, Reachability raw) {
-            ConstantBindings binding = bindings.get(key);
-            Reachability defined = definitions.get(key);
-            if (binding == null) {
-                if (raw == null) {
-                    return bound;
-                }
-                return defined == null ? raw : defined.and(raw);
-            }
-            if (raw == null) {
-                return bound;
-            }
-            Reachability available = defined == null ? trueReachability() : defined;
-            Reachability unresolved = available.subtract(binding.defined()).and(raw);
-            return bound == null ? unresolved : bound.or(unresolved);
-        }
-
-        private Reachability rawEquality(String key, Value<?> value) {
-            String scalarValue = scalarLiteral(value);
-            if (scalarValue == null) {
-                return null;
-            }
-            InputDomain domain = domains.get(key);
-            if (domain == null || domain.kind != InputDomain.Kind.SCALAR) {
-                return null;
-            }
-            if (!domain.scalarValues.contains(scalarValue)) {
-                return falseReachability();
-            }
-            return Reachability.scalar(key, Set.of(scalarValue), domains);
-        }
-
-        private Reachability rawScalarAny(String key, Set<String> values) {
-            InputDomain domain = domains.get(key);
-            if (domain == null || domain.kind != InputDomain.Kind.SCALAR) {
-                return null;
-            }
-            Set<String> allowed = new TreeSet<>(values);
-            allowed.retainAll(domain.scalarValues);
-            return allowed.isEmpty() ? falseReachability() : Reachability.scalar(key, allowed, domains);
-        }
-
-        private Reachability rawListContains(String key, Set<String> required) {
-            InputDomain domain = domains.get(key);
-            if (domain == null || domain.kind != InputDomain.Kind.LIST) {
-                return null;
-            }
-            if (!domain.listItems.containsAll(required)) {
-                return falseReachability();
-            }
-            return Reachability.listContains(key, required, domains);
-        }
-
-        private Set<String> containsValues(Value<?> value) {
-            switch (value.type()) {
-                case STRING:
-                case DYNAMIC:
-                    return Set.of(value.getString());
-                case LIST:
-                    return new TreeSet<>(value.getList());
-                default:
-                    return null;
-            }
-        }
-    }
-
-    private interface TranslationTerm {
-        final class Boolean implements TranslationTerm {
-            private final Reachability reachability;
-
-            private Boolean(Reachability reachability) {
-                this.reachability = reachability;
-            }
-        }
-
-        final class Ref implements TranslationTerm {
-            private final String key;
-
-            private Ref(String key) {
-                this.key = key;
-            }
-        }
-
-        final class Value implements TranslationTerm {
-            private final io.helidon.build.archetype.engine.v2.Value<?> value;
-
-            private Value(io.helidon.build.archetype.engine.v2.Value<?> value) {
-                this.value = value;
-            }
         }
     }
 
