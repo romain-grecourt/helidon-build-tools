@@ -466,19 +466,13 @@ public class ScriptCompiler {
 
             // check evaluation
             if (resolved) {
-                Map<String, Value<?>> variables = new HashMap<>();
-                for (String variable : expr.variables()) {
-                    Type type = refTypes.getOrDefault(scope.key(variable), Type.EMPTY);
-                    variables.put(variable, Value.typed(type));
-                }
-                try {
-                    expr.eval(variables::get);
-                } catch (RuntimeException ex) {
+                String evalError = validateExpressionEvaluation(expr, scope);
+                if (evalError != null) {
                     errors.add(String.format(
                             "%s %s: '%s'",
                             node.location(),
                             EXPR_EVAL_ERROR,
-                            ex.getMessage()));
+                            evalError));
                     continue;
                 }
                 if (compatible && translate(expr, scope, refBindings, refReachabilityMap) == null) {
@@ -490,6 +484,85 @@ public class ScriptCompiler {
                 }
             }
         }
+    }
+
+    // Keep validation-side typing local so ScriptCompiler no longer depends on
+    // Expression.eval() semantics.
+    private String validateExpressionEvaluation(Expression expr, Scope scope) {
+        Deque<Value<?>> stack = new ArrayDeque<>();
+        try {
+            for (Token token : expr.tokens()) {
+                Value<?> value;
+                if (token.isOperator()) {
+                    value = validateExpressionOperator(token.operator(), stack);
+                } else if (token.isOperand()) {
+                    value = token.operand();
+                } else if (token.isVariable()) {
+                    value = validationValue(scope, token.variable());
+                } else {
+                    throw new IllegalStateException("Invalid token");
+                }
+                stack.push(value);
+            }
+            stack.pop().asBoolean().get();
+            return null;
+        } catch (RuntimeException ex) {
+            return ex.getMessage();
+        }
+    }
+
+    private Value<?> validateExpressionOperator(Expression.Operator operator, Deque<Value<?>> stack) {
+        Value<?> op1 = stack.pop();
+        switch (operator) {
+            case NOT:
+                return Value.of(!op1.getBoolean());
+            case SIZEOF:
+                if (op1.type() == Value.Type.LIST) {
+                    return Value.of(op1.getList().size());
+                }
+                return Value.of(op1.getString().length());
+            case AS_INT:
+                return Value.of(op1.getInt());
+            case AS_LIST:
+                return Value.of(op1.getList());
+            case AS_STRING:
+                return Value.of(op1.getString());
+            default:
+                Value<?> op2 = stack.pop();
+                switch (operator) {
+                    case OR:
+                        return Value.of(op2.asBoolean().orElse(false) || op1.asBoolean().orElse(false));
+                    case AND:
+                        return Value.of(op2.asBoolean().orElse(false) && op1.asBoolean().orElse(false));
+                    case EQUAL:
+                        return Value.of(Value.isEqual(op2, op1));
+                    case NOT_EQUAL:
+                        return Value.of(!Value.isEqual(op2, op1));
+                    case GREATER_THAN:
+                        return Value.of(op2.getInt() > op1.getInt());
+                    case GREATER_OR_EQUAL:
+                        return Value.of(op2.getInt() >= op1.getInt());
+                    case LOWER_THAN:
+                        return Value.of(op2.getInt() < op1.getInt());
+                    case LOWER_OR_EQUAL:
+                        return Value.of(op2.getInt() <= op1.getInt());
+                    case CONTAINS:
+                        if (op1.type() == Value.Type.LIST) {
+                            return Value.of(new HashSet<>(op2.getList()).containsAll(op1.getList()));
+                        }
+                        if (op2.type() == Value.Type.LIST) {
+                            return Value.of(op2.getList().contains(op1.asString().orElse(null)));
+                        }
+                        return Value.of(op1.isPresent() && op2.asString().orElse("").contains(op1.getString()));
+                    default:
+                        throw new IllegalStateException("Unsupported operator: " + operator);
+                }
+        }
+    }
+
+    private Value<?> validationValue(Scope scope, String variable) {
+        Type type = refTypes.getOrDefault(scope.key(variable), Type.EMPTY);
+        return Value.typed(type);
     }
 
     private Map<String, Reachability> variableDemands(Expression expr,
