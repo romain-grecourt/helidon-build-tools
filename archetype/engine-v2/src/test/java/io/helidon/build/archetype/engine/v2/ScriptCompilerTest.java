@@ -414,6 +414,21 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testExpressionWithIncompatibleOperatorsAndTypeMismatch() {
+        try {
+            compile("compiler/validate",
+                    "expression-incompatible-operators-type-mismatch.xml",
+                    VALIDATE_ONLY);
+            fail("An exception should have been thrown");
+        } catch (ValidationException ex) {
+            assertThat(ex.errors(), contains(List.of(
+                    containsString(EXPR_INCOMPATIBLE_OPERATOR),
+                    containsString(EXPR_INCOMPATIBLE_OPERATOR),
+                    containsString(EXPR_EVAL_ERROR))));
+        }
+    }
+
+    @Test
     void testExpressionWithUnsupportedConditionShape() {
         try {
             compile("compiler/validate", "expression-unsupported-condition-shape.xml", VALIDATE_ONLY);

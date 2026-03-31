@@ -393,7 +393,7 @@ public class ScriptCompiler {
             Reachability blockReachability = reachability(node.parent());
             Map<String, Reachability> refReachabilityMap = refReachabilityByNode.getOrDefault(node, Map.of());
             Map<String, ConstantBindings> refBindings = refBindingsByNode.getOrDefault(node, Map.of());
-            ExpressionAnalysis analysis = analyze(expr, scope, refBindings, refReachabilityMap);
+            ExpressionAnalysis analysis = analyze(expr, scope, refBindings, refReachabilityMap, true);
             boolean compatible = analysis.incompatibleOperators().isEmpty();
 
             // check operators compatibility
@@ -456,7 +456,7 @@ public class ScriptCompiler {
 
             // check evaluation
             if (resolved) {
-                String evalError = validateExpressionEvaluation(expr, scope);
+                String evalError = analysis.evaluationError();
                 if (evalError != null) {
                     errors.add(String.format(
                             "%s %s: '%s'",
@@ -473,31 +473,6 @@ public class ScriptCompiler {
                             expr.literal()));
                 }
             }
-        }
-    }
-
-    // Keep validation-side typing local so ScriptCompiler no longer depends on
-    // Expression.eval() semantics.
-    private String validateExpressionEvaluation(Expression expr, Scope scope) {
-        Deque<Value<?>> stack = new ArrayDeque<>();
-        try {
-            for (Token token : expr.tokens()) {
-                Value<?> value;
-                if (token.isOperator()) {
-                    value = validateExpressionOperator(token.operator(), stack);
-                } else if (token.isOperand()) {
-                    value = token.operand();
-                } else if (token.isVariable()) {
-                    value = validationValue(scope, token.variable());
-                } else {
-                    throw new IllegalStateException("Invalid token");
-                }
-                stack.push(value);
-            }
-            stack.pop().asBoolean().get();
-            return null;
-        } catch (RuntimeException ex) {
-            return ex.getMessage();
         }
     }
 
@@ -1141,7 +1116,15 @@ public class ScriptCompiler {
                                        Scope scope,
                                        Map<String, ConstantBindings> bindings,
                                        Map<String, Reachability> definitions) {
-        return new ExpressionAnalyzer(scope, bindings, definitions).analyze(expr);
+        return analyze(expr, scope, bindings, definitions, false);
+    }
+
+    private ExpressionAnalysis analyze(Expression expr,
+                                       Scope scope,
+                                       Map<String, ConstantBindings> bindings,
+                                       Map<String, Reachability> definitions,
+                                       boolean validateEvaluation) {
+        return new ExpressionAnalyzer(scope, bindings, definitions, validateEvaluation).analyze(expr);
     }
 
     private Reachability translate(Expression expr,
@@ -1167,22 +1150,34 @@ public class ScriptCompiler {
         private final Scope scope;
         private final Map<String, ConstantBindings> bindings;
         private final Map<String, Reachability> definitions;
+        private final boolean validateEvaluation;
 
         private ExpressionAnalyzer(Scope scope,
                                    Map<String, ConstantBindings> bindings,
-                                   Map<String, Reachability> definitions) {
+                                   Map<String, Reachability> definitions,
+                                   boolean validateEvaluation) {
             this.scope = scope;
             this.bindings = bindings;
             this.definitions = definitions;
+            this.validateEvaluation = validateEvaluation;
         }
 
         ExpressionAnalysis analyze(Expression expr) {
             Map<String, String> variables = new LinkedHashMap<>();
             List<Expression.Operator> incompatibleOperators = new ArrayList<>();
             Deque<AnalysisTerm> stack = new ArrayDeque<>();
+            Deque<Value<?>> validationStack = validateEvaluation ? new ArrayDeque<>() : null;
+            String evaluationError = null;
             boolean compatible = true;
             try {
                 for (Token token : expr.tokens()) {
+                    if (validationStack != null && evaluationError == null) {
+                        try {
+                            validationStack.push(validationValue(token, validationStack));
+                        } catch (RuntimeException ex) {
+                            evaluationError = ex.getMessage();
+                        }
+                    }
                     if (token.isOperand()) {
                         stack.push(new AnalysisValue(token.operand()));
                         continue;
@@ -1220,11 +1215,14 @@ public class ScriptCompiler {
                             stack.push(contains(stack.pop(), stack.pop()));
                             break;
                         default:
-                            return ExpressionAnalysis.unsupported(variables, incompatibleOperators);
+                            return ExpressionAnalysis.unsupported(variables,
+                                    incompatibleOperators,
+                                    finalizeEvaluation(validationStack, evaluationError));
                     }
                 }
+                evaluationError = finalizeEvaluation(validationStack, evaluationError);
                 if (stack.size() != 1 || !compatible) {
-                    return ExpressionAnalysis.unsupported(variables, incompatibleOperators);
+                    return ExpressionAnalysis.unsupported(variables, incompatibleOperators, evaluationError);
                 }
                 Map<String, Reachability> demands = new HashMap<>();
                 AnalysisBoolean result = booleanTerm(stack.pop());
@@ -1232,9 +1230,37 @@ public class ScriptCompiler {
                 return new ExpressionAnalysis(result.translatedTruthy,
                         Map.copyOf(demands),
                         Map.copyOf(variables),
-                        List.copyOf(incompatibleOperators));
+                        List.copyOf(incompatibleOperators),
+                        evaluationError);
             } catch (RuntimeException ex) {
-                return ExpressionAnalysis.unsupported(variables, incompatibleOperators);
+                return ExpressionAnalysis.unsupported(variables,
+                        incompatibleOperators,
+                        finalizeEvaluation(validationStack, evaluationError));
+            }
+        }
+
+        private Value<?> validationValue(Token token, Deque<Value<?>> validationStack) {
+            if (token.isOperator()) {
+                return validateExpressionOperator(token.operator(), validationStack);
+            }
+            if (token.isOperand()) {
+                return token.operand();
+            }
+            if (token.isVariable()) {
+                return ScriptCompiler.this.validationValue(scope, token.variable());
+            }
+            throw new IllegalStateException("Invalid token");
+        }
+
+        private String finalizeEvaluation(Deque<Value<?>> validationStack, String evaluationError) {
+            if (validationStack == null || evaluationError != null) {
+                return evaluationError;
+            }
+            try {
+                validationStack.pop().asBoolean().get();
+                return null;
+            } catch (RuntimeException ex) {
+                return ex.getMessage();
             }
         }
 
@@ -1640,23 +1666,28 @@ public class ScriptCompiler {
         private final Map<String, Reachability> variableDemands;
         private final Map<String, String> variables;
         private final List<Expression.Operator> incompatibleOperators;
+        private final String evaluationError;
 
         private ExpressionAnalysis(Reachability reachability,
                                    Map<String, Reachability> variableDemands,
                                    Map<String, String> variables,
-                                   List<Expression.Operator> incompatibleOperators) {
+                                   List<Expression.Operator> incompatibleOperators,
+                                   String evaluationError) {
             this.reachability = reachability;
             this.variableDemands = variableDemands;
             this.variables = variables;
             this.incompatibleOperators = incompatibleOperators;
+            this.evaluationError = evaluationError;
         }
 
         private static ExpressionAnalysis unsupported(Map<String, String> variables,
-                                                      List<Expression.Operator> incompatibleOperators) {
+                                                      List<Expression.Operator> incompatibleOperators,
+                                                      String evaluationError) {
             return new ExpressionAnalysis(null,
                     Map.of(),
                     Map.copyOf(variables),
-                    List.copyOf(incompatibleOperators));
+                    List.copyOf(incompatibleOperators),
+                    evaluationError);
         }
 
         private Reachability reachability() {
@@ -1677,6 +1708,10 @@ public class ScriptCompiler {
 
         private List<Expression.Operator> incompatibleOperators() {
             return incompatibleOperators;
+        }
+
+        private String evaluationError() {
+            return evaluationError;
         }
     }
 
