@@ -1545,11 +1545,17 @@ public class ScriptCompiler {
                                 EXPR_TEXT_INPUT_CONTROL_FLOW,
                                 node.expression().literal()));
                     }
-                    Expression expr = inlineCondition(node, node.expression());
+                    Expression expr = node.expression();
+                    Reachability conditionReachability = translate(expr, scope, currentBindings,
+                            currentReachabilityByRef);
+                    if (conditionReachability == null) {
+                        // supported shapes can stay on the reachability path;
+                        // keep inlining only as a compatibility fallback for unsupported expressions
+                        expr = inlineCondition(node, expr);
+                        conditionReachability = translate(expr, scope, currentBindings, currentReachabilityByRef);
+                    }
                     if (expr != Expression.FALSE) {
                         node.expression(expr);
-                        Reachability conditionReachability = translate(expr, scope, currentBindings,
-                                currentReachabilityByRef);
                         nodeState = currentState.and(conditionReachability);
                         if (nodeState.isFalse()) {
                             node.expression(Expression.FALSE);
