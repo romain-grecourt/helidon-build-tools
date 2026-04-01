@@ -1109,7 +1109,7 @@ public class ScriptCompiler {
                                                Map<String, Reachability> definitions) {
         Reachability reachability = trueReachability();
         for (ConditionTerm term : terms) {
-            Reachability translated = translate(term.expression(), scope, bindings, definitions);
+            Reachability translated = translate(term, scope, bindings, definitions);
             if (translated == null) {
                 throw new IllegalStateException("Unsupported pruning expression for: " + node);
             }
@@ -1126,6 +1126,17 @@ public class ScriptCompiler {
                                    Map<String, ConstantBindings> bindings,
                                    Map<String, Reachability> definitions) {
         return analyze(expr, scope, bindings, definitions).reachability();
+    }
+
+    private Reachability translate(ConditionTerm term,
+                                   Scope scope,
+                                   Map<String, ConstantBindings> bindings,
+                                   Map<String, Reachability> definitions) {
+        return new ExpressionAnalyzer(scope,
+                bindings,
+                definitions,
+                false,
+                false).analyze(term.tokens).reachability();
     }
 
     private Value<?> constantValue(Node node) {
@@ -1160,6 +1171,17 @@ public class ScriptCompiler {
         }
 
         ExpressionAnalysis analyze(Expression expr) {
+            return analyze(expr.tokens(), expr);
+        }
+
+        ExpressionAnalysis analyze(List<Token> tokens) {
+            if (captureSupportedTerms) {
+                throw new IllegalStateException("Expression source required when capturing supported terms");
+            }
+            return analyze(tokens, null);
+        }
+
+        private ExpressionAnalysis analyze(List<Token> tokens, Expression source) {
             Map<String, String> variables = new LinkedHashMap<>();
             List<Expression.Operator> incompatibleOperators = new ArrayList<>();
             Deque<AnalysisTerm> stack = new ArrayDeque<>();
@@ -1167,7 +1189,7 @@ public class ScriptCompiler {
             String evaluationError = null;
             boolean compatible = true;
             try {
-                for (Token token : expr.tokens()) {
+                for (Token token : tokens) {
                     if (validationStack != null && evaluationError == null) {
                         try {
                             validationStack.push(validationValue(token, validationStack));
@@ -1215,7 +1237,7 @@ public class ScriptCompiler {
                             return ExpressionAnalysis.unsupported(variables,
                                     incompatibleOperators,
                                     finalizeEvaluation(validationStack, evaluationError),
-                                    supportedTerms(expr));
+                                    supportedTerms(source));
                     }
                 }
                 evaluationError = finalizeEvaluation(validationStack, evaluationError);
@@ -1223,7 +1245,7 @@ public class ScriptCompiler {
                     return ExpressionAnalysis.unsupported(variables,
                             incompatibleOperators,
                             evaluationError,
-                            supportedTerms(expr));
+                            supportedTerms(source));
                 }
                 Map<String, Reachability> demands = new HashMap<>();
                 AnalysisBoolean result = booleanTerm(stack.pop());
@@ -1234,18 +1256,18 @@ public class ScriptCompiler {
                         List.copyOf(incompatibleOperators),
                         evaluationError,
                         result.translatedTruthy == null
-                                ? supportedTerms(expr)
+                                ? supportedTerms(source)
                                 : supportedTerms(result.translatedTruthy));
             } catch (RuntimeException ex) {
                 return ExpressionAnalysis.unsupported(variables,
                         incompatibleOperators,
                         finalizeEvaluation(validationStack, evaluationError),
-                        supportedTerms(expr));
+                        supportedTerms(source));
             }
         }
 
         private SupportedTerms supportedTerms(Expression expr) {
-            if (!captureSupportedTerms) {
+            if (!captureSupportedTerms || expr == null) {
                 return null;
             }
             Reachability supported = trueReachability();
