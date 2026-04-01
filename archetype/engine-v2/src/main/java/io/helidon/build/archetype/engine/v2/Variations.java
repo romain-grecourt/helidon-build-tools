@@ -762,9 +762,9 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                 case INPUT_BOOLEAN:
                 case INPUT_ENUM:
                 case INPUT_LIST:
-                    return node.parent() == null ? Expression.TRUE : compiler.expression(node.parent());
+                    return compiler.activationCondition(node.parent());
                 default:
-                    return compiler.expression(node);
+                    return compiler.activationCondition(node);
             }
         }
 
@@ -1051,7 +1051,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         }
 
         Table table(Node node) {
-            Expression expr = node.parent() == null ? Expression.TRUE : compiler.expression(node.parent());
+            Expression expr = compiler.activationCondition(node.parent());
             return new Table(node, compiler.scopeId(node), prune(node, expr));
         }
 

@@ -198,7 +198,6 @@ public class ScriptCompiler {
     private final Map<Node, Map<String, Value<?>>> paths = new HashMap<>();
     private final Map<String, Set<Node>> declaredValues = new HashMap<>();
     private final Map<Node, Map<String, Value<?>>> declaredValueCache = new IdentityHashMap<>();
-    private final Map<Node, Expression> expressions = new HashMap<>();
     private final Map<Node, ConditionSemantics> conditionSemanticsByNode = new IdentityHashMap<>();
     private final Map<String, Set<Node>> definedRefs = new HashMap<>();
     private final Map<Node, Reachability> reachabilityByNode = new HashMap<>();
@@ -1035,6 +1034,10 @@ public class ScriptCompiler {
                 .reduce();
     }
 
+    Expression activationCondition(Node node) {
+        return node == null ? Expression.TRUE : outputCondition(node, scope(node));
+    }
+
     private List<Expression> conjunctionTerms(Expression expr) {
         List<String> literals = new ArrayList<>();
         StringBuilder current = new StringBuilder();
@@ -1766,18 +1769,6 @@ public class ScriptCompiler {
         }
     }
 
-    Expression expression(Node node) {
-        return expressions.computeIfAbsent(node, k -> expression(k, this::scopeId));
-    }
-
-    private Expression expression(Node node, Function<Node, String> key) {
-        Expression expr = Expression.TRUE;
-        for (Node n = node; n != null; n = n.parent()) {
-            expr = expr.and(expressionContribution(n, key));
-        }
-        return expr.reduce();
-    }
-
     private Expression expressionContribution(Node node, Function<Node, String> key) {
         switch (node.kind()) {
             case CONDITION:
@@ -1903,7 +1894,6 @@ public class ScriptCompiler {
 
         private final Map<String, Reachability> currentReachabilityByRef = new HashMap<>();
         private final Map<String, ConstantBindings> currentBindings = new HashMap<>();
-        private final Map<Node, Expression> pathExpressions = new IdentityHashMap<>();
         private final Deque<ReachabilityState> reachabilityStack = new ArrayDeque<>(
                 List.of(ReachabilityState.of(trueReachability())));
         private final Set<Node> modifiedSteps = new HashSet<>();
@@ -1931,20 +1921,6 @@ public class ScriptCompiler {
                     parentSemantics.and(nodeState.knownReachability(), localPruning, localUnsupported));
         }
 
-        private void cacheExpression(Node node) {
-            Expression parentExpression = node.parent() == null
-                    ? Expression.TRUE
-                    : pathExpressions.get(node.parent());
-            if (parentExpression == null) {
-                throw new IllegalStateException("Missing cached expression for parent: " + node.parent());
-            }
-            // Keep the accepted post-visit pruning logic, but carry the exact
-            // node expression forward instead of rebuilding it later.
-            Expression expr = parentExpression.and(expressionContribution(node, ScriptCompiler.this::scopeId)).reduce();
-            pathExpressions.put(node, expr);
-            expressions.put(node, expr);
-        }
-
         @Override
         public boolean visit(Node node) {
             node.id(nextId++);
@@ -1957,7 +1933,6 @@ public class ScriptCompiler {
                 case SOURCE:
                 case EXEC:
                     scopes.put(node, scope.key());
-                    cacheExpression(node);
                     cacheConditionSemantics(node, nodeState, localPruning, localUnsupported);
                     if (node.attribute("url").isPresent()) {
                         // skip url invocation
@@ -2005,7 +1980,6 @@ public class ScriptCompiler {
                     }
                     if (expr != Expression.FALSE) {
                         node.expression(expr);
-                        cacheExpression(node);
                         if (conditionReachability != null) {
                             nodeState = currentState.and(conditionReachability);
                         } else {
@@ -2018,7 +1992,6 @@ public class ScriptCompiler {
                         cacheConditionSemantics(node, nodeState, localPruning, localUnsupported);
                         if (nodeState.isFalse()) {
                             node.expression(Expression.FALSE);
-                            cacheExpression(node);
                             reachabilityByNode.put(node, nodeState.reachability());
                             reachabilityStack.push(nodeState);
                             return false;
@@ -2032,7 +2005,6 @@ public class ScriptCompiler {
                     // condition is always false
                     // skip traversal and prune (postVisit)
                     node.expression(Expression.FALSE);
-                    cacheExpression(node);
                     ReachabilityState falseState = ReachabilityState.of(falseReachability());
                     cacheConditionSemantics(node, falseState, Expression.FALSE, Expression.TRUE);
                     reachabilityByNode.put(node, falseState.reachability());
@@ -2107,7 +2079,6 @@ public class ScriptCompiler {
                     if (nodeState.supported()) {
                         reachabilityByNode.put(node, nodeState.reachability());
                     }
-                    cacheExpression(node);
                     cacheConditionSemantics(node, nodeState, localPruning, localUnsupported);
                     reachabilityStack.push(nodeState);
                     return true;
@@ -2116,7 +2087,6 @@ public class ScriptCompiler {
             if (nodeState.supported()) {
                 reachabilityByNode.put(node, nodeState.reachability());
             }
-            cacheExpression(node);
             cacheConditionSemantics(node, nodeState, localPruning, localUnsupported);
             reachabilityStack.push(nodeState);
             return super.visit(node);
@@ -2193,7 +2163,6 @@ public class ScriptCompiler {
             Reachability reachability = nodeState.supported() ? nodeState.reachability() : falseReachability();
             ReachabilityState prunedState = nodeState.supported() ? nodeState : ReachabilityState.of(reachability);
             reachabilityByNode.put(node, reachability);
-            cacheExpression(node);
             cacheConditionSemantics(node, prunedState, pruningContribution(node), Expression.TRUE);
             reachabilityStack.push(prunedState);
             return false;
@@ -2203,7 +2172,7 @@ public class ScriptCompiler {
             Log.debug("Removing %s, path: %s, expression: %s",
                     node,
                     Maps.mapValue(path(node), v -> Value.toString(v)),
-                    expression(node.parent()));
+                    activationCondition(node.parent()));
             node.remove();
         }
     }
