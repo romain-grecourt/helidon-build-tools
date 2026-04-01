@@ -313,7 +313,7 @@ public class ScriptCompiler {
             sourceNode.visit(new OutputVisitor(image, conditionRefs)); // render outputs
         }
         image.node.visit(new StubsVisitor(mirrors, blockReachabilities, conditionRefs)); // render stubs
-        image.node.visit(new DedupVisitor()); // de-dup steps
+        image.node.visit(new DedupVisitor(mirrors)); // de-dup steps
     }
 
     private void validate() {
@@ -2878,6 +2878,11 @@ public class ScriptCompiler {
     private final class DedupVisitor implements Node.Visitor {
 
         private final Map<String, List<Node>> steps = new LinkedHashMap<>();
+        private final Map<Node, Node> mirrors;
+
+        private DedupVisitor(Map<Node, Node> mirrors) {
+            this.mirrors = mirrors;
+        }
 
         @Override
         public boolean visit(Node node) {
@@ -2913,13 +2918,15 @@ public class ScriptCompiler {
         }
 
         private Expression renderedCondition(Node node) {
-            Expression expr = Expression.TRUE;
-            for (Node current = node.parent(); current != null; current = current.parent()) {
-                if (current.kind() == Kind.CONDITION) {
-                    expr = current.expression().and(expr).reduce();
-                }
+            return activationCondition(mirror(node).parent());
+        }
+
+        private Node mirror(Node node) {
+            Node mirror = mirrors.get(node);
+            if (mirror != null) {
+                return mirror;
             }
-            return expr;
+            throw new IllegalStateException("Mirror not found: " + node);
         }
     }
 
