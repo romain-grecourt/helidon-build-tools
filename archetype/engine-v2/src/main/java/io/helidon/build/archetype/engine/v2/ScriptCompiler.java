@@ -1014,10 +1014,7 @@ public class ScriptCompiler {
         Reachability baseReachability = blockReachability != null
                 ? blockReachability
                 : blockSemantics.knownReachability();
-        Expression residual = nodeSemantics.unsupported();
-        if (blockSemantics.unsupported() != Expression.TRUE && residual != Expression.TRUE) {
-            residual = residual.sub(blockSemantics.unsupported());
-        }
+        Expression residual = nodeSemantics.relativizeUnsupported(blockSemantics);
         return residualExpression(nodeSemantics.knownReachability(), baseReachability, scope)
                 .and(residual)
                 .reduce();
@@ -1081,6 +1078,24 @@ public class ScriptCompiler {
         }
         literals.add(term);
         return Lists.map(literals, Expression::create);
+    }
+
+    private List<Expression> expressionTerms(Expression expr) {
+        if (expr == null || expr == Expression.TRUE) {
+            return List.of();
+        }
+        LinkedHashSet<Expression> terms = new LinkedHashSet<>();
+        for (Expression term0 : conjunctionTerms(expr)) {
+            Expression term = term0.reduce();
+            if (term == Expression.TRUE) {
+                continue;
+            }
+            if (term == Expression.FALSE) {
+                return List.of(Expression.FALSE);
+            }
+            terms.add(term);
+        }
+        return terms.isEmpty() ? List.of() : List.copyOf(terms);
     }
 
     private ExpressionAnalysis analyze(Expression expr,
@@ -1918,7 +1933,9 @@ public class ScriptCompiler {
             }
             ConditionSemantics parentSemantics = conditionSemantics(node.parent());
             conditionSemanticsByNode.put(node,
-                    parentSemantics.and(nodeState.knownReachability(), localPruning, localUnsupported));
+                    parentSemantics.and(nodeState.knownReachability(),
+                            expressionTerms(localPruning),
+                            expressionTerms(localUnsupported)));
         }
 
         @Override
@@ -2957,27 +2974,27 @@ public class ScriptCompiler {
 
     private static final class ConditionSemantics {
         private final Reachability knownReachability;
-        private final Expression pruningExpression;
-        private final Expression unsupported;
+        private final List<Expression> pruningTerms;
+        private final List<Expression> unsupportedTerms;
 
         private ConditionSemantics(Reachability knownReachability,
-                                   Expression pruningExpression,
-                                   Expression unsupported) {
+                                   List<Expression> pruningTerms,
+                                   List<Expression> unsupportedTerms) {
             this.knownReachability = Objects.requireNonNull(knownReachability);
-            this.pruningExpression = Objects.requireNonNull(pruningExpression);
-            this.unsupported = Objects.requireNonNull(unsupported);
+            this.pruningTerms = List.copyOf(pruningTerms);
+            this.unsupportedTerms = List.copyOf(unsupportedTerms);
         }
 
         static ConditionSemantics root(Reachability knownReachability) {
-            return new ConditionSemantics(knownReachability, Expression.TRUE, Expression.TRUE);
+            return new ConditionSemantics(knownReachability, List.of(), List.of());
         }
 
         ConditionSemantics and(Reachability nextKnownReachability,
-                               Expression localPruning,
-                               Expression localUnsupported) {
+                               List<Expression> localPruningTerms,
+                               List<Expression> localUnsupportedTerms) {
             return new ConditionSemantics(nextKnownReachability,
-                    pruningExpression.and(localPruning).reduce(),
-                    unsupported.and(localUnsupported).reduce());
+                    mergeTerms(pruningTerms, localPruningTerms),
+                    mergeTerms(unsupportedTerms, localUnsupportedTerms));
         }
 
         Reachability knownReachability() {
@@ -2985,11 +3002,55 @@ public class ScriptCompiler {
         }
 
         Expression pruningExpression() {
-            return pruningExpression;
+            return expression(pruningTerms);
         }
 
         Expression unsupported() {
-            return unsupported;
+            return expression(unsupportedTerms);
+        }
+
+        Expression relativizeUnsupported(ConditionSemantics base) {
+            return expression(relativeTerms(unsupportedTerms, base.unsupportedTerms));
+        }
+
+        private static List<Expression> mergeTerms(List<Expression> current, List<Expression> local) {
+            if (current.size() == 1 && current.get(0) == Expression.FALSE) {
+                return current;
+            }
+            if (local.isEmpty()) {
+                return current;
+            }
+            if (local.size() == 1 && local.get(0) == Expression.FALSE) {
+                return local;
+            }
+            if (current.isEmpty()) {
+                return local;
+            }
+            LinkedHashSet<Expression> merged = new LinkedHashSet<>(current);
+            merged.addAll(local);
+            return merged.size() == current.size() ? current : List.copyOf(merged);
+        }
+
+        private static List<Expression> relativeTerms(List<Expression> terms, List<Expression> baseTerms) {
+            if (terms.isEmpty() || baseTerms.isEmpty()) {
+                return terms;
+            }
+            Set<Expression> base = Set.copyOf(baseTerms);
+            List<Expression> relative = new ArrayList<>();
+            for (Expression term : terms) {
+                if (!base.contains(term)) {
+                    relative.add(term);
+                }
+            }
+            return relative;
+        }
+
+        private static Expression expression(List<Expression> terms) {
+            Expression expr = Expression.TRUE;
+            for (Expression term : terms) {
+                expr = expr.and(term);
+            }
+            return expr.reduce();
         }
     }
 
