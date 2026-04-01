@@ -296,18 +296,15 @@ public class ScriptCompiler {
 
     private void compile(Image image) {
         Map<Node, Node> mirrors = new HashMap<>();
-        Map<Node, Expression> renderedConditions = new IdentityHashMap<>();
         Map<Node, ConditionSemantics> renderedConditionSemantics = new IdentityHashMap<>();
         Map<Node, Reachability> blockReachabilities = new IdentityHashMap<>();
         Map<Node, Set<String>> conditionRefs = new IdentityHashMap<>();
         mirrors.put(sourceNode, image.node);
         mirrors.put(image.node, sourceNode);
-        renderedConditions.put(image.node, Expression.TRUE);
         renderedConditionSemantics.put(image.node, conditionSemantics(sourceNode));
         blockReachabilities.put(image.node, trueReachability());
         sourceNode.visit(new InputVisitor(image,
                 mirrors,
-                renderedConditions,
                 renderedConditionSemantics,
                 blockReachabilities,
                 conditionRefs));
@@ -316,7 +313,7 @@ public class ScriptCompiler {
             sourceNode.visit(new OutputVisitor(image, conditionRefs)); // render outputs
         }
         image.node.visit(new StubsVisitor(mirrors, blockReachabilities, conditionRefs)); // render stubs
-        image.node.visit(new DedupVisitor(renderedConditions)); // de-dup steps
+        image.node.visit(new DedupVisitor()); // de-dup steps
     }
 
     private void validate() {
@@ -978,11 +975,11 @@ public class ScriptCompiler {
         }
     }
 
-    private Expression reachabilityExpression(Reachability reachability, Scope scope) {
+    private static Expression reachabilityExpression(Reachability reachability, Scope scope) {
         return reachability.toExpression(scope).reduce();
     }
 
-    private Expression residualExpression(Reachability reachability, Reachability base, Scope scope) {
+    private static Expression residualExpression(Reachability reachability, Reachability base, Scope scope) {
         return reachability.toExpression(scope).reduce(base.toExpression(scope));
     }
 
@@ -1000,28 +997,12 @@ public class ScriptCompiler {
         }
     }
 
-    private Expression relativizeRenderedCondition(ConditionSemantics blockSemantics,
-                                                   ConditionSemantics nodeSemantics,
-                                                   Scope scope,
-                                                   Reachability blockReachability) {
-        Reachability baseReachability = blockReachability != null
-                ? blockReachability
-                : blockSemantics.knownReachability();
-        Expression residual = nodeSemantics.relativizeUnsupported(blockSemantics);
-        return residualExpression(nodeSemantics.knownReachability(), baseReachability, scope)
-                .and(residual)
-                .reduce();
-    }
-
     private Expression outputCondition(Node node, Scope scope) {
         Reachability nodeReachability = reachability(node);
         if (nodeReachability != null) {
             return reachabilityExpression(nodeReachability, scope);
         }
-        ConditionSemantics semantics = conditionSemantics(node);
-        return reachabilityExpression(semantics.knownReachability(), scope)
-                .and(semantics.unsupported())
-                .reduce();
+        return conditionSemantics(node).emittedCondition(scope);
     }
 
     Expression activationCondition(Node node) {
@@ -2209,7 +2190,6 @@ public class ScriptCompiler {
     private class InputVisitor implements Node.Visitor {
         private final Deque<Node> stack = new ArrayDeque<>();
         private final Map<Node, Node> mirrors;
-        private final Map<Node, Expression> renderedConditions;
         private final Map<Node, ConditionSemantics> renderedConditionSemantics;
         private final Map<Node, Reachability> blockReachabilities;
         private final Map<Node, Set<String>> conditionRefs;
@@ -2217,13 +2197,11 @@ public class ScriptCompiler {
 
         InputVisitor(Image image,
                      Map<Node, Node> mirrors,
-                     Map<Node, Expression> renderedConditions,
                      Map<Node, ConditionSemantics> renderedConditionSemantics,
                      Map<Node, Reachability> blockReachabilities,
                      Map<Node, Set<String>> conditionRefs) {
             this.image = image;
             this.mirrors = mirrors;
-            this.renderedConditions = renderedConditions;
             this.renderedConditionSemantics = renderedConditionSemantics;
             this.blockReachabilities = blockReachabilities;
             this.conditionRefs = conditionRefs;
@@ -2363,7 +2341,6 @@ public class ScriptCompiler {
             Node block = mirrors.get(blockCopy);
 
             Scope scope = scope(block);
-            Expression blockExpr = renderedCondition(blockCopy);
             ConditionSemantics blockSemantics = renderedConditionSemantics(blockCopy);
             ConditionSemantics nodeSemantics = conditionSemantics(node.parent());
 
@@ -2374,7 +2351,7 @@ public class ScriptCompiler {
             if (blockReachability != null && nodeReachability != null) {
                 expr = residualExpression(nodeReachability, blockReachability, scope);
             } else {
-                expr = relativizeRenderedCondition(blockSemantics, nodeSemantics, scope, blockReachability);
+                expr = nodeSemantics.relativeCondition(blockSemantics, scope, blockReachability);
             }
 
             // create copy
@@ -2382,7 +2359,6 @@ public class ScriptCompiler {
             Node wrappedCopy = copy.wrap(expr);
             appender.accept(blockCopy, wrappedCopy);
             rememberConditionRefs(wrappedCopy, expr, conditionRefs);
-            renderedConditions.put(copy, blockExpr.and(expr).reduce());
             renderedConditionSemantics.put(copy, nodeSemantics);
             if (node.kind().isBlock()) {
                 blockReachabilities.put(copy, reachability(node));
@@ -2391,14 +2367,6 @@ public class ScriptCompiler {
             mirrors.put(node, copy);
             mirrors.put(copy, node);
             return copy;
-        }
-
-        private Expression renderedCondition(Node node) {
-            Expression expr = renderedConditions.get(node);
-            if (expr != null) {
-                return expr;
-            }
-            throw new IllegalStateException("Rendered condition not found: " + node);
         }
 
         private ConditionSemantics renderedConditionSemantics(Node node) {
@@ -2884,11 +2852,6 @@ public class ScriptCompiler {
     private final class DedupVisitor implements Node.Visitor {
 
         private final Map<String, List<Node>> steps = new LinkedHashMap<>();
-        private final Map<Node, Expression> renderedConditions;
-
-        private DedupVisitor(Map<Node, Expression> renderedConditions) {
-            this.renderedConditions = renderedConditions;
-        }
 
         @Override
         public boolean visit(Node node) {
@@ -2924,11 +2887,13 @@ public class ScriptCompiler {
         }
 
         private Expression renderedCondition(Node node) {
-            Expression expr = renderedConditions.get(node);
-            if (expr != null) {
-                return expr;
+            Expression expr = Expression.TRUE;
+            for (Node current = node.parent(); current != null; current = current.parent()) {
+                if (current.kind() == Kind.CONDITION) {
+                    expr = current.expression().and(expr).reduce();
+                }
             }
-            throw new IllegalStateException("Rendered condition not found: " + node);
+            return expr;
         }
     }
 
@@ -3017,12 +2982,27 @@ public class ScriptCompiler {
             return pruningTerms;
         }
 
-        Expression unsupported() {
+        private Expression unsupportedExpression() {
             return expression(unsupportedTerms);
         }
 
-        Expression relativizeUnsupported(ConditionSemantics base) {
+        private Expression relativeUnsupportedExpression(ConditionSemantics base) {
             return expression(relativeTerms(unsupportedTerms, base.unsupportedTerms));
+        }
+
+        Expression emittedCondition(Scope scope) {
+            return reachabilityExpression(knownReachability, scope)
+                    .and(unsupportedExpression())
+                    .reduce();
+        }
+
+        Expression relativeCondition(ConditionSemantics base, Scope scope, Reachability baseReachability) {
+            Reachability relativeBase = baseReachability != null
+                    ? baseReachability
+                    : base.knownReachability;
+            return residualExpression(knownReachability, relativeBase, scope)
+                    .and(relativeUnsupportedExpression(base))
+                    .reduce();
         }
 
         private static List<Expression> mergeTerms(List<Expression> current, List<Expression> local) {
