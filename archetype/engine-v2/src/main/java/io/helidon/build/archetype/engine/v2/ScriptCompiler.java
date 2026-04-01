@@ -1054,18 +1054,18 @@ public class ScriptCompiler {
         return Lists.map(literals, Expression::create);
     }
 
-    private List<Expression> expressionTerms(Expression expr) {
+    private List<ConditionTerm> expressionTerms(Expression expr) {
         if (expr == null || expr == Expression.TRUE) {
             return List.of();
         }
-        LinkedHashSet<Expression> terms = new LinkedHashSet<>();
+        LinkedHashSet<ConditionTerm> terms = new LinkedHashSet<>();
         for (Expression term0 : conjunctionTerms(expr)) {
-            Expression term = term0.reduce();
-            if (term == Expression.TRUE) {
+            ConditionTerm term = ConditionTerm.of(term0);
+            if (term.isTrue()) {
                 continue;
             }
-            if (term == Expression.FALSE) {
-                return List.of(Expression.FALSE);
+            if (term.isFalse()) {
+                return List.of(ConditionTerm.FALSE);
             }
             terms.add(term);
         }
@@ -1103,13 +1103,13 @@ public class ScriptCompiler {
     }
 
     private Reachability translatePruningTerms(Node node,
-                                               List<Expression> terms,
+                                               List<ConditionTerm> terms,
                                                Scope scope,
                                                Map<String, ConstantBindings> bindings,
                                                Map<String, Reachability> definitions) {
         Reachability reachability = trueReachability();
-        for (Expression term : terms) {
-            Reachability translated = translate(term, scope, bindings, definitions);
+        for (ConditionTerm term : terms) {
+            Reachability translated = translate(term.expression(), scope, bindings, definitions);
             if (translated == null) {
                 throw new IllegalStateException("Unsupported pruning expression for: " + node);
             }
@@ -2949,12 +2949,12 @@ public class ScriptCompiler {
 
     private static final class ConditionSemantics {
         private final Reachability knownReachability;
-        private final List<Expression> pruningTerms;
-        private final List<Expression> unsupportedTerms;
+        private final List<ConditionTerm> pruningTerms;
+        private final List<ConditionTerm> unsupportedTerms;
 
         private ConditionSemantics(Reachability knownReachability,
-                                   List<Expression> pruningTerms,
-                                   List<Expression> unsupportedTerms) {
+                                   List<ConditionTerm> pruningTerms,
+                                   List<ConditionTerm> unsupportedTerms) {
             this.knownReachability = Objects.requireNonNull(knownReachability);
             this.pruningTerms = List.copyOf(pruningTerms);
             this.unsupportedTerms = List.copyOf(unsupportedTerms);
@@ -2965,8 +2965,8 @@ public class ScriptCompiler {
         }
 
         ConditionSemantics and(Reachability nextKnownReachability,
-                               List<Expression> localPruningTerms,
-                               List<Expression> localUnsupportedTerms) {
+                               List<ConditionTerm> localPruningTerms,
+                               List<ConditionTerm> localUnsupportedTerms) {
             return new ConditionSemantics(nextKnownReachability,
                     mergeTerms(pruningTerms, localPruningTerms),
                     mergeTerms(unsupportedTerms, localUnsupportedTerms));
@@ -2976,7 +2976,7 @@ public class ScriptCompiler {
             return knownReachability;
         }
 
-        List<Expression> pruningTerms() {
+        List<ConditionTerm> pruningTerms() {
             return pruningTerms;
         }
 
@@ -3003,31 +3003,31 @@ public class ScriptCompiler {
                     .reduce();
         }
 
-        private static List<Expression> mergeTerms(List<Expression> current, List<Expression> local) {
-            if (current.size() == 1 && current.get(0) == Expression.FALSE) {
+        private static List<ConditionTerm> mergeTerms(List<ConditionTerm> current, List<ConditionTerm> local) {
+            if (current.size() == 1 && current.get(0).isFalse()) {
                 return current;
             }
             if (local.isEmpty()) {
                 return current;
             }
-            if (local.size() == 1 && local.get(0) == Expression.FALSE) {
+            if (local.size() == 1 && local.get(0).isFalse()) {
                 return local;
             }
             if (current.isEmpty()) {
                 return local;
             }
-            LinkedHashSet<Expression> merged = new LinkedHashSet<>(current);
+            LinkedHashSet<ConditionTerm> merged = new LinkedHashSet<>(current);
             merged.addAll(local);
             return merged.size() == current.size() ? current : List.copyOf(merged);
         }
 
-        private static List<Expression> relativeTerms(List<Expression> terms, List<Expression> baseTerms) {
+        private static List<ConditionTerm> relativeTerms(List<ConditionTerm> terms, List<ConditionTerm> baseTerms) {
             if (terms.isEmpty() || baseTerms.isEmpty()) {
                 return terms;
             }
-            Set<Expression> base = Set.copyOf(baseTerms);
-            List<Expression> relative = new ArrayList<>();
-            for (Expression term : terms) {
+            Set<ConditionTerm> base = Set.copyOf(baseTerms);
+            List<ConditionTerm> relative = new ArrayList<>();
+            for (ConditionTerm term : terms) {
                 if (!base.contains(term)) {
                     relative.add(term);
                 }
@@ -3035,12 +3035,66 @@ public class ScriptCompiler {
             return relative;
         }
 
-        private static Expression expression(List<Expression> terms) {
+        private static Expression expression(List<ConditionTerm> terms) {
             Expression expr = Expression.TRUE;
-            for (Expression term : terms) {
-                expr = expr.and(term);
+            for (ConditionTerm term : terms) {
+                expr = expr.and(term.expression());
             }
             return expr.reduce();
+        }
+    }
+
+    private static final class ConditionTerm {
+        private static final ConditionTerm TRUE = new ConditionTerm(Expression.TRUE.tokens());
+        private static final ConditionTerm FALSE = new ConditionTerm(Expression.FALSE.tokens());
+
+        private final List<Token> tokens;
+
+        private ConditionTerm(List<Token> tokens) {
+            this.tokens = List.copyOf(tokens);
+        }
+
+        private static ConditionTerm of(Expression expression) {
+            Expression reduced = expression.reduce();
+            if (reduced == Expression.TRUE) {
+                return TRUE;
+            }
+            if (reduced == Expression.FALSE) {
+                return FALSE;
+            }
+            return new ConditionTerm(reduced.tokens());
+        }
+
+        private boolean isTrue() {
+            return tokens.equals(Expression.TRUE.tokens());
+        }
+
+        private boolean isFalse() {
+            return tokens.equals(Expression.FALSE.tokens());
+        }
+
+        private Expression expression() {
+            if (isTrue()) {
+                return Expression.TRUE;
+            }
+            if (isFalse()) {
+                return Expression.FALSE;
+            }
+            return new Expression(tokens, true);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof ConditionTerm)) {
+                return false;
+            }
+            ConditionTerm other = (ConditionTerm) o;
+            return tokens.equals(other.tokens);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(tokens);
         }
     }
 
