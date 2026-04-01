@@ -281,6 +281,13 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testUnsupportedConditionKeepsBindingBackedModelOutputCondition() {
+        Path outputDir = compile("compiler/unsupported-output-model-condition", "main.xml", IGNORE_ERRORS);
+        assertThat(normalizeXml(outputDir.resolve("main.xml")),
+                is(normalizeXml("compiler/expected/unsupported-output-model-condition.xml")));
+    }
+
+    @Test
     void testVariables1() {
         Path outputDir = compile("compiler/variables1", "main.xml", IGNORE_ERRORS);
         assertThat(normalizeXml(outputDir.resolve("main.xml")), is(normalizeXml("compiler/expected/variables1.xml")));

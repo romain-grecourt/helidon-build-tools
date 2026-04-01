@@ -1024,6 +1024,17 @@ public class ScriptCompiler {
                 .reduce();
     }
 
+    private Expression outputCondition(Node node, Scope scope) {
+        Reachability nodeReachability = reachability(node);
+        if (nodeReachability != null) {
+            return reachabilityExpression(nodeReachability, scope);
+        }
+        ConditionSemantics semantics = conditionSemantics(node);
+        return reachabilityExpression(semantics.knownReachability(), scope)
+                .and(semantics.unsupported())
+                .reduce();
+    }
+
     private List<Expression> conjunctionTerms(Expression expr) {
         List<String> literals = new ArrayList<>();
         StringBuilder current = new StringBuilder();
@@ -2657,10 +2668,7 @@ public class ScriptCompiler {
                         throw new IllegalStateException("Unresolved cwd");
                     }
                     Scope scope = scope(node);
-                    Reachability nodeReachability = reachability(node);
-                    Expression expr = nodeReachability != null
-                            ? reachabilityExpression(nodeReachability, scope)
-                            : normalize(expression(node), scope);
+                    Expression expr = outputCondition(node, scope);
                     if (expr != Expression.FALSE) {
                         Node copy = node.deepCopy();
                         for (Node n : copy.traverse(Kind.MODEL_VALUE::equals)) {
