@@ -72,6 +72,7 @@ public final class Expression implements Comparable<Expression> {
 
     private static final Map<String, Expression> CACHE1 = new HashMap<>();
     private static final Map<List<Token>, Expression> CACHE2 = new HashMap<>();
+    private static final Map<String, List<Token>> CACHE3 = new HashMap<>();
     private static final Map<String, Operator> OPS = Arrays.stream(Operator.values())
             .flatMap(op -> Arrays.stream(op.symbols).map(s -> Map.entry(s, op)))
             .collect(toMap(Map.Entry::getKey, Map.Entry::getValue));
@@ -107,6 +108,11 @@ public final class Expression implements Comparable<Expression> {
      */
     public static Expression create(String expression) {
         return CACHE1.computeIfAbsent(expression, Expression::new);
+    }
+
+    static List<Token> parseTokens(String expression) {
+        Expression cached = CACHE1.get(expression);
+        return cached != null ? cached.tokens : CACHE3.computeIfAbsent(expression, e -> unmodifiableList(parse(e)));
     }
 
     /**

@@ -3924,6 +3924,7 @@ public class ScriptCompiler {
         private final Reachability reachability;
         private final Scope scope;
         private String conditionLiteral;
+        private List<Expression.Token> conditionTokens;
 
         FileObject(String checksum, List<FileOp> ops, Reachability reachability, Scope scope) {
             this.checksum = checksum;
@@ -3936,19 +3937,39 @@ public class ScriptCompiler {
             if (reachability.isFalse()) {
                 return Expression.FALSE;
             }
-            String literal = conditionLiteral;
-            if (literal == null) {
-                literal = reachabilityExpression(reachability, scope).literal();
-                conditionLiteral = literal;
-            }
+            String literal = conditionLiteral();
             return Expression.TRUE.literal().equals(literal)
                     ? Expression.TRUE
                     : Expression.create(literal);
         }
 
+        private String conditionLiteral() {
+            String literal = conditionLiteral;
+            if (literal == null) {
+                literal = reachabilityExpression(reachability, scope).literal();
+                conditionLiteral = literal;
+            }
+            return literal;
+        }
+
+        private List<Expression.Token> conditionTokens() {
+            if (reachability.isFalse()) {
+                return Expression.FALSE.tokens();
+            }
+            List<Expression.Token> tokens = conditionTokens;
+            if (tokens == null) {
+                String literal = conditionLiteral();
+                tokens = Expression.TRUE.literal().equals(literal)
+                        ? Expression.TRUE.tokens()
+                        : Expression.parseTokens(literal);
+                conditionTokens = tokens;
+            }
+            return tokens;
+        }
+
         @Override
         public int compareTo(FileObject o) {
-            int r = condition().compareTo(o.condition());
+            int r = Lists.compare(conditionTokens(), o.conditionTokens());
             if (r == 0) {
                 r = checksum.compareTo(o.checksum);
                 if (r == 0) {
@@ -3966,12 +3987,12 @@ public class ScriptCompiler {
             FileObject other = (FileObject) o;
             return Objects.equals(checksum, other.checksum)
                    && Objects.equals(ops, other.ops)
-                   && Objects.equals(condition(), other.condition());
+                   && Objects.equals(conditionTokens(), other.conditionTokens());
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(checksum, ops, condition());
+            return Objects.hash(checksum, ops, Objects.hash(conditionTokens()));
         }
     }
 

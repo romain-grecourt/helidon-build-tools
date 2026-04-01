@@ -459,6 +459,12 @@ class ExpressionTest {
     }
 
     @Test
+    void testParseTokensFromLiteral() {
+        String literal = expr("(${v1} || ${v2}) && !(${v3} contains 'a')").reduce().literal();
+        assertThat(Expression.parseTokens(literal), is(Expression.create(literal).tokens()));
+    }
+
+    @Test
     void testReduceNoVars() {
         assertThat(expr("false || true").reduce(), is(expr("true")));
         assertThat(expr("false || false").reduce(), is(expr("false")));
