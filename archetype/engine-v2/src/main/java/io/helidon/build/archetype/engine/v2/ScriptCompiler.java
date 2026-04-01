@@ -794,16 +794,6 @@ public class ScriptCompiler {
         return false;
     }
 
-    private Expression relativizeUnsupportedCondition(Node node,
-                                                      SupportedTerms terms,
-                                                      ReachabilityState currentState,
-                                                      Scope scope) {
-        Reachability knownReachability = conditionReachability(node, currentState);
-        return residualExpression(terms.supported, knownReachability, scope)
-                .and(terms.unsupported)
-                .reduce();
-    }
-
     private Reachability conditionReachability(Node node, ReachabilityState currentState) {
         Reachability knownReachability = currentState.knownReachability();
         Reachability pathReachability = pathReachability(node);
@@ -837,7 +827,6 @@ public class ScriptCompiler {
 
     private boolean prunedByReachability(Node node) {
         Scope scope = scope(node);
-        Expression expr = normalize(expression(node), scope);
         Map<String, Reachability> definitions = refReachabilityByNode.getOrDefault(node, Map.of());
         Map<String, ConstantBindings> bindings = refBindingsByNode.getOrDefault(node, Map.of());
         if (node.kind().isInput()) {
@@ -845,12 +834,14 @@ public class ScriptCompiler {
             definitions = withoutKey(definitions, key);
             bindings = withoutKey(bindings, key);
         }
-        Reachability translated = translate(expr, scope, bindings, definitions);
-        if (translated != null) {
-            return translated.isFalse();
+        Reachability translated = translate(normalize(conditionSemantics(node).pruningExpression(), scope),
+                scope,
+                bindings,
+                definitions);
+        if (translated == null) {
+            throw new IllegalStateException("Unsupported pruning expression for: " + node);
         }
-        SupportedTerms terms = supportedTerms(expr, scope, bindings, definitions);
-        return terms.hasSupportedTerms && terms.supported.isFalse();
+        return translated.isFalse();
     }
 
     private <T> Map<String, T> withoutKey(Map<String, T> values, String key) {
@@ -1768,6 +1759,16 @@ public class ScriptCompiler {
         }
     }
 
+    private Expression pruningContribution(Node node) {
+        switch (node.kind()) {
+            case INPUT_BOOLEAN:
+            case INPUT_OPTION:
+                return expressionContribution(node, this::scopeId);
+            default:
+                return Expression.TRUE;
+        }
+    }
+
     private final class InlineInvoker extends ScriptInvoker {
         private final Deque<Node> callStack = new ArrayDeque<>();
         private final Map<String, Node> methods = new HashMap<>();
@@ -1873,13 +1874,15 @@ public class ScriptCompiler {
 
         private void cacheConditionSemantics(Node node,
                                              ReachabilityState nodeState,
+                                             Expression localPruning,
                                              Expression localUnsupported) {
             if (node.parent() == null) {
                 conditionSemanticsByNode.put(node, ConditionSemantics.root(nodeState.knownReachability()));
                 return;
             }
             ConditionSemantics parentSemantics = conditionSemantics(node.parent());
-            conditionSemanticsByNode.put(node, parentSemantics.and(nodeState.knownReachability(), localUnsupported));
+            conditionSemanticsByNode.put(node,
+                    parentSemantics.and(nodeState.knownReachability(), localPruning, localUnsupported));
         }
 
         private void cacheExpression(Node node) {
@@ -1902,13 +1905,14 @@ public class ScriptCompiler {
             Scope scope = ctx.scope();
             ReachabilityState currentState = reachabilityStack.peek();
             ReachabilityState nodeState = currentState;
+            Expression localPruning = Expression.TRUE;
             Expression localUnsupported = Expression.TRUE;
             switch (node.kind()) {
                 case SOURCE:
                 case EXEC:
                     scopes.put(node, scope.key());
                     cacheExpression(node);
-                    cacheConditionSemantics(node, nodeState, localUnsupported);
+                    cacheConditionSemantics(node, nodeState, localPruning, localUnsupported);
                     if (node.attribute("url").isPresent()) {
                         // skip url invocation
                         reachabilityStack.push(nodeState);
@@ -1919,6 +1923,7 @@ public class ScriptCompiler {
                     scopes.put(node, scope.key());
                     snapshotNodeContext(node);
                     Expression expr = node.expression();
+                    localPruning = normalize(expr, scope);
                     ExpressionAnalysis analysis = analyze(expr, scope, currentBindings, currentReachabilityByRef);
                     SupportedTerms conditionTerms = null;
                     if (dependsOnTextInput(analysis.refs(), new HashSet<>())) {
@@ -1932,17 +1937,23 @@ public class ScriptCompiler {
                     if (conditionReachability == null) {
                         conditionTerms = supportedTerms(expr, scope,
                                 currentBindings, currentReachabilityByRef);
+                        if (conditionTerms.hasSupportedTerms) {
+                            // Keep the exact translatable slice that survives on the
+                            // residualized path so post-visit pruning can re-evaluate
+                            // it under later bindings without reparsing the full path.
+                            localPruning = residualExpression(conditionTerms.supported,
+                                    conditionReachability(node, currentState),
+                                    scope);
+                            expr = localPruning.and(conditionTerms.unsupported).reduce();
+                            conditionReachability = translate(expr, scope, currentBindings,
+                                    currentReachabilityByRef);
+                        } else {
+                            localPruning = Expression.TRUE;
+                        }
                         if (conditionReachability == null) {
-                            // keep unsupported residuals on the reachability path
-                            // by subtracting any supported terms from the current branch state
-                            if (conditionTerms.hasSupportedTerms) {
-                                expr = relativizeUnsupportedCondition(node, conditionTerms, currentState, scope);
-                                conditionReachability = translate(expr, scope, currentBindings,
-                                        currentReachabilityByRef);
-                            }
-                            if (conditionReachability == null) {
-                                localUnsupported = conditionTerms.unsupported;
-                            }
+                            localUnsupported = conditionTerms.unsupported;
+                        } else {
+                            localPruning = normalize(expr, scope);
                         }
                     }
                     if (expr != Expression.FALSE) {
@@ -1957,7 +1968,7 @@ public class ScriptCompiler {
                                             : null;
                             nodeState = currentState.andKnown(knownConditionReachability);
                         }
-                        cacheConditionSemantics(node, nodeState, localUnsupported);
+                        cacheConditionSemantics(node, nodeState, localPruning, localUnsupported);
                         if (nodeState.isFalse()) {
                             node.expression(Expression.FALSE);
                             cacheExpression(node);
@@ -1976,7 +1987,7 @@ public class ScriptCompiler {
                     node.expression(Expression.FALSE);
                     cacheExpression(node);
                     ReachabilityState falseState = ReachabilityState.of(falseReachability());
-                    cacheConditionSemantics(node, falseState, Expression.TRUE);
+                    cacheConditionSemantics(node, falseState, Expression.FALSE, Expression.TRUE);
                     reachabilityByNode.put(node, falseState.reachability());
                     reachabilityStack.push(falseState);
                     return false;
@@ -1986,6 +1997,7 @@ public class ScriptCompiler {
                 case INPUT_ENUM:
                     scope = ctx.pushScope(s -> s.getOrCreate(node));
                     scopes.put(node, scope.key());
+                    localPruning = pruningContribution(node);
                     snapshotNodeContext(node);
                     definedRefs.computeIfAbsent(scope.key(), k -> new LinkedHashSet<>()).add(node);
                     refTypes.putIfAbsent(scope.key(), node.kind().valueType());
@@ -2013,6 +2025,7 @@ public class ScriptCompiler {
                     break;
                 case INPUT_OPTION:
                     scopes.put(node, scope.key());
+                    localPruning = pruningContribution(node);
                     snapshotNodeContext(node);
                     nodeState = currentState.and(optionReachability(node));
                     if (shouldPrune(node, nodeState)) {
@@ -2048,7 +2061,7 @@ public class ScriptCompiler {
                         reachabilityByNode.put(node, nodeState.reachability());
                     }
                     cacheExpression(node);
-                    cacheConditionSemantics(node, nodeState, localUnsupported);
+                    cacheConditionSemantics(node, nodeState, localPruning, localUnsupported);
                     reachabilityStack.push(nodeState);
                     return true;
                 default:
@@ -2057,7 +2070,7 @@ public class ScriptCompiler {
                 reachabilityByNode.put(node, nodeState.reachability());
             }
             cacheExpression(node);
-            cacheConditionSemantics(node, nodeState, localUnsupported);
+            cacheConditionSemantics(node, nodeState, localPruning, localUnsupported);
             reachabilityStack.push(nodeState);
             return super.visit(node);
         }
@@ -2134,7 +2147,7 @@ public class ScriptCompiler {
             ReachabilityState prunedState = nodeState.supported() ? nodeState : ReachabilityState.of(reachability);
             reachabilityByNode.put(node, reachability);
             cacheExpression(node);
-            cacheConditionSemantics(node, prunedState, Expression.TRUE);
+            cacheConditionSemantics(node, prunedState, pruningContribution(node), Expression.TRUE);
             reachabilityStack.push(prunedState);
             return false;
         }
@@ -2931,23 +2944,35 @@ public class ScriptCompiler {
 
     private static final class ConditionSemantics {
         private final Reachability knownReachability;
+        private final Expression pruningExpression;
         private final Expression unsupported;
 
-        private ConditionSemantics(Reachability knownReachability, Expression unsupported) {
+        private ConditionSemantics(Reachability knownReachability,
+                                   Expression pruningExpression,
+                                   Expression unsupported) {
             this.knownReachability = Objects.requireNonNull(knownReachability);
+            this.pruningExpression = Objects.requireNonNull(pruningExpression);
             this.unsupported = Objects.requireNonNull(unsupported);
         }
 
         static ConditionSemantics root(Reachability knownReachability) {
-            return new ConditionSemantics(knownReachability, Expression.TRUE);
+            return new ConditionSemantics(knownReachability, Expression.TRUE, Expression.TRUE);
         }
 
-        ConditionSemantics and(Reachability nextKnownReachability, Expression localUnsupported) {
-            return new ConditionSemantics(nextKnownReachability, unsupported.and(localUnsupported).reduce());
+        ConditionSemantics and(Reachability nextKnownReachability,
+                               Expression localPruning,
+                               Expression localUnsupported) {
+            return new ConditionSemantics(nextKnownReachability,
+                    pruningExpression.and(localPruning).reduce(),
+                    unsupported.and(localUnsupported).reduce());
         }
 
         Reachability knownReachability() {
             return knownReachability;
+        }
+
+        Expression pruningExpression() {
+            return pruningExpression;
         }
 
         Expression unsupported() {
