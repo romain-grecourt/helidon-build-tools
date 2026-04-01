@@ -2473,9 +2473,7 @@ public class ScriptCompiler {
             String checksum = checksum(path);
             image.blobs.putIfAbsent(checksum, readAllBytes(path));
             List<FileOp> fileOps = List.of(new FileOp(Pattern.quote(checksum), target));
-            Scope scope = scope(node);
-            Expression expr = reachabilityExpression(outputReachability(node), scope);
-            return new FileObject(checksum, fileOps, expr);
+            return new FileObject(checksum, fileOps, outputReachability(node), scope(node));
         }
 
         Set<FileObject> resolveFiles(Node node) {
@@ -2527,14 +2525,13 @@ public class ScriptCompiler {
 
                     if (resolvedOps.isEmpty()) {
                         List<FileOp> fileOps = List.of(new FileOp(Pattern.quote(checksum), source));
-                        Expression blobExpr = reachabilityExpression(blobReachability, scope);
-                        fileObjects.add(new FileObject(checksum, fileOps, blobExpr));
+                        fileObjects.add(new FileObject(checksum, fileOps, blobReachability, scope));
                     } else {
                         // create a unique file object for each transformation variation
                         for (FileOps e : resolvedOps) {
                             List<FileOp> fileOps = e.resolve(checksum, source);
-                            Expression fileExpr = reachabilityExpression(blobReachability.and(e.reachability), scope);
-                            fileObjects.add(new FileObject(checksum, fileOps, fileExpr));
+                            Reachability fileReachability = blobReachability.and(e.reachability);
+                            fileObjects.add(new FileObject(checksum, fileOps, fileReachability, scope));
                         }
                     }
                 }
@@ -2588,10 +2585,11 @@ public class ScriptCompiler {
                 Node directive = func.apply("blobs", ids);
                 Node includes = Nodes.includes();
                 for (FileObject f : group) {
-                    if (f.expression != Expression.FALSE) {
+                    Expression expr = f.condition();
+                    if (expr != Expression.FALSE) {
                         Node include = Nodes.include(f.checksum);
-                        Node wrappedInclude = include.wrap(f.expression);
-                        rememberConditionRefs(wrappedInclude, f.expression, conditionRefs);
+                        Node wrappedInclude = include.wrap(expr);
+                        rememberConditionRefs(wrappedInclude, expr, conditionRefs);
                         includes.append(wrappedInclude);
                     }
                 }
@@ -3847,17 +3845,34 @@ public class ScriptCompiler {
     private static final class FileObject implements Comparable<FileObject> {
         private final String checksum;
         private final List<FileOp> ops;
-        private final Expression expression;
+        private final Reachability reachability;
+        private final Scope scope;
+        private String conditionLiteral;
 
-        FileObject(String checksum, List<FileOp> ops, Expression expression) {
+        FileObject(String checksum, List<FileOp> ops, Reachability reachability, Scope scope) {
             this.checksum = checksum;
             this.ops = ops;
-            this.expression = expression.reduce();
+            this.reachability = Objects.requireNonNull(reachability);
+            this.scope = Objects.requireNonNull(scope);
+        }
+
+        Expression condition() {
+            if (reachability.isFalse()) {
+                return Expression.FALSE;
+            }
+            String literal = conditionLiteral;
+            if (literal == null) {
+                literal = reachabilityExpression(reachability, scope).literal();
+                conditionLiteral = literal;
+            }
+            return Expression.TRUE.literal().equals(literal)
+                    ? Expression.TRUE
+                    : Expression.create(literal);
         }
 
         @Override
         public int compareTo(FileObject o) {
-            int r = expression.compareTo(o.expression);
+            int r = condition().compareTo(o.condition());
             if (r == 0) {
                 r = checksum.compareTo(o.checksum);
                 if (r == 0) {
@@ -3875,12 +3890,12 @@ public class ScriptCompiler {
             FileObject other = (FileObject) o;
             return Objects.equals(checksum, other.checksum)
                    && Objects.equals(ops, other.ops)
-                   && Objects.equals(expression, other.expression);
+                   && Objects.equals(condition(), other.condition());
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(checksum, ops, expression);
+            return Objects.hash(checksum, ops, condition());
         }
     }
 
