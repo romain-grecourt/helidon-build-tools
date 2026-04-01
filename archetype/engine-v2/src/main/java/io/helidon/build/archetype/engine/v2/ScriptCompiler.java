@@ -1024,29 +1024,6 @@ public class ScriptCompiler {
                 .reduce();
     }
 
-    private SupportedTerms supportedTerms(Expression expr, Scope scope) {
-        return supportedTerms(expr, scope, Map.of(), Map.of());
-    }
-
-    private SupportedTerms supportedTerms(Expression expr,
-                                         Scope scope,
-                                         Map<String, ConstantBindings> bindings,
-                                         Map<String, Reachability> definitions) {
-        Reachability supported = trueReachability();
-        Expression unsupported = Expression.TRUE;
-        boolean hasSupportedTerms = false;
-        for (Expression term : conjunctionTerms(expr)) {
-            Reachability termReachability = translate(term, scope, bindings, definitions);
-            if (termReachability != null) {
-                supported = supported.and(termReachability);
-                hasSupportedTerms = true;
-            } else {
-                unsupported = unsupported.and(term);
-            }
-        }
-        return new SupportedTerms(supported, unsupported.reduce(), hasSupportedTerms);
-    }
-
     private List<Expression> conjunctionTerms(Expression expr) {
         List<String> literals = new ArrayList<>();
         StringBuilder current = new StringBuilder();
@@ -1104,7 +1081,22 @@ public class ScriptCompiler {
                                        Map<String, ConstantBindings> bindings,
                                        Map<String, Reachability> definitions,
                                        boolean validateEvaluation) {
-        return new ExpressionAnalyzer(scope, bindings, definitions, validateEvaluation).analyze(expr);
+        return new ExpressionAnalyzer(scope,
+                bindings,
+                definitions,
+                validateEvaluation,
+                false).analyze(expr);
+    }
+
+    private ExpressionAnalysis analyzeCondition(Expression expr,
+                                                Scope scope,
+                                                Map<String, ConstantBindings> bindings,
+                                                Map<String, Reachability> definitions) {
+        return new ExpressionAnalyzer(scope,
+                bindings,
+                definitions,
+                false,
+                true).analyze(expr);
     }
 
     private Reachability translate(Expression expr,
@@ -1131,15 +1123,18 @@ public class ScriptCompiler {
         private final Map<String, ConstantBindings> bindings;
         private final Map<String, Reachability> definitions;
         private final boolean validateEvaluation;
+        private final boolean captureSupportedTerms;
 
         private ExpressionAnalyzer(Scope scope,
                                    Map<String, ConstantBindings> bindings,
                                    Map<String, Reachability> definitions,
-                                   boolean validateEvaluation) {
+                                   boolean validateEvaluation,
+                                   boolean captureSupportedTerms) {
             this.scope = scope;
             this.bindings = bindings;
             this.definitions = definitions;
             this.validateEvaluation = validateEvaluation;
+            this.captureSupportedTerms = captureSupportedTerms;
         }
 
         ExpressionAnalysis analyze(Expression expr) {
@@ -1197,12 +1192,16 @@ public class ScriptCompiler {
                         default:
                             return ExpressionAnalysis.unsupported(variables,
                                     incompatibleOperators,
-                                    finalizeEvaluation(validationStack, evaluationError));
+                                    finalizeEvaluation(validationStack, evaluationError),
+                                    supportedTerms(expr));
                     }
                 }
                 evaluationError = finalizeEvaluation(validationStack, evaluationError);
                 if (stack.size() != 1 || !compatible) {
-                    return ExpressionAnalysis.unsupported(variables, incompatibleOperators, evaluationError);
+                    return ExpressionAnalysis.unsupported(variables,
+                            incompatibleOperators,
+                            evaluationError,
+                            supportedTerms(expr));
                 }
                 Map<String, Reachability> demands = new HashMap<>();
                 AnalysisBoolean result = booleanTerm(stack.pop());
@@ -1211,12 +1210,39 @@ public class ScriptCompiler {
                         Map.copyOf(demands),
                         Map.copyOf(variables),
                         List.copyOf(incompatibleOperators),
-                        evaluationError);
+                        evaluationError,
+                        result.translatedTruthy == null
+                                ? supportedTerms(expr)
+                                : supportedTerms(result.translatedTruthy));
             } catch (RuntimeException ex) {
                 return ExpressionAnalysis.unsupported(variables,
                         incompatibleOperators,
-                        finalizeEvaluation(validationStack, evaluationError));
+                        finalizeEvaluation(validationStack, evaluationError),
+                        supportedTerms(expr));
             }
+        }
+
+        private SupportedTerms supportedTerms(Expression expr) {
+            if (!captureSupportedTerms) {
+                return null;
+            }
+            Reachability supported = trueReachability();
+            Expression unsupported = Expression.TRUE;
+            boolean hasSupportedTerms = false;
+            for (Expression term : conjunctionTerms(expr)) {
+                Reachability termReachability = translate(term, scope, bindings, definitions);
+                if (termReachability != null) {
+                    supported = supported.and(termReachability);
+                    hasSupportedTerms = true;
+                } else {
+                    unsupported = unsupported.and(term);
+                }
+            }
+            return new SupportedTerms(supported, unsupported.reduce(), hasSupportedTerms);
+        }
+
+        private SupportedTerms supportedTerms(Reachability reachability) {
+            return captureSupportedTerms ? SupportedTerms.fullySupported(reachability) : null;
         }
 
         private Value<?> validationValue(Token token, Deque<Value<?>> validationStack) {
@@ -1647,27 +1673,32 @@ public class ScriptCompiler {
         private final Map<String, String> variables;
         private final List<Expression.Operator> incompatibleOperators;
         private final String evaluationError;
+        private final SupportedTerms supportedTerms;
 
         private ExpressionAnalysis(Reachability reachability,
                                    Map<String, Reachability> variableDemands,
                                    Map<String, String> variables,
                                    List<Expression.Operator> incompatibleOperators,
-                                   String evaluationError) {
+                                   String evaluationError,
+                                   SupportedTerms supportedTerms) {
             this.reachability = reachability;
             this.variableDemands = variableDemands;
             this.variables = variables;
             this.incompatibleOperators = incompatibleOperators;
             this.evaluationError = evaluationError;
+            this.supportedTerms = supportedTerms;
         }
 
         private static ExpressionAnalysis unsupported(Map<String, String> variables,
                                                       List<Expression.Operator> incompatibleOperators,
-                                                      String evaluationError) {
+                                                      String evaluationError,
+                                                      SupportedTerms supportedTerms) {
             return new ExpressionAnalysis(null,
                     Map.of(),
                     Map.copyOf(variables),
                     List.copyOf(incompatibleOperators),
-                    evaluationError);
+                    evaluationError,
+                    supportedTerms);
         }
 
         private Reachability reachability() {
@@ -1692,6 +1723,10 @@ public class ScriptCompiler {
 
         private String evaluationError() {
             return evaluationError;
+        }
+
+        private SupportedTerms supportedTerms() {
+            return supportedTerms;
         }
     }
 
@@ -1924,8 +1959,11 @@ public class ScriptCompiler {
                     snapshotNodeContext(node);
                     Expression expr = node.expression();
                     localPruning = normalize(expr, scope);
-                    ExpressionAnalysis analysis = analyze(expr, scope, currentBindings, currentReachabilityByRef);
-                    SupportedTerms conditionTerms = null;
+                    ExpressionAnalysis analysis = analyzeCondition(expr,
+                            scope,
+                            currentBindings,
+                            currentReachabilityByRef);
+                    SupportedTerms conditionTerms = analysis.supportedTerms();
                     if (dependsOnTextInput(analysis.refs(), new HashSet<>())) {
                         errors.add(String.format(
                                 "%s %s: '%s'",
@@ -1935,8 +1973,6 @@ public class ScriptCompiler {
                     }
                     Reachability conditionReachability = analysis.reachability();
                     if (conditionReachability == null) {
-                        conditionTerms = supportedTerms(expr, scope,
-                                currentBindings, currentReachabilityByRef);
                         if (conditionTerms.hasSupportedTerms) {
                             // Keep the exact translatable slice that survives on the
                             // residualized path so post-visit pruning can re-evaluate
@@ -3108,7 +3144,7 @@ public class ScriptCompiler {
         }
     }
 
-    private final class SupportedTerms {
+    private static final class SupportedTerms {
         private final Reachability supported;
         private final Expression unsupported;
         private final boolean hasSupportedTerms;
@@ -3119,8 +3155,8 @@ public class ScriptCompiler {
             this.hasSupportedTerms = hasSupportedTerms;
         }
 
-        private boolean fullySupported() {
-            return unsupported == Expression.TRUE;
+        private static SupportedTerms fullySupported(Reachability reachability) {
+            return new SupportedTerms(reachability, Expression.TRUE, true);
         }
     }
 
