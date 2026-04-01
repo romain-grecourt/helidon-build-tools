@@ -833,14 +833,7 @@ public class ScriptCompiler {
             definitions = withoutKey(definitions, key);
             bindings = withoutKey(bindings, key);
         }
-        Reachability translated = translate(normalize(conditionSemantics(node).pruningExpression(), scope),
-                scope,
-                bindings,
-                definitions);
-        if (translated == null) {
-            throw new IllegalStateException("Unsupported pruning expression for: " + node);
-        }
-        return translated.isFalse();
+        return translatePruningTerms(node, conditionSemantics(node).pruningTerms(), scope, bindings, definitions).isFalse();
     }
 
     private <T> Map<String, T> withoutKey(Map<String, T> values, String key) {
@@ -1126,6 +1119,25 @@ public class ScriptCompiler {
                 definitions,
                 false,
                 true).analyze(expr);
+    }
+
+    private Reachability translatePruningTerms(Node node,
+                                               List<Expression> terms,
+                                               Scope scope,
+                                               Map<String, ConstantBindings> bindings,
+                                               Map<String, Reachability> definitions) {
+        Reachability reachability = trueReachability();
+        for (Expression term : terms) {
+            Reachability translated = translate(term, scope, bindings, definitions);
+            if (translated == null) {
+                throw new IllegalStateException("Unsupported pruning expression for: " + node);
+            }
+            reachability = reachability.and(translated);
+            if (reachability.isFalse()) {
+                return reachability;
+            }
+        }
+        return reachability;
     }
 
     private Reachability translate(Expression expr,
@@ -3001,8 +3013,8 @@ public class ScriptCompiler {
             return knownReachability;
         }
 
-        Expression pruningExpression() {
-            return expression(pruningTerms);
+        List<Expression> pruningTerms() {
+            return pruningTerms;
         }
 
         Expression unsupported() {
