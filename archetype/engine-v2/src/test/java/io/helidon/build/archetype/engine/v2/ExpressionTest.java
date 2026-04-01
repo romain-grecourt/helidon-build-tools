@@ -683,58 +683,6 @@ class ExpressionTest {
     }
 
     @Test
-    void testSub() {
-        assertThat(expr("true").sub(expr("false")),
-                is(expr("true")));
-        assertThat(expr("true").sub(expr("true")),
-                is(expr("true")));
-        assertThat(expr("false").sub(expr("true")),
-                is(expr("false")));
-        assertThat(expr("false").sub(expr("false")),
-                is(expr("false")));
-        assertThat(expr("true").sub(expr("${a}")),
-                is(expr("true")));
-        assertThat(expr("false").sub(expr("${a}")),
-                is(expr("false")));
-        assertThat(expr("${a}").sub(expr("${a}")),
-                is(expr("true")));
-        assertThat(expr("${a}").sub(expr("${b}")),
-                is(expr("${a}")));
-        assertThat(expr("${a} && ${b}").sub(expr("${a}")),
-                is(expr("${b}")));
-        assertThat(expr("${a} && ${b} && ${c}").sub(expr("${a}")),
-                is(expr("${b} && ${c}")));
-        assertThat(expr("${a} && ${b} && ${c}").sub(expr("${a} && ${b}")),
-                is(expr("${c}")));
-        assertThat(expr("${a} && !${b}").sub(expr("${a}")),
-                is(expr("!${b}")));
-        assertThat(expr("${a} && ${b} && !${c}").sub(expr("${a} && ${b}")),
-                is(expr("!${c}")));
-        assertThat(expr("${a} && ${b} && !${c}").sub(expr("${a} && !${b}")),
-                is(expr("${a} && ${b} && !${c}")));
-        assertThat(expr("${a} && ${b} && !${c}").sub(expr("${a}")),
-                is(expr("${b} && !${c}")));
-        assertThat(expr("!${a} || ${b}").sub(expr("${a}")),
-                is(expr("!${a} || ${b}")));
-        assertThat(expr("${a} || ${b}").sub(expr("${a}")),
-                is(expr("${b}")));
-        assertThat(expr("!${a} || ${b}").sub(expr("!${a}")),
-                is(expr("${b}")));
-        assertThat(expr("${a} && ${b} && ${c} && ${d}").sub(expr("${a} && ${c} && ${d}")),
-                is(expr("${b}")));
-        assertThat(expr("!${a} && ${c} || !${a} && ${b}").sub(expr("${b} || ${c}")),
-                is(expr("!${a}")));
-        assertThat(expr("${a} && ${b} && ${c} || ${b} && ${c} && ${d}").sub(expr("${a}")),
-                is(expr("${b} && ${c}")));
-        assertThat(expr("${a} && ${b} && ${c} || ${b} && ${c} && ${d}").sub(expr("${c}")),
-                is(expr("${b} && (${a} || ${d})")));
-        assertThat(expr("${a}").sub(expr("${a} || ${b} || ${c}")),
-                is(expr("true")));
-        assertThat(expr("${v1} == 'a' && ${v1} != 'b'").sub(expr("${v1} == 'a'")),
-                is(expr("true")));
-    }
-
-    @Test
     void testInline() {
         assertThat(expr("${v1}").inline(s -> Value.TRUE), is(expr("true")));
         assertThat(expr("${v1}").inline(s -> Value.FALSE), is(expr("false")));
@@ -774,14 +722,6 @@ class ExpressionTest {
         // ${c} and ${d} are exclusives
         assertThat(expr("(${a} && ${c} || ${b} && ${c}) && ${a} && ${d} && (!${c} && ${d} || ${c} && !${d})").reduce(),
                 is(expr("false")));
-    }
-
-    @Test
-    void testSubTruth() {
-        // ${c} and ${d} are exclusives
-        assertThat(expr("!${a} && !${b} || !${c} && !${d} && (!${d} && ${c} || ${d} && !${c})").reduce()
-                        .sub(expr("!${d} && ${c} || ${d} && !${c}")),
-                is(expr("!${a} && !${b}")));
     }
 
     static Expression expr(String expression) {

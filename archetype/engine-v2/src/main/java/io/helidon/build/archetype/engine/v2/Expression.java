@@ -25,7 +25,6 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
@@ -108,21 +107,6 @@ public final class Expression implements Comparable<Expression> {
      */
     public static Expression create(String expression) {
         return CACHE1.computeIfAbsent(expression, Expression::new);
-    }
-
-    /**
-     * Negate this expression.
-     *
-     * @return Expression
-     */
-    public Expression negate() {
-        if (this == TRUE) {
-            return FALSE;
-        } else if (this == FALSE) {
-            return TRUE;
-        } else {
-            return new Expression(Lists.addAll(tokens, Token.NOT), false);
-        }
     }
 
     /**
@@ -331,106 +315,6 @@ public final class Expression implements Comparable<Expression> {
             inlined.add(token);
         }
         return new Expression(inlined, false).reduce();
-    }
-
-    /**
-     * Relativize the given expression against this expression.
-     *
-     * @param expr expression
-     * @return Expression
-     */
-    public Expression relativize(Expression expr) {
-        return and(expr).reduce().sub(this);
-    }
-
-    /**
-     * Substitute an expression from this expression.
-     *
-     * @param expr expression
-     * @return sub expression
-     */
-    public Expression sub(Expression expr) {
-        SyntheticVars v1 = new SyntheticVars(new TreeMap<>());
-        Expression e1 = synthetic(v1);
-        if (v1.vars.isEmpty()) {
-            return e1.eval() ? TRUE : FALSE;
-        }
-
-        SyntheticVars v2 = new SyntheticVars(new TreeMap<>());
-        Expression e2 = expr.synthetic(v2);
-        if (v2.vars.isEmpty()) {
-            return this;
-        }
-
-        SyntheticVars sharedVars = v1.intersect(v2);
-        if (sharedVars.vars.isEmpty()) {
-            // not intersecting
-            return this;
-        }
-        SyntheticVars vars = new SyntheticVars(new LinkedHashMap<>());
-        vars.put(sharedVars, v1, v2);
-
-        BitSet excludes = vars.exclusiveDontCares();
-
-        // evaluate the truth tables
-        BitSet m2 = BitSets.andNot(e2.minterms(vars), excludes);
-        BitSet m1 = BitSets.andNot(e1.minterms(vars), excludes);
-
-        if (!m1.intersects(m2)) {
-            // not intersecting
-            return this;
-        }
-
-        if (m1.equals(m2)) {
-            // always true
-            return TRUE;
-        }
-
-        int tableSize = 1 << vars.vars.size();
-        boolean flip = false;
-        if (excludes.isEmpty() && m1.cardinality() > tableSize >> 1) {
-            m1.flip(0, tableSize);
-            m2.flip(0, tableSize);
-            flip = true;
-        }
-
-        BitSet minterms = BitSets.copyOf(m1);
-        BitSet shared = BitSets.and(BitSets.copyOf(m1), m2);
-
-        int offset = vars.vars.size() - sharedVars.vars.size();
-        int mask = -1 << offset;
-        int suffixes = 1 << offset; // number of suffix variations
-        int prefixes = 1 << sharedVars.vars.size(); // number of prefix variations
-        for (int i = shared.nextSetBit(0); i >= 0 && i < tableSize; i = shared.nextSetBit(i + 1)) {
-            // test all suffixes of the prefix
-            int prefix = i & mask;
-            boolean stable = true;
-            for (int y = 0; y < suffixes; y++) {
-                int index = prefix | y;
-                if (!excludes.get(index) && !m2.get(index)) {
-                    stable = false;
-                    break;
-                }
-            }
-            if (stable) {
-                // set all prefixes of the suffix
-                int suffix = i & ~mask;
-                for (int y = 0; y < prefixes; y++) {
-                    minterms.set((y << offset) | suffix);
-                }
-            }
-        }
-
-        if (flip) {
-            minterms.flip(0, tableSize);
-        }
-
-        BitSet actualMinterms = BitSets.andNot(BitSets.copyOf(minterms), excludes);
-        if (actualMinterms.isEmpty() || actualMinterms.cardinality() == tableSize - excludes.cardinality()) {
-            // always true
-            return TRUE;
-        }
-        return reduce(vars, minterms, excludes);
     }
 
     /**
@@ -1651,27 +1535,6 @@ public final class Expression implements Comparable<Expression> {
 
         void put(String name, List<Token> tokens) {
             vars.putIfAbsent(name, new SyntheticVar(tokens));
-        }
-
-        void put(SyntheticVars... others) {
-            for (SyntheticVars other : others) {
-                other.vars.forEach(vars::putIfAbsent);
-            }
-        }
-
-        SyntheticVars intersect(SyntheticVars other) {
-            SyntheticVars result = new SyntheticVars(new LinkedHashMap<>());
-            vars.forEach((name, value) -> {
-                if (other.vars.containsKey(name)) {
-                    result.vars.putIfAbsent(name, value);
-                }
-            });
-            other.vars.forEach((name, value) -> {
-                if (vars.containsKey(name)) {
-                    result.vars.putIfAbsent(name, value);
-                }
-            });
-            return result;
         }
     }
 
