@@ -803,7 +803,7 @@ public class ScriptCompiler {
     }
 
     private Reachability conditionReachability(Node node, ReachabilityState currentState) {
-        Reachability knownReachability = currentState.reachability();
+        Reachability knownReachability = currentState.knownReachability();
         Reachability pathReachability = pathReachability(node);
         if (knownReachability == null) {
             return pathReachability;
@@ -1918,6 +1918,7 @@ public class ScriptCompiler {
                     snapshotNodeContext(node);
                     Expression expr = node.expression();
                     ExpressionAnalysis analysis = analyze(expr, scope, currentBindings, currentReachabilityByRef);
+                    SupportedTerms conditionTerms = null;
                     if (dependsOnTextInput(analysis.refs(), new HashSet<>())) {
                         errors.add(String.format(
                                 "%s %s: '%s'",
@@ -1932,11 +1933,24 @@ public class ScriptCompiler {
                         expr = relativizeUnsupportedCondition(node, expr, currentState, scope,
                                 currentBindings, currentReachabilityByRef);
                         conditionReachability = translate(expr, scope, currentBindings, currentReachabilityByRef);
+                        if (conditionReachability == null) {
+                            conditionTerms = supportedTerms(expr, scope,
+                                    currentBindings,
+                                    currentReachabilityByRef);
+                        }
                     }
                     if (expr != Expression.FALSE) {
                         node.expression(expr);
                         cacheExpression(node);
-                        nodeState = currentState.and(conditionReachability);
+                        if (conditionReachability != null) {
+                            nodeState = currentState.and(conditionReachability);
+                        } else {
+                            Reachability knownConditionReachability = conditionTerms != null
+                                    && conditionTerms.hasSupportedTerms
+                                            ? conditionTerms.supported
+                                            : null;
+                            nodeState = currentState.andKnown(knownConditionReachability);
+                        }
                         if (nodeState.isFalse()) {
                             node.expression(Expression.FALSE);
                             cacheExpression(node);
@@ -2838,16 +2852,21 @@ public class ScriptCompiler {
     }
 
     private static final class ReachabilityState {
-        private static final ReachabilityState UNSUPPORTED = new ReachabilityState(null);
-
         private final Reachability reachability;
+        private final Reachability knownReachability;
 
-        private ReachabilityState(Reachability reachability) {
+        private ReachabilityState(Reachability reachability, Reachability knownReachability) {
             this.reachability = reachability;
+            this.knownReachability = Objects.requireNonNull(knownReachability);
         }
 
         static ReachabilityState of(Reachability reachability) {
-            return reachability == null ? UNSUPPORTED : new ReachabilityState(reachability);
+            Reachability knownReachability = Objects.requireNonNull(reachability);
+            return new ReachabilityState(reachability, knownReachability);
+        }
+
+        static ReachabilityState unsupported(Reachability knownReachability) {
+            return new ReachabilityState(null, Objects.requireNonNull(knownReachability));
         }
 
         boolean supported() {
@@ -2862,11 +2881,25 @@ public class ScriptCompiler {
             return reachability;
         }
 
+        Reachability knownReachability() {
+            return knownReachability;
+        }
+
         ReachabilityState and(Reachability other) {
+            Reachability nextKnownReachability = other == null
+                    ? knownReachability
+                    : knownReachability.and(other);
             if (!supported() || other == null) {
-                return UNSUPPORTED;
+                return unsupported(nextKnownReachability);
             }
-            return of(reachability.and(other));
+            return new ReachabilityState(reachability.and(other), nextKnownReachability);
+        }
+
+        ReachabilityState andKnown(Reachability other) {
+            Reachability nextKnownReachability = other == null
+                    ? knownReachability
+                    : knownReachability.and(other);
+            return unsupported(nextKnownReachability);
         }
     }
 
