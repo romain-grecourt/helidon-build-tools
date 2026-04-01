@@ -2765,10 +2765,10 @@ public class ScriptCompiler {
             Node block = node.ancestor(Kind::isBlock).orElseThrow();
 
             // collect variables in the block
-            Map<String, Expression> existing = new LinkedHashMap<>();
+            Map<String, List<Token>> existing = new LinkedHashMap<>();
             for (Node n0 : block.children(Kind.VARIABLES::equals)) {
                 for (Node n1 : n0.children()) {
-                    existing.put(n1.unwrap().attribute("path").getString(), n1.expression());
+                    existing.put(n1.unwrap().attribute("path").getString(), nodeConditionTokens(n1));
                 }
             }
 
@@ -2776,8 +2776,8 @@ public class ScriptCompiler {
             List<Node> stubs = new ArrayList<>();
             for (Node n : nodes) {
                 String path = n.unwrap().attribute("path").getString();
-                Expression expr = existing.get(path);
-                if (!n.expression().equals(expr)) {
+                List<Token> conditionTokens = existing.get(path);
+                if (!nodeConditionTokens(n).equals(conditionTokens)) {
                     stubs.add(n);
                 }
             }
@@ -2817,6 +2817,12 @@ public class ScriptCompiler {
                     throw new IllegalStateException("Unable to resolve stubs container");
                 }
             }
+        }
+
+        private List<Token> nodeConditionTokens(Node node) {
+            return node.kind() == Kind.CONDITION
+                    ? node.expression().tokens()
+                    : Expression.TRUE.tokens();
         }
 
         List<Node> resolveStubs(Node node, Map<String, Reachability> reachabilitySnapshot) {
