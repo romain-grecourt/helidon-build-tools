@@ -2807,25 +2807,127 @@ public class ScriptCompiler {
                 for (List<Node> steps : steps.values()) {
                     List<List<Node>> groups = Lists.groupingBy(steps, step -> Lists.map(step.collect(), Nodes::hash));
                     for (List<Node> group : groups) {
-                        Node first = null;
-                        for (Node step : group) {
-                            if (first == null) {
-                                first = step;
-                            } else {
-                                Node p = first.parent();
-                                if (p.kind() == Kind.CONDITION) {
-                                    p.expression(p.expression().or(renderedCondition(step)));
-                                }
-                                step.remove();
-                            }
+                        if (group.size() < 2) {
+                            continue;
+                        }
+                        Node first = group.get(0);
+                        applyMergedCondition(first, mergedCondition(group));
+                        for (int i = 1; i < group.size(); i++) {
+                            group.get(i).remove();
                         }
                     }
                 }
             }
         }
 
-        Expression renderedCondition(Node node) {
-            return activationCondition(mirror(node).parent());
+        void applyMergedCondition(Node step, Expression condition) {
+            Node parent = step.parent();
+            if (parent.kind() != Kind.CONDITION) {
+                if (condition != Expression.TRUE) {
+                    throw new IllegalStateException("Missing condition wrapper for merged step: " + step);
+                }
+                return;
+            }
+            if (condition == Expression.TRUE) {
+                parent.replace(step);
+            } else {
+                parent.expression(condition);
+            }
+        }
+
+        Expression mergedCondition(List<Node> group) {
+            Set<Node> anchors = mergedActivationAnchors(group);
+            if (anchors.size() == group.size()) {
+                Expression condition = currentCondition(group.get(0));
+                for (int i = 1; i < group.size(); i++) {
+                    condition = condition.or(activationCondition(mirror(group.get(i)).parent()));
+                }
+                return condition;
+            }
+
+            Node firstAnchor = anchors.iterator().next();
+            if (anchors.size() <= 4) {
+                Reachability mergedReach = reachability(firstAnchor);
+                if (mergedReach != null) {
+                    for (Node anchor : anchors) {
+                        if (anchor == firstAnchor) {
+                            continue;
+                        }
+                        Reachability reach = reachability(anchor);
+                        if (reach == null) {
+                            mergedReach = null;
+                            break;
+                        }
+                        mergedReach = mergedReach.or(reach);
+                    }
+                    if (mergedReach != null) {
+                        return reachabilityExpression(mergedReach, scope(firstAnchor));
+                    }
+                }
+            }
+
+            Expression condition = activationCondition(firstAnchor);
+            for (Node anchor : anchors) {
+                if (anchor != firstAnchor) {
+                    condition = condition.or(activationCondition(anchor));
+                }
+            }
+            return condition;
+        }
+
+        Expression currentCondition(Node step) {
+            Node parent = step.parent();
+            return parent.kind() == Kind.CONDITION ? parent.expression() : Expression.TRUE;
+        }
+
+        Set<Node> mergedActivationAnchors(List<Node> group) {
+            LinkedHashSet<Node> anchors = new LinkedHashSet<>();
+            for (Node step : group) {
+                Node anchor = mirror(step).parent();
+                if (anchor == null) {
+                    throw new IllegalStateException("Merged step is missing an activation anchor: " + step);
+                }
+                anchors.add(anchor);
+            }
+            collapseEnumCoverage(anchors);
+            return anchors;
+        }
+
+        void collapseEnumCoverage(Set<Node> anchors) {
+            boolean changed;
+            do {
+                changed = false;
+
+                Map<Node, Set<Node>> optionsByInput = new LinkedHashMap<>();
+                for (Node anchor : anchors) {
+                    if (anchor.kind() == Kind.INPUT_OPTION) {
+                        Node input = anchor.ancestor(Kind::isInput).orElse(null);
+                        if (input != null && input.kind() == Kind.INPUT_ENUM) {
+                            optionsByInput.computeIfAbsent(input, k -> new LinkedHashSet<>()).add(anchor);
+                        }
+                    }
+                }
+
+                for (Entry<Node, Set<Node>> entry : optionsByInput.entrySet()) {
+                    Node input = entry.getKey();
+                    Set<Node> options = entry.getValue();
+                    if (anchors.contains(input)) {
+                        changed = anchors.removeAll(options) || changed;
+                        continue;
+                    }
+                    boolean coversAllOptions = true;
+                    for (Node option : input.children(Kind.INPUT_OPTION::equals)) {
+                        if (!options.contains(option)) {
+                            coversAllOptions = false;
+                            break;
+                        }
+                    }
+                    if (coversAllOptions) {
+                        changed = anchors.removeAll(options) || changed;
+                        changed = anchors.add(input) || changed;
+                    }
+                }
+            } while (changed);
         }
 
         Node mirror(Node node) {

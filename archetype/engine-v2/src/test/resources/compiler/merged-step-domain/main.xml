@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 
-    Copyright (c) 2025 Oracle and/or its affiliates.
+    Copyright (c) 2026 Oracle and/or its affiliates.
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -17,21 +17,19 @@
 
 -->
 <archetype-script xmlns="https://helidon.io/archetype/2.0"
-        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
-    <step name="Step1">
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
+
+    <step name="Flavor" optional="true">
         <inputs>
-            <enum id="i1" name="Input1" global="true">
-                <option name="Option1" value="o1"/>
-                <option name="Option2" value="o2"/>
-            </enum>
-        </inputs>
-    </step>
-    <step name="Step2">
-        <inputs>
-            <enum id="i2" name="Input2" global="true">
-                <option name="Option1" value="o1"/>
-                <option name="Option2" value="o2"/>
+            <enum id="flavor" name="Flavor" default="se" global="true"
+                  optional="true">
+                <option value="se" name="SE">
+                    <exec src="se.xml"/>
+                </option>
+                <option value="mp" name="MP">
+                    <exec src="mp.xml"/>
+                </option>
             </enum>
         </inputs>
     </step>

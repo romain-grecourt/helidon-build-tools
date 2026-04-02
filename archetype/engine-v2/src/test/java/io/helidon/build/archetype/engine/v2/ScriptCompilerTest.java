@@ -57,6 +57,7 @@ import static io.helidon.build.common.test.utils.TestFiles.testResourcePath;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -322,6 +323,14 @@ class ScriptCompilerTest {
     void testNormalizedExpressions() {
         Path outputDir = compile("compiler/normalized-expr", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")), is(normalizeXml("compiler/expected/normalized-expr.xml")));
+    }
+
+    @Test
+    void testMergedStepConditionUsesPreReducedEmission() {
+        Path outputDir = compile("compiler/merged-step-domain", "main.xml");
+        String actual = normalizeXml(outputDir.resolve("main.xml"));
+        assertThat(actual, containsString("<step name=\"Packaging\" optional=\"true\">"));
+        assertThat(actual, not(containsString("name=\"Packaging\" optional=\"true\" if=\"")));
     }
 
     @Test
