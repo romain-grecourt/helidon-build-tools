@@ -367,11 +367,38 @@
                 </p>
             </xs:documentation>
         </xs:annotation>
-        <xs:complexContent>
-            <xs:extension base="a:value-type">
+        <xs:simpleContent>
+            <xs:extension base="xs:string">
+                <xs:attribute name="file" type="xs:string">
+                    <xs:annotation>
+                        <xs:documentation source="version">2.0</xs:documentation>
+                        <xs:documentation source="description">
+                            File path to a file containing the content for this value.
+                        </xs:documentation>
+                    </xs:annotation>
+                </xs:attribute>
+                <xs:attribute name="url" type="xs:anyURI">
+                    <xs:annotation>
+                        <xs:documentation source="version">2.0</xs:documentation>
+                        <xs:documentation source="description">
+                            URL point at a file containing the content for this value.
+                        </xs:documentation>
+                    </xs:annotation>
+                </xs:attribute>
+                <xs:attribute name="template" type="xs:string">
+                    <xs:annotation>
+                        <xs:documentation source="version">2.0</xs:documentation>
+                        <xs:documentation source="description">
+                            Pre-process the value with the given template engine. The value must match
+                            a template engine registered with the archetype engine.
+                        </xs:documentation>
+                    </xs:annotation>
+                </xs:attribute>
+                <xs:attributeGroup ref="a:if-group"/>
                 <xs:attributeGroup ref="a:key-group"/>
+                <xs:attributeGroup ref="a:order-group"/>
             </xs:extension>
-        </xs:complexContent>
+        </xs:simpleContent>
     </xs:complexType>
 
     <xs:complexType name="map-type">
@@ -391,11 +418,20 @@
     </xs:complexType>
 
     <xs:complexType name="keyed-map-type">
-        <xs:complexContent>
-            <xs:extension base="a:map-type">
-                <xs:attributeGroup ref="a:key-group"/>
-            </xs:extension>
-        </xs:complexContent>
+        <xs:annotation>
+            <xs:documentation source="version">2.0</xs:documentation>
+            <xs:documentation source="description">
+                Map data type.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="value" type="a:keyed-value-type" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="list" type="a:keyed-list-type" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="map" type="a:keyed-map-type" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attributeGroup ref="a:if-group"/>
+        <xs:attributeGroup ref="a:key-group"/>
+        <xs:attributeGroup ref="a:order-group"/>
     </xs:complexType>
 
     <xs:complexType name="list-type">
@@ -415,11 +451,20 @@
     </xs:complexType>
 
     <xs:complexType name="keyed-list-type">
-        <xs:complexContent>
-            <xs:extension base="a:list-type">
-                <xs:attributeGroup ref="a:key-group"/>
-            </xs:extension>
-        </xs:complexContent>
+        <xs:annotation>
+            <xs:documentation source="version">2.0</xs:documentation>
+            <xs:documentation source="description">
+                List data type. Nested elements do not require a <code>key</code> attribute.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="value" type="a:value-type" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="list" type="a:list-type" minOccurs="0" maxOccurs="unbounded"/>
+            <xs:element name="map" type="a:map-type" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+        <xs:attributeGroup ref="a:if-group"/>
+        <xs:attributeGroup ref="a:key-group"/>
+        <xs:attributeGroup ref="a:order-group"/>
     </xs:complexType>
 
     <xs:attributeGroup name="transient-attribute-group">
