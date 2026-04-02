@@ -996,17 +996,16 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         Join join(Table table, Set<BitSet> merged) {
             if (table.expr == Expression.FALSE) {
                 // never matches, current rows are unchanged.
-                return new Join(table, List.of(), merged.size());
+                return new Join(table, List.of());
             }
             if (merged.isEmpty()) {
                 // initial intermediate set
-                return new Join(table, List.of(), table.rows.size());
+                return new Join(table, List.of());
             }
             if (table.expr == Expression.TRUE) {
                 // always matches
                 // every merged row combines with every row in the table
-                long cost = (long) merged.size() * table.rows.size();
-                return new Join(table, new ArrayList<>(merged), cost);
+                return new Join(table, new ArrayList<>(merged));
             }
 
             // collect the rows that should be expanded.
@@ -1019,8 +1018,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             }
 
             // cost = unchanged rows (merged - filtered) + expanded rows (filtered * table rows)
-            long cost = merged.size() - filtered.size() + (long) filtered.size() * table.rows.size();
-            return new Join(table, filtered, cost);
+            return new Join(table, filtered);
         }
 
         // collect every input id that must be available before this table can join
@@ -1181,12 +1179,10 @@ public final class Variations extends AbstractSet<Variations.Entry> {
     private static class Join {
         private final Table table;
         private final List<BitSet> filtered;
-        private final long cost;
 
-        Join(Table table, List<BitSet> filtered, long cost) {
+        Join(Table table, List<BitSet> filtered) {
             this.table = table;
             this.filtered = filtered;
-            this.cost = cost;
         }
     }
 
