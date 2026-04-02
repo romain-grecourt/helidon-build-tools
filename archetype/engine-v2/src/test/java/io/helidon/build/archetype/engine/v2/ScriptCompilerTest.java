@@ -244,11 +244,62 @@ class ScriptCompilerTest {
             }
         }
         assertThat(sharedSteps.size(), is(1));
-        Node shared = sharedSteps.get(0);
-        assertThat(shared.parent().kind(), is(Node.Kind.CONDITION));
-        String condition = shared.parent().expression().literal().replaceAll("\\s+", " ").trim();
+        Node mergedShared = sharedSteps.get(0);
+        assertThat(mergedShared.parent().kind(), is(Node.Kind.CONDITION));
+        String condition = mergedShared.parent().expression().literal().replaceAll("\\s+", " ").trim();
         boolean merged = condition.equals("${app-type} != 'custom'")
                 || condition.equals("${app-type} == 'quickstart' || ${app-type} == 'database'")
+                || condition.equals("${app-type} == 'database' || ${app-type} == 'quickstart'");
+        assertThat(merged, is(true));
+    }
+
+    @Test
+    void testDuplicateCrossProductStepsCollapseCoveredDimension() {
+        java.util.function.Supplier<Node> sharedStep = () -> Nodes.step("Shared",
+                Nodes.inputs(
+                        Nodes.inputBoolean("feature",
+                                f -> f.attribute("name", "Feature"))));
+        Node seAppType = Nodes.step("App Type",
+                Nodes.inputs(
+                        Nodes.inputEnum("app-type", a -> {
+                                    a.attribute("name", "App Type");
+                                    a.attribute("global", "true");
+                                },
+                                Nodes.inputOption("Quickstart", "quickstart", sharedStep.get()),
+                                Nodes.inputOption("Database", "database", sharedStep.get()),
+                                Nodes.inputOption("Custom", "custom"))));
+        Node mpAppType = Nodes.step("App Type",
+                Nodes.inputs(
+                        Nodes.inputEnum("app-type", a -> {
+                                    a.attribute("name", "App Type");
+                                    a.attribute("global", "true");
+                                },
+                                Nodes.inputOption("Quickstart", "quickstart", sharedStep.get()),
+                                Nodes.inputOption("Database", "database", sharedStep.get()),
+                                Nodes.inputOption("Custom", "custom"),
+                                Nodes.inputOption("OCI", "oci"))));
+        Path outputDir = compile(
+                Nodes.script(
+                        Nodes.step("Flavor",
+                                Nodes.inputs(
+                                        Nodes.inputEnum("flavor", b -> {
+                                            b.attribute("name", "Flavor");
+                                            b.attribute("global", "true");
+                                        },
+                                                Nodes.inputOption("SE", "se", seAppType),
+                                                Nodes.inputOption("MP", "mp", mpAppType))))));
+        Node output = Script.load(outputDir.resolve("main.xml"));
+        List<Node> sharedSteps = new java.util.ArrayList<>();
+        for (Node step : output.traverse(kind -> kind == Node.Kind.STEP)) {
+            if ("Shared".equals(step.attribute("name").getString())) {
+                sharedSteps.add(step);
+            }
+        }
+        assertThat(sharedSteps.size(), is(1));
+        Node mergedShared = sharedSteps.get(0);
+        assertThat(mergedShared.parent().kind(), is(Node.Kind.CONDITION));
+        String condition = mergedShared.parent().expression().literal().replaceAll("\\s+", " ").trim();
+        boolean merged = condition.equals("${app-type} == 'quickstart' || ${app-type} == 'database'")
                 || condition.equals("${app-type} == 'database' || ${app-type} == 'quickstart'");
         assertThat(merged, is(true));
     }

@@ -2837,6 +2837,11 @@ public class ScriptCompiler {
 
         Expression mergedCondition(List<Node> group) {
             Set<Node> anchors = mergedActivationAnchors(group);
+            Reachability mergedReach = mergedActivationReachability(group, anchors);
+            if (mergedReach != null) {
+                return reachabilityExpression(mergedReach, scope(group.get(0)));
+            }
+
             if (anchors.size() == group.size()) {
                 Expression condition = currentCondition(group.get(0));
                 for (int i = 1; i < group.size(); i++) {
@@ -2846,26 +2851,6 @@ public class ScriptCompiler {
             }
 
             Node firstAnchor = anchors.iterator().next();
-            if (anchors.size() <= 4) {
-                Reachability mergedReach = reachability(firstAnchor);
-                if (mergedReach != null) {
-                    for (Node anchor : anchors) {
-                        if (anchor == firstAnchor) {
-                            continue;
-                        }
-                        Reachability reach = reachability(anchor);
-                        if (reach == null) {
-                            mergedReach = null;
-                            break;
-                        }
-                        mergedReach = mergedReach.or(reach);
-                    }
-                    if (mergedReach != null) {
-                        return reachabilityExpression(mergedReach, scope(firstAnchor));
-                    }
-                }
-            }
-
             Expression condition = activationCondition(firstAnchor);
             for (Node anchor : anchors) {
                 if (anchor != firstAnchor) {
@@ -2873,6 +2858,24 @@ public class ScriptCompiler {
                 }
             }
             return condition;
+        }
+
+        Reachability mergedActivationReachability(List<Node> group, Set<Node> anchors) {
+            if (anchors.size() > 4) {
+                return null;
+            }
+            Scope scope = scope(group.get(0));
+            Reachability merged = null;
+            for (Node anchor : anchors) {
+                ExpressionAnalysis analysis = new ExpressionAnalyzer(scope, Map.of(), Map.of(), false, false)
+                        .analyze(activationCondition(anchor));
+                Reachability reach = analysis.reach;
+                if (reach == null) {
+                    return null;
+                }
+                merged = merged == null ? reach : merged.or(reach);
+            }
+            return merged;
         }
 
         Expression currentCondition(Node step) {
