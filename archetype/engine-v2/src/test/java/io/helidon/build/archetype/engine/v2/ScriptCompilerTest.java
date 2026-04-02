@@ -436,6 +436,26 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testPresetImpliedBooleanPrunesImpossibleNestedInputStubBranch() {
+        Path outputDir = compile("compiler/preset-implied-nested-input", "main.xml");
+        Node output = Script.load(outputDir.resolve("main.xml"));
+        assertThat(output, hasProperty("db server stubs",
+                node -> StreamSupport.stream(node.traverse(Kind.VARIABLE_TEXT::equals).spliterator(), false)
+                        .filter(variable -> "~db.server".equals(variable.attribute("path").getString()))
+                        .collect(toList()),
+                contains(isNode(
+                        hasProperty("parent", Node::parent, isNode(
+                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
+                                hasProperty("condition",
+                                        node -> node.expression().literal().replaceAll("\\s+", " ").trim(),
+                                        allOf(
+                                                containsString("${app-type} == 'quickstart'"),
+                                                containsString("${app-type} == 'custom'"),
+                                                containsString("!${db}"),
+                                                not(containsString("${app-type} == 'database'"))))))))));
+    }
+
+    @Test
     void testUnsupportedConditionKeepsBindingBackedReachability() {
         Path outputDir = compile("compiler/unsupported-binding-condition", "main.xml", IGNORE_ERRORS);
         assertThat(normalizeXml(outputDir.resolve("main.xml")),

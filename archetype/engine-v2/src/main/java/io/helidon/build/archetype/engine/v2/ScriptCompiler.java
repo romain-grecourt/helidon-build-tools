@@ -201,6 +201,7 @@ public class ScriptCompiler {
     private final Map<Node, ConditionSemantics> conditionSemanticsByNode = new IdentityHashMap<>();
     private final Map<String, Set<Node>> definedRefs = new HashMap<>();
     private final Map<Node, Reachability> reachByNode = new HashMap<>();
+    private final Map<Node, Reachability> definitionReachByNode = new IdentityHashMap<>();
     private final Map<Node, Map<String, Reachability>> refReachByNode = new HashMap<>();
     private final Map<Node, Map<String, ConstantBindings>> refBindingsByNode = new HashMap<>();
     private final Map<String, InputDomain> domains = new LinkedHashMap<>();
@@ -304,6 +305,7 @@ public class ScriptCompiler {
         conditionSemanticsByNode.clear();
         definedRefs.clear();
         reachByNode.clear();
+        definitionReachByNode.clear();
         refReachByNode.clear();
         refBindingsByNode.clear();
         refTypes.clear();
@@ -991,7 +993,7 @@ public class ScriptCompiler {
             case INPUT_ENUM:
             case INPUT_LIST:
             case INPUT_TEXT:
-                return reachability(node.parent());
+                return definitionReachByNode.getOrDefault(node.parent(), reachability(node.parent()));
             case PRESET_BOOLEAN:
             case PRESET_ENUM:
             case PRESET_LIST:
@@ -1000,7 +1002,7 @@ public class ScriptCompiler {
             case VARIABLE_ENUM:
             case VARIABLE_LIST:
             case VARIABLE_TEXT:
-                return reachability(node);
+                return definitionReachByNode.getOrDefault(node, reachability(node));
             default:
                 return null;
         }
@@ -1925,6 +1927,25 @@ public class ScriptCompiler {
             refBindingsByNode.put(node, snapshotBindings(currentBindings));
         }
 
+        Reachability normalizeDefinitionReachability(Reachability reach, Scope scope) {
+            if (reach == null || currentBindings.isEmpty()) {
+                return reach;
+            }
+            ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope,
+                    currentBindings,
+                    currentReachByRef,
+                    false,
+                    false);
+            ExpressionAnalysis analysis = analyzer.analyze(reachabilityExpression(reach, scope));
+            return analysis.reach == null ? reach : analysis.reach;
+        }
+
+        void rememberDefinitionReachability(Node node, Reachability reach, Scope scope) {
+            if (reach != null) {
+                definitionReachByNode.put(node, normalizeDefinitionReachability(reach, scope));
+            }
+        }
+
         void cacheConditionSemantics(Node node,
                                              ReachabilityState nodeState,
                                              Expression localPruning,
@@ -2010,11 +2031,13 @@ public class ScriptCompiler {
                         if (nodeState.isFalse()) {
                             node.expression(Expression.FALSE);
                             reachByNode.put(node, nodeState.reach);
+                            rememberDefinitionReachability(node, nodeState.reach, scope);
                             reachStack.push(nodeState);
                             return false;
                         }
                         if (nodeState.supported()) {
                             reachByNode.put(node, nodeState.reach);
+                            rememberDefinitionReachability(node, nodeState.reach, scope);
                         }
                         reachStack.push(nodeState);
                         return true;
@@ -2099,6 +2122,7 @@ public class ScriptCompiler {
                     }
                     if (nodeState.supported()) {
                         reachByNode.put(node, nodeState.reach);
+                        rememberDefinitionReachability(node, nodeState.reach, scope);
                     }
                     cacheConditionSemantics(node, nodeState, pruning, unsupported);
                     reachStack.push(nodeState);
@@ -2107,6 +2131,7 @@ public class ScriptCompiler {
             }
             if (nodeState.supported()) {
                 reachByNode.put(node, nodeState.reach);
+                rememberDefinitionReachability(node, nodeState.reach, scope);
             }
             cacheConditionSemantics(node, nodeState, pruning, unsupported);
             reachStack.push(nodeState);
@@ -2174,6 +2199,7 @@ public class ScriptCompiler {
             Reachability reach = nodeState.supported() ? nodeState.reach : falseReach();
             ReachabilityState prunedState = nodeState.supported() ? nodeState : ReachabilityState.of(reach);
             reachByNode.put(node, reach);
+            rememberDefinitionReachability(node, reach, scope(node));
             cacheConditionSemantics(node, prunedState, pruningContribution(node), Expression.TRUE);
             reachStack.push(prunedState);
             return false;
