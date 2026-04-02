@@ -20,16 +20,24 @@ import java.io.UncheckedIOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.regex.Pattern;
+import java.util.stream.StreamSupport;
 
+import io.helidon.build.archetype.engine.v2.Node.Kind;
 import io.helidon.build.archetype.engine.v2.ScriptCompiler.ValidationException;
 import io.helidon.build.common.Strings;
 import io.helidon.build.common.VirtualFileSystem;
 
+import org.hamcrest.FeatureMatcher;
+import org.hamcrest.Matcher;
 import org.junit.jupiter.api.Test;
 
+import static org.hamcrest.Matchers.allOf;
+import static org.hamcrest.Matchers.anyOf;
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.EXPR_EVAL_ERROR;
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.EXPR_INCOMPATIBLE_OPERATOR;
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.EXPR_TEXT_INPUT_CONTROL_FLOW;
@@ -54,7 +62,9 @@ import static io.helidon.build.common.FileUtils.fileName;
 import static io.helidon.build.common.FileUtils.unique;
 import static io.helidon.build.common.test.utils.TestFiles.targetDir;
 import static io.helidon.build.common.test.utils.TestFiles.testResourcePath;
+import static java.util.stream.Collectors.toList;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
@@ -76,8 +86,9 @@ class ScriptCompilerTest {
     void testEmptyMethod() {
         Path outputDir = compile("compiler/empty-method", "main.xml");
         Node node = Script.load(outputDir.resolve("main.xml"));
-        assertThat(node.script().methods(), is(Map.of()));
-        assertThat(node.children(), is(List.of()));
+        assertThat(node, allOf(
+                hasProperty("methods", n -> n.script().methods(), is(Map.of())),
+                hasProperty("children", Node::children, is(List.of()))));
     }
 
     @Test
@@ -215,93 +226,192 @@ class ScriptCompilerTest {
 
     @Test
     void testDuplicateDiscreteStepsPreserveMergedCondition() {
-        Path outputDir = compile(
-                Nodes.script(
-                        Nodes.step("App Type",
-                                Nodes.inputs(
-                                        Nodes.inputEnum("app-type", b -> {
-                                            b.attribute("name", "App Type");
-                                            b.attribute("global", "true");
-                                        },
-                                                Nodes.inputOption("Quickstart", "quickstart",
-                                                        Nodes.step("Shared",
-                                                                Nodes.inputs(
-                                                                        Nodes.inputBoolean("feature",
-                                                                                b -> b.attribute("name",
-                                                                                        "Feature"))))),
-                                                Nodes.inputOption("Database", "database",
-                                                        Nodes.step("Shared",
-                                                                Nodes.inputs(
-                                                                        Nodes.inputBoolean("feature",
-                                                                                b -> b.attribute("name",
-                                                                                        "Feature"))))),
-                                                Nodes.inputOption("Custom", "custom"))))));
+        Path outputDir = compile("compiler/duplicate-discrete-steps", "main.xml");
         Node output = Script.load(outputDir.resolve("main.xml"));
-        List<Node> sharedSteps = new java.util.ArrayList<>();
-        for (Node step : output.traverse(kind -> kind == Node.Kind.STEP)) {
-            if ("Shared".equals(step.attribute("name").getString())) {
-                sharedSteps.add(step);
-            }
-        }
-        assertThat(sharedSteps.size(), is(1));
-        Node mergedShared = sharedSteps.get(0);
-        assertThat(mergedShared.parent().kind(), is(Node.Kind.CONDITION));
-        String condition = mergedShared.parent().expression().literal().replaceAll("\\s+", " ").trim();
-        boolean merged = condition.equals("${app-type} != 'custom'")
-                || condition.equals("${app-type} == 'quickstart' || ${app-type} == 'database'")
-                || condition.equals("${app-type} == 'database' || ${app-type} == 'quickstart'");
-        assertThat(merged, is(true));
+        assertThat(output, hasProperty("shared steps",
+                node -> StreamSupport.stream(node.traverse(Kind.STEP::equals).spliterator(), false)
+                        .filter(step -> "Shared".equals(step.attribute("name").getString()))
+                        .collect(toList()),
+                contains(isNode(
+                        hasProperty("parent", Node::parent, isNode(
+                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
+                                hasProperty("condition",
+                                        node -> node.expression().literal().replaceAll("\\s+", " ").trim(),
+                                        anyOf(
+                                                is("${app-type} != 'custom'"),
+                                                is("${app-type} == 'quickstart' || ${app-type} == 'database'"),
+                                                is("${app-type} == 'database' || ${app-type} == 'quickstart'")))))))));
     }
 
     @Test
     void testDuplicateCrossProductStepsCollapseCoveredDimension() {
-        java.util.function.Supplier<Node> sharedStep = () -> Nodes.step("Shared",
-                Nodes.inputs(
-                        Nodes.inputBoolean("feature",
-                                f -> f.attribute("name", "Feature"))));
-        Node seAppType = Nodes.step("App Type",
-                Nodes.inputs(
-                        Nodes.inputEnum("app-type", a -> {
-                                    a.attribute("name", "App Type");
-                                    a.attribute("global", "true");
-                                },
-                                Nodes.inputOption("Quickstart", "quickstart", sharedStep.get()),
-                                Nodes.inputOption("Database", "database", sharedStep.get()),
-                                Nodes.inputOption("Custom", "custom"))));
-        Node mpAppType = Nodes.step("App Type",
-                Nodes.inputs(
-                        Nodes.inputEnum("app-type", a -> {
-                                    a.attribute("name", "App Type");
-                                    a.attribute("global", "true");
-                                },
-                                Nodes.inputOption("Quickstart", "quickstart", sharedStep.get()),
-                                Nodes.inputOption("Database", "database", sharedStep.get()),
-                                Nodes.inputOption("Custom", "custom"),
-                                Nodes.inputOption("OCI", "oci"))));
-        Path outputDir = compile(
-                Nodes.script(
-                        Nodes.step("Flavor",
-                                Nodes.inputs(
-                                        Nodes.inputEnum("flavor", b -> {
-                                            b.attribute("name", "Flavor");
-                                            b.attribute("global", "true");
-                                        },
-                                                Nodes.inputOption("SE", "se", seAppType),
-                                                Nodes.inputOption("MP", "mp", mpAppType))))));
+        Path outputDir = compile("compiler/duplicate-cross-product-covered-dimension", "main.xml");
         Node output = Script.load(outputDir.resolve("main.xml"));
-        List<Node> sharedSteps = new java.util.ArrayList<>();
-        for (Node step : output.traverse(kind -> kind == Node.Kind.STEP)) {
-            if ("Shared".equals(step.attribute("name").getString())) {
-                sharedSteps.add(step);
-            }
-        }
-        assertThat(sharedSteps.size(), is(1));
-        Node mergedShared = sharedSteps.get(0);
-        assertThat(mergedShared.parent().kind(), is(Node.Kind.CONDITION));
-        String condition = mergedShared.parent().expression().literal().replaceAll("\\s+", " ").trim();
-        boolean merged = condition.equals("${app-type} == 'quickstart' || ${app-type} == 'database'")
-                || condition.equals("${app-type} == 'database' || ${app-type} == 'quickstart'");
-        assertThat(merged, is(true));
+        assertThat(output, hasProperty("shared steps",
+                node -> StreamSupport.stream(node.traverse(Kind.STEP::equals).spliterator(), false)
+                        .filter(step -> "Shared".equals(step.attribute("name").getString()))
+                        .collect(toList()),
+                contains(isNode(
+                        hasProperty("parent", Node::parent, isNode(
+                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
+                                hasProperty("condition",
+                                        node -> node.expression().literal().replaceAll("\\s+", " ").trim(),
+                                        anyOf(
+                                                is("${app-type} == 'quickstart' || ${app-type} == 'database'"),
+                                                is("${app-type} == 'database' || ${app-type} == 'quickstart'")))))))));
+    }
+
+    @Test
+    void testOptionSpecificValueImplicationRemovesRedundantParentGuard() {
+        Path outputDir = compile("compiler/option-specific-value-implication", "main.xml");
+        Node output = Script.load(outputDir.resolve("main.xml"));
+        assertThat(output, hasProperty("oci steps",
+                node -> StreamSupport.stream(node.traverse(Kind.STEP::equals).spliterator(), false)
+                        .filter(step -> "OCI".equals(step.attribute("name").getString()))
+                        .collect(toList()),
+                contains(isNode(
+                        hasProperty("parent", Node::parent, isNode(
+                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
+                                hasProperty("condition", node -> node.expression().literal(),
+                                        is("${app-type} == 'oci'"))))))));
+    }
+
+    @Test
+    void testOptionSpecificValueImplicationPrunesImpossibleSiblingGuard() {
+        Path outputDir = compile("compiler/option-specific-value-implication", "main.xml");
+        String actual = normalizeXml(outputDir.resolve("main.xml"));
+        assertThat(actual, not(containsString("name=\"Impossible\"")));
+    }
+
+    @Test
+    void testDuplicateCrossProductStepsCollapseUnsupportedOptionComplement() {
+        Path outputDir = compile("compiler/duplicate-cross-product-unsupported-option-complement", "main.xml");
+        Node output = Script.load(outputDir.resolve("main.xml"));
+        assertThat(output, hasProperty("shared steps",
+                node -> StreamSupport.stream(node.traverse(Kind.STEP::equals).spliterator(), false)
+                        .filter(step -> "Shared".equals(step.attribute("name").getString()))
+                        .collect(toList()),
+                contains(isNode(
+                        hasProperty("parent", Node::parent, isNode(
+                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
+                                hasProperty("condition", node -> node.expression().literal(),
+                                        is("${app-type} != 'oci'"))))))));
+    }
+
+    @Test
+    void testConditionallyDefinedEnumValuePrunesImpossibleUnsupportedFlavorBranch() {
+        Path outputDir = compile("compiler/conditional-json-lib", "main.xml");
+        String actual = normalizeXml(outputDir.resolve("main.xml"));
+        assertThat(actual, not(containsString("name=\"Impossible JSONP\"")));
+    }
+
+    @Test
+    void testConditionallyDefinedEnumValueKeepsSelectedValueGuard() {
+        Path outputDir = compile("compiler/conditional-json-lib", "main.xml");
+        Node output = Script.load(outputDir.resolve("main.xml"));
+        assertThat(output, hasProperty("jsonp steps",
+                node -> StreamSupport.stream(node.traverse(Kind.STEP::equals).spliterator(), false)
+                        .filter(step -> "JSON-P Only".equals(step.attribute("name").getString()))
+                        .collect(toList()),
+                contains(isNode(
+                        hasProperty("parent", Node::parent, isNode(
+                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
+                                hasProperty("condition",
+                                        node -> node.expression().literal().replaceAll("\\s+", " ").trim(),
+                                        anyOf(
+                                        is("${media} contains 'json' && ${media.json-lib} == 'jsonp'"),
+                                        is("${media.json-lib} == 'jsonp' && ${media} contains 'json'")))))))));
+    }
+
+    @Test
+    void testConditionallyDefinedEnumComplementDropsUnsupportedValueGuard() {
+        Path outputDir = compile("compiler/conditional-json-lib", "main.xml");
+        Node output = Script.load(outputDir.resolve("main.xml"));
+        assertThat(output, hasProperty("binding steps",
+                node -> StreamSupport.stream(node.traverse(Kind.STEP::equals).spliterator(), false)
+                        .filter(step -> "JSON Binding".equals(step.attribute("name").getString()))
+                        .collect(toList()),
+                contains(isNode(
+                        hasProperty("parent", Node::parent, isNode(
+                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
+                                hasProperty("condition",
+                                        node -> node.expression().literal().replaceAll("\\s+", " ").trim(),
+                                        anyOf(
+                                        is("${flavor} != 'se' && ${media} contains 'json'"),
+                                        is("${media} contains 'json' && ${flavor} != 'se'")))))))));
+    }
+
+    @Test
+    void testOpenScalarDomainDoesNotEmitClosedComplement() {
+        Path outputDir = compile("compiler/open-domain-complement", "main.xml");
+        Node output = Script.load(outputDir.resolve("main.xml"));
+        assertThat(output, hasProperty("json steps",
+                node -> StreamSupport.stream(node.traverse(Kind.STEP::equals).spliterator(), false)
+                        .filter(step -> "JSON Model".equals(step.attribute("name").getString()))
+                        .collect(toList()),
+                contains(isNode(
+                        hasProperty("parent", Node::parent, isNode(
+                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
+                                hasProperty("condition",
+                                        node -> node.expression().literal().replaceAll("\\s+", " ").trim(),
+                                        allOf(
+                                        not(containsString("!= 'jsonp'")),
+                                        containsString("== 'jsonb'"),
+                                        containsString("== 'jackson'")))))))));
+    }
+
+    @Test
+    void testOpenScalarDomainKeepsOptionSpecificOutputGuard() {
+        Path outputDir = compile("compiler/open-domain-option-output", "main.xml");
+        Node output = Script.load(outputDir.resolve("main.xml"));
+        assertThat(output, hasProperty("imports lists",
+                node -> StreamSupport.stream(node.traverse(Kind.MODEL_LIST::equals).spliterator(), false)
+                        .filter(list -> "imports".equals(list.attribute("key").getString()))
+                        .collect(toList()),
+                containsInAnyOrder(List.of(
+                        isNode(hasProperty("parent", Node::parent, isNode(
+                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
+                                hasProperty("condition",
+                                        node -> node.expression().literal().replaceAll("\\s+", " ").trim(),
+                                        allOf(
+                                        containsString("${app-type} == 'quickstart'"),
+                                        containsString("${media.json-lib} == 'jsonp'")))))),
+                        isNode(hasProperty("parent", Node::parent, isNode(
+                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
+                                hasProperty("condition",
+                                        node -> node.expression().literal().replaceAll("\\s+", " ").trim(),
+                                        allOf(
+                                        containsString("${app-type} == 'database'"),
+                                        containsString("${media.json-lib} == 'jsonp'")))))),
+                        isNode(hasProperty("parent", Node::parent, isNode(
+                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
+                                hasProperty("condition",
+                                        node -> node.expression().literal().replaceAll("\\s+", " ").trim(),
+                                        allOf(
+                                        containsString("${app-type} == 'custom'"),
+                                        containsString("${media.json-lib} == 'jsonp'"))))))))));
+    }
+
+    @Test
+    void testListOptionAvailabilityRemovesRedundantFlavorGuard() {
+        Path outputDir = compile("compiler/list-option-availability", "main.xml");
+        Node output = Script.load(outputDir.resolve("main.xml"));
+        assertThat(output, hasProperty("client steps",
+                node -> StreamSupport.stream(node.traverse(Kind.STEP::equals).spliterator(), false)
+                        .filter(step -> "WebClient Support".equals(step.attribute("name").getString()))
+                        .collect(toList()),
+                contains(isNode(
+                        hasProperty("parent", Node::parent, isNode(
+                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
+                                hasProperty("condition", node -> node.expression().literal(),
+                                        is("${extra} contains 'webclient'"))))))));
+    }
+
+    @Test
+    void testListOptionAvailabilityPrunesImpossibleFlavorBranch() {
+        Path outputDir = compile("compiler/list-option-availability", "main.xml");
+        String actual = normalizeXml(outputDir.resolve("main.xml"));
+        assertThat(actual, not(containsString("name=\"Impossible WebClient\"")));
     }
 
     @Test
@@ -712,14 +822,21 @@ class ScriptCompilerTest {
 
     @Test
     void testTextInputRejectsNestedValues() {
-        Node sourceNode = Nodes.script(
-                Nodes.step("Text",
-                        Nodes.inputs(
-                                Nodes.inputText("name",
-                                        Nodes.inputs(
-                                                Nodes.inputBoolean("flag"))))));
+        Path cwd = targetDir(ScriptCompilerTest.class).toAbsolutePath().normalize();
         try {
-            compile(sourceNode, VALIDATE_ONLY);
+            compile(new Script.Source() {
+                @Override
+                public Node readScript(boolean readOnly, Script.Loader loader) {
+                    Node textInput = Nodes.inputText("name", Nodes.inputs(Nodes.inputBoolean("flag")));
+                    Node step = Nodes.step("Text", Nodes.inputs(textInput));
+                    return Nodes.script(step);
+                }
+
+                @Override
+                public Path path() {
+                    return cwd.resolve("programmatic.xml");
+                }
+            }, cwd, VALIDATE_ONLY);
             fail("An exception should have been thrown");
         } catch (ValidationException ex) {
             assertThat(ex.errors(), contains(List.of(
@@ -747,23 +864,6 @@ class ScriptCompilerTest {
         } catch (IOException ex) {
             throw new UncheckedIOException(ex.getMessage(), ex);
         }
-    }
-
-    static Path compile(Node node, ScriptCompiler.Options... features) {
-        Path cwd = targetDir(ScriptCompilerTest.class).toAbsolutePath().normalize();
-        Path source = cwd.resolve("programmatic-script.xml");
-        Script.Source scriptSource = new Script.Source() {
-            @Override
-            public Node readScript(boolean readOnly, Script.Loader loader) {
-                return node.deepCopy();
-            }
-
-            @Override
-            public Path path() {
-                return source;
-            }
-        };
-        return compile(scriptSource, cwd, features);
     }
 
     private static Path compile(Script.Source source,
@@ -795,5 +895,24 @@ class ScriptCompilerTest {
     static String normalizeXmlString(String xml) {
         String str = XML_COMMENT.matcher(xml).replaceAll("").trim();
         return XML_NAMESPACE.matcher(str).replaceAll("\n        $1");
+    }
+
+    static <T, U> Matcher<T> hasProperty(String name, Function<T, U> extractor, Matcher<U> subMatcher) {
+        return new FeatureMatcher<>(subMatcher, "has property " + name, name) {
+            @Override
+            protected U featureValueOf(T target) {
+                return extractor.apply(target);
+            }
+        };
+    }
+
+    @SafeVarargs
+    @SuppressWarnings("unchecked")
+    static Matcher<Node> isNode(Matcher<? extends Node>... matchers) {
+        var list = new ArrayList<Matcher<? super Node>>();
+        for (var matcher : matchers) {
+            list.add((Matcher<Node>) matcher);
+        }
+        return allOf(list);
     }
 }
