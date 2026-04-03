@@ -697,43 +697,43 @@ public final class Expression implements Comparable<Expression> {
 
     private static List<Token> parse(String expression) {
         // raw infix tokens
-        Spliterator<Symbol> spliterator = spliteratorUnknownSize(new Tokenizer(expression), ORDERED);
-        List<Symbol> symbols = StreamSupport.stream(spliterator, false).collect(toList());
+        Spliterator<RawToken> spliterator = spliteratorUnknownSize(new Lexer(expression), ORDERED);
+        List<RawToken> rawTokens = StreamSupport.stream(spliterator, false).collect(toList());
 
         // used for validation
         int stackSize = 0;
 
         List<Token> tokens = new ArrayList<>();
-        Stack<Symbol> stack = new Stack<>();
+        Stack<RawToken> stack = new Stack<>();
 
         // shunting yard, convert infix to rpn
-        ListIterator<Symbol> it = symbols.listIterator();
+        ListIterator<RawToken> it = rawTokens.listIterator();
         while (it.hasNext()) {
             int previous = it.previousIndex();
-            Symbol symbol = it.next();
-            switch (symbol.type) {
+            RawToken rawToken = it.next();
+            switch (rawToken.kind) {
                 case BINARY_OPERATOR:
                 case UNARY_OPERATOR:
-                    if (symbol.type != Symbol.Type.UNARY_OPERATOR
-                        && previous >= 0 && symbols.get(previous).value.equals("(")) {
+                    if (rawToken.kind != RawToken.Kind.UNARY_OPERATOR
+                        && previous >= 0 && rawTokens.get(previous).text.equals("(")) {
                         throw new FormatException("Invalid parenthesis");
                     }
-                    while (!stack.isEmpty() && OPS.containsKey(stack.peek().value)) {
-                        Operator currentOp = OPS.get(symbol.value);
-                        Operator leftOp = OPS.get(stack.peek().value);
+                    while (!stack.isEmpty() && OPS.containsKey(stack.peek().text)) {
+                        Operator currentOp = OPS.get(rawToken.text);
+                        Operator leftOp = OPS.get(stack.peek().text);
                         if ((leftOp.precedence >= currentOp.precedence)) {
                             stackSize += 1 - addToken(stack.pop(), tokens);
                             continue;
                         }
                         break;
                     }
-                    stack.push(symbol);
+                    stack.push(rawToken);
                     break;
                 case PARENTHESIS:
-                    if ("(".equals(symbol.value)) {
-                        stack.push(symbol);
-                    } else if (")".equals(symbol.value)) {
-                        while (!stack.isEmpty() && !stack.peek().value.equals("(")) {
+                    if ("(".equals(rawToken.text)) {
+                        stack.push(rawToken);
+                    } else if (")".equals(rawToken.text)) {
+                        while (!stack.isEmpty() && !stack.peek().text.equals("(")) {
                             stackSize += 1 - addToken(stack.pop(), tokens);
                         }
                         if (stack.isEmpty()) {
@@ -741,7 +741,7 @@ public final class Expression implements Comparable<Expression> {
                         }
                         stack.pop();
                     } else {
-                        throw new IllegalStateException("Unexpected symbol: " + symbol.value);
+                        throw new IllegalStateException("Unexpected raw token: " + rawToken.text);
                     }
                     break;
                 case BOOLEAN:
@@ -749,13 +749,13 @@ public final class Expression implements Comparable<Expression> {
                 case ARRAY:
                 case INT:
                 case VARIABLE:
-                    stackSize += 1 - addToken(symbol, tokens);
+                    stackSize += 1 - addToken(rawToken, tokens);
                     break;
                 case SKIP:
                 case COMMENT:
                     break;
                 default:
-                    throw new IllegalStateException("Unexpected symbol: " + symbol.value);
+                    throw new IllegalStateException("Unexpected raw token: " + rawToken.text);
             }
         }
         while (!stack.isEmpty()) {
@@ -767,8 +767,8 @@ public final class Expression implements Comparable<Expression> {
         return tokens;
     }
 
-    private static int addToken(Symbol symbol, List<Token> tokens) {
-        Token token = Token.of(symbol);
+    private static int addToken(RawToken rawToken, List<Token> tokens) {
+        Token token = Token.of(rawToken);
         int valence = 0;
         if (token.operator != null) {
             if (tokens.size() < token.operator.valence) {
@@ -1221,40 +1221,40 @@ public final class Expression implements Comparable<Expression> {
                             "Incorrect variable name: " + symbol));
         }
 
-        static Token of(Symbol symbol) {
-            switch (symbol.type) {
+        static Token of(RawToken token) {
+            switch (token.kind) {
                 case BINARY_OPERATOR:
                 case UNARY_OPERATOR:
-                    return Token.of(OPS.get(symbol.value));
+                    return Token.of(OPS.get(token.text));
                 case BOOLEAN:
-                    return Token.of(Boolean.parseBoolean(symbol.value));
+                    return Token.of(Boolean.parseBoolean(token.text));
                 case STRING:
-                    return Token.of(Value.of(symbol.value.substring(1, symbol.value.length() - 1)));
+                    return Token.of(Value.of(token.text.substring(1, token.text.length() - 1)));
                 case INT:
-                    return Token.of(Value.of(Integer.parseInt(symbol.value)));
+                    return Token.of(Value.of(Integer.parseInt(token.text)));
                 case ARRAY:
-                    return Token.of(Value.of(parseArray(symbol.value)));
+                    return Token.of(Value.of(parseArray(token.text)));
                 case VARIABLE:
-                    return Token.of(parseVariable(symbol.value));
+                    return Token.of(parseVariable(token.text));
                 case PARENTHESIS:
                     throw new FormatException("Unmatched parenthesis");
                 default:
-                    throw new IllegalStateException("Unexpected symbol" + symbol.value);
+                    throw new IllegalStateException("Unexpected raw token: " + token.text);
             }
         }
     }
 
-    private static final class Symbol {
+    private static final class RawToken {
 
-        private final Type type;
-        private final String value;
+        private final Kind kind;
+        private final String text;
 
-        Symbol(Type type, String value) {
-            this.type = type;
-            this.value = value;
+        RawToken(Kind kind, String text) {
+            this.kind = kind;
+            this.text = text;
         }
 
-        enum Type {
+        enum Kind {
             SKIP("^\\s+"),
             ARRAY("^\\[[^]\\[]*]"),
             BOOLEAN("^(true|false)"),
@@ -1268,23 +1268,23 @@ public final class Expression implements Comparable<Expression> {
 
             private final Pattern pattern;
 
-            Type(String regex) {
+            Kind(String regex) {
                 this.pattern = Pattern.compile(regex);
             }
         }
 
         @Override
         public String toString() {
-            return "Symbol{ " + value + " }";
+            return "RawToken{ " + text + " }";
         }
     }
 
-    private static final class Tokenizer implements Iterator<Symbol> {
+    private static final class Lexer implements Iterator<RawToken> {
 
         private final String line;
         private int cursor;
 
-        Tokenizer(String line) {
+        Lexer(String line) {
             this.line = line;
             this.cursor = 0;
         }
@@ -1295,17 +1295,17 @@ public final class Expression implements Comparable<Expression> {
         }
 
         @Override
-        public Symbol next() {
+        public RawToken next() {
             if (!hasNext()) {
                 throw new NoSuchElementException();
             }
             String current = line.substring(cursor);
-            for (Symbol.Type type : Symbol.Type.values()) {
-                Matcher matcher = type.pattern.matcher(current);
+            for (RawToken.Kind kind : RawToken.Kind.values()) {
+                Matcher matcher = kind.pattern.matcher(current);
                 if (matcher.find()) {
-                    String value = matcher.group();
-                    cursor += value.length();
-                    return new Symbol(type, value);
+                    String text = matcher.group();
+                    cursor += text.length();
+                    return new RawToken(kind, text);
                 }
             }
             throw new FormatException("Unexpected token: " + current);
