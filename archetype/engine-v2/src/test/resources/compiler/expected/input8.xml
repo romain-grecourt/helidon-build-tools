@@ -42,7 +42,9 @@
     <step name="Step2">
         <inputs>
             <boolean id="i2" name="Input2" global="true"/>
-            <list id="i3" name="Input3" if="${i2}">
+            <list id="i3"
+                  name="Input3"
+                  if="${i1} == &apos;o2&apos; || ${i1} == &apos;o3&apos; &amp;&amp; ${i2}">
                 <option name="Input2" value="o1"/>
                 <option name="Input2" value="o2">
                     <inputs>

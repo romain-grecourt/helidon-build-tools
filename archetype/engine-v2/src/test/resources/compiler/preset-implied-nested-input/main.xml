@@ -26,7 +26,9 @@
                   global="true"
                   default="quickstart"
                   optional="true">
-                <option value="quickstart" name="Quickstart"/>
+                <option value="quickstart" name="Quickstart">
+                    <exec src="quickstart.xml"/>
+                </option>
                 <option value="database" name="Database">
                     <exec src="database.xml"/>
                 </option>

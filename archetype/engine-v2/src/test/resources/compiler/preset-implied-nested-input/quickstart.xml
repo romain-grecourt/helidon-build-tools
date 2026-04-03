@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
 
-    Copyright (c) 2025 Oracle and/or its affiliates.
+    Copyright (c) 2026 Oracle and/or its affiliates.
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -19,25 +19,8 @@
 <archetype-script xmlns="https://helidon.io/archetype/2.0"
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
-    <step name="Step1">
-        <inputs>
-            <boolean id="i1" name="Input1">
-                <inputs>
-                    <boolean id="i2" name="Input2"/>
-                </inputs>
-            </boolean>
-        </inputs>
-    </step>
-    <output>
-        <transformation id="file-blobs-1">
-            <replace regex="\Q826E8142E6BAABE8AF779F5F490CF5F5\E" replacement="file1.txt"/>
-        </transformation>
-        <files transformations="file-blobs-1">
-            <directory>blobs</directory>
-            <includes>
-                <include if="${i1} &amp;&amp; ${i1.i2}">826E8142E6BAABE8AF779F5F490CF5F5</include>
-                <include><![CDATA[]]></include>
-            </includes>
-        </files>
-    </output>
+    <presets>
+        <boolean path="db">false</boolean>
+    </presets>
+    <exec src="custom.xml"/>
 </archetype-script>

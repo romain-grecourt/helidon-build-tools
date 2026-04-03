@@ -439,20 +439,24 @@ class ScriptCompilerTest {
     void testPresetImpliedBooleanPrunesImpossibleNestedInputStubBranch() {
         Path outputDir = compile("compiler/preset-implied-nested-input", "main.xml");
         Node output = Script.load(outputDir.resolve("main.xml"));
-        assertThat(output, hasProperty("db server stubs",
-                node -> StreamSupport.stream(node.traverse(Kind.VARIABLE_TEXT::equals).spliterator(), false)
-                        .filter(variable -> "~db.server".equals(variable.attribute("path").getString()))
+        assertThat(output, hasProperty("database steps",
+                node -> StreamSupport.stream(node.traverse(Kind.STEP::equals).spliterator(), false)
+                        .filter(step -> "Database".equals(step.attribute("name").getString()))
                         .collect(toList()),
                 contains(isNode(
                         hasProperty("parent", Node::parent, isNode(
                                 hasProperty("kind", Node::kind, is(Kind.CONDITION)),
                                 hasProperty("condition",
                                         node -> node.expression().literal().replaceAll("\\s+", " ").trim(),
-                                        allOf(
-                                                containsString("${app-type} == 'quickstart'"),
-                                                containsString("${app-type} == 'custom'"),
-                                                containsString("!${db}"),
-                                                not(containsString("${app-type} == 'database'"))))))))));
+                                        anyOf(
+                                                is("${app-type} != 'quickstart'"),
+                                                is("${app-type} == 'custom' || ${app-type} == 'database'"),
+                                                is("${app-type} == 'database' || ${app-type} == 'custom'")))))))));
+        assertThat(output, hasProperty("db server stubs",
+                node -> StreamSupport.stream(node.traverse(Kind.VARIABLE_TEXT::equals).spliterator(), false)
+                        .filter(variable -> "~db.server".equals(variable.attribute("path").getString()))
+                        .collect(toList()),
+                is(List.of())));
     }
 
     @Test

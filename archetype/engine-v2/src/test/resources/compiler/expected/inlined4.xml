@@ -52,11 +52,6 @@
                 <option name="Mango" value="mango"/>
                 <option name="Banana" value="banana"/>
             </enum>
-        </inputs>
-        <variables>
-            <text path="~tropical-type" if="${fruit} != &apos;tropical&apos;"><![CDATA[]]></text>
-        </variables>
-        <inputs>
             <boolean id="fare-trade"
                      name="Fare trade"
                      global="true"

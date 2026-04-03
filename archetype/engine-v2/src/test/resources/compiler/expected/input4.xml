@@ -43,7 +43,9 @@
                 <option name="Option1" value="o1"/>
                 <option name="Option2" value="o2"/>
             </list>
-            <boolean id="i2-1" name="Input2-1" if="${i2} contains &apos;o1&apos;">
+            <boolean id="i2-1"
+                     name="Input2-1"
+                     if="${i1} != &apos;o2&apos; || ${i2} contains &apos;o1&apos;">
                 <inputs>
                     <enum id="i2-1-1" name="Input2-1-1" default="o1">
                         <option name="Option1" value="o1"/>

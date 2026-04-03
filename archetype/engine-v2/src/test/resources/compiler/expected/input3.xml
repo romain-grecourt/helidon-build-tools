@@ -23,26 +23,11 @@
         <inputs>
             <boolean id="i1" name="Input1" global="true"/>
             <boolean id="i2" name="Input2" global="true" if="${i1}"/>
-        </inputs>
-        <variables>
-            <boolean path="~i2" if="!${i1}">false</boolean>
-        </variables>
-        <inputs>
             <boolean id="i3" name="Input3" global="true" if="${i1} &amp;&amp; ${i2}"/>
-        </inputs>
-        <variables>
-            <boolean path="~i3" if="!${i1} || !${i2}">false</boolean>
-        </variables>
-        <inputs>
             <boolean id="i4" name="Input4" if="${i1} &amp;&amp; ${i2} &amp;&amp; ${i3}"/>
             <boolean id="i4" name="Input4" if="${i1} &amp;&amp; ${i2}"/>
             <boolean id="i2" name="Input2" global="true"/>
             <boolean id="i3" name="Input3" global="true" if="${i2}"/>
-        </inputs>
-        <variables>
-            <boolean path="~i3" if="!${i2}">false</boolean>
-        </variables>
-        <inputs>
             <boolean id="i4" name="Input4" if="${i2} &amp;&amp; ${i3}"/>
             <boolean id="i4" name="Input4" if="${i2}"/>
             <boolean id="i3" name="Input3" global="true"/>

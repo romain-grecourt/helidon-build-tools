@@ -319,6 +319,7 @@ public class ScriptCompiler {
         Map<Node, ConditionSemantics> renderedConditionSemantics = new IdentityHashMap<>();
         Map<Node, Reachability> reachableBlocks = new IdentityHashMap<>();
         Map<Node, Set<String>> conditionRefs = new IdentityHashMap<>();
+        Map<Node, Map<String, Reachability>> conditionDemands = new IdentityHashMap<>();
         mirrors.put(sourceNode, image.node);
         mirrors.put(image.node, sourceNode);
         renderedConditionSemantics.put(image.node, conditionSemantics(sourceNode));
@@ -327,12 +328,13 @@ public class ScriptCompiler {
                 mirrors,
                 renderedConditionSemantics,
                 reachableBlocks,
-                conditionRefs));
+                conditionRefs,
+                conditionDemands));
         // render inputs
         if (!options.contains(Options.NO_OUTPUT)) {
-            sourceNode.visit(new OutputVisitor(image, conditionRefs)); // render outputs
+            sourceNode.visit(new OutputVisitor(image, conditionRefs, conditionDemands)); // render outputs
         }
-        image.node.visit(new StubsVisitor(mirrors, reachableBlocks, conditionRefs)); // render stubs
+        image.node.visit(new StubsVisitor(mirrors, reachableBlocks, conditionRefs, conditionDemands)); // render stubs
         image.node.visit(new DedupVisitor(mirrors)); // de-dup steps
     }
 
@@ -839,6 +841,11 @@ public class ScriptCompiler {
         return null;
     }
 
+    private boolean unreachable(Node node) {
+        Reachability reach = reachability(node);
+        return reach != null && reach.isFalse();
+    }
+
     private boolean prunedByReachability(Node node) {
         Scope scope = scope(node);
         Map<String, Reachability> definitions = refReachByNode.getOrDefault(node, Map.of());
@@ -1026,6 +1033,35 @@ public class ScriptCompiler {
         if (node.kind() == Kind.CONDITION) {
             conditionRefs.put(node, Set.copyOf(node.expression().variables()));
         }
+    }
+
+    private void rememberConditionRefs(Node node,
+                                       Expression expr,
+                                       Scope scope,
+                                       Map<Node, Set<String>> conditionRefs,
+                                       Map<Node, Map<String, Reachability>> conditionDemands) {
+        if (node.kind() == Kind.CONDITION) {
+            conditionRefs.put(node, Set.copyOf(expr.variables()));
+            conditionDemands.put(node, conditionDemands(expr, scope));
+        }
+    }
+
+    private void rememberConditionRefs(Node node,
+                                       Scope scope,
+                                       Map<Node, Set<String>> conditionRefs,
+                                       Map<Node, Map<String, Reachability>> conditionDemands) {
+        if (node.kind() == Kind.CONDITION) {
+            Expression expr = node.expression();
+            conditionRefs.put(node, Set.copyOf(expr.variables()));
+            conditionDemands.put(node, conditionDemands(expr, scope));
+        }
+    }
+
+    private Map<String, Reachability> conditionDemands(Expression expr, Scope scope) {
+        if (expr == null || expr == Expression.TRUE || expr == Expression.FALSE) {
+            return Map.of();
+        }
+        return new ExpressionAnalyzer(scope, Map.of(), Map.of(), false, false).analyze(expr).variableDemands;
     }
 
     private Expression outputCondition(Node node, Scope scope) {
@@ -2076,7 +2112,10 @@ public class ScriptCompiler {
                         }
                     }
                     if (node.kind() == Kind.INPUT_BOOLEAN) {
-                        nodeState = currentState.and(Reachability.scalar(scope.key(), Set.of("true"), domains));
+                        Reachability translated = translatedPruningReachability(node, scope);
+                        nodeState = currentState.and(translated == null
+                                ? Reachability.scalar(scope.key(), Set.of("true"), domains)
+                                : translated);
                     }
                     if (shouldPrune(nodeState)) {
                         return skipPrunedNode(node, nodeState);
@@ -2089,7 +2128,8 @@ public class ScriptCompiler {
                     if (currentState.supported()) {
                         rememberOptionAvailability(node, currentState.reach);
                     }
-                    nodeState = currentState.and(optionReachability(node));
+                    Reachability translated = translatedPruningReachability(node, scope);
+                    nodeState = currentState.and(translated == null ? optionReachability(node) : translated);
                     if (shouldPrune(nodeState)) {
                         return skipPrunedNode(node, nodeState);
                     }
@@ -2156,7 +2196,7 @@ public class ScriptCompiler {
                     break;
                 case INPUT_BOOLEAN:
                 case INPUT_TEXT:
-                    if (prunedByReachability(node)) {
+                    if (unreachable(node) || prunedByReachability(node)) {
                         remove(node);
                         node.ancestor(Kind.STEP::equals).ifPresent(modifiedSteps::add);
                     }
@@ -2164,14 +2204,14 @@ public class ScriptCompiler {
                     break;
                 case INPUT_LIST:
                 case INPUT_ENUM:
-                    if (prunedByReachability(node) || node.children().isEmpty()) {
+                    if (unreachable(node) || prunedByReachability(node) || node.children().isEmpty()) {
                         remove(node);
                         node.ancestor(Kind.STEP::equals).ifPresent(modifiedSteps::add);
                     }
                     ctx.popScope();
                     break;
                 case INPUT_OPTION:
-                    if (prunedByReachability(node)) {
+                    if (unreachable(node) || prunedByReachability(node)) {
                         remove(node);
                     }
                     break;
@@ -2181,7 +2221,11 @@ public class ScriptCompiler {
                         // to detect steps without inputs during validation
                         List<Node> inputs = node.collect(Kind::isInput);
                         if (inputs.isEmpty()) {
-                            node.replace(node.children());
+                            if (node.children().isEmpty()) {
+                                node.remove();
+                            } else {
+                                node.replace(node.children());
+                            }
                         }
                     }
                     break;
@@ -2193,6 +2237,19 @@ public class ScriptCompiler {
 
         boolean shouldPrune(ReachabilityState nodeState) {
             return nodeState.supported() && nodeState.isFalse();
+        }
+
+        Reachability translatedPruningReachability(Node node, Scope scope) {
+            Expression pruning = pruningContribution(node);
+            if (pruning == Expression.TRUE) {
+                return trueReach();
+            }
+            ExpressionAnalysis analysis = new ExpressionAnalyzer(scope,
+                    currentBindings,
+                    currentReachByRef,
+                    false,
+                    false).analyze(pruning);
+            return analysis.reach;
         }
 
         boolean skipPrunedNode(Node node, ReachabilityState nodeState) {
@@ -2220,18 +2277,21 @@ public class ScriptCompiler {
         private final Map<Node, ConditionSemantics> renderedConditionSemantics;
         private final Map<Node, Reachability> reachableBlocks;
         private final Map<Node, Set<String>> conditionRefs;
+        private final Map<Node, Map<String, Reachability>> conditionDemands;
         private final Image image;
 
         InputVisitor(Image image,
                      Map<Node, Node> mirrors,
                      Map<Node, ConditionSemantics> renderedConditionSemantics,
                      Map<Node, Reachability> reachableBlocks,
-                     Map<Node, Set<String>> conditionRefs) {
+                     Map<Node, Set<String>> conditionRefs,
+                     Map<Node, Map<String, Reachability>> conditionDemands) {
             this.image = image;
             this.mirrors = mirrors;
             this.renderedConditionSemantics = renderedConditionSemantics;
             this.reachableBlocks = reachableBlocks;
             this.conditionRefs = conditionRefs;
+            this.conditionDemands = conditionDemands;
             this.stack.push(image.node);
         }
 
@@ -2385,7 +2445,7 @@ public class ScriptCompiler {
             Node copy = node.copy();
             Node wrappedCopy = copy.wrap(expr);
             appender.accept(blockCopy, wrappedCopy);
-            rememberConditionRefs(wrappedCopy, expr, conditionRefs);
+            rememberConditionRefs(wrappedCopy, expr, scope, conditionRefs, conditionDemands);
             renderedConditionSemantics.put(copy, nodeSemantics);
             if (node.kind().isBlock()) {
                 reachableBlocks.put(copy, reachability(node));
@@ -2419,11 +2479,15 @@ public class ScriptCompiler {
         private final Set<FileObject> files = new TreeSet<>();
         private final Set<FileObject> templates = new TreeSet<>();
         private final Map<Node, Set<String>> conditionRefs;
+        private final Map<Node, Map<String, Reachability>> conditionDemands;
         private final Image image;
 
-        OutputVisitor(Image image, Map<Node, Set<String>> conditionRefs) {
+        OutputVisitor(Image image,
+                      Map<Node, Set<String>> conditionRefs,
+                      Map<Node, Map<String, Reachability>> conditionDemands) {
             this.image = image;
             this.conditionRefs = conditionRefs;
+            this.conditionDemands = conditionDemands;
         }
 
         @Override
@@ -2614,7 +2678,7 @@ public class ScriptCompiler {
                     if (expr != Expression.FALSE) {
                         Node include = Nodes.include(f.checksum);
                         Node wrappedInclude = include.wrap(expr);
-                        rememberConditionRefs(wrappedInclude, expr, conditionRefs);
+                        rememberConditionRefs(wrappedInclude, expr, f.scope, conditionRefs, conditionDemands);
                         includes.append(wrappedInclude);
                     }
                 }
@@ -2687,10 +2751,10 @@ public class ScriptCompiler {
                             }
                         }
                         for (Node condition : copy.traverse(Kind.CONDITION::equals)) {
-                            rememberConditionRefs(condition, conditionRefs);
+                            rememberConditionRefs(condition, scope, conditionRefs, conditionDemands);
                         }
                         Node wrappedCopy = copy.wrap(expr);
-                        rememberConditionRefs(wrappedCopy, expr, conditionRefs);
+                        rememberConditionRefs(wrappedCopy, expr, scope, conditionRefs, conditionDemands);
                         nodes.add(wrappedCopy);
                     }
                 }
@@ -2713,11 +2777,16 @@ public class ScriptCompiler {
         private final Map<Node, Node> mirrors;
         private final Map<Node, Reachability> reachableBlocks;
         private final Map<Node, Set<String>> conditionRefs;
+        private final Map<Node, Map<String, Reachability>> conditionDemands;
 
-        StubsVisitor(Map<Node, Node> mirrors, Map<Node, Reachability> reachableBlocks, Map<Node, Set<String>> conditionRefs) {
+        StubsVisitor(Map<Node, Node> mirrors,
+                     Map<Node, Reachability> reachableBlocks,
+                     Map<Node, Set<String>> conditionRefs,
+                     Map<Node, Map<String, Reachability>> conditionDemands) {
             this.mirrors = mirrors;
             this.reachableBlocks = reachableBlocks;
             this.conditionRefs = conditionRefs;
+            this.conditionDemands = conditionDemands;
         }
 
         @Override
@@ -2842,13 +2911,15 @@ public class ScriptCompiler {
                 // validation already reports unsupported condition shapes; do not reintroduce expression fallback here
                 return List.of();
             }
+            Map<String, Reachability> demands = conditionDemands.getOrDefault(node, Map.of());
             for (String ref : variables) {
 
                 // normalize the ref
                 String key = scope.key(ref);
 
+                Reachability required = demands.getOrDefault(key, reach);
                 Reachability refReach = snapshots.getOrDefault(key, falseReach());
-                Reachability missing = reach.subtract(refReach);
+                Reachability missing = required.subtract(refReach);
                 if (missing.isFalse()) {
                     continue;
                 }
