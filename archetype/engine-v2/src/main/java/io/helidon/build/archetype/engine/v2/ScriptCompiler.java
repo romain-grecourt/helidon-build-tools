@@ -1502,7 +1502,7 @@ public class ScriptCompiler {
         }
 
         Reachability translatedBooleanReachability(String key) {
-            ConstantBindings binding = bindings.get(key);
+            ConstantBindings binding = bindingFor(key);
             if (binding != null) {
                 if (binding.type != Type.BOOLEAN) {
                     return null;
@@ -1522,12 +1522,12 @@ public class ScriptCompiler {
                 return null;
             }
             Reachability raw = Reachability.scalar(key, Set.of("true"), domains);
-            Reachability defined = definitions.get(key);
+            Reachability defined = definitionFor(key);
             return defined == null ? raw : defined.and(raw);
         }
 
         Reachability translatedEquality(String key, Value<?> value) {
-            ConstantBindings binding = bindings.get(key);
+            ConstantBindings binding = bindingFor(key);
             Reachability bound = binding != null ? binding.match(value) : null;
             Reachability raw = rawEquality(key, value);
             return combine(key, bound, raw);
@@ -1535,7 +1535,7 @@ public class ScriptCompiler {
 
         Reachability demandEquality(String key, Value<?> value) {
             Reachability raw = rawEquality(key, value);
-            Reachability defined = definitions.get(key);
+            Reachability defined = definitionFor(key);
             if (raw == null) {
                 return null;
             }
@@ -1543,7 +1543,7 @@ public class ScriptCompiler {
         }
 
         Reachability translatedScalarAny(String key, Set<String> values) {
-            ConstantBindings binding = bindings.get(key);
+            ConstantBindings binding = bindingFor(key);
             Reachability bound = binding != null ? binding.scalarAny(values) : null;
             Reachability raw = rawScalarAny(key, values);
             return combine(key, bound, raw);
@@ -1551,7 +1551,7 @@ public class ScriptCompiler {
 
         Reachability demandScalarAny(String key, Set<String> values) {
             Reachability raw = rawScalarAny(key, values);
-            Reachability defined = definitions.get(key);
+            Reachability defined = definitionFor(key);
             if (raw == null) {
                 return null;
             }
@@ -1563,7 +1563,7 @@ public class ScriptCompiler {
             if (required == null) {
                 return null;
             }
-            ConstantBindings binding = bindings.get(key);
+            ConstantBindings binding = bindingFor(key);
             Reachability bound = binding != null ? binding.listContains(required) : null;
             Reachability raw = rawListContains(key, required);
             return combine(key, bound, raw);
@@ -1575,7 +1575,7 @@ public class ScriptCompiler {
                 return null;
             }
             Reachability raw = rawListContains(key, required);
-            Reachability defined = definitions.get(key);
+            Reachability defined = definitionFor(key);
             if (raw == null) {
                 return null;
             }
@@ -1583,8 +1583,8 @@ public class ScriptCompiler {
         }
 
         Reachability combine(String key, Reachability bound, Reachability raw) {
-            ConstantBindings binding = bindings.get(key);
-            Reachability defined = definitions.get(key);
+            ConstantBindings binding = bindingFor(key);
+            Reachability defined = definitionFor(key);
             if (binding == null) {
                 if (raw == null) {
                     return bound;
@@ -1597,6 +1597,22 @@ public class ScriptCompiler {
             Reachability available = defined == null ? trueReach() : defined;
             Reachability unresolved = available.subtract(binding.defined()).and(raw);
             return bound == null ? unresolved : bound.or(unresolved);
+        }
+
+        ConstantBindings bindingFor(String key) {
+            ConstantBindings binding = bindings.get(key);
+            if (binding != null || key.startsWith("~")) {
+                return binding;
+            }
+            return bindings.get("~" + key);
+        }
+
+        Reachability definitionFor(String key) {
+            Reachability definition = definitions.get(key);
+            if (definition != null || key.startsWith("~")) {
+                return definition;
+            }
+            return definitions.get("~" + key);
         }
 
         Reachability rawEquality(String key, Value<?> value) {
@@ -2809,6 +2825,9 @@ public class ScriptCompiler {
         private final Map<String, ConstantBindings> currentBindings = new HashMap<>();
         private final Map<Node, Map<String, Reachability>> reachRefs = new LinkedHashMap<>();
         private final Map<Node, Map<String, ConstantBindings>> bindingRefs = new LinkedHashMap<>();
+        private final Map<Node, Map<String, Set<List<Token>>>> existingConditionsByBlock = new IdentityHashMap<>();
+        private final Map<Node, Map<String, Set<List<Token>>>> existingConditionsByContainer = new IdentityHashMap<>();
+        private final Map<Node, Map<String, StubState>> emittedStubsByContainer = new IdentityHashMap<>();
         private final Map<Node, Node> mirrors;
         private final Map<Node, Reachability> reachableBlocks;
         private final Map<Node, Set<String>> conditionRefs;
@@ -2869,7 +2888,7 @@ public class ScriptCompiler {
         public void postVisit(Node node) {
             if (node.kind() == Kind.SCRIPT) {
                 reachRefs.forEach((n, snapshot) -> {
-                    List<Node> stubs = resolveStubs(n, snapshot);
+                    List<StubSpec> stubs = resolveStubs(n, snapshot);
                     if (!stubs.isEmpty()) {
                         addVariables(n, stubs);
                     }
@@ -2877,64 +2896,107 @@ public class ScriptCompiler {
             }
         }
 
-        void addVariables(Node node, List<Node> nodes) {
+        void addVariables(Node node, List<StubSpec> stubs) {
+            if (stubs.isEmpty()) {
+                return;
+            }
+
             Node block = node.ancestor(Kind::isBlock).orElseThrow();
+            Map<String, Set<List<Token>>> existingInBlock = existingConditionsByBlock.computeIfAbsent(
+                    block,
+                    this::existingConditionsInBlock);
+            Node container = null;
+            Map<String, Set<List<Token>>> existing = null;
+            Map<String, StubState> emitted = null;
+            for (StubSpec stub : stubs) {
+                List<Token> conditionTokens = nodeConditionTokens(stub.render());
+                Set<List<Token>> blockConditions = existingInBlock.computeIfAbsent(stub.path(), k -> new LinkedHashSet<>());
+                if (blockConditions.contains(conditionTokens)) {
+                    continue;
+                }
 
-            // collect variables in the block
+                if (container == null) {
+                    container = resolveContainer(node);
+                    existing = existingConditionsByContainer.computeIfAbsent(
+                            container,
+                            this::existingConditionsInContainer);
+                    emitted = emittedStubsByContainer.computeIfAbsent(container, k -> new LinkedHashMap<>());
+                }
+
+                StubState state = emitted.get(stub.path());
+                if (state != null) {
+                    if (!state.merge(stub, existing, existingInBlock)) {
+                        emitted.remove(stub.path());
+                    }
+                    continue;
+                }
+
+                Node rendered = stub.render();
+                if (!blockConditions.add(conditionTokens)) {
+                    continue;
+                }
+                Set<List<Token>> conditions = existing.computeIfAbsent(stub.path(), k -> new LinkedHashSet<>());
+                if (!conditions.add(conditionTokens)) {
+                    blockConditions.remove(conditionTokens);
+                    continue;
+                }
+
+                container.append(rendered);
+                emitted.put(stub.path(), new StubState(stub, rendered));
+            }
+        }
+
+        private Map<String, Set<List<Token>>> existingConditionsInBlock(Node block) {
             Map<String, Set<List<Token>>> existing = new LinkedHashMap<>();
-            for (Node n0 : block.children(Kind.VARIABLES::equals)) {
-                for (Node n1 : n0.children()) {
-                    String path = n1.unwrap().attribute("path").getString();
-                    existing.computeIfAbsent(path, k -> new LinkedHashSet<>()).add(nodeConditionTokens(n1));
+            for (Node variables : block.children(Kind.VARIABLES::equals)) {
+                for (Node child : variables.children()) {
+                    String path = child.unwrap().attribute("path").getString();
+                    existing.computeIfAbsent(path, k -> new LinkedHashSet<>()).add(nodeConditionTokens(child));
                 }
             }
+            return existing;
+        }
 
-            // filter stubs that already exist
-            List<Node> stubs = new ArrayList<>();
-            for (Node n : nodes) {
-                String path = n.unwrap().attribute("path").getString();
-                List<Token> conditionTokens = nodeConditionTokens(n);
-                Set<List<Token>> conditions = existing.computeIfAbsent(path, k -> new LinkedHashSet<>());
-                if (conditions.add(conditionTokens)) {
-                    stubs.add(n);
-                }
+        private Map<String, Set<List<Token>>> existingConditionsInContainer(Node container) {
+            Map<String, Set<List<Token>>> existing = new LinkedHashMap<>();
+            for (Node child : container.children()) {
+                String path = child.unwrap().attribute("path").getString();
+                existing.computeIfAbsent(path, k -> new LinkedHashSet<>()).add(nodeConditionTokens(child));
             }
+            return existing;
+        }
 
-            if (!stubs.isEmpty()) {
-                Node container = null;
-                for (Node n = node; n != null && container == null; n = n.parent()) {
-                    Node parent = n.parent();
-                    if (parent.kind() == Kind.INPUTS) {
-                        int index = n.index();
-                        if (index == 0) {
-                            container = Nodes.ensureBefore(parent, Kind.VARIABLES);
-                        } else {
-                            int p = parent.index();
+        private Node resolveContainer(Node node) {
+            Node container = null;
+            for (Node n = node; n != null && container == null; n = n.parent()) {
+                Node parent = n.parent();
+                if (parent.kind() == Kind.INPUTS) {
+                    int index = n.index();
+                    if (index == 0) {
+                        container = Nodes.ensureBefore(parent, Kind.VARIABLES);
+                    } else {
+                        int p = parent.index();
 
-                            // insert a variables container
-                            container = Nodes.variables();
-                            parent.parent().append(p + 1, container);
+                        // insert a variables container
+                        container = Nodes.variables();
+                        parent.parent().append(p + 1, container);
 
-                            // move remaining siblings
-                            // to their own inputs container
-                            Node inputs = Nodes.inputs();
-                            parent.parent().append(p + 2, inputs);
-                            for (int j = index, size = parent.children().size(); j < size; j++) {
-                                inputs.append(parent.children().remove(index));
-                            }
+                        // move remaining siblings
+                        // to their own inputs container
+                        Node inputs = Nodes.inputs();
+                        parent.parent().append(p + 2, inputs);
+                        for (int j = index, size = parent.children().size(); j < size; j++) {
+                            inputs.append(parent.children().remove(index));
                         }
-                    } else if (parent.kind().isBlock()) {
-                        container = Nodes.ensureBefore(n, Kind.VARIABLES);
                     }
-                }
-                if (container != null) {
-                    for (Node stub : stubs) {
-                        container.append(stub);
-                    }
-                } else {
-                    throw new IllegalStateException("Unable to resolve stubs container");
+                } else if (parent.kind().isBlock()) {
+                    container = Nodes.ensureBefore(n, Kind.VARIABLES);
                 }
             }
+            if (container == null) {
+                throw new IllegalStateException("Unable to resolve stubs container");
+            }
+            return container;
         }
 
         List<Token> nodeConditionTokens(Node node) {
@@ -2943,7 +3005,7 @@ public class ScriptCompiler {
                     : Expression.TRUE.tokens();
         }
 
-        List<Node> resolveStubs(Node node, Map<String, Reachability> snapshots) {
+        List<StubSpec> resolveStubs(Node node, Map<String, Reachability> snapshots) {
             Set<String> variables = conditionRefs.get(node);
             if (variables == null) {
                 throw new IllegalStateException("Condition refs not found: " + node);
@@ -2952,7 +3014,7 @@ public class ScriptCompiler {
                 return List.of();
             }
 
-            List<Node> nodes = new ArrayList<>();
+            List<StubSpec> nodes = new ArrayList<>();
             Node block = node.ancestor(Kind::isBlock).orElseThrow();
             Scope scope = scope(mirror(block));
             Reachability reach = reachability(block);
@@ -2978,13 +3040,64 @@ public class ScriptCompiler {
                     continue;
                 }
                 Type type = refTypes.getOrDefault(key, Type.EMPTY);
-                Expression expr = nestedBooleanStubExpression(key, missing, reach, scope, bindings, snapshots);
-                if (expr == null) {
-                    expr = residualExpression(missing, reach, scope);
-                }
-                nodes.add(Nodes.variable(type, "~" + key).wrap(expr));
+                nodes.add(new StubSpec(type, key, missing, reach, scope, bindings, snapshots));
             }
             return nodes;
+        }
+
+        Expression definitionComplementStubExpression(String key,
+                                                     Reachability missing,
+                                                     Reachability base,
+                                                     Scope scope,
+                                                     Map<String, Reachability> definitions) {
+            Reachability definition = definitions.getOrDefault(key, falseReach());
+            if (!equivalent(base.subtract(definition), missing)) {
+                return null;
+            }
+            Expression expr = Expression.create("!(" + reachabilityExpression(definition, scope).literal() + ")");
+            return expr.reduce(base.toExpression(scope));
+        }
+
+        Expression nestedDefinitionComplementStubExpression(String key,
+                                                           Reachability missing,
+                                                           Reachability base,
+                                                           Scope scope,
+                                                           Map<String, ConstantBindings> bindings,
+                                                           Map<String, Reachability> definitions) {
+            int dot = key.lastIndexOf('.');
+            if (dot < 0) {
+                return null;
+            }
+            String parentKey = key.substring(0, dot);
+            if (refTypes.getOrDefault(parentKey, Type.EMPTY) != Type.BOOLEAN) {
+                return null;
+            }
+            Reachability definition = definitions.get(key);
+            if (definition == null || definition.isFalse()) {
+                return null;
+            }
+            Expression parentExpr = Expression.create(String.format("${%s}", scope.key(parentKey)));
+            ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, bindings, definitions, false, false);
+            Reachability parentReach = analyzer.analyze(parentExpr).reach;
+            if (parentReach == null || !parentReach.contains(definition)) {
+                return null;
+            }
+            Expression tail = residualExpression(definition, parentReach, scope);
+            Expression definitionExpr = parentExpr.and(tail).reduce();
+            Reachability candidateDefinition = analyzer.analyze(definitionExpr).reach;
+            if (candidateDefinition == null || !equivalent(candidateDefinition, definition)) {
+                return null;
+            }
+            Expression parentComplement = Expression.create(String.format("!${%s}", scope.key(parentKey)));
+            Reachability tailReach = tail == Expression.TRUE ? trueReach() : analyzer.analyze(tail).reach;
+            Expression tailComplement = tail == Expression.TRUE
+                    ? Expression.FALSE
+                    : tailReach == null
+                            ? Expression.create("!(" + tail.literal() + ")").reduce()
+                            : reachabilityExpression(trueReach().subtract(tailReach), scope);
+            Expression expr = parentComplement.or(tailComplement).reduce(base.toExpression(scope));
+            Reachability candidateMissing = analyzer.analyze(expr).reach;
+            return candidateMissing != null && equivalent(candidateMissing, missing) ? expr : null;
         }
 
         Expression nestedBooleanStubExpression(String key,
@@ -3009,7 +3122,113 @@ public class ScriptCompiler {
                 return null;
             }
             Reachability relative = base == null ? candidate : base.and(candidate);
-            return relative.equals(missing) ? expr : null;
+            return equivalent(relative, missing) ? expr : null;
+        }
+
+        boolean equivalent(Reachability left, Reachability right) {
+            return left != null
+                    && right != null
+                    && left.contains(right)
+                    && right.contains(left);
+        }
+
+        private final class StubSpec {
+            private final Type type;
+            private final String key;
+            private final Reachability missing;
+            private final Reachability base;
+            private final Scope scope;
+            private final Map<String, ConstantBindings> bindings;
+            private final Map<String, Reachability> definitions;
+
+            private StubSpec(Type type,
+                             String key,
+                             Reachability missing,
+                             Reachability base,
+                             Scope scope,
+                             Map<String, ConstantBindings> bindings,
+                             Map<String, Reachability> definitions) {
+                this.type = type;
+                this.key = key;
+                this.missing = missing;
+                this.base = base;
+                this.scope = scope;
+                this.bindings = bindings;
+                this.definitions = definitions;
+            }
+
+            private String path() {
+                return "~" + key;
+            }
+
+            private StubSpec withMissing(Reachability nextMissing) {
+                return new StubSpec(type, key, nextMissing, base, scope, bindings, definitions);
+            }
+
+            private Node render() {
+                Expression residual = residualExpression(missing, base, scope);
+                Expression expr = nestedBooleanStubExpression(key, missing, base, scope, bindings, definitions);
+                if (expr == null) {
+                    expr = nestedDefinitionComplementStubExpression(key, missing, base, scope, bindings, definitions);
+                }
+                if (expr == null) {
+                    Expression complement = definitionComplementStubExpression(key, missing, base, scope, definitions);
+                    expr = complement != null && complement.tokens().size() < residual.tokens().size()
+                            ? complement
+                            : residual;
+                }
+                return Nodes.variable(type, path()).wrap(expr);
+            }
+        }
+
+        private final class StubState {
+            private StubSpec stub;
+            private Node node;
+
+            private StubState(StubSpec stub, Node node) {
+                this.stub = stub;
+                this.node = node;
+            }
+
+            private boolean merge(StubSpec other,
+                                  Map<String, Set<List<Token>>> existingInContainer,
+                                  Map<String, Set<List<Token>>> existingInBlock) {
+                Reachability merged = stub.missing.or(other.missing);
+                if (merged.equals(stub.missing)) {
+                    return true;
+                }
+
+                StubSpec next = stub.withMissing(merged);
+                Node mergedNode = next.render();
+                List<Token> previousTokens = nodeConditionTokens(node);
+                List<Token> mergedTokens = nodeConditionTokens(mergedNode);
+                if (!mergedTokens.equals(previousTokens)) {
+                    Set<List<Token>> containerConditions = existingInContainer.computeIfAbsent(
+                            stub.path(),
+                            k -> new LinkedHashSet<>());
+                    Set<List<Token>> blockConditions = existingInBlock.computeIfAbsent(
+                            stub.path(),
+                            k -> new LinkedHashSet<>());
+                    containerConditions.remove(previousTokens);
+                    blockConditions.remove(previousTokens);
+                    boolean addedInContainer = containerConditions.add(mergedTokens);
+                    boolean addedInBlock = blockConditions.add(mergedTokens);
+                    if (!addedInContainer || !addedInBlock) {
+                        if (addedInContainer) {
+                            containerConditions.remove(mergedTokens);
+                        }
+                        if (addedInBlock) {
+                            blockConditions.remove(mergedTokens);
+                        }
+                        node.remove();
+                        return false;
+                    }
+                    node.replace(mergedNode);
+                    node = mergedNode;
+                }
+                stub = next;
+                return true;
+            }
         }
 
         Reachability reachability(Node node) {

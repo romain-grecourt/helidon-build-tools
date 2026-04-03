@@ -460,6 +460,28 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testMergedNestedDefinitionStubsUseDefinitionComplement() {
+        Path outputDir = compile("compiler/merged-stub-complement", "main.xml", IGNORE_ERRORS);
+        Node output = Script.load(outputDir.resolve("main.xml"));
+        Matcher<Iterable<? extends String>> complement = contains(anyOf(
+                is("!${db} || ${flavor} != 'mp'"),
+                is("${flavor} != 'mp' || !${db}")));
+        assertThat(output, allOf(
+                hasProperty("jpa stubs",
+                        node -> (Iterable<String>) StreamSupport.stream(node.traverse(Kind::isVariable).spliterator(), false)
+                                .filter(variable -> "~db.jpa-impl".equals(variable.attribute("path").getString()))
+                                .map(variable -> normalizedCondition(variable.parent()))
+                                .collect(toList()),
+                        complement),
+                hasProperty("cp stubs",
+                        node -> (Iterable<String>) StreamSupport.stream(node.traverse(Kind::isVariable).spliterator(), false)
+                                .filter(variable -> "~db.cp".equals(variable.attribute("path").getString()))
+                                .map(variable -> normalizedCondition(variable.parent()))
+                                .collect(toList()),
+                        complement)));
+    }
+
+    @Test
     void testUnsupportedConditionKeepsBindingBackedReachability() {
         Path outputDir = compile("compiler/unsupported-binding-condition", "main.xml", IGNORE_ERRORS);
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
@@ -919,6 +941,12 @@ class ScriptCompilerTest {
     static String normalizeXmlString(String xml) {
         String str = XML_COMMENT.matcher(xml).replaceAll("").trim();
         return XML_NAMESPACE.matcher(str).replaceAll("\n        $1");
+    }
+
+    static String normalizedCondition(Node node) {
+        return node.kind() == Kind.CONDITION
+                ? node.expression().literal().replaceAll("\\s+", " ").trim()
+                : Expression.TRUE.literal();
     }
 
     static <T, U> Matcher<T> hasProperty(String name, Function<T, U> extractor, Matcher<U> subMatcher) {
