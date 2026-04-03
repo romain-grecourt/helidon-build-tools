@@ -500,55 +500,6 @@ public class ScriptCompiler {
         }
     }
 
-    private Value<?> validateExpressionOperator(Expression.Operator operator, Deque<Value<?>> stack) {
-        Value<?> op1 = stack.pop();
-        switch (operator) {
-            case NOT:
-                return Value.of(!op1.getBoolean());
-            case SIZEOF:
-                if (op1.type() == Value.Type.LIST) {
-                    return Value.of(op1.getList().size());
-                }
-                return Value.of(op1.getString().length());
-            case AS_INT:
-                return Value.of(op1.getInt());
-            case AS_LIST:
-                return Value.of(op1.getList());
-            case AS_STRING:
-                return Value.of(op1.getString());
-            default:
-                Value<?> op2 = stack.pop();
-                switch (operator) {
-                    case OR:
-                        return Value.of(op2.asBoolean().orElse(false) || op1.asBoolean().orElse(false));
-                    case AND:
-                        return Value.of(op2.asBoolean().orElse(false) && op1.asBoolean().orElse(false));
-                    case EQUAL:
-                        return Value.of(Value.isEqual(op2, op1));
-                    case NOT_EQUAL:
-                        return Value.of(!Value.isEqual(op2, op1));
-                    case GREATER_THAN:
-                        return Value.of(op2.getInt() > op1.getInt());
-                    case GREATER_OR_EQUAL:
-                        return Value.of(op2.getInt() >= op1.getInt());
-                    case LOWER_THAN:
-                        return Value.of(op2.getInt() < op1.getInt());
-                    case LOWER_OR_EQUAL:
-                        return Value.of(op2.getInt() <= op1.getInt());
-                    case CONTAINS:
-                        if (op1.type() == Value.Type.LIST) {
-                            return Value.of(new HashSet<>(op2.getList()).containsAll(op1.getList()));
-                        }
-                        if (op2.type() == Value.Type.LIST) {
-                            return Value.of(op2.getList().contains(op1.asString().orElse(null)));
-                        }
-                        return Value.of(op1.isPresent() && op2.asString().orElse("").contains(op1.getString()));
-                    default:
-                        throw new IllegalStateException("Unsupported operator: " + operator);
-                }
-        }
-    }
-
     private Value<?> validationValue(Scope scope, String variable) {
         Type type = refTypes.getOrDefault(scope.key(variable), Type.EMPTY);
         return Value.typed(type);
@@ -1023,18 +974,6 @@ public class ScriptCompiler {
         return reach.toExpression(scope).reduce(base.toExpression(scope));
     }
 
-    private void rememberConditionRefs(Node node, Expression expr, Map<Node, Set<String>> conditionRefs) {
-        if (node.kind() == Kind.CONDITION) {
-            conditionRefs.put(node, Set.copyOf(expr.variables()));
-        }
-    }
-
-    private void rememberConditionRefs(Node node, Map<Node, Set<String>> conditionRefs) {
-        if (node.kind() == Kind.CONDITION) {
-            conditionRefs.put(node, Set.copyOf(node.expression().variables()));
-        }
-    }
-
     private void rememberConditionRefs(Node node,
                                        Expression expr,
                                        Scope scope,
@@ -1069,12 +1008,6 @@ public class ScriptCompiler {
             return Map.of();
         }
         return new ExpressionAnalyzer(scope, bindings, definitions, false, false).analyze(expr).variableDemands;
-    }
-
-    private Map<String, Reachability> conditionDemands(Expression expr,
-                                                       Scope scope,
-                                                       Map<String, Reachability> definitions) {
-        return conditionDemands(expr, scope, Map.of(), definitions);
     }
 
     private Expression outputCondition(Node node, Scope scope) {
@@ -1218,18 +1151,10 @@ public class ScriptCompiler {
             Map<String, String> variables = new LinkedHashMap<>();
             List<Expression.Operator> incompatibleOps = new ArrayList<>();
             Deque<AnalysisTerm> stack = new ArrayDeque<>();
-            Deque<Value<?>> validationStack = validate ? new ArrayDeque<>() : null;
-            String evaluationError = null;
+            String evaluationError = evaluationError(source, tokens);
             boolean compatible = true;
             try {
                 for (Token token : tokens) {
-                    if (validationStack != null && evaluationError == null) {
-                        try {
-                            validationStack.push(validationValue(token, validationStack));
-                        } catch (RuntimeException ex) {
-                            evaluationError = ex.getMessage();
-                        }
-                    }
                     if (token.isOperand()) {
                         stack.push(new AnalysisValue(token.operand()));
                         continue;
@@ -1271,11 +1196,10 @@ public class ScriptCompiler {
                                     Map.of(),
                                     variables,
                                     incompatibleOps,
-                                    finalizeEvaluation(validationStack, evaluationError),
+                                    evaluationError,
                                     supportedTerms(source));
                     }
                 }
-                evaluationError = finalizeEvaluation(validationStack, evaluationError);
                 if (stack.size() != 1 || !compatible) {
                     return new ExpressionAnalysis(null,
                             Map.of(),
@@ -1300,7 +1224,7 @@ public class ScriptCompiler {
                         Map.of(),
                         variables,
                         incompatibleOps,
-                        finalizeEvaluation(validationStack, evaluationError),
+                        evaluationError,
                         supportedTerms(source));
             }
         }
@@ -1329,25 +1253,13 @@ public class ScriptCompiler {
             return capture ? SupportedTerms.fullySupported(reach) : null;
         }
 
-        Value<?> validationValue(Token token, Deque<Value<?>> validationStack) {
-            if (token.isOperator()) {
-                return validateExpressionOperator(token.operator(), validationStack);
+        String evaluationError(Expression source, List<Token> tokens) {
+            if (!validate) {
+                return null;
             }
-            if (token.isOperand()) {
-                return token.operand();
-            }
-            if (token.isVariable()) {
-                return ScriptCompiler.this.validationValue(scope, token.variable());
-            }
-            throw new IllegalStateException("Invalid token");
-        }
-
-        String finalizeEvaluation(Deque<Value<?>> validationStack, String evaluationError) {
-            if (validationStack == null || evaluationError != null) {
-                return evaluationError;
-            }
+            Expression expr = source != null ? source : new Expression(tokens, false);
             try {
-                validationStack.pop().asBoolean().get();
+                expr.eval(variable -> ScriptCompiler.this.validationValue(scope, variable));
                 return null;
             } catch (RuntimeException ex) {
                 return ex.getMessage();
@@ -3032,7 +2944,7 @@ public class ScriptCompiler {
                 Reachability required = reach;
                 Reachability demand = demands.get(key);
                 if (demand != null) {
-                    required = required == null ? demand : required.and(demand);
+                    required = required.and(demand);
                 }
                 Reachability refReach = snapshots.getOrDefault(key, falseReach());
                 Reachability missing = required.subtract(refReach);
@@ -3104,7 +3016,7 @@ public class ScriptCompiler {
             Expression tail = residualExpression(definition, parentReach, scope);
             Expression definitionExpr = parentExpr.and(tail).reduce();
             Reachability candidateDefinition = analyzer.analyze(definitionExpr).reach;
-            if (candidateDefinition == null || !equivalent(candidateDefinition, definition)) {
+            if (!equivalent(candidateDefinition, definition)) {
                 return null;
             }
             Expression parentComplement = Expression.create(String.format("!${%s}", scope.key(parentKey)));
@@ -4288,7 +4200,7 @@ public class ScriptCompiler {
                     if (availability == null) {
                         continue;
                     }
-                    if (!base.compatibleWith(availability, domains)) {
+                    if (base.incompatibleWith(availability, domains)) {
                         return null;
                     }
                     if (availability.constraintSets.size() != 1) {
@@ -4316,7 +4228,7 @@ public class ScriptCompiler {
                     if (availability == null) {
                         continue;
                     }
-                    if (!base.compatibleWith(availability, domains)) {
+                    if (base.incompatibleWith(availability, domains)) {
                         return null;
                     }
                     if (availability.constraintSets.size() != 1) {
@@ -4365,16 +4277,16 @@ public class ScriptCompiler {
             return true;
         }
 
-        boolean compatibleWith(Reachability reachability, Map<String, InputDomain> domains) {
+        boolean incompatibleWith(Reachability reachability, Map<String, InputDomain> domains) {
             if (reachability == null || reachability.isFalse()) {
-                return false;
+                return true;
             }
             for (ConstraintSet constraintSet : reachability.constraintSets) {
                 if (compatibleWith(constraintSet, domains)) {
-                    return true;
+                    return false;
                 }
             }
-            return false;
+            return true;
         }
 
         boolean removeImpliedDifference(ConstraintSet implied,
@@ -4504,7 +4416,7 @@ public class ScriptCompiler {
             Set<String> values = new TreeSet<>(domain.scalarValues);
             values.removeIf(value -> {
                 Reachability availability = domain.selectionAvailability(Set.of(value), domains);
-                return availability != null && !compatibleWith(availability, domains);
+                return availability != null && incompatibleWith(availability, domains);
             });
             return values;
         }
