@@ -334,7 +334,7 @@ public class ScriptCompiler {
         if (!options.contains(Options.NO_OUTPUT)) {
             sourceNode.visit(new OutputVisitor(image, conditionRefs, conditionDemands)); // render outputs
         }
-        image.node.visit(new StubsVisitor(mirrors, reachableBlocks, conditionRefs, conditionDemands)); // render stubs
+        image.node.visit(new StubsVisitor(mirrors, reachableBlocks, conditionRefs)); // render stubs
         image.node.visit(new DedupVisitor(mirrors)); // de-dup steps
     }
 
@@ -1058,10 +1058,23 @@ public class ScriptCompiler {
     }
 
     private Map<String, Reachability> conditionDemands(Expression expr, Scope scope) {
+        return conditionDemands(expr, scope, Map.of(), Map.of());
+    }
+
+    private Map<String, Reachability> conditionDemands(Expression expr,
+                                                       Scope scope,
+                                                       Map<String, ConstantBindings> bindings,
+                                                       Map<String, Reachability> definitions) {
         if (expr == null || expr == Expression.TRUE || expr == Expression.FALSE) {
             return Map.of();
         }
-        return new ExpressionAnalyzer(scope, Map.of(), Map.of(), false, false).analyze(expr).variableDemands;
+        return new ExpressionAnalyzer(scope, bindings, definitions, false, false).analyze(expr).variableDemands;
+    }
+
+    private Map<String, Reachability> conditionDemands(Expression expr,
+                                                       Scope scope,
+                                                       Map<String, Reachability> definitions) {
+        return conditionDemands(expr, scope, Map.of(), definitions);
     }
 
     private Expression outputCondition(Node node, Scope scope) {
@@ -1815,12 +1828,31 @@ public class ScriptCompiler {
         if (reach == null || reach.isFalse()) {
             return;
         }
-        if (node.kind() != Kind.INPUT_ENUM && node.kind() != Kind.INPUT_LIST) {
-            return;
-        }
         InputDomain domain = domains.get(key);
         if (domain != null) {
             domain.addDefinition(reach);
+            if (node.kind() == Kind.INPUT_BOOLEAN) {
+                domain.addAvailability("true", reach);
+                domain.addAvailability("false", reach);
+            }
+        }
+    }
+
+    private void rememberImplicitDefinition(String key, Reachability reach, Value<?> value) {
+        if (reach == null || reach.isFalse()) {
+            return;
+        }
+        InputDomain domain = domains.get(key);
+        if (domain == null || !domain.isBoolean()) {
+            return;
+        }
+        domain.addDefinition(reach);
+        String scalar = value == null ? null : scalarLiteral(value);
+        if (scalar == null) {
+            domain.addAvailability("true", reach);
+            domain.addAvailability("false", reach);
+        } else {
+            domain.addAvailability(scalar, reach);
         }
     }
 
@@ -2154,6 +2186,7 @@ public class ScriptCompiler {
                         currentReachByRef.compute(scope.key(),
                                 (k, v) -> v == null ? parentReachability : v.or(parentReachability));
                         Value<?> value = constantValue(node);
+                        rememberImplicitDefinition(scope.key(), parentReachability, value);
                         if (value != null) {
                             currentBindings.computeIfAbsent(scope.key(),
                                     k -> new ConstantBindings(node.kind().valueType()))
@@ -2773,20 +2806,19 @@ public class ScriptCompiler {
 
     private class StubsVisitor implements Node.Visitor {
         private final Map<String, Reachability> currentReachByRef = new HashMap<>();
+        private final Map<String, ConstantBindings> currentBindings = new HashMap<>();
         private final Map<Node, Map<String, Reachability>> reachRefs = new LinkedHashMap<>();
+        private final Map<Node, Map<String, ConstantBindings>> bindingRefs = new LinkedHashMap<>();
         private final Map<Node, Node> mirrors;
         private final Map<Node, Reachability> reachableBlocks;
         private final Map<Node, Set<String>> conditionRefs;
-        private final Map<Node, Map<String, Reachability>> conditionDemands;
 
         StubsVisitor(Map<Node, Node> mirrors,
                      Map<Node, Reachability> reachableBlocks,
-                     Map<Node, Set<String>> conditionRefs,
-                     Map<Node, Map<String, Reachability>> conditionDemands) {
+                     Map<Node, Set<String>> conditionRefs) {
             this.mirrors = mirrors;
             this.reachableBlocks = reachableBlocks;
             this.conditionRefs = conditionRefs;
-            this.conditionDemands = conditionDemands;
         }
 
         @Override
@@ -2807,11 +2839,26 @@ public class ScriptCompiler {
                     Node mirror = mirror(node);
                     Reachability reach = definitionReachability(mirror);
                     if (reach != null) {
-                        currentReachByRef.compute(scopeId(mirror), (k, v) -> v == null ? reach : v.or(reach));
+                        String key = scopeId(mirror);
+                        currentReachByRef.compute(key, (k, v) -> v == null ? reach : v.or(reach));
+                        Value<?> value = constantValue(node);
+                        if (value != null
+                                && node.kind().is(Kind.PRESET_BOOLEAN,
+                                                  Kind.PRESET_ENUM,
+                                                  Kind.PRESET_LIST,
+                                                  Kind.PRESET_TEXT,
+                                                  Kind.VARIABLE_BOOLEAN,
+                                                  Kind.VARIABLE_ENUM,
+                                                  Kind.VARIABLE_LIST,
+                                                  Kind.VARIABLE_TEXT)) {
+                            currentBindings.computeIfAbsent(key, k -> new ConstantBindings(node.kind().valueType()))
+                                    .add(value, reach);
+                        }
                     }
                     break;
                 case CONDITION:
                     reachRefs.put(node, Map.copyOf(currentReachByRef));
+                    bindingRefs.put(node, snapshotBindings(currentBindings));
                     break;
                 default:
             }
@@ -2834,10 +2881,11 @@ public class ScriptCompiler {
             Node block = node.ancestor(Kind::isBlock).orElseThrow();
 
             // collect variables in the block
-            Map<String, List<Token>> existing = new LinkedHashMap<>();
+            Map<String, Set<List<Token>>> existing = new LinkedHashMap<>();
             for (Node n0 : block.children(Kind.VARIABLES::equals)) {
                 for (Node n1 : n0.children()) {
-                    existing.put(n1.unwrap().attribute("path").getString(), nodeConditionTokens(n1));
+                    String path = n1.unwrap().attribute("path").getString();
+                    existing.computeIfAbsent(path, k -> new LinkedHashSet<>()).add(nodeConditionTokens(n1));
                 }
             }
 
@@ -2845,8 +2893,9 @@ public class ScriptCompiler {
             List<Node> stubs = new ArrayList<>();
             for (Node n : nodes) {
                 String path = n.unwrap().attribute("path").getString();
-                List<Token> conditionTokens = existing.get(path);
-                if (!nodeConditionTokens(n).equals(conditionTokens)) {
+                List<Token> conditionTokens = nodeConditionTokens(n);
+                Set<List<Token>> conditions = existing.computeIfAbsent(path, k -> new LinkedHashSet<>());
+                if (conditions.add(conditionTokens)) {
                     stubs.add(n);
                 }
             }
@@ -2911,22 +2960,56 @@ public class ScriptCompiler {
                 // validation already reports unsupported condition shapes; do not reintroduce expression fallback here
                 return List.of();
             }
-            Map<String, Reachability> demands = conditionDemands.getOrDefault(node, Map.of());
+            Map<String, ConstantBindings> bindings = bindingRefs.getOrDefault(node, Map.of());
+            Map<String, Reachability> demands = conditionDemands(node.expression(), scope, bindings, snapshots);
             for (String ref : variables) {
 
                 // normalize the ref
                 String key = scope.key(ref);
 
-                Reachability required = demands.getOrDefault(key, reach);
+                Reachability required = reach;
+                Reachability demand = demands.get(key);
+                if (demand != null) {
+                    required = required == null ? demand : required.and(demand);
+                }
                 Reachability refReach = snapshots.getOrDefault(key, falseReach());
                 Reachability missing = required.subtract(refReach);
                 if (missing.isFalse()) {
                     continue;
                 }
                 Type type = refTypes.getOrDefault(key, Type.EMPTY);
-                nodes.add(Nodes.variable(type, "~" + key).wrap(residualExpression(missing, reach, scope)));
+                Expression expr = nestedBooleanStubExpression(key, missing, reach, scope, bindings, snapshots);
+                if (expr == null) {
+                    expr = residualExpression(missing, reach, scope);
+                }
+                nodes.add(Nodes.variable(type, "~" + key).wrap(expr));
             }
             return nodes;
+        }
+
+        Expression nestedBooleanStubExpression(String key,
+                                               Reachability missing,
+                                               Reachability base,
+                                               Scope scope,
+                                               Map<String, ConstantBindings> bindings,
+                                               Map<String, Reachability> definitions) {
+            int dot = key.lastIndexOf('.');
+            if (dot < 0) {
+                return null;
+            }
+            String parentKey = key.substring(0, dot);
+            if (refTypes.getOrDefault(parentKey, Type.EMPTY) != Type.BOOLEAN) {
+                return null;
+            }
+            Expression expr = Expression.create(String.format("!${%s}", scope.key(parentKey)));
+            Reachability candidate = new ExpressionAnalyzer(scope, bindings, definitions, false, false)
+                    .analyze(expr)
+                    .reach;
+            if (candidate == null) {
+                return null;
+            }
+            Reachability relative = base == null ? candidate : base.and(candidate);
+            return relative.equals(missing) ? expr : null;
         }
 
         Reachability reachability(Node node) {
