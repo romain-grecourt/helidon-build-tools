@@ -482,6 +482,20 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testCoveringNestedDefinitionStubUsesDefinitionComplement() {
+        Path outputDir = compile("compiler/covering-stub-complement", "main.xml", IGNORE_ERRORS);
+        Node output = Script.load(outputDir.resolve("main.xml"));
+        assertThat(output, hasProperty("cp stubs",
+                node -> (Iterable<String>) StreamSupport.stream(node.traverse(Kind::isVariable).spliterator(), false)
+                        .filter(variable -> "~db.cp".equals(variable.attribute("path").getString()))
+                        .map(variable -> normalizedCondition(variable.parent()))
+                        .collect(toList()),
+                contains(anyOf(
+                        is("!${db} || ${flavor} != 'mp'"),
+                        is("${flavor} != 'mp' || !${db}")))));
+    }
+
+    @Test
     void testUnsupportedConditionKeepsBindingBackedReachability() {
         Path outputDir = compile("compiler/unsupported-binding-condition", "main.xml", IGNORE_ERRORS);
         assertThat(normalizeXml(outputDir.resolve("main.xml")),

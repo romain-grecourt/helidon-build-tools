@@ -3064,6 +3064,25 @@ public class ScriptCompiler {
                                                            Scope scope,
                                                            Map<String, ConstantBindings> bindings,
                                                            Map<String, Reachability> definitions) {
+            return nestedDefinitionComplementStubExpression(key, missing, base, scope, bindings, definitions, false);
+        }
+
+        Expression coveringNestedDefinitionComplementStubExpression(String key,
+                                                                   Reachability missing,
+                                                                   Reachability base,
+                                                                   Scope scope,
+                                                                   Map<String, ConstantBindings> bindings,
+                                                                   Map<String, Reachability> definitions) {
+            return nestedDefinitionComplementStubExpression(key, missing, base, scope, bindings, definitions, true);
+        }
+
+        private Expression nestedDefinitionComplementStubExpression(String key,
+                                                                   Reachability missing,
+                                                                   Reachability base,
+                                                                   Scope scope,
+                                                                   Map<String, ConstantBindings> bindings,
+                                                                   Map<String, Reachability> definitions,
+                                                                   boolean allowCovering) {
             int dot = key.lastIndexOf('.');
             if (dot < 0) {
                 return null;
@@ -3097,7 +3116,16 @@ public class ScriptCompiler {
                             : reachabilityExpression(trueReach().subtract(tailReach), scope);
             Expression expr = parentComplement.or(tailComplement).reduce(base.toExpression(scope));
             Reachability candidateMissing = analyzer.analyze(expr).reach;
-            return candidateMissing != null && equivalent(candidateMissing, missing) ? expr : null;
+            if (candidateMissing == null) {
+                return null;
+            }
+            if (!allowCovering) {
+                return equivalent(candidateMissing, missing) ? expr : null;
+            }
+            Reachability complement = trueReach().subtract(definition);
+            return candidateMissing.contains(missing) && complement.contains(candidateMissing)
+                    ? expr
+                    : null;
         }
 
         Expression nestedBooleanStubExpression(String key,
@@ -3170,6 +3198,18 @@ public class ScriptCompiler {
                 Expression expr = nestedBooleanStubExpression(key, missing, base, scope, bindings, definitions);
                 if (expr == null) {
                     expr = nestedDefinitionComplementStubExpression(key, missing, base, scope, bindings, definitions);
+                }
+                if (expr == null) {
+                    Expression covering = coveringNestedDefinitionComplementStubExpression(
+                            key,
+                            missing,
+                            base,
+                            scope,
+                            bindings,
+                            definitions);
+                    if (covering != null && covering.tokens().size() < residual.tokens().size()) {
+                        expr = covering;
+                    }
                 }
                 if (expr == null) {
                     Expression complement = definitionComplementStubExpression(key, missing, base, scope, definitions);
