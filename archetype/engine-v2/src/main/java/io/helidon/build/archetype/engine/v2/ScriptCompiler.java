@@ -210,6 +210,8 @@ public class ScriptCompiler {
     private final Map<String, Boolean> textInputProvenance = new HashMap<>();
     private final Map<Node, Path> workDirs = new HashMap<>();
     private final Set<String> errors = new LinkedHashSet<>();
+    private volatile Flow.Ir flowIr;
+    private volatile Flow.Analysis flowAnalysis;
     private final Node sourceNode;
     private final Context ctx = new Context();
     private volatile List<Option> options;
@@ -312,30 +314,82 @@ public class ScriptCompiler {
         textInputRefs.clear();
         textInputProvenance.clear();
         errors.clear();
+        flowIr = null;
+        flowAnalysis = null;
     }
 
     private void compile(Image image) {
-        Map<Node, Node> mirrors = new HashMap<>();
-        Map<Node, ConditionSemantics> renderedConditionSemantics = new IdentityHashMap<>();
-        Map<Node, Reachability> reachableBlocks = new IdentityHashMap<>();
-        Map<Node, Set<String>> conditionRefs = new IdentityHashMap<>();
-        Map<Node, Map<String, Reachability>> conditionDemands = new IdentityHashMap<>();
-        mirrors.put(sourceNode, image.node);
-        mirrors.put(image.node, sourceNode);
-        renderedConditionSemantics.put(image.node, conditionSemantics(sourceNode));
-        reachableBlocks.put(image.node, trueReach());
-        sourceNode.visit(new InputVisitor(image,
-                mirrors,
-                renderedConditionSemantics,
-                reachableBlocks,
-                conditionRefs,
-                conditionDemands));
-        // render inputs
-        if (!options.contains(Options.NO_OUTPUT)) {
-            sourceNode.visit(new OutputVisitor(image, conditionRefs, conditionDemands)); // render outputs
+        new LegacyBackend(image, flowIr()).emit();
+    }
+
+    Flow.Ir flowIr() {
+        init();
+        if (flowIr == null) {
+            buildFlowIr();
         }
-        image.node.visit(new StubsVisitor(mirrors, reachableBlocks, conditionRefs)); // render stubs
-        image.node.visit(new DedupVisitor(mirrors)); // de-dup steps
+        return requireNonNull(flowIr, "flowIr is null");
+    }
+
+    Flow.Analysis flowAnalysis() {
+        if (flowAnalysis == null) {
+            buildFlowAnalysis();
+        }
+        return requireNonNull(flowAnalysis, "flowAnalysis is null");
+    }
+
+    private synchronized void buildFlowIr() {
+        if (flowIr != null) {
+            return;
+        }
+        flowIr = Flow.ir(sourceNode, rootScope());
+    }
+
+    private synchronized void buildFlowAnalysis() {
+        if (flowAnalysis != null) {
+            return;
+        }
+        flowAnalysis = Flow.analyze(flowIr());
+    }
+
+    private Scope rootScope() {
+        Scope scope = ctx.scope();
+        while (scope.parent() != null) {
+            scope = scope.parent();
+        }
+        return scope;
+    }
+
+    private final class LegacyBackend {
+        private final Image image;
+        private final Flow.Ir flowIr;
+
+        private LegacyBackend(Image image, Flow.Ir flowIr) {
+            this.image = requireNonNull(image, "image is null");
+            this.flowIr = requireNonNull(flowIr, "flowIr is null");
+        }
+
+        private void emit() {
+            Map<Node, Node> mirrors = new HashMap<>();
+            Map<Node, ConditionSemantics> renderedConditionSemantics = new IdentityHashMap<>();
+            Map<Node, Reachability> reachableBlocks = new IdentityHashMap<>();
+            Map<Node, Set<String>> conditionRefs = new IdentityHashMap<>();
+            Map<Node, Map<String, Reachability>> conditionDemands = new IdentityHashMap<>();
+            mirrors.put(sourceNode, image.node);
+            mirrors.put(image.node, sourceNode);
+            renderedConditionSemantics.put(image.node, conditionSemantics(sourceNode));
+            reachableBlocks.put(image.node, trueReach());
+            sourceNode.visit(new InputVisitor(image,
+                    mirrors,
+                    renderedConditionSemantics,
+                    reachableBlocks,
+                    conditionRefs,
+                    conditionDemands));
+            if (!options.contains(Options.NO_OUTPUT)) {
+                sourceNode.visit(new OutputVisitor(image, conditionRefs, conditionDemands));
+            }
+            image.node.visit(new StubsVisitor(mirrors, reachableBlocks, conditionRefs));
+            image.node.visit(new DedupVisitor(mirrors));
+        }
     }
 
     private void validate() {

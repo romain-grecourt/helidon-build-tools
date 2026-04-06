@@ -42,11 +42,6 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
-            <groupId>io.helidon.build-tools.archetype</groupId>
-            <artifactId>helidon-archetype-engine-v2-json</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
             <groupId>io.helidon.build-tools.ide-support.lsp</groupId>
             <artifactId>helidon-lsp-common</artifactId>
             <version>${project.version}</version>

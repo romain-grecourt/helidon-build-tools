@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2025, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,22 +14,13 @@
  * limitations under the License.
  */
 
-package io.helidon.build.archetype.v2.json;
+package io.helidon.build.archetype.engine.v2;
 
 import java.io.IOException;
-import java.io.Reader;
 import java.io.StringWriter;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.util.List;
-import java.util.Map;
-
-import javax.json.JsonReader;
-import javax.json.JsonReaderFactory;
-import javax.json.JsonWriter;
-import javax.json.JsonWriterFactory;
-
-import io.helidon.build.archetype.engine.v2.Node;
 
 import org.junit.jupiter.api.Test;
 
@@ -58,15 +49,10 @@ import static io.helidon.build.archetype.engine.v2.Nodes.variableEnum;
 import static io.helidon.build.archetype.engine.v2.Nodes.variableList;
 import static io.helidon.build.archetype.engine.v2.Nodes.variableText;
 import static io.helidon.build.archetype.engine.v2.Nodes.variables;
-import static io.helidon.build.archetype.v2.json.JsonFactory.PRETTY_OPTIONS;
-import static io.helidon.build.archetype.v2.json.JsonFactory.PROVIDER;
 import static io.helidon.build.common.test.utils.TestFiles.testResourcePath;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 
-/**
- * Tests {@link JsonScriptWriter}.
- */
 class JsonScriptWriterTest {
 
     @Test
@@ -98,13 +84,13 @@ class JsonScriptWriterTest {
                 condition("['', 'adc', 'def'] contains ['', 'adc', 'def']", step("Step" + i++)),
                 condition("true == ${def}", step("Step" + i)));
 
-        assertThat(toJson(node), is(normalizeJson("writer/expressions.json")));
+        assertThat(toJson(node), is(expected("writer/expressions.json")));
     }
 
     @Test
     void testValidations() {
         Node script = script(validations(validation("validation1", regex("^foo"))));
-        assertThat(toJson(script), is(normalizeJson("writer/validations.json")));
+        assertThat(toJson(script), is(expected("writer/validations.json")));
     }
 
     @Test
@@ -115,7 +101,7 @@ class JsonScriptWriterTest {
                         variableEnum("variable-enum1", "value1"),
                         variableText("variable-text1", "value1"),
                         variableList("variable-list1", List.of("value1"))));
-        assertThat(toJson(script), is(normalizeJson("writer/variables.json")));
+        assertThat(toJson(script), is(expected("writer/variables.json")));
     }
 
     @Test
@@ -126,7 +112,7 @@ class JsonScriptWriterTest {
                         presetEnum("preset-enum1", "value1"),
                         presetText("preset-text1", "value1"),
                         presetList("preset-list1", List.of("value1"))));
-        assertThat(toJson(script), is(normalizeJson("writer/presets.json")));
+        assertThat(toJson(script), is(expected("writer/presets.json")));
     }
 
     @Test
@@ -134,7 +120,7 @@ class JsonScriptWriterTest {
         Node block = script();
         block.script().methods().put("method1", method("method1",
                 output(model(modelList("model-list1", modelValue("value1"))))));
-        assertThat(toJson(block), is(normalizeJson("writer/methods.json")));
+        assertThat(toJson(block), is(expected("writer/methods.json")));
     }
 
     @Test
@@ -145,35 +131,46 @@ class JsonScriptWriterTest {
                                 condition("${foo}", inputEnum("enum1", b -> b.attribute("default", "option1"),
                                         inputOption("Option1", "option1"),
                                         inputOption("Option2", "option2"))),
-                                inputText("text1")
-                                        .attribute("default", "Default1"))));
-        assertThat(toJson(script), is(normalizeJson("writer/inputs.json")));
+                                inputText("text1").attribute("default", "Default1"))));
+        assertThat(toJson(script), is(expected("writer/inputs.json")));
     }
 
-    static String toJson(Node node) {
-        StringWriter sw = new StringWriter();
-        try (JsonScriptWriter writer = new JsonScriptWriter(sw, true)) {
-            writer.writeScript(node);
+    @Test
+    void testInputsCompatProjectionDropsOutputAndMethods() {
+        Node source = script(
+                presets(presetText("preset", "value")),
+                step("Prompt",
+                        inputs(inputText("name")),
+                        output(model(modelValue("secret")))));
+        source.script().methods().put("method1", method("method1",
+                output(model(modelValue("ignored")))));
+
+        Node projected = Nodes.project(source, Nodes.Projection.INPUTS_COMPAT);
+
+        assertThat(projected.script().methods().isEmpty(), is(true));
+        assertThat(projected.traverse(Node.Kind.OUTPUT::equals).iterator().hasNext(), is(false));
+        assertThat(projected.traverse(Node.Kind.MODEL::equals).iterator().hasNext(), is(false));
+        assertThat(projected.traverse(Node.Kind.INPUT_TEXT::equals).iterator().hasNext(), is(true));
+        assertThat(projected.traverse(Node.Kind.PRESET_TEXT::equals).iterator().hasNext(), is(true));
+    }
+
+    private static String toJson(Node node) {
+        StringWriter writer = new StringWriter();
+        try (JsonScriptWriter json = new JsonScriptWriter(writer, true)) {
+            json.writeScript(node);
         }
-        return sw.toString();
+        return normalize(writer.toString());
     }
 
-    static final JsonReaderFactory JSON_READER_FACTORY = PROVIDER.createReaderFactory(Map.of());
-    static final JsonWriterFactory JSON_WRITER_FACTORY = PROVIDER.createWriterFactory(PRETTY_OPTIONS);
-
-    static String normalizeJson(String path) {
+    private static String expected(String path) {
         try {
-            return normalizeJson(Files.newBufferedReader(testResourcePath(JsonScriptWriterTest.class, path)));
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+            return normalize(Files.readString(testResourcePath(JsonScriptWriterTest.class, "json-writer/" + path)));
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
         }
     }
 
-    static String normalizeJson(Reader reader) {
-        StringWriter sw = new StringWriter();
-        JsonReader jsonReader = JSON_READER_FACTORY.createReader(reader);
-        JsonWriter jsonWriter = JSON_WRITER_FACTORY.createWriter(sw);
-        jsonWriter.write(jsonReader.read());
-        return sw.toString();
+    private static String normalize(String value) {
+        return value.replace("\r\n", "\n").replace("\r", "\n");
     }
 }

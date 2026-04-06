@@ -66,8 +66,10 @@ import static java.util.stream.Collectors.toList;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -433,6 +435,22 @@ class ScriptCompilerTest {
         Path outputDir = compile("compiler/preset-condition", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/preset-condition.xml")));
+    }
+
+    @Test
+    void testCompilerInitBuildsFlowCoreForCurrentSourceTree() {
+        Path source = testResourcePath(ScriptCompilerTest.class, "compiler/preset-condition/main.xml");
+        ScriptCompiler compiler = new ScriptCompiler(Script.Source.of(source), source.getParent());
+
+        assertThat(compiler.sourceNode(), notNullValue());
+        assertThat(compiler.flowIr(), notNullValue());
+        assertThat(compiler.flowAnalysis(), notNullValue());
+        assertThat(compiler.flowIr().ops().stream().filter(op -> op.kind() == Flow.Op.Kind.DEFINE_VALUE).count(),
+                greaterThan(0L));
+        assertThat(compiler.flowAnalysis().usesById().stream()
+                        .map(use -> compiler.flowIr().symbols().symbol(use.symbolId()).name())
+                        .collect(toList()),
+                contains("db"));
     }
 
     @Test
