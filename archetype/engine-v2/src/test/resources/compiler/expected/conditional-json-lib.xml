@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Copyright (c) 2026 Oracle and/or its affiliates.
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
+<archetype-script xmlns="https://helidon.io/archetype/2.0"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
+    <step name="Flavor">
+        <inputs>
+            <enum id="flavor" name="Flavor" global="true">
+                <option name="SE" value="se"/>
+                <option name="MP" value="mp"/>
+            </enum>
+        </inputs>
+    </step>
+    <step name="Media" if="${flavor} != &apos;mp&apos;">
+        <inputs>
+            <list id="media" name="Media">
+                <option name="JSON" value="json">
+                    <inputs>
+                        <enum id="json-lib" name="JSON Library">
+                            <option name="JSON-P" value="jsonp"/>
+                            <option name="Jackson" value="jackson"/>
+                            <option name="JSON-B" value="jsonb"/>
+                        </enum>
+                    </inputs>
+                </option>
+                <option name="Multipart" value="multipart"/>
+            </list>
+        </inputs>
+    </step>
+    <step name="Media" if="${flavor} != &apos;se&apos;">
+        <inputs>
+            <list id="media" name="Media">
+                <option name="JSON" value="json">
+                    <inputs>
+                        <enum id="json-lib" name="JSON Library">
+                            <option name="Jackson" value="jackson"/>
+                            <option name="JSON-B" value="jsonb"/>
+                        </enum>
+                    </inputs>
+                </option>
+                <option name="Multipart" value="multipart"/>
+            </list>
+        </inputs>
+    </step>
+    <step name="JSON-P Only"
+          if="${media} contains &apos;json&apos; &amp;&amp; ${media.json-lib} == &apos;jsonp&apos;">
+        <inputs>
+            <boolean id="jsonp" name="JSON-P"/>
+        </inputs>
+    </step>
+    <step name="JSON Binding"
+          if="${flavor} != &apos;se&apos; &amp;&amp; ${media} contains &apos;json&apos;">
+        <inputs>
+            <boolean id="binding" name="Binding"/>
+        </inputs>
+    </step>
+</archetype-script>

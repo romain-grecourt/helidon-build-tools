@@ -259,10 +259,16 @@ final class Domain {
         static final class Fact {
             private final Guard definedUnder;
             private final Value value;
+            private final List<ExactCase> exactCases;
 
             Fact(Guard definedUnder, Value value) {
+                this(definedUnder, value, List.of());
+            }
+
+            Fact(Guard definedUnder, Value value, List<ExactCase> exactCases) {
                 this.definedUnder = requireNonNull(definedUnder, "definedUnder is null");
                 this.value = requireNonNull(value, "value is null");
+                this.exactCases = List.copyOf(requireNonNull(exactCases, "exactCases is null"));
             }
 
             Guard definedUnder() {
@@ -273,18 +279,156 @@ final class Domain {
                 return value;
             }
 
+            List<ExactCase> exactCases() {
+                return exactCases;
+            }
+
+            Guard exactDefined(Guards guards) {
+                Guard result = guards.falseGuard();
+                for (ExactCase exactCase : exactCases) {
+                    result = guards.or(result, exactCase.guard);
+                }
+                return result;
+            }
+
+            Guard match(io.helidon.build.archetype.engine.v2.Value<?> candidate, Guards guards) {
+                Guard result = guards.falseGuard();
+                for (ExactCase exactCase : exactCases) {
+                    if (io.helidon.build.archetype.engine.v2.Value.isEqual(exactCase.value, candidate)) {
+                        result = guards.or(result, exactCase.guard);
+                    }
+                }
+                return result;
+            }
+
+            Guard scalarAny(Set<String> values, Guards guards) {
+                Guard result = guards.falseGuard();
+                for (ExactCase exactCase : exactCases) {
+                    String scalar = exactCase.scalarLiteral();
+                    if (scalar != null && values.contains(scalar)) {
+                        result = guards.or(result, exactCase.guard);
+                    }
+                }
+                return result;
+            }
+
+            Guard listContains(Set<String> required, Guards guards) {
+                Guard result = guards.falseGuard();
+                for (ExactCase exactCase : exactCases) {
+                    if (exactCase.containsAll(required)) {
+                        result = guards.or(result, exactCase.guard);
+                    }
+                }
+                return result;
+            }
+
+            static Fact exact(Guard definedUnder,
+                              Value value,
+                              io.helidon.build.archetype.engine.v2.Value<?> exactValue) {
+                if (exactValue == null || !exactValue.isPresent()) {
+                    return new Fact(definedUnder, value);
+                }
+                return new Fact(definedUnder, value, List.of(new ExactCase(exactValue, definedUnder)));
+            }
+
+            static Fact merge(Fact left, Fact right, Guards guards) {
+                Guard definedUnder = guards.or(left.definedUnder, right.definedUnder);
+                Value value = Value.join(left.value, right.value);
+                if (left.exactCases.isEmpty()) {
+                    return right.exactCases.isEmpty()
+                            ? new Fact(definedUnder, value)
+                            : new Fact(definedUnder, value, right.exactCases);
+                }
+                if (right.exactCases.isEmpty()) {
+                    return new Fact(definedUnder, value, left.exactCases);
+                }
+                List<ExactCase> merged = new ArrayList<>();
+                for (ExactCase exactCase : left.exactCases) {
+                    mergeExactCase(merged, exactCase, guards);
+                }
+                for (ExactCase exactCase : right.exactCases) {
+                    mergeExactCase(merged, exactCase, guards);
+                }
+                return new Fact(definedUnder, value, merged);
+            }
+
+            private static void mergeExactCase(List<ExactCase> merged, ExactCase next, Guards guards) {
+                for (int i = 0; i < merged.size(); i++) {
+                    ExactCase current = merged.get(i);
+                    if (io.helidon.build.archetype.engine.v2.Value.isEqual(current.value, next.value)) {
+                        merged.set(i, new ExactCase(current.value, guards.or(current.guard, next.guard)));
+                        return;
+                    }
+                }
+                merged.add(next);
+            }
+
             @Override
             public boolean equals(Object o) {
                 if (!(o instanceof Fact)) {
                     return false;
                 }
                 Fact other = (Fact) o;
-                return definedUnder.equals(other.definedUnder) && value.equals(other.value);
+                return definedUnder.equals(other.definedUnder)
+                       && value.equals(other.value)
+                       && exactCases.equals(other.exactCases);
             }
 
             @Override
             public int hashCode() {
-                return Objects.hash(definedUnder, value);
+                return Objects.hash(definedUnder, value, exactCases);
+            }
+
+            static final class ExactCase {
+                private final io.helidon.build.archetype.engine.v2.Value<?> value;
+                private final Guard guard;
+
+                ExactCase(io.helidon.build.archetype.engine.v2.Value<?> value, Guard guard) {
+                    this.value = requireNonNull(value, "value is null");
+                    this.guard = requireNonNull(guard, "guard is null");
+                }
+
+                io.helidon.build.archetype.engine.v2.Value<?> value() {
+                    return value;
+                }
+
+                Guard guard() {
+                    return guard;
+                }
+
+                boolean containsAll(Set<String> required) {
+                    if (value.type() != io.helidon.build.archetype.engine.v2.Value.Type.LIST) {
+                        return false;
+                    }
+                    return value.getList().containsAll(required);
+                }
+
+                String scalarLiteral() {
+                    switch (value.type()) {
+                        case STRING:
+                        case DYNAMIC:
+                            return value.getString();
+                        case BOOLEAN:
+                            return String.valueOf(value.getBoolean());
+                        default:
+                            return null;
+                    }
+                }
+
+                @Override
+                public boolean equals(Object o) {
+                    if (!(o instanceof ExactCase)) {
+                        return false;
+                    }
+                    ExactCase other = (ExactCase) o;
+                    return io.helidon.build.archetype.engine.v2.Value.isEqual(value, other.value)
+                           && guard.equals(other.guard);
+                }
+
+                @Override
+                public int hashCode() {
+                    return Objects.hash(io.helidon.build.archetype.engine.v2.Value.hash(value), guard);
+                }
             }
         }
 
@@ -764,6 +908,7 @@ final class Domain {
         private final Symbol.Table symbols;
         private final List<Decision> decisions = new ArrayList<>();
         private final Map<Decision, Integer> ids = new HashMap<>();
+        private final Map<Guard, Map<Guard, Guard>> orCache = new HashMap<>();
         private final Guard falseGuard;
         private final Guard trueGuard;
 
@@ -793,16 +938,27 @@ final class Domain {
         }
 
         Guard or(Guard left, Guard right) {
+            if (left.equals(right)) {
+                return left;
+            }
             if (isFalse(left)) {
                 return right;
             }
             if (isFalse(right)) {
                 return left;
             }
-            if (isPure(left) && isPure(right)) {
-                return guard(decision(left).or(decision(right), symbols), Expression.TRUE);
+            Guard cached = cachedOr(left, right);
+            if (cached != null) {
+                return cached;
             }
-            return residualGuard(rawExpression(left).or(rawExpression(right)).reduce());
+            Guard result;
+            if (isPure(left) && isPure(right)) {
+                result = guard(decision(left).or(decision(right), symbols), Expression.TRUE);
+            } else {
+                result = residualGuard(rawExpression(left).or(rawExpression(right)).reduce());
+            }
+            rememberOr(left, right, result);
+            return result;
         }
 
         Guard not(Guard guard) {
@@ -850,8 +1006,8 @@ final class Domain {
             if (allowed.isEmpty()) {
                 return falseGuard();
             }
-            ConstraintSet set = new ConstraintSet(Map.of(symbolId, new ScalarConstraint(allowed)), Map.of());
-            return guard(Decision.of(List.of(set), symbols), Expression.TRUE);
+            DecisionShape shape = new DecisionShape(Map.of(symbolId, new ScalarShape(allowed)), Map.of());
+            return guard(Decision.of(List.of(shape), symbols), Expression.TRUE);
         }
 
         Guard contains(int symbolId, String value) {
@@ -864,9 +1020,9 @@ final class Domain {
             if (!spec.items().contains(item)) {
                 return falseGuard();
             }
-            MembershipConstraint membership = MembershipConstraint.required(item);
-            ConstraintSet set = new ConstraintSet(Map.of(), Map.of(symbolId, membership));
-            return guard(Decision.of(List.of(set), symbols), Expression.TRUE);
+            MembershipShape membership = MembershipShape.required(item);
+            DecisionShape shape = new DecisionShape(Map.of(), Map.of(symbolId, membership));
+            return guard(Decision.of(List.of(shape), symbols), Expression.TRUE);
         }
 
         Guard defined(int symbolId) {
@@ -878,8 +1034,8 @@ final class Domain {
                 case BOOLEAN:
                 case CHOICE:
                 case FINITE_TEXT:
-                    return guard(Decision.of(List.of(new ConstraintSet(
-                            Map.of(symbolId, new ScalarConstraint(scalarValues(symbol.domain()))),
+                    return guard(Decision.of(List.of(new DecisionShape(
+                            Map.of(symbolId, new ScalarShape(scalarValues(symbol.domain()))),
                             Map.of())), symbols), Expression.TRUE);
                 case MEMBERSHIP:
                     return trueGuard();
@@ -933,6 +1089,23 @@ final class Domain {
 
         private Guard residualGuard(Expression expression) {
             return guard(Decision.TRUE, expression.reduce());
+        }
+
+        private Guard cachedOr(Guard left, Guard right) {
+            Map<Guard, Guard> cached = orCache.get(left);
+            if (cached != null) {
+                Guard result = cached.get(right);
+                if (result != null) {
+                    return result;
+                }
+            }
+            cached = orCache.get(right);
+            return cached == null ? null : cached.get(left);
+        }
+
+        private void rememberOr(Guard left, Guard right, Guard result) {
+            orCache.computeIfAbsent(left, k -> new HashMap<>()).put(right, result);
+            orCache.computeIfAbsent(right, k -> new HashMap<>()).put(left, result);
         }
 
         private int register(Decision decision) {
@@ -1002,21 +1175,21 @@ final class Domain {
 
     private static final class Decision {
         private static final Decision FALSE = new Decision(List.of());
-        private static final Decision TRUE = new Decision(List.of(new ConstraintSet()));
+        private static final Decision TRUE = new Decision(List.of(new DecisionShape()));
 
-        private final List<ConstraintSet> sets;
+        private final List<DecisionShape> shapes;
 
-        private Decision(List<ConstraintSet> sets) {
-            this.sets = List.copyOf(sets);
+        private Decision(List<DecisionShape> shapes) {
+            this.shapes = List.copyOf(shapes);
         }
 
-        static Decision of(List<ConstraintSet> sets, Symbol.Table symbols) {
-            if (sets.isEmpty()) {
+        static Decision of(List<DecisionShape> shapes, Symbol.Table symbols) {
+            if (shapes.isEmpty()) {
                 return FALSE;
             }
-            List<ConstraintSet> normalized = new ArrayList<>();
-            for (ConstraintSet set : sets) {
-                ConstraintSet next = set.normalized(symbols);
+            List<DecisionShape> normalized = new ArrayList<>();
+            for (DecisionShape shape : shapes) {
+                DecisionShape next = shape.normalized(symbols);
                 if (next.isTrue()) {
                     return TRUE;
                 }
@@ -1029,8 +1202,8 @@ final class Domain {
                 changed = false;
                 for (int i = 0; i < normalized.size() && !changed; i++) {
                     for (int j = i + 1; j < normalized.size(); j++) {
-                        ConstraintSet left = normalized.get(i);
-                        ConstraintSet right = normalized.get(j);
+                        DecisionShape left = normalized.get(i);
+                        DecisionShape right = normalized.get(j);
                         if (left.subsetOf(right, symbols)) {
                             normalized.remove(i);
                             changed = true;
@@ -1041,7 +1214,7 @@ final class Domain {
                             changed = true;
                             break;
                         }
-                        ConstraintSet merged = left.tryMerge(right, symbols);
+                        DecisionShape merged = left.tryMerge(right, symbols);
                         if (merged != null) {
                             normalized.set(i, merged);
                             normalized.remove(j);
@@ -1054,12 +1227,12 @@ final class Domain {
             if (normalized.isEmpty()) {
                 return FALSE;
             }
-            normalized.sort(Comparator.comparing(ConstraintSet::literal));
+            normalized.sort(Comparator.comparing(DecisionShape::literal));
             return new Decision(normalized);
         }
 
         boolean isFalse() {
-            return sets.isEmpty();
+            return shapes.isEmpty();
         }
 
         Decision and(Decision other, Symbol.Table symbols) {
@@ -1072,10 +1245,10 @@ final class Domain {
             if (other.equals(TRUE)) {
                 return this;
             }
-            List<ConstraintSet> result = new ArrayList<>();
-            for (ConstraintSet left : sets) {
-                for (ConstraintSet right : other.sets) {
-                    ConstraintSet intersection = left.intersect(right, symbols);
+            List<DecisionShape> result = new ArrayList<>();
+            for (DecisionShape left : shapes) {
+                for (DecisionShape right : other.shapes) {
+                    DecisionShape intersection = left.intersect(right, symbols);
                     if (intersection != null) {
                         result.add(intersection);
                     }
@@ -1091,8 +1264,8 @@ final class Domain {
             if (other.isFalse()) {
                 return this;
             }
-            List<ConstraintSet> result = new ArrayList<>(sets);
-            result.addAll(other.sets);
+            List<DecisionShape> result = new ArrayList<>(shapes);
+            result.addAll(other.shapes);
             return of(result, symbols);
         }
 
@@ -1103,10 +1276,10 @@ final class Domain {
             if (other.equals(TRUE)) {
                 return FALSE;
             }
-            List<ConstraintSet> remaining = new ArrayList<>(sets);
-            for (ConstraintSet right : other.sets) {
-                List<ConstraintSet> next = new ArrayList<>();
-                for (ConstraintSet left : remaining) {
+            List<DecisionShape> remaining = new ArrayList<>(shapes);
+            for (DecisionShape right : other.shapes) {
+                List<DecisionShape> next = new ArrayList<>();
+                for (DecisionShape left : remaining) {
                     next.addAll(left.subtract(right, symbols));
                 }
                 remaining = next;
@@ -1122,32 +1295,32 @@ final class Domain {
                 return Expression.FALSE;
             }
             Expression expression = Expression.FALSE;
-            for (ConstraintSet set : sets) {
-                expression = expression.or(set.toExpression(keyResolver, symbols));
+            for (DecisionShape shape : shapes) {
+                expression = expression.or(shape.toExpression(keyResolver, symbols));
             }
             return expression.reduce();
         }
 
         @Override
         public boolean equals(Object o) {
-            return o instanceof Decision && sets.equals(((Decision) o).sets);
+            return o instanceof Decision && shapes.equals(((Decision) o).shapes);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(sets);
+            return Objects.hash(shapes);
         }
     }
 
-    private static final class ConstraintSet {
-        private final Map<Integer, ScalarConstraint> scalars;
-        private final Map<Integer, MembershipConstraint> memberships;
+    private static final class DecisionShape {
+        private final Map<Integer, ScalarShape> scalars;
+        private final Map<Integer, MembershipShape> memberships;
 
-        private ConstraintSet() {
+        private DecisionShape() {
             this(Map.of(), Map.of());
         }
 
-        private ConstraintSet(Map<Integer, ScalarConstraint> scalars, Map<Integer, MembershipConstraint> memberships) {
+        private DecisionShape(Map<Integer, ScalarShape> scalars, Map<Integer, MembershipShape> memberships) {
             this.scalars = new TreeMap<>(scalars);
             this.memberships = new TreeMap<>(memberships);
         }
@@ -1156,55 +1329,55 @@ final class Domain {
             return scalars.isEmpty() && memberships.isEmpty();
         }
 
-        ConstraintSet normalized(Symbol.Table symbols) {
-            Map<Integer, ScalarConstraint> nextScalars = new TreeMap<>();
-            for (Map.Entry<Integer, ScalarConstraint> entry : scalars.entrySet()) {
+        DecisionShape normalized(Symbol.Table symbols) {
+            Map<Integer, ScalarShape> nextScalars = new TreeMap<>();
+            for (Map.Entry<Integer, ScalarShape> entry : scalars.entrySet()) {
                 Set<String> domainValues = scalarValues(symbols.symbol(entry.getKey()).domain());
-                if (!entry.getValue().allowed().equals(domainValues)) {
+                if (!entry.getValue().allowed.equals(domainValues)) {
                     nextScalars.put(entry.getKey(), entry.getValue());
                 }
             }
-            Map<Integer, MembershipConstraint> nextMemberships = new TreeMap<>();
-            for (Map.Entry<Integer, MembershipConstraint> entry : memberships.entrySet()) {
-                MembershipConstraint constraint = entry.getValue();
+            Map<Integer, MembershipShape> nextMemberships = new TreeMap<>();
+            for (Map.Entry<Integer, MembershipShape> entry : memberships.entrySet()) {
+                MembershipShape constraint = entry.getValue();
                 if (!constraint.isEmpty()) {
                     nextMemberships.put(entry.getKey(), constraint);
                 }
             }
-            return new ConstraintSet(nextScalars, nextMemberships);
+            return new DecisionShape(nextScalars, nextMemberships);
         }
 
-        ConstraintSet intersect(ConstraintSet other, Symbol.Table symbols) {
-            Map<Integer, ScalarConstraint> nextScalars = new TreeMap<>(scalars);
-            for (Map.Entry<Integer, ScalarConstraint> entry : other.scalars.entrySet()) {
-                ScalarConstraint current = nextScalars.get(entry.getKey());
+        DecisionShape intersect(DecisionShape other, Symbol.Table symbols) {
+            Map<Integer, ScalarShape> nextScalars = new TreeMap<>(scalars);
+            for (Map.Entry<Integer, ScalarShape> entry : other.scalars.entrySet()) {
+                ScalarShape current = nextScalars.get(entry.getKey());
                 if (current == null) {
                     nextScalars.put(entry.getKey(), entry.getValue());
                 } else {
-                    ScalarConstraint intersection = current.intersect(entry.getValue());
+                    ScalarShape intersection = current.intersect(entry.getValue());
                     if (intersection == null) {
                         return null;
                     }
                     nextScalars.put(entry.getKey(), intersection);
                 }
             }
-            Map<Integer, MembershipConstraint> nextMemberships = new TreeMap<>(memberships);
-            for (Map.Entry<Integer, MembershipConstraint> entry : other.memberships.entrySet()) {
-                MembershipConstraint current = nextMemberships.get(entry.getKey());
+            Map<Integer, MembershipShape> nextMemberships = new TreeMap<>(memberships);
+            for (Map.Entry<Integer, MembershipShape> entry : other.memberships.entrySet()) {
+                MembershipShape current = nextMemberships.get(entry.getKey());
                 if (current == null) {
                     nextMemberships.put(entry.getKey(), entry.getValue());
                 } else {
-                    MembershipConstraint intersection = current.intersect(entry.getValue());
+                    MembershipShape intersection = current.intersect(entry.getValue());
                     if (intersection == null) {
                         return null;
                     }
                     nextMemberships.put(entry.getKey(), intersection);
                 }
             }
-            return new ConstraintSet(nextScalars, nextMemberships).normalized(symbols);
+            return new DecisionShape(nextScalars, nextMemberships).normalized(symbols);
         }
 
-        boolean subsetOf(ConstraintSet other, Symbol.Table symbols) {
+        boolean subsetOf(DecisionShape other, Symbol.Table symbols) {
             Set<Integer> scalarKeys = new HashSet<>(scalars.keySet());
             scalarKeys.addAll(other.scalars.keySet());
             for (int symbolId : scalarKeys) {
@@ -1217,21 +1390,21 @@ final class Domain {
             Set<Integer> membershipKeys = new HashSet<>(memberships.keySet());
             membershipKeys.addAll(other.memberships.keySet());
             for (int symbolId : membershipKeys) {
-                MembershipConstraint left = memberships.getOrDefault(symbolId, MembershipConstraint.EMPTY);
-                MembershipConstraint right = other.memberships.getOrDefault(symbolId, MembershipConstraint.EMPTY);
-                if (!left.required().containsAll(right.required()) || !left.forbidden().containsAll(right.forbidden())) {
+                MembershipShape left = memberships.getOrDefault(symbolId, MembershipShape.EMPTY);
+                MembershipShape right = other.memberships.getOrDefault(symbolId, MembershipShape.EMPTY);
+                if (!left.required.containsAll(right.required) || !left.forbidden.containsAll(right.forbidden)) {
                     return false;
                 }
             }
             return true;
         }
 
-        ConstraintSet tryMerge(ConstraintSet other, Symbol.Table symbols) {
+        DecisionShape tryMerge(DecisionShape other, Symbol.Table symbols) {
             if (!memberships.equals(other.memberships)) {
                 return null;
             }
             Integer diffSymbolId = null;
-            Map<Integer, ScalarConstraint> nextScalars = new TreeMap<>();
+            Map<Integer, ScalarShape> nextScalars = new TreeMap<>();
             Set<Integer> keys = new TreeSet<>(scalars.keySet());
             keys.addAll(other.scalars.keySet());
             for (int symbolId : keys) {
@@ -1246,45 +1419,45 @@ final class Domain {
                     Set<String> union = new TreeSet<>(leftAllowed);
                     union.addAll(rightAllowed);
                     if (!union.equals(domainValues)) {
-                        nextScalars.put(symbolId, new ScalarConstraint(union));
+                        nextScalars.put(symbolId, new ScalarShape(union));
                     }
                 } else if (!leftAllowed.equals(domainValues)) {
-                    nextScalars.put(symbolId, new ScalarConstraint(leftAllowed));
+                    nextScalars.put(symbolId, new ScalarShape(leftAllowed));
                 }
             }
-            return diffSymbolId == null ? null : new ConstraintSet(nextScalars, memberships).normalized(symbols);
+            return diffSymbolId == null ? null : new DecisionShape(nextScalars, memberships).normalized(symbols);
         }
 
-        List<ConstraintSet> subtract(ConstraintSet other, Symbol.Table symbols) {
-            ConstraintSet intersection = intersect(other, symbols);
+        List<DecisionShape> subtract(DecisionShape other, Symbol.Table symbols) {
+            DecisionShape intersection = intersect(other, symbols);
             if (intersection == null) {
                 return List.of(this);
             }
             if (subsetOf(other, symbols)) {
                 return List.of();
             }
-            Split split = splitAgainst(other, symbols);
-            if (split == null) {
+            DecisionPartition partition = splitAgainst(other, symbols);
+            if (partition == null) {
                 return List.of(this);
             }
-            List<ConstraintSet> result = new ArrayList<>();
-            if (split.outside() != null) {
-                result.add(split.outside());
+            List<DecisionShape> result = new ArrayList<>();
+            if (partition.outside != null) {
+                result.add(partition.outside);
             }
-            if (split.overlap() == null) {
+            if (partition.overlap == null) {
                 return result;
             }
-            result.addAll(split.overlap().subtract(other, symbols));
+            result.addAll(partition.overlap.subtract(other, symbols));
             return result;
         }
 
         Expression toExpression(IntFunction<String> keyResolver, Symbol.Table symbols) {
             Expression expression = Expression.TRUE;
-            for (Map.Entry<Integer, ScalarConstraint> entry : scalars.entrySet()) {
+            for (Map.Entry<Integer, ScalarShape> entry : scalars.entrySet()) {
                 Symbol symbol = symbols.symbol(entry.getKey());
                 expression = expression.and(entry.getValue().toExpression(keyResolver.apply(entry.getKey()), symbol.domain()));
             }
-            for (Map.Entry<Integer, MembershipConstraint> entry : memberships.entrySet()) {
+            for (Map.Entry<Integer, MembershipShape> entry : memberships.entrySet()) {
                 expression = expression.and(entry.getValue().toExpression(keyResolver.apply(entry.getKey())));
             }
             return expression.reduce();
@@ -1294,8 +1467,8 @@ final class Domain {
             return scalars + "|" + memberships;
         }
 
-        private Split splitAgainst(ConstraintSet other, Symbol.Table symbols) {
-            for (Map.Entry<Integer, ScalarConstraint> entry : other.scalars.entrySet()) {
+        private DecisionPartition splitAgainst(DecisionShape other, Symbol.Table symbols) {
+            for (Map.Entry<Integer, ScalarShape> entry : other.scalars.entrySet()) {
                 int symbolId = entry.getKey();
                 Set<String> leftAllowed = allowed(symbolId, symbols);
                 Set<String> rightAllowed = other.allowed(symbolId, symbols);
@@ -1304,21 +1477,21 @@ final class Domain {
                     outside.removeAll(rightAllowed);
                     Set<String> overlap = new TreeSet<>(leftAllowed);
                     overlap.retainAll(rightAllowed);
-                    return new Split(withScalar(symbolId, outside, symbols), withScalar(symbolId, overlap, symbols));
+                    return new DecisionPartition(withScalar(symbolId, outside, symbols), withScalar(symbolId, overlap, symbols));
                 }
             }
-            for (Map.Entry<Integer, MembershipConstraint> entry : other.memberships.entrySet()) {
+            for (Map.Entry<Integer, MembershipShape> entry : other.memberships.entrySet()) {
                 int symbolId = entry.getKey();
-                MembershipConstraint left = memberships.getOrDefault(symbolId, MembershipConstraint.EMPTY);
-                for (String required : entry.getValue().required()) {
-                    if (!left.required().contains(required) && !left.forbidden().contains(required)) {
-                        return new Split(withMembershipForbidden(symbolId, required, symbols),
+                MembershipShape left = memberships.getOrDefault(symbolId, MembershipShape.EMPTY);
+                for (String required : entry.getValue().required) {
+                    if (!left.required.contains(required) && !left.forbidden.contains(required)) {
+                        return new DecisionPartition(withMembershipForbidden(symbolId, required, symbols),
                                 withMembershipRequired(symbolId, required, symbols));
                     }
                 }
-                for (String forbidden : entry.getValue().forbidden()) {
-                    if (!left.required().contains(forbidden) && !left.forbidden().contains(forbidden)) {
-                        return new Split(withMembershipRequired(symbolId, forbidden, symbols),
+                for (String forbidden : entry.getValue().forbidden) {
+                    if (!left.required.contains(forbidden) && !left.forbidden.contains(forbidden)) {
+                        return new DecisionPartition(withMembershipRequired(symbolId, forbidden, symbols),
                                 withMembershipForbidden(symbolId, forbidden, symbols));
                     }
                 }
@@ -1326,42 +1499,42 @@ final class Domain {
             return null;
         }
 
-        private ConstraintSet withScalar(int symbolId, Set<String> allowed, Symbol.Table symbols) {
-            Map<Integer, ScalarConstraint> nextScalars = new TreeMap<>(scalars);
+        private DecisionShape withScalar(int symbolId, Set<String> allowed, Symbol.Table symbols) {
+            Map<Integer, ScalarShape> nextScalars = new TreeMap<>(scalars);
             Set<String> domainValues = scalarValues(symbols.symbol(symbolId).domain());
             if (allowed.equals(domainValues)) {
                 nextScalars.remove(symbolId);
             } else {
-                nextScalars.put(symbolId, new ScalarConstraint(allowed));
+                nextScalars.put(symbolId, new ScalarShape(allowed));
             }
-            return new ConstraintSet(nextScalars, memberships).normalized(symbols);
+            return new DecisionShape(nextScalars, memberships).normalized(symbols);
         }
 
-        private ConstraintSet withMembershipRequired(int symbolId, String item, Symbol.Table symbols) {
-            Map<Integer, MembershipConstraint> nextMemberships = new TreeMap<>(memberships);
-            MembershipConstraint current = nextMemberships.getOrDefault(symbolId, MembershipConstraint.EMPTY);
+        private DecisionShape withMembershipRequired(int symbolId, String item, Symbol.Table symbols) {
+            Map<Integer, MembershipShape> nextMemberships = new TreeMap<>(memberships);
+            MembershipShape current = nextMemberships.getOrDefault(symbolId, MembershipShape.EMPTY);
             nextMemberships.put(symbolId, current.withRequired(item));
-            return new ConstraintSet(scalars, nextMemberships).normalized(symbols);
+            return new DecisionShape(scalars, nextMemberships).normalized(symbols);
         }
 
-        private ConstraintSet withMembershipForbidden(int symbolId, String item, Symbol.Table symbols) {
-            Map<Integer, MembershipConstraint> nextMemberships = new TreeMap<>(memberships);
-            MembershipConstraint current = nextMemberships.getOrDefault(symbolId, MembershipConstraint.EMPTY);
+        private DecisionShape withMembershipForbidden(int symbolId, String item, Symbol.Table symbols) {
+            Map<Integer, MembershipShape> nextMemberships = new TreeMap<>(memberships);
+            MembershipShape current = nextMemberships.getOrDefault(symbolId, MembershipShape.EMPTY);
             nextMemberships.put(symbolId, current.withForbidden(item));
-            return new ConstraintSet(scalars, nextMemberships).normalized(symbols);
+            return new DecisionShape(scalars, nextMemberships).normalized(symbols);
         }
 
         private Set<String> allowed(int symbolId, Symbol.Table symbols) {
-            ScalarConstraint constraint = scalars.get(symbolId);
-            return constraint == null ? scalarValues(symbols.symbol(symbolId).domain()) : constraint.allowed();
+            ScalarShape constraint = scalars.get(symbolId);
+            return constraint == null ? scalarValues(symbols.symbol(symbolId).domain()) : constraint.allowed;
         }
 
         @Override
         public boolean equals(Object o) {
-            if (!(o instanceof ConstraintSet)) {
+            if (!(o instanceof DecisionShape)) {
                 return false;
             }
-            ConstraintSet other = (ConstraintSet) o;
+            DecisionShape other = (DecisionShape) o;
             return scalars.equals(other.scalars) && memberships.equals(other.memberships);
         }
 
@@ -1371,24 +1544,20 @@ final class Domain {
         }
     }
 
-    private static final class ScalarConstraint {
+    private static final class ScalarShape {
         private final Set<String> allowed;
 
-        private ScalarConstraint(Set<String> allowed) {
+        private ScalarShape(Set<String> allowed) {
             if (allowed.isEmpty()) {
                 throw new IllegalArgumentException("Scalar constraint must not be empty");
             }
             this.allowed = canonicalStrings(allowed);
         }
 
-        Set<String> allowed() {
-            return allowed;
-        }
-
-        ScalarConstraint intersect(ScalarConstraint other) {
+        ScalarShape intersect(ScalarShape other) {
             Set<String> intersection = new TreeSet<>(allowed);
             intersection.retainAll(other.allowed);
-            return intersection.isEmpty() ? null : new ScalarConstraint(intersection);
+            return intersection.isEmpty() ? null : new ScalarShape(intersection);
         }
 
         Expression toExpression(String key, Spec spec) {
@@ -1415,7 +1584,7 @@ final class Domain {
 
         @Override
         public boolean equals(Object o) {
-            return o instanceof ScalarConstraint && allowed.equals(((ScalarConstraint) o).allowed);
+            return o instanceof ScalarShape && allowed.equals(((ScalarShape) o).allowed);
         }
 
         @Override
@@ -1424,13 +1593,13 @@ final class Domain {
         }
     }
 
-    private static final class MembershipConstraint {
-        private static final MembershipConstraint EMPTY = new MembershipConstraint(Set.of(), Set.of());
+    private static final class MembershipShape {
+        private static final MembershipShape EMPTY = new MembershipShape(Set.of(), Set.of());
 
         private final Set<String> required;
         private final Set<String> forbidden;
 
-        private MembershipConstraint(Set<String> required, Set<String> forbidden) {
+        private MembershipShape(Set<String> required, Set<String> forbidden) {
             Set<String> nextRequired = new TreeSet<>(required);
             Set<String> nextForbidden = new TreeSet<>(forbidden);
             if (!disjoint(nextRequired, nextForbidden)) {
@@ -1440,23 +1609,15 @@ final class Domain {
             this.forbidden = Set.copyOf(nextForbidden);
         }
 
-        static MembershipConstraint required(String item) {
-            return new MembershipConstraint(Set.of(item), Set.of());
-        }
-
-        Set<String> required() {
-            return required;
-        }
-
-        Set<String> forbidden() {
-            return forbidden;
+        static MembershipShape required(String item) {
+            return new MembershipShape(Set.of(item), Set.of());
         }
 
         boolean isEmpty() {
             return required.isEmpty() && forbidden.isEmpty();
         }
 
-        MembershipConstraint intersect(MembershipConstraint other) {
+        MembershipShape intersect(MembershipShape other) {
             Set<String> nextRequired = new TreeSet<>(required);
             nextRequired.addAll(other.required);
             Set<String> nextForbidden = new TreeSet<>(forbidden);
@@ -1464,19 +1625,19 @@ final class Domain {
             if (!disjoint(nextRequired, nextForbidden)) {
                 return null;
             }
-            return new MembershipConstraint(nextRequired, nextForbidden);
+            return new MembershipShape(nextRequired, nextForbidden);
         }
 
-        MembershipConstraint withRequired(String item) {
+        MembershipShape withRequired(String item) {
             Set<String> nextRequired = new TreeSet<>(required);
             nextRequired.add(item);
-            return new MembershipConstraint(nextRequired, forbidden);
+            return new MembershipShape(nextRequired, forbidden);
         }
 
-        MembershipConstraint withForbidden(String item) {
+        MembershipShape withForbidden(String item) {
             Set<String> nextForbidden = new TreeSet<>(forbidden);
             nextForbidden.add(item);
-            return new MembershipConstraint(required, nextForbidden);
+            return new MembershipShape(required, nextForbidden);
         }
 
         Expression toExpression(String key) {
@@ -1496,10 +1657,10 @@ final class Domain {
 
         @Override
         public boolean equals(Object o) {
-            if (!(o instanceof MembershipConstraint)) {
+            if (!(o instanceof MembershipShape)) {
                 return false;
             }
-            MembershipConstraint other = (MembershipConstraint) o;
+            MembershipShape other = (MembershipShape) o;
             return required.equals(other.required) && forbidden.equals(other.forbidden);
         }
 
@@ -1509,21 +1670,13 @@ final class Domain {
         }
     }
 
-    private static final class Split {
-        private final ConstraintSet outside;
-        private final ConstraintSet overlap;
+    private static final class DecisionPartition {
+        private final DecisionShape outside;
+        private final DecisionShape overlap;
 
-        private Split(ConstraintSet outside, ConstraintSet overlap) {
+        private DecisionPartition(DecisionShape outside, DecisionShape overlap) {
             this.outside = outside;
             this.overlap = overlap;
-        }
-
-        ConstraintSet outside() {
-            return outside;
-        }
-
-        ConstraintSet overlap() {
-            return overlap;
         }
     }
 

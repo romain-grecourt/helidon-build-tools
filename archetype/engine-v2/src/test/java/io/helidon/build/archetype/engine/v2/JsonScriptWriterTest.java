@@ -25,6 +25,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static io.helidon.build.archetype.engine.v2.Nodes.condition;
+import static io.helidon.build.archetype.engine.v2.Nodes.inputBoolean;
 import static io.helidon.build.archetype.engine.v2.Nodes.inputEnum;
 import static io.helidon.build.archetype.engine.v2.Nodes.inputOption;
 import static io.helidon.build.archetype.engine.v2.Nodes.inputText;
@@ -51,6 +52,7 @@ import static io.helidon.build.archetype.engine.v2.Nodes.variableText;
 import static io.helidon.build.archetype.engine.v2.Nodes.variables;
 import static io.helidon.build.common.test.utils.TestFiles.testResourcePath;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 
 class JsonScriptWriterTest {
@@ -133,6 +135,20 @@ class JsonScriptWriterTest {
                                         inputOption("Option2", "option2"))),
                                 inputText("text1").attribute("default", "Default1"))));
         assertThat(toJson(script), is(expected("writer/inputs.json")));
+    }
+
+    @Test
+    void testBooleanDefaultsKeepScriptSemantics() {
+        Node script = script(
+                step("Step1",
+                        inputs(
+                                inputBoolean("flag", b -> b.attribute("default", "false")),
+                                inputBoolean("legacy", b -> b.attribute("default", "no")))));
+
+        String json = toJson(script);
+
+        assertThat(json, containsString("\"default\": false"));
+        assertThat(json, containsString("\"default\": \"no\""));
     }
 
     @Test

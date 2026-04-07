@@ -405,6 +405,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
 
     private static final class VisitorImpl implements Node.Visitor {
         private final ScriptCompiler compiler;
+        private final Flow.Model flowModel;
         private final Node sourceNode;
 
         private final List<Table> inputs = new ArrayList<>();
@@ -429,6 +430,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                     Map<String, String> externalDefaults,
                     long maxIntermediateVariations) {
             this.compiler = compiler;
+            this.flowModel = compiler.flowModel();
             this.sourceNode = sourceNode;
             this.variations = variations;
             this.filters = filters;
@@ -739,7 +741,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                 return false;
             }
             try {
-                Scope scope = compiler.scope(node);
+                Scope scope = flowModel.scope(node);
                 return expr.eval(s -> {
                     String v = variation.get(scope.key(s));
                     if (v != null) {
@@ -762,9 +764,9 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                 case INPUT_BOOLEAN:
                 case INPUT_ENUM:
                 case INPUT_LIST:
-                    return compiler.activationCondition(node.parent());
+                    return flowModel.activationCondition(node.parent());
                 default:
-                    return compiler.activationCondition(node);
+                    return flowModel.activationCondition(node);
             }
         }
 
@@ -772,7 +774,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             if (expr == Expression.TRUE || expr == Expression.FALSE || resolvedExternalValues.isEmpty()) {
                 return expr;
             }
-            Scope scope = compiler.scope(node);
+            Scope scope = flowModel.scope(node);
             return expr.inline(s -> {
                 String key = scope.key(s);
                 String value = resolvedExternalValues.get(key);
@@ -850,7 +852,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             if (value != null) {
                 return Value.typed(Value.dynamic(value), node.kind().valueType());
             }
-            return compiler.declaredValue(node, key);
+            return flowModel.declaredValue(node, key);
         }
 
         Value<String> externalDefaultValue(String key) {
@@ -882,7 +884,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         Map<String, Value.Type> inputTypes() {
             Map<String, Value.Type> types = new LinkedHashMap<>();
             for (Node input : sourceNode.traverse(Kind::isInput)) {
-                types.putIfAbsent(compiler.scopeId(input), input.kind().valueType());
+                types.putIfAbsent(flowModel.key(input), input.kind().valueType());
             }
             return Collections.unmodifiableMap(types);
         }
@@ -1023,7 +1025,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
 
         // collect every input id that must be available before this table can join
         Set<String> dependencies(Table table, Set<String> inputIds) {
-            Scope scope = compiler.scope(table.node);
+            Scope scope = flowModel.scope(table.node);
             // join order only depends on input ids referenced by table and row predicates
             Set<String> dependencies = new LinkedHashSet<>(dependencies(table.expr, scope, table.id, inputIds));
             for (Row row : table.rows) {
@@ -1049,8 +1051,8 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         }
 
         Table table(Node node) {
-            Expression expr = compiler.activationCondition(node.parent());
-            return new Table(node, compiler.scopeId(node), prune(node, expr));
+            Expression expr = flowModel.activationCondition(node.parent());
+            return new Table(node, flowModel.key(node), prune(node, expr));
         }
 
         static List<Node> optionNodes(Node node) {

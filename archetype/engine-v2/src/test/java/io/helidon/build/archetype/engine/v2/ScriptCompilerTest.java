@@ -20,24 +20,15 @@ import java.io.UncheckedIOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
 import java.util.regex.Pattern;
-import java.util.stream.StreamSupport;
 
-import io.helidon.build.archetype.engine.v2.Node.Kind;
 import io.helidon.build.archetype.engine.v2.ScriptCompiler.ValidationException;
 import io.helidon.build.common.Strings;
 import io.helidon.build.common.VirtualFileSystem;
 
-import org.hamcrest.FeatureMatcher;
-import org.hamcrest.Matcher;
 import org.junit.jupiter.api.Test;
 
-import static org.hamcrest.Matchers.allOf;
-import static org.hamcrest.Matchers.anyOf;
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.EXPR_EVAL_ERROR;
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.EXPR_INCOMPATIBLE_OPERATOR;
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.EXPR_TEXT_INPUT_CONTROL_FLOW;
@@ -64,7 +55,6 @@ import static io.helidon.build.common.test.utils.TestFiles.targetDir;
 import static io.helidon.build.common.test.utils.TestFiles.testResourcePath;
 import static java.util.stream.Collectors.toList;
 import static org.hamcrest.Matchers.contains;
-import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.is;
@@ -88,9 +78,7 @@ class ScriptCompilerTest {
     void testEmptyMethod() {
         Path outputDir = compile("compiler/empty-method", "main.xml");
         Node node = Script.load(outputDir.resolve("main.xml"));
-        assertThat(node, allOf(
-                hasProperty("methods", n -> n.script().methods(), is(Map.of())),
-                hasProperty("children", Node::children, is(List.of()))));
+        assertThat(node.children(), is(List.of()));
     }
 
     @Test
@@ -229,53 +217,22 @@ class ScriptCompilerTest {
     @Test
     void testDuplicateDiscreteStepsPreserveMergedCondition() {
         Path outputDir = compile("compiler/duplicate-discrete-steps", "main.xml");
-        Node output = Script.load(outputDir.resolve("main.xml"));
-        assertThat(output, hasProperty("shared steps",
-                node -> StreamSupport.stream(node.traverse(Kind.STEP::equals).spliterator(), false)
-                        .filter(step -> "Shared".equals(step.attribute("name").getString()))
-                        .collect(toList()),
-                contains(isNode(
-                        hasProperty("parent", Node::parent, isNode(
-                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
-                                hasProperty("condition",
-                                        node -> node.expression().literal().replaceAll("\\s+", " ").trim(),
-                                        anyOf(
-                                                is("${app-type} != 'custom'"),
-                                                is("${app-type} == 'quickstart' || ${app-type} == 'database'"),
-                                                is("${app-type} == 'database' || ${app-type} == 'quickstart'")))))))));
+        assertThat(normalizeXml(outputDir.resolve("main.xml")),
+                is(normalizeXml("compiler/expected/duplicate-discrete-steps.xml")));
     }
 
     @Test
     void testDuplicateCrossProductStepsCollapseCoveredDimension() {
         Path outputDir = compile("compiler/duplicate-cross-product-covered-dimension", "main.xml");
-        Node output = Script.load(outputDir.resolve("main.xml"));
-        assertThat(output, hasProperty("shared steps",
-                node -> StreamSupport.stream(node.traverse(Kind.STEP::equals).spliterator(), false)
-                        .filter(step -> "Shared".equals(step.attribute("name").getString()))
-                        .collect(toList()),
-                contains(isNode(
-                        hasProperty("parent", Node::parent, isNode(
-                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
-                                hasProperty("condition",
-                                        node -> node.expression().literal().replaceAll("\\s+", " ").trim(),
-                                        anyOf(
-                                                is("${app-type} == 'quickstart' || ${app-type} == 'database'"),
-                                                is("${app-type} == 'database' || ${app-type} == 'quickstart'")))))))));
+        assertThat(normalizeXml(outputDir.resolve("main.xml")),
+                is(normalizeXml("compiler/expected/duplicate-cross-product-covered-dimension.xml")));
     }
 
     @Test
     void testOptionSpecificValueImplicationRemovesRedundantParentGuard() {
         Path outputDir = compile("compiler/option-specific-value-implication", "main.xml");
-        Node output = Script.load(outputDir.resolve("main.xml"));
-        assertThat(output, hasProperty("oci steps",
-                node -> StreamSupport.stream(node.traverse(Kind.STEP::equals).spliterator(), false)
-                        .filter(step -> "OCI".equals(step.attribute("name").getString()))
-                        .collect(toList()),
-                contains(isNode(
-                        hasProperty("parent", Node::parent, isNode(
-                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
-                                hasProperty("condition", node -> node.expression().literal(),
-                                        is("${app-type} == 'oci'"))))))));
+        assertThat(normalizeXml(outputDir.resolve("main.xml")),
+                is(normalizeXml("compiler/expected/option-specific-value-implication.xml")));
     }
 
     @Test
@@ -288,16 +245,8 @@ class ScriptCompilerTest {
     @Test
     void testDuplicateCrossProductStepsCollapseUnsupportedOptionComplement() {
         Path outputDir = compile("compiler/duplicate-cross-product-unsupported-option-complement", "main.xml");
-        Node output = Script.load(outputDir.resolve("main.xml"));
-        assertThat(output, hasProperty("shared steps",
-                node -> StreamSupport.stream(node.traverse(Kind.STEP::equals).spliterator(), false)
-                        .filter(step -> "Shared".equals(step.attribute("name").getString()))
-                        .collect(toList()),
-                contains(isNode(
-                        hasProperty("parent", Node::parent, isNode(
-                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
-                                hasProperty("condition", node -> node.expression().literal(),
-                                        is("${app-type} != 'oci'"))))))));
+        assertThat(normalizeXml(outputDir.resolve("main.xml")),
+                is(normalizeXml("compiler/expected/duplicate-cross-product-unsupported-option-complement.xml")));
     }
 
     @Test
@@ -310,103 +259,36 @@ class ScriptCompilerTest {
     @Test
     void testConditionallyDefinedEnumValueKeepsSelectedValueGuard() {
         Path outputDir = compile("compiler/conditional-json-lib", "main.xml");
-        Node output = Script.load(outputDir.resolve("main.xml"));
-        assertThat(output, hasProperty("jsonp steps",
-                node -> StreamSupport.stream(node.traverse(Kind.STEP::equals).spliterator(), false)
-                        .filter(step -> "JSON-P Only".equals(step.attribute("name").getString()))
-                        .collect(toList()),
-                contains(isNode(
-                        hasProperty("parent", Node::parent, isNode(
-                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
-                                hasProperty("condition",
-                                        node -> node.expression().literal().replaceAll("\\s+", " ").trim(),
-                                        anyOf(
-                                        is("${media} contains 'json' && ${media.json-lib} == 'jsonp'"),
-                                        is("${media.json-lib} == 'jsonp' && ${media} contains 'json'")))))))));
+        assertThat(normalizeXml(outputDir.resolve("main.xml")),
+                is(normalizeXml("compiler/expected/conditional-json-lib.xml")));
     }
 
     @Test
     void testConditionallyDefinedEnumComplementDropsUnsupportedValueGuard() {
         Path outputDir = compile("compiler/conditional-json-lib", "main.xml");
-        Node output = Script.load(outputDir.resolve("main.xml"));
-        assertThat(output, hasProperty("binding steps",
-                node -> StreamSupport.stream(node.traverse(Kind.STEP::equals).spliterator(), false)
-                        .filter(step -> "JSON Binding".equals(step.attribute("name").getString()))
-                        .collect(toList()),
-                contains(isNode(
-                        hasProperty("parent", Node::parent, isNode(
-                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
-                                hasProperty("condition",
-                                        node -> node.expression().literal().replaceAll("\\s+", " ").trim(),
-                                        anyOf(
-                                        is("${flavor} != 'se' && ${media} contains 'json'"),
-                                        is("${media} contains 'json' && ${flavor} != 'se'")))))))));
+        assertThat(normalizeXml(outputDir.resolve("main.xml")),
+                is(normalizeXml("compiler/expected/conditional-json-lib.xml")));
     }
 
     @Test
     void testOpenScalarDomainDoesNotEmitClosedComplement() {
         Path outputDir = compile("compiler/open-domain-complement", "main.xml");
-        Node output = Script.load(outputDir.resolve("main.xml"));
-        assertThat(output, hasProperty("json steps",
-                node -> StreamSupport.stream(node.traverse(Kind.STEP::equals).spliterator(), false)
-                        .filter(step -> "JSON Model".equals(step.attribute("name").getString()))
-                        .collect(toList()),
-                contains(isNode(
-                        hasProperty("parent", Node::parent, isNode(
-                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
-                                hasProperty("condition",
-                                        node -> node.expression().literal().replaceAll("\\s+", " ").trim(),
-                                        allOf(
-                                        not(containsString("!= 'jsonp'")),
-                                        containsString("== 'jsonb'"),
-                                        containsString("== 'jackson'")))))))));
+        assertThat(normalizeXml(outputDir.resolve("main.xml")),
+                is(normalizeXml("compiler/expected/open-domain-complement.xml")));
     }
 
     @Test
     void testOpenScalarDomainKeepsOptionSpecificOutputGuard() {
         Path outputDir = compile("compiler/open-domain-option-output", "main.xml");
-        Node output = Script.load(outputDir.resolve("main.xml"));
-        assertThat(output, hasProperty("imports lists",
-                node -> StreamSupport.stream(node.traverse(Kind.MODEL_LIST::equals).spliterator(), false)
-                        .filter(list -> "imports".equals(list.attribute("key").getString()))
-                        .collect(toList()),
-                containsInAnyOrder(List.of(
-                        isNode(hasProperty("parent", Node::parent, isNode(
-                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
-                                hasProperty("condition",
-                                        node -> node.expression().literal().replaceAll("\\s+", " ").trim(),
-                                        allOf(
-                                        containsString("${app-type} == 'quickstart'"),
-                                        containsString("${media.json-lib} == 'jsonp'")))))),
-                        isNode(hasProperty("parent", Node::parent, isNode(
-                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
-                                hasProperty("condition",
-                                        node -> node.expression().literal().replaceAll("\\s+", " ").trim(),
-                                        allOf(
-                                        containsString("${app-type} == 'database'"),
-                                        containsString("${media.json-lib} == 'jsonp'")))))),
-                        isNode(hasProperty("parent", Node::parent, isNode(
-                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
-                                hasProperty("condition",
-                                        node -> node.expression().literal().replaceAll("\\s+", " ").trim(),
-                                        allOf(
-                                        containsString("${app-type} == 'custom'"),
-                                        containsString("${media.json-lib} == 'jsonp'"))))))))));
+        assertThat(normalizeXml(outputDir.resolve("main.xml")),
+                is(normalizeXml("compiler/expected/open-domain-option-output.xml")));
     }
 
     @Test
     void testListOptionAvailabilityRemovesRedundantFlavorGuard() {
         Path outputDir = compile("compiler/list-option-availability", "main.xml");
-        Node output = Script.load(outputDir.resolve("main.xml"));
-        assertThat(output, hasProperty("client steps",
-                node -> StreamSupport.stream(node.traverse(Kind.STEP::equals).spliterator(), false)
-                        .filter(step -> "WebClient Support".equals(step.attribute("name").getString()))
-                        .collect(toList()),
-                contains(isNode(
-                        hasProperty("parent", Node::parent, isNode(
-                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
-                                hasProperty("condition", node -> node.expression().literal(),
-                                        is("${extra} contains 'webclient'"))))))));
+        assertThat(normalizeXml(outputDir.resolve("main.xml")),
+                is(normalizeXml("compiler/expected/list-option-availability.xml")));
     }
 
     @Test
@@ -456,61 +338,22 @@ class ScriptCompilerTest {
     @Test
     void testPresetImpliedBooleanPrunesImpossibleNestedInputStubBranch() {
         Path outputDir = compile("compiler/preset-implied-nested-input", "main.xml");
-        Node output = Script.load(outputDir.resolve("main.xml"));
-        assertThat(output, hasProperty("database steps",
-                node -> StreamSupport.stream(node.traverse(Kind.STEP::equals).spliterator(), false)
-                        .filter(step -> "Database".equals(step.attribute("name").getString()))
-                        .collect(toList()),
-                contains(isNode(
-                        hasProperty("parent", Node::parent, isNode(
-                                hasProperty("kind", Node::kind, is(Kind.CONDITION)),
-                                hasProperty("condition",
-                                        node -> node.expression().literal().replaceAll("\\s+", " ").trim(),
-                                        anyOf(
-                                                is("${app-type} != 'quickstart'"),
-                                                is("${app-type} == 'custom' || ${app-type} == 'database'"),
-                                                is("${app-type} == 'database' || ${app-type} == 'custom'")))))))));
-        assertThat(output, hasProperty("db server stubs",
-                node -> StreamSupport.stream(node.traverse(Kind.VARIABLE_TEXT::equals).spliterator(), false)
-                        .filter(variable -> "~db.server".equals(variable.attribute("path").getString()))
-                        .collect(toList()),
-                is(List.of())));
+        assertThat(normalizeXml(outputDir.resolve("main.xml")),
+                is(normalizeXml("compiler/expected/preset-implied-nested-input.xml")));
     }
 
     @Test
     void testMergedNestedDefinitionStubsUseDefinitionComplement() {
         Path outputDir = compile("compiler/merged-stub-complement", "main.xml", IGNORE_ERRORS);
-        Node output = Script.load(outputDir.resolve("main.xml"));
-        Matcher<Iterable<? extends String>> complement = contains(anyOf(
-                is("!${db} || ${flavor} != 'mp'"),
-                is("${flavor} != 'mp' || !${db}")));
-        assertThat(output, allOf(
-                hasProperty("jpa stubs",
-                        node -> (Iterable<String>) StreamSupport.stream(node.traverse(Kind::isVariable).spliterator(), false)
-                                .filter(variable -> "~db.jpa-impl".equals(variable.attribute("path").getString()))
-                                .map(variable -> normalizedCondition(variable.parent()))
-                                .collect(toList()),
-                        complement),
-                hasProperty("cp stubs",
-                        node -> (Iterable<String>) StreamSupport.stream(node.traverse(Kind::isVariable).spliterator(), false)
-                                .filter(variable -> "~db.cp".equals(variable.attribute("path").getString()))
-                                .map(variable -> normalizedCondition(variable.parent()))
-                                .collect(toList()),
-                        complement)));
+        assertThat(normalizeXml(outputDir.resolve("main.xml")),
+                is(normalizeXml("compiler/expected/merged-stub-complement.xml")));
     }
 
     @Test
     void testCoveringNestedDefinitionStubUsesDefinitionComplement() {
         Path outputDir = compile("compiler/covering-stub-complement", "main.xml", IGNORE_ERRORS);
-        Node output = Script.load(outputDir.resolve("main.xml"));
-        assertThat(output, hasProperty("cp stubs",
-                node -> (Iterable<String>) StreamSupport.stream(node.traverse(Kind::isVariable).spliterator(), false)
-                        .filter(variable -> "~db.cp".equals(variable.attribute("path").getString()))
-                        .map(variable -> normalizedCondition(variable.parent()))
-                        .collect(toList()),
-                contains(anyOf(
-                        is("!${db} || ${flavor} != 'mp'"),
-                        is("${flavor} != 'mp' || !${db}")))));
+        assertThat(normalizeXml(outputDir.resolve("main.xml")),
+                is(normalizeXml("compiler/expected/covering-stub-complement.xml")));
     }
 
     @Test
@@ -546,10 +389,27 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testRootVariableOutputConditionRemainsResolvedAfterConditionalRedefinition() {
+        compile("compiler/root-variable-output-condition", "main.xml", VALIDATE_ONLY);
+    }
+
+    @Test
+    void testSharedDefinitionUnionDoesNotDropLaterBranchAvailability() {
+        compile("compiler/shared-definition-union", "main.xml", VALIDATE_ONLY);
+    }
+
+    @Test
     void testBooleanInputConditionDoesNotGenerateStubVariable() {
         Path outputDir = compile("compiler/no-boolean-stubs", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/no-boolean-stubs.xml")));
+    }
+
+    @Test
+    void testInvalidScriptBooleanDefaultIsNotPruned() {
+        Path outputDir = compile("compiler/invalid-boolean-default", "main.xml");
+        assertThat(normalizeXml(outputDir.resolve("main.xml")),
+                is(normalizeXml("compiler/expected/invalid-boolean-default.xml")));
     }
 
     @Test
@@ -973,30 +833,5 @@ class ScriptCompilerTest {
     static String normalizeXmlString(String xml) {
         String str = XML_COMMENT.matcher(xml).replaceAll("").trim();
         return XML_NAMESPACE.matcher(str).replaceAll("\n        $1");
-    }
-
-    static String normalizedCondition(Node node) {
-        return node.kind() == Kind.CONDITION
-                ? node.expression().literal().replaceAll("\\s+", " ").trim()
-                : Expression.TRUE.literal();
-    }
-
-    static <T, U> Matcher<T> hasProperty(String name, Function<T, U> extractor, Matcher<U> subMatcher) {
-        return new FeatureMatcher<>(subMatcher, "has property " + name, name) {
-            @Override
-            protected U featureValueOf(T target) {
-                return extractor.apply(target);
-            }
-        };
-    }
-
-    @SafeVarargs
-    @SuppressWarnings("unchecked")
-    static Matcher<Node> isNode(Matcher<? extends Node>... matchers) {
-        var list = new ArrayList<Matcher<? super Node>>();
-        for (var matcher : matchers) {
-            list.add((Matcher<Node>) matcher);
-        }
-        return allOf(list);
     }
 }

@@ -22,6 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
@@ -37,7 +38,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
@@ -45,6 +45,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import io.helidon.build.archetype.engine.v2.Context.Scope;
+import io.helidon.build.archetype.engine.v2.Domain.Guard;
+import io.helidon.build.archetype.engine.v2.Domain.Guards;
+import io.helidon.build.archetype.engine.v2.Domain.Symbol.Fact;
 import io.helidon.build.archetype.engine.v2.Expression.Token;
 import io.helidon.build.archetype.engine.v2.Node.Kind;
 import io.helidon.build.archetype.engine.v2.Value.Type;
@@ -54,7 +57,6 @@ import io.helidon.build.common.Lists;
 import io.helidon.build.common.Maps;
 import io.helidon.build.common.PropertyEvaluator;
 import io.helidon.build.common.SourcePath;
-import io.helidon.build.common.logging.Log;
 
 import static io.helidon.build.common.Checksum.md5;
 import static io.helidon.build.common.FileUtils.ensureDirectory;
@@ -193,28 +195,23 @@ public class ScriptCompiler {
     static final String OPTION_VALUE_ALREADY_DECLARED = "Option value is already declared";
     static final String EXPR_TEXT_INPUT_CONTROL_FLOW = "Expression depends on a user text input";
 
-    private final AtomicBoolean initialized = new AtomicBoolean(false);
-    private final Map<Node, String> scopes = new HashMap<>();
-    private final Map<Node, Map<String, Value<?>>> paths = new HashMap<>();
+    private boolean initialized;
     private final Map<String, Set<Node>> declaredValues = new HashMap<>();
-    private final Map<Node, Map<String, Value<?>>> declaredValueCache = new IdentityHashMap<>();
-    private final Map<Node, ConditionSemantics> conditionSemanticsByNode = new IdentityHashMap<>();
+    private final Map<Node, Map<String, Fact>> factCache = new IdentityHashMap<>();
+    private final Map<Node, Guard> renderGuardsByNode = new IdentityHashMap<>();
+    private final Map<Node, Guard> activeGuardsByNode = new IdentityHashMap<>();
     private final Map<String, Set<Node>> definedRefs = new HashMap<>();
-    private final Map<Node, Reachability> reachByNode = new HashMap<>();
-    private final Map<Node, Reachability> definitionReachByNode = new IdentityHashMap<>();
-    private final Map<Node, Map<String, Reachability>> refReachByNode = new HashMap<>();
-    private final Map<Node, Map<String, ConstantBindings>> refBindingsByNode = new HashMap<>();
-    private final Map<String, InputDomain> domains = new LinkedHashMap<>();
     private final Map<String, Type> refTypes = new HashMap<>();
     private final Set<String> textInputRefs = new HashSet<>();
     private final Map<String, Boolean> textInputProvenance = new HashMap<>();
     private final Map<Node, Path> workDirs = new HashMap<>();
     private final Set<String> errors = new LinkedHashSet<>();
-    private volatile Flow.Ir flowIr;
-    private volatile Flow.Analysis flowAnalysis;
+    private Flow.Ir flowIr;
+    private Flow.Analysis flowAnalysis;
+    private Flow.Model flowModel;
     private final Node sourceNode;
     private final Context ctx = new Context();
-    private volatile List<Option> options;
+    private List<Option> options;
 
     /**
      * Create a new instance.
@@ -254,7 +251,7 @@ public class ScriptCompiler {
 
         Image image = new Image();
         if (!options.contains(Options.VALIDATE_ONLY)) {
-            compile(image);
+            new LegacyBackend(image).emit();
         }
         return image;
     }
@@ -291,64 +288,120 @@ public class ScriptCompiler {
     }
 
     private void init() {
-        if (initialized.compareAndSet(false, true)) {
-            new InlineInvoker().invoke(sourceNode); // inline call sites
-            new RefsInvoker().invoke(sourceNode.deepCopy()); // pre-fill domain availability
-            clearAnalysisState();
-            new RefsInvoker().invoke(sourceNode); // gather refs and prune tree
+        if (initialized) {
+            return;
         }
+        initialized = true;
+        new InlineInvoker().invoke(sourceNode); // inline call sites
+        indexSourceTree();
+        flowIr = Flow.ir(sourceNode, rootScope());
+        flowAnalysis = Flow.analyze(flowIr);
+        flowModel = Flow.model(flowIr, flowAnalysis, sourceNode, rootScope());
+        projectSourceGuards();
     }
 
-    private void clearAnalysisState() {
-        scopes.clear();
-        paths.clear();
-        declaredValues.clear();
-        declaredValueCache.clear();
-        conditionSemanticsByNode.clear();
-        definedRefs.clear();
-        reachByNode.clear();
-        definitionReachByNode.clear();
-        refReachByNode.clear();
-        refBindingsByNode.clear();
-        refTypes.clear();
-        textInputRefs.clear();
-        textInputProvenance.clear();
-        errors.clear();
-        flowIr = null;
-        flowAnalysis = null;
+    private void indexSourceTree() {
+        indexNode(sourceNode, rootScope(), 0);
     }
 
-    private void compile(Image image) {
-        new LegacyBackend(image, flowIr()).emit();
+    private int indexNode(Node node, Scope currentScope, int nextId) {
+        node.id(nextId++);
+        Scope childScope = currentScope;
+        switch (node.kind()) {
+            case INPUT_BOOLEAN:
+            case INPUT_ENUM:
+            case INPUT_LIST:
+            case INPUT_TEXT:
+                childScope = currentScope.getOrCreate(node);
+                definedRefs.computeIfAbsent(childScope.key(), k -> new LinkedHashSet<>()).add(node);
+                refTypes.putIfAbsent(childScope.key(), node.kind().valueType());
+                if (node.kind() == Kind.INPUT_TEXT) {
+                    textInputRefs.add(childScope.key());
+                }
+                break;
+            case PRESET_BOOLEAN:
+            case PRESET_ENUM:
+            case PRESET_LIST:
+            case PRESET_TEXT:
+            case VARIABLE_BOOLEAN:
+            case VARIABLE_ENUM:
+            case VARIABLE_LIST:
+            case VARIABLE_TEXT:
+                String key = currentScope.getOrCreate("~" + Context.Key.normalize(node.attribute("path").getString())).key();
+                definedRefs.computeIfAbsent(key, k -> new LinkedHashSet<>()).add(node);
+                declaredValues.computeIfAbsent(key, k -> new LinkedHashSet<>()).add(node);
+                refTypes.putIfAbsent(key, node.kind().valueType());
+                break;
+            case INPUT_OPTION:
+            default:
+                break;
+        }
+        for (Node child : node.children()) {
+            nextId = indexNode(child, childScope, nextId);
+        }
+        return nextId;
     }
 
     Flow.Ir flowIr() {
         init();
-        if (flowIr == null) {
-            buildFlowIr();
-        }
-        return requireNonNull(flowIr, "flowIr is null");
+        return flowIr;
     }
 
     Flow.Analysis flowAnalysis() {
-        if (flowAnalysis == null) {
-            buildFlowAnalysis();
-        }
-        return requireNonNull(flowAnalysis, "flowAnalysis is null");
+        init();
+        return flowAnalysis;
     }
 
-    private synchronized void buildFlowIr() {
-        if (flowIr != null) {
-            return;
-        }
-        flowIr = Flow.ir(sourceNode, rootScope());
+    Flow.Model flowModel() {
+        init();
+        return flowModel;
     }
 
-    private synchronized void buildFlowAnalysis() {
-        if (flowAnalysis != null) {
-            return;
+    private void projectSourceGuards() {
+        projectSourceNode(sourceNode, trueGuard());
+    }
+
+    private void projectSourceNode(Node node, Guard currentGuard) {
+        renderGuardsByNode.put(node, currentGuard);
+        Guard activeGuard = localActiveGuard(node, currentGuard);
+        activeGuardsByNode.put(node, activeGuard);
+        for (Node child : node.children()) {
+            projectSourceNode(child, activeGuard);
         }
-        flowAnalysis = Flow.analyze(flowIr());
+    }
+
+    private Guard localActiveGuard(Node node, Guard currentGuard) {
+        Expression expr = controlExpression(node);
+        if (expr == Expression.TRUE) {
+            return currentGuard;
+        }
+        if (isFalse(currentGuard) || expr == Expression.FALSE) {
+            return falseGuard();
+        }
+        Scope scope = scope(node);
+        ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, facts(node), false, true);
+        ExpressionAnalysis analysis = analyzer.analyze(expr);
+        Guard local = localGuard(expr, scope, currentGuard, analysis);
+        Guard full = and(currentGuard, local);
+        return node.kind() == Kind.CONDITION ? simplifyProjectedConditionGuard(full, scope) : full;
+    }
+
+    private Guard localGuard(Expression expr, Scope scope, Guard currentGuard, ExpressionAnalysis analysis) {
+        if (analysis.reach != null) {
+            return analysis.reach;
+        }
+        Expression truth = guardExpression(currentGuard);
+        if (analysis.supportedTerms != null && analysis.supportedTerms.hasSupportedTerms) {
+            Guard supported = analysis.supportedTerms.supported;
+            Guard supportedTruth = and(currentGuard, supported);
+            Expression unsupported = normalize(analysis.supportedTerms.unsupported, scope).reduce(guardExpression(supportedTruth));
+            if (unsupported == Expression.FALSE) {
+                return falseGuard();
+            }
+            return unsupported == Expression.TRUE ? supported : and(supported, residualGuard(unsupported));
+        }
+        Expression normalized = normalize(expr, scope).reduce(truth);
+        return residualGuard(normalized);
     }
 
     private Scope rootScope() {
@@ -361,31 +414,21 @@ public class ScriptCompiler {
 
     private final class LegacyBackend {
         private final Image image;
-        private final Flow.Ir flowIr;
 
-        private LegacyBackend(Image image, Flow.Ir flowIr) {
-            this.image = requireNonNull(image, "image is null");
-            this.flowIr = requireNonNull(flowIr, "flowIr is null");
+        private LegacyBackend(Image image) {
+            this.image = image;
         }
 
         private void emit() {
             Map<Node, Node> mirrors = new HashMap<>();
-            Map<Node, ConditionSemantics> renderedConditionSemantics = new IdentityHashMap<>();
-            Map<Node, Reachability> reachableBlocks = new IdentityHashMap<>();
+            Map<Node, Guard> reachableBlocks = new IdentityHashMap<>();
             Map<Node, Set<String>> conditionRefs = new IdentityHashMap<>();
-            Map<Node, Map<String, Reachability>> conditionDemands = new IdentityHashMap<>();
             mirrors.put(sourceNode, image.node);
             mirrors.put(image.node, sourceNode);
-            renderedConditionSemantics.put(image.node, conditionSemantics(sourceNode));
-            reachableBlocks.put(image.node, trueReach());
-            sourceNode.visit(new InputVisitor(image,
-                    mirrors,
-                    renderedConditionSemantics,
-                    reachableBlocks,
-                    conditionRefs,
-                    conditionDemands));
+            reachableBlocks.put(image.node, trueGuard());
+            sourceNode.visit(new InputVisitor(image, mirrors, reachableBlocks, conditionRefs));
             if (!options.contains(Options.NO_OUTPUT)) {
-                sourceNode.visit(new OutputVisitor(image, conditionRefs, conditionDemands));
+                sourceNode.visit(new OutputVisitor(image, conditionRefs));
             }
             image.node.visit(new StubsVisitor(mirrors, reachableBlocks, conditionRefs));
             image.node.visit(new DedupVisitor(mirrors));
@@ -404,8 +447,11 @@ public class ScriptCompiler {
 
     private void validateBooleanInputDeclarations() {
         for (Node node : sourceNode.traverse(Kind.INPUT_BOOLEAN::equals)) {
-            String key = scopeId(node);
-            Value<?> value = declaredValue(node, key);
+            if (inactiveInput(node)) {
+                continue;
+            }
+            String key = flowModel.key(node);
+            Value<?> value = flowModel.declaredValue(node, key);
             if (value.type() == Type.EMPTY || value.type() == Type.BOOLEAN) {
                 continue;
             }
@@ -424,7 +470,7 @@ public class ScriptCompiler {
     private void validatePresets() {
         Map<String, List<Node>> inputs = new HashMap<>();
         for (Node node : sourceNode.traverse(Kind::isInput)) {
-            inputs.computeIfAbsent(scopeId(node), k -> new ArrayList<>()).add(node);
+            inputs.computeIfAbsent(flowModel.key(node), k -> new ArrayList<>()).add(node);
         }
         for (Node node : sourceNode.traverse(Kind::isPreset)) {
             String path = node.attribute("path").getString();
@@ -455,7 +501,10 @@ public class ScriptCompiler {
     private void validateInputTypes() {
         Map<String, Kind> kinds = new HashMap<>();
         for (Node node : sourceNode.traverse(Kind::isInput)) {
-            String scopeId = scopeId(node);
+            if (inactiveInput(node)) {
+                continue;
+            }
+            String scopeId = flowModel.key(node);
             Kind expected = kinds.computeIfAbsent(scopeId, k -> node.kind());
             if (expected != node.kind()) {
                 errors.add(String.format("%s %s: '%s'",
@@ -468,12 +517,14 @@ public class ScriptCompiler {
 
     private void validateExpressions() {
         for (Node node : sourceNode.traverse(Kind.CONDITION::equals)) {
+            if (node.expression() == Expression.FALSE) {
+                continue;
+            }
             Expression expr = node.expression();
             Scope scope = scope(node);
-            Reachability blockReach = reachability(node.parent());
-            Map<String, Reachability> refReachMap = refReachByNode.getOrDefault(node, Map.of());
-            Map<String, ConstantBindings> refBindings = refBindingsByNode.getOrDefault(node, Map.of());
-            ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, refBindings, refReachMap, true, false);
+            Map<String, Fact> facts = facts(node);
+            Guard blockReach = activeGuard(node.parent());
+            ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, facts, true, false);
             ExpressionAnalysis analysis = analyzer.analyze(expr);
             boolean compatible = analysis.incompatibleOps.isEmpty();
 
@@ -494,27 +545,38 @@ public class ScriptCompiler {
                 continue;
             }
 
+            if (unreachable(node)) {
+                continue;
+            }
+
             boolean resolved = true;
-            Map<String, Reachability> variableDemands = analysis.variableDemands;
+            Map<String, Guard> variableDemands = analysis.variableDemands;
             for (Entry<String, String> variable : analysis.variables.entrySet()) {
                 String ref = variable.getValue();
                 boolean variableResolved = false;
-                Reachability requiredReach = blockReach;
-                Reachability variableDemand = variableDemands.get(ref);
+                Guard requiredReach = blockReach;
+                Guard variableDemand = variableDemands.get(ref);
                 if (variableDemand != null) {
-                    requiredReach = requiredReach == null ? variableDemand : requiredReach.and(variableDemand);
+                    requiredReach = requiredReach == null ? variableDemand : and(requiredReach, variableDemand);
                 }
-                Reachability refReach = refReachMap.get(ref);
+                Fact refFact = fact(facts, ref);
+                Guard refReach = refFact == null ? null : refFact.definedUnder();
                 if (requiredReach != null && refReach != null) {
-                    variableResolved = refReach.contains(requiredReach);
+                    variableResolved = contains(refReach, requiredReach);
+                    if (!variableResolved) {
+                        variableResolved = coversUnderFacts(refReach, requiredReach, scope, facts);
+                    }
                 }
-                Reachability bindingReach = null;
+                Guard bindingReach = null;
                 if (!variableResolved && requiredReach != null && refReach != null) {
                     // replay constant bindings against the recorded definition reachability first
-                    analyzer = new ExpressionAnalyzer(scope, refBindings, refReachMap, false, false);
-                    bindingReach = analyzer.analyze(reachabilityExpression(refReach, scope)).reach;
+                    analyzer = new ExpressionAnalyzer(scope, facts, false, false);
+                    bindingReach = analyzer.analyze(guardExpression(refReach)).reach;
                     if (bindingReach != null) {
-                        variableResolved = bindingReach.contains(requiredReach);
+                        variableResolved = contains(bindingReach, requiredReach);
+                        if (!variableResolved) {
+                            variableResolved = coversUnderFacts(bindingReach, requiredReach, scope, facts);
+                        }
                     }
                 }
                 if (!variableResolved && bindingReach == null) {
@@ -561,7 +623,11 @@ public class ScriptCompiler {
 
     private boolean hasPriorDefinition(Node node, String key) {
         for (Node definition : definedRefs.getOrDefault(key, Set.of())) {
-            if (!attached(definition) || node.id() <= definition.id()) {
+            if (node.id() <= definition.id()) {
+                continue;
+            }
+            Guard reach = definitionGuard(definition);
+            if (isFalse(reach)) {
                 continue;
             }
             return true;
@@ -607,7 +673,7 @@ public class ScriptCompiler {
             }
             if (ancestor.kind() == Kind.CONDITION) {
                 Scope scope = scope(ancestor);
-                ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, Map.of(), Map.of(), false, false);
+                ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, Map.of(), false, false);
                 ExpressionAnalysis analysis = analyzer.analyze(ancestor.expression());
                 if (dependsOnTextInput(analysis.refs(), visitingRefs)) {
                     return true;
@@ -642,7 +708,13 @@ public class ScriptCompiler {
     private void validateOptions() {
         Map<Node, Set<Node>> options = new HashMap<>();
         for (Node option : sourceNode.traverse(Kind.INPUT_OPTION::equals)) {
+            if (inactiveOption(option)) {
+                continue;
+            }
             for (Node input : option.ancestors(Kind::isInput)) {
+                if (inactiveInput(input)) {
+                    break;
+                }
                 options.computeIfAbsent(input, k -> new HashSet<>()).add(option);
                 break;
             }
@@ -665,6 +737,9 @@ public class ScriptCompiler {
     private void validateInputs() {
         Map<String, List<Node>> inputs = new HashMap<>();
         for (Node input : sourceNode.traverse(Kind::isInput)) {
+            if (inactiveInput(input)) {
+                continue;
+            }
             Scope scope = scope(input);
 
             // optional no default
@@ -716,12 +791,23 @@ public class ScriptCompiler {
 
     private void validateSteps() {
         for (Node step : sourceNode.traverse(Kind.STEP::equals)) {
-            List<Node> inputs = step.collect(Kind::isInput);
-            if (inputs.isEmpty()) {
+            if (unreachable(step)) {
+                continue;
+            }
+            List<Node> allInputs = step.collect(Kind::isInput);
+            if (allInputs.isEmpty()) {
                 errors.add(String.format("%s %s",
                         step.location(),
                         STEP_NO_INPUT));
-            } else {
+                continue;
+            }
+            List<Node> inputs = new ArrayList<>();
+            for (Node input : allInputs) {
+                if (!inactiveInput(input)) {
+                    inputs.add(input);
+                }
+            }
+            if (!inputs.isEmpty()) {
                 boolean optionalStep = step.attribute("optional").asBoolean().orElse(false);
                 boolean optionalInputs = true;
                 for (Node input : inputs) {
@@ -743,61 +829,125 @@ public class ScriptCompiler {
         }
     }
 
-    String scopeId(Node node) {
-        for (Node n = node; n != null; n = n.parent()) {
-            String scopeId = scopes.get(n);
-            if (scopeId != null) {
-                return scopeId;
-            }
-        }
-        return "";
-    }
-
     Scope scope(Node node) {
-        return ctx.scope().get("~" + scopeId(node));
+        return flowModel.scope(node);
     }
 
-    Value<?> declaredValue(Node node, String key) {
-        return declaredValueCache
-                .computeIfAbsent(node, n -> new HashMap<>())
-                .computeIfAbsent(key, k -> declaredValue0(node, k));
+    private Guards guards() {
+        return flowModel.guards();
     }
 
-    private Value<?> declaredValue0(Node node, String key) {
-        Node node0 = declaredValueByReachability(node, key);
-        if (node0 != null) {
-            return Value.typed(node0.value(), node0.kind().valueType());
+    private Guard trueGuard() {
+        return flowModel.trueGuard();
+    }
+
+    private Guard falseGuard() {
+        return flowModel.falseGuard();
+    }
+
+    private Guard renderGuard(Node node) {
+        return node == null ? trueGuard() : flowModel.renderGuard(node);
+    }
+
+    private Guard activeGuard(Node node) {
+        return node == null ? trueGuard() : flowModel.activeGuard(node);
+    }
+
+    private Expression guardExpression(Guard guard) {
+        return guardExpression(guard, rootScope());
+    }
+
+    private Expression guardExpression(Guard guard, Scope scope) {
+        return flowModel.expression(guard, scope);
+    }
+
+    private Guard residualGuard(Expression expr) {
+        Expression reduced = expr.reduce();
+        if (reduced == Expression.FALSE) {
+            return falseGuard();
         }
-        return Value.empty();
+        if (reduced == Expression.TRUE) {
+            return trueGuard();
+        }
+        return new Guard(trueGuard().id(), reduced);
     }
 
-    private Node declaredValueByReachability(Node node, String key) {
-        Reachability blockReach = reachability(node.parent());
-        if (blockReach == null) {
+    private boolean isFalse(Guard guard) {
+        return guard == null || guard.equals(falseGuard());
+    }
+
+    private Guard and(Guard left, Guard right) {
+        if (left == null || right == null) {
             return null;
         }
-        Node node0 = null;
-        for (Node n : declaredValues.getOrDefault(key, Set.of())) {
-            if (!attached(n) || node.id() <= n.id()) {
-                continue;
-            }
-            Reachability refReachability = reachability(n);
-            if (refReachability == null) {
-                continue;
-            }
-            Reachability overlap = blockReach.and(refReachability);
-            if (overlap.isFalse()) {
-                continue;
-            }
-            if (refReachability.contains(blockReach)) {
-                if (node0 == null || n.id() > node0.id()) {
-                    node0 = n;
-                }
-            } else if (node0 != null && n.id() > node0.id()) {
-                node0 = null;
-            }
+        return guards().and(left, right);
+    }
+
+    private Guard or(Guard left, Guard right) {
+        if (left == null) {
+            return right;
         }
-        return node0;
+        if (right == null) {
+            return left;
+        }
+        return guards().or(left, right);
+    }
+
+    private Guard minus(Guard left, Guard right) {
+        if (left == null) {
+            return null;
+        }
+        return right == null ? left : guards().minus(left, right);
+    }
+
+    private boolean contains(Guard left, Guard right) {
+        return left != null && right != null && guards().implies(right, left);
+    }
+
+    private boolean equivalent(Guard left, Guard right) {
+        return left != null && right != null && guards().equivalent(left, right);
+    }
+
+    private Expression controlExpression(Node node) {
+        switch (node.kind()) {
+            case CONDITION:
+                return node.expression();
+            case INPUT_BOOLEAN:
+            case INPUT_OPTION:
+                return expressionContribution(node, n -> flowModel.key(n));
+            default:
+                return Expression.TRUE;
+        }
+    }
+
+    private Map<String, Fact> facts(Node node) {
+        return factCache.computeIfAbsent(node, this::facts0);
+    }
+
+    private Map<String, Fact> facts0(Node node) {
+        Flow.NodeFacts facts = flowModel.node(node);
+        if (facts == null || facts.before().env().isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Fact> byName = new LinkedHashMap<>();
+        facts.before().env().forEach((symbolId, fact) -> byName.put(flowModel.symbols().symbol(symbolId).name(), fact));
+        return Map.copyOf(byName);
+    }
+
+    private Fact fact(Map<String, Fact> facts, String key) {
+        Fact fact = facts.get(key);
+        if (fact != null || key.startsWith("~")) {
+            return fact;
+        }
+        return facts.get("~" + key);
+    }
+
+    private Flow.SymbolInfo symbolInfo(String key) {
+        Flow.SymbolInfo info = flowModel.symbol(key);
+        if (info != null || key.startsWith("~")) {
+            return info;
+        }
+        return flowModel.symbol("~" + key);
     }
 
     private boolean attached(Node node) {
@@ -815,56 +965,58 @@ public class ScriptCompiler {
         return false;
     }
 
-    private Reachability conditionReach(Node node, ReachabilityState currentState) {
-        Reachability known = currentState.known;
-        Reachability path = pathReach(node);
-        if (known == null) {
-            return path;
-        }
-        return known.and(path);
+    private boolean unreachable(Node node) {
+        return isFalse(feasibleActiveGuard(node));
     }
 
-    private Reachability pathReach(Node node) {
-        Reachability reach = trueReach();
-        for (Entry<String, Value<?>> entry : path(node).entrySet()) {
-            Reachability valueReach = valueReach(entry.getKey(), entry.getValue());
-            if (valueReach != null) {
-                reach = reach.and(valueReach);
+    private boolean inactiveInput(Node node) {
+        return isFalse(feasibleRenderGuard(node));
+    }
+
+    private boolean inactiveOption(Node node) {
+        return isFalse(feasibleRenderGuard(node));
+    }
+
+    private boolean skipCompiledNode(Node node) {
+        if (node == sourceNode) {
+            return false;
+        }
+        if (node.kind().isInput()) {
+            return inactiveInput(node);
+        }
+        if (node.kind() == Kind.INPUT_OPTION) {
+            return inactiveOption(node);
+        }
+        return unreachable(node);
+    }
+
+    private boolean redundantBooleanInput(Node node) {
+        if (node.kind() != Kind.INPUT_BOOLEAN) {
+            return false;
+        }
+        Value<?> exact = flowModel.declaredValue(node, flowModel.key(node));
+        if (exact.type() != Type.BOOLEAN || exact.getBoolean()) {
+            return false;
+        }
+        Value<?> scriptDefault = node.attribute("default");
+        if (scriptDefault.isPresent()) {
+            Value<Boolean> booleanDefault = scriptDefault.asBoolean();
+            if (!booleanDefault.isPresent() || booleanDefault.getBoolean()) {
+                return false;
             }
         }
-        return reach;
-    }
-
-    private Reachability valueReach(String key, Value<?> value) {
-        String scalarValue = scalarLiteral(value);
-        if (scalarValue != null) {
-            return Reachability.scalar(key, Set.of(scalarValue), domains);
+        for (Node descendant : node.traverse()) {
+            if (descendant != node && (descendant.kind().isInput() || descendant.kind() == Kind.INPUT_OPTION)) {
+                if (!skipCompiledNode(descendant)) {
+                    return false;
+                }
+            }
         }
-        if (value.type() == Type.LIST) {
-            return Reachability.listContains(key, new TreeSet<>(value.getList()), domains);
-        }
-        return null;
-    }
-
-    private boolean unreachable(Node node) {
-        Reachability reach = reachability(node);
-        return reach != null && reach.isFalse();
-    }
-
-    private boolean prunedByReachability(Node node) {
-        Scope scope = scope(node);
-        Map<String, Reachability> definitions = refReachByNode.getOrDefault(node, Map.of());
-        Map<String, ConstantBindings> bindings = refBindingsByNode.getOrDefault(node, Map.of());
-        if (node.kind().isInput()) {
-            String key = scopeId(node);
-            definitions = withoutKey(definitions, key);
-            bindings = withoutKey(bindings, key);
-        }
-        return translatePruningTerms(node, conditionSemantics(node).pruning, scope, bindings, definitions).isFalse();
+        return true;
     }
 
     private <T> Map<String, T> withoutKey(Map<String, T> values, String key) {
-        if (key == null || !values.containsKey(key)) {
+        if (!values.containsKey(key)) {
             return values;
         }
         Map<String, T> filtered = new LinkedHashMap<>(values);
@@ -872,36 +1024,56 @@ public class ScriptCompiler {
         return Map.copyOf(filtered);
     }
 
-    private Map<String, Value<?>> path(Node node) {
-        return paths.computeIfAbsent(node.parent(), this::path0);
+    private Guard normalizeGuard(Guard guard, Scope scope, Map<String, Fact> facts) {
+        if (isFalse(guard) || facts.isEmpty()) {
+            return guard;
+        }
+        Expression expr = guardExpression(guard, scope);
+        ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, facts, false, true);
+        ExpressionAnalysis analysis = analyzer.analyze(expr);
+        return localGuard(expr, scope, trueGuard(), analysis);
     }
 
-    private Map<String, Value<?>> path0(Node node) {
-        Map<String, Value<?>> values = new LinkedHashMap<>();
-        for (Node n = node; n != null; n = n.parent()) {
-            switch (n.kind()) {
-                case INPUT_BOOLEAN:
-                    values.put(scopeId(n), Value.TRUE);
-                    break;
-                case INPUT_OPTION:
-                    Node input = n.ancestor(Kind::isInput).orElseThrow();
-                    if (input.kind() == Kind.INPUT_ENUM) {
-                        values.put(scopeId(input), Value.of(n.value().getString()));
-                    }
-                    break;
-                default:
-            }
-        }
-        return values;
+    private Guard feasibleGuard(Node node, Guard guard) {
+        return node == null ? trueGuard() : normalizeGuard(guard, scope(node), facts(node));
     }
 
-    private Map<String, ConstantBindings> snapshotBindings(Map<String, ConstantBindings> bindings) {
-        if (bindings.isEmpty()) {
-            return Map.of();
+    private Guard feasibleRenderGuard(Node node) {
+        return feasibleGuard(node, renderGuard(node));
+    }
+
+    private Guard feasibleActiveGuard(Node node) {
+        return feasibleGuard(node, activeGuard(node));
+    }
+
+    private boolean coversUnderFacts(Guard available, Guard required, Scope scope, Map<String, Fact> facts) {
+        if (available == null || required == null) {
+            return false;
         }
-        Map<String, ConstantBindings> snapshot = new LinkedHashMap<>();
-        bindings.forEach((key, value) -> snapshot.put(key, value.copy()));
-        return Map.copyOf(snapshot);
+        Guard normalizedRequired = normalizeGuard(required, scope, facts);
+        Guard normalizedCovered = normalizeGuard(and(required, available), scope, facts);
+        return equivalent(normalizedCovered, normalizedRequired);
+    }
+
+    private Guard definitionGuard(Node node) {
+        switch (node.kind()) {
+            case INPUT_BOOLEAN:
+            case INPUT_ENUM:
+            case INPUT_LIST:
+            case INPUT_TEXT:
+                return renderGuard(node);
+            case PRESET_BOOLEAN:
+            case PRESET_ENUM:
+            case PRESET_LIST:
+            case PRESET_TEXT:
+            case VARIABLE_BOOLEAN:
+            case VARIABLE_ENUM:
+            case VARIABLE_LIST:
+            case VARIABLE_TEXT:
+                return activeGuard(node);
+            default:
+                return null;
+        }
     }
 
     private Expression normalize(Expression expr, Scope scope) {
@@ -929,151 +1101,163 @@ public class ScriptCompiler {
         }
     }
 
-    private void registerDomain(Node node, String key) {
-        switch (node.kind()) {
-            case INPUT_BOOLEAN:
-                domains.putIfAbsent(key, InputDomain.booleanDomain());
-                break;
-            case INPUT_ENUM:
-                mergeDomain(key, InputDomain.scalar(optionValues(node)));
-                break;
-            case INPUT_LIST:
-                mergeDomain(key, InputDomain.list(optionValues(node)));
-                break;
-            default:
-                registerImplicitDomain(key, node.kind().valueType());
-        }
+    private Expression reachabilityExpression(Guard reach, Scope scope) {
+        return reachabilityExpression(reach, scope, Map.of());
     }
 
-    private void mergeDomain(String key, InputDomain domain) {
-        domains.merge(key, domain, InputDomain::merge);
+    private Expression reachabilityExpression(Guard reach, Scope scope, Map<String, Fact> facts) {
+        Guard normalized = normalizeGuard(reach, scope, facts);
+        return guardExpression(normalized, scope).reduce();
     }
 
-    private void markDomainOpen(String key, Type type) {
-        InputDomain domain = domains.get(key);
-        if (domain == null) {
-            return;
-        }
-        if (domain.isBoolean() && type == Type.BOOLEAN) {
-            return;
-        }
-        domain.markOpen();
+    private Expression residualExpression(Guard reach, Guard base, Scope scope) {
+        return residualExpression(reach, base, scope, Map.of());
     }
 
-    private void registerImplicitDomain(String key, Type type) {
-        if (domains.containsKey(key)) {
-            return;
-        }
-        if (type == Type.BOOLEAN) {
-            domains.put(key, InputDomain.booleanDomain());
-        }
+    private Expression residualExpression(Guard reach, Guard base, Scope scope, Map<String, Fact> facts) {
+        Guard normalizedReach = normalizeGuard(reach, scope, facts);
+        Guard normalizedBase = normalizeGuard(base, scope, facts);
+        return guardExpression(normalizedReach, scope).reduce(guardExpression(normalizedBase, scope));
     }
 
-    private Set<String> optionValues(Node node) {
-        Set<String> values = new TreeSet<>();
-        for (Node option : node.traverse(Kind.INPUT_OPTION::equals)) {
-            if (option.ancestor(Kind::isInput).orElse(null) == node) {
-                values.add(option.value().getString());
-            }
-        }
-        return values;
-    }
-
-    private Reachability trueReach() {
-        return Reachability.trueValue(domains);
-    }
-
-    private Reachability falseReach() {
-        return Reachability.falseValue(domains);
-    }
-
-    private Reachability reachability(Node node) {
-        return node == null ? trueReach() : reachByNode.get(node);
-    }
-
-    private ConditionSemantics conditionSemantics(Node node) {
-        ConditionSemantics semantics = conditionSemanticsByNode.get(node);
-        if (semantics != null) {
-            return semantics;
-        }
-        throw new IllegalStateException("Condition semantics not found: " + node);
-    }
-
-    private Reachability definitionReachability(Node node) {
-        switch (node.kind()) {
-            case INPUT_BOOLEAN:
-            case INPUT_ENUM:
-            case INPUT_LIST:
-            case INPUT_TEXT:
-                return definitionReachByNode.getOrDefault(node.parent(), reachability(node.parent()));
-            case PRESET_BOOLEAN:
-            case PRESET_ENUM:
-            case PRESET_LIST:
-            case PRESET_TEXT:
-            case VARIABLE_BOOLEAN:
-            case VARIABLE_ENUM:
-            case VARIABLE_LIST:
-            case VARIABLE_TEXT:
-                return definitionReachByNode.getOrDefault(node, reachability(node));
-            default:
-                return null;
-        }
-    }
-
-    private static Expression reachabilityExpression(Reachability reach, Scope scope) {
-        return reach.toExpression(scope).reduce();
-    }
-
-    private static Expression residualExpression(Reachability reach, Reachability base, Scope scope) {
-        return reach.toExpression(scope).reduce(base.toExpression(scope));
-    }
-
-    private void rememberConditionRefs(Node node,
-                                       Expression expr,
-                                       Scope scope,
-                                       Map<Node, Set<String>> conditionRefs,
-                                       Map<Node, Map<String, Reachability>> conditionDemands) {
+    private void rememberConditionRefs(Node node, Expression expr, Map<Node, Set<String>> conditionRefs) {
         if (node.kind() == Kind.CONDITION) {
             conditionRefs.put(node, Set.copyOf(expr.variables()));
-            conditionDemands.put(node, conditionDemands(expr, scope));
         }
     }
 
-    private void rememberConditionRefs(Node node,
-                                       Scope scope,
-                                       Map<Node, Set<String>> conditionRefs,
-                                       Map<Node, Map<String, Reachability>> conditionDemands) {
+    private void rememberConditionRefs(Node node, Map<Node, Set<String>> conditionRefs) {
         if (node.kind() == Kind.CONDITION) {
-            Expression expr = node.expression();
-            conditionRefs.put(node, Set.copyOf(expr.variables()));
-            conditionDemands.put(node, conditionDemands(expr, scope));
+            conditionRefs.put(node, Set.copyOf(node.expression().variables()));
         }
     }
 
-    private Map<String, Reachability> conditionDemands(Expression expr, Scope scope) {
-        return conditionDemands(expr, scope, Map.of(), Map.of());
-    }
-
-    private Map<String, Reachability> conditionDemands(Expression expr,
-                                                       Scope scope,
-                                                       Map<String, ConstantBindings> bindings,
-                                                       Map<String, Reachability> definitions) {
+    private Map<String, Guard> conditionDemands(Expression expr, Scope scope, Map<String, Fact> facts) {
         if (expr == null || expr == Expression.TRUE || expr == Expression.FALSE) {
             return Map.of();
         }
-        return new ExpressionAnalyzer(scope, bindings, definitions, false, false).analyze(expr).variableDemands;
+        return new ExpressionAnalyzer(scope, facts, false, false).analyze(expr).variableDemands;
     }
 
     private Expression outputCondition(Node node, Scope scope) {
-        Reachability reach = reachability(node);
-        if (reach != null) {
-            return reachabilityExpression(reach, scope);
-        }
-        return conditionSemantics(node).emittedCondition(scope);
+        Guard projected = activeGuardsByNode.get(node);
+        Guard guard = projected != null && node.ancestor(Kind.OUTPUT::equals).isPresent()
+                ? projected
+                : activeGuard(node);
+        return reachabilityExpression(guard, scope, facts(node));
     }
 
-    Expression activationCondition(Node node) {
-        return node == null ? Expression.TRUE : outputCondition(node, scope(node));
+    private Guard simplifyProjectedConditionGuard(Guard guard, Scope scope) {
+        Expression expr = normalize(guardExpression(guard, scope), scope).reduce();
+        Expression simplified = simplifyProjectedConditionExpression(expr);
+        return simplified.equals(expr) ? guard : residualGuard(simplified);
+    }
+
+    private Expression simplifyProjectedConditionExpression(Expression expr) {
+        Guard target = projectedReach(expr);
+        if (target == null) {
+            return expr;
+        }
+        Expression minimized = expr;
+        boolean changed;
+        do {
+            changed = false;
+            List<Expression> terms = new ArrayList<>(conjunctionTerms(minimized));
+            if (terms.size() < 2) {
+                break;
+            }
+            for (int i = 0; i < terms.size(); i++) {
+                Expression term = terms.get(i);
+                List<Expression> remaining = Lists.withoutIndex(terms, i);
+                if (!removableProjectedConditionTerm(term, remaining)) {
+                    continue;
+                }
+                Expression candidate = andTerms(remaining).reduce();
+                Guard candidateReach = projectedReach(candidate);
+                if (equivalent(candidateReach, target)) {
+                    minimized = candidate;
+                    changed = true;
+                    break;
+                }
+            }
+        } while (changed);
+        return minimized;
+    }
+
+    private boolean removableProjectedConditionTerm(Expression term, List<Expression> remaining) {
+        Guard termReach = projectedReach(term);
+        if (termReach == null) {
+            return false;
+        }
+        for (Expression other : remaining) {
+            if (!carrierProjectedConditionTerm(other) || ancestorProjectedConditionTerm(term, other)) {
+                continue;
+            }
+            Guard otherReach = projectedReach(other);
+            if (otherReach != null && contains(termReach, otherReach)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean carrierProjectedConditionTerm(Expression expr) {
+        List<Token> tokens = expr.tokens();
+        if (tokens.size() != 3 || !tokens.get(0).isVariable() || !tokens.get(1).isOperand()) {
+            return false;
+        }
+        Expression.Operator operator = tokens.get(2).operator();
+        return operator == Expression.Operator.EQUAL || operator == Expression.Operator.CONTAINS;
+    }
+
+    private boolean ancestorProjectedConditionTerm(Expression left, Expression right) {
+        for (String leftVar : left.variables()) {
+            for (String rightVar : right.variables()) {
+                if (rightVar.startsWith(leftVar + ".")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private Guard projectedReach(Expression expr) {
+        return new ExpressionAnalyzer(rootScope(), Map.of(), false, false).analyze(expr).reach;
+    }
+
+    private Guard localProjectedReach(Expression expr, Scope scope) {
+        return new ExpressionAnalyzer(scope, Map.of(), false, false, true).analyze(expr).reach;
+    }
+
+    private Guard localReach(Expression expr, Scope scope) {
+        return new ExpressionAnalyzer(scope, Map.of(), false, false).analyze(expr).reach;
+    }
+
+    private Expression simplifyMergedConditionExpression(Expression expr, Scope scope) {
+        Guard target = localReach(expr, scope);
+        if (target == null) {
+            return expr;
+        }
+        Expression minimized = expr;
+        boolean changed;
+        do {
+            changed = false;
+            List<Expression> terms = new ArrayList<>(disjunctionTerms(minimized));
+            if (terms.size() < 2) {
+                break;
+            }
+            for (int i = 0; i < terms.size(); i++) {
+                List<Expression> remaining = Lists.withoutIndex(terms, i);
+                Expression candidate = orTerms(remaining).reduce();
+                Guard candidateReach = localReach(candidate, scope);
+                if (equivalent(candidateReach, target)) {
+                    minimized = candidate;
+                    changed = true;
+                    break;
+                }
+            }
+        } while (changed);
+        return minimized;
     }
 
     private List<Expression> conjunctionTerms(Expression expr) {
@@ -1121,47 +1305,73 @@ public class ScriptCompiler {
         return Lists.map(literals, Expression::create);
     }
 
-    private List<ConditionTerm> expressionTerms(Expression expr) {
-        if (expr == null || expr == Expression.TRUE) {
-            return List.of();
-        }
-        LinkedHashSet<ConditionTerm> terms = new LinkedHashSet<>();
-        for (Expression term0 : conjunctionTerms(expr)) {
-            ConditionTerm term = ConditionTerm.of(term0);
-            if (term.isTrue()) {
+    private List<Expression> disjunctionTerms(Expression expr) {
+        List<String> literals = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        String literal = expr.literal();
+        int depth = 0;
+        boolean quoted = false;
+        for (int i = 0; i < literal.length(); i++) {
+            char ch = literal.charAt(i);
+            if (ch == '\'') {
+                quoted = !quoted;
+                current.append(ch);
                 continue;
             }
-            if (term.isFalse()) {
-                return List.of(ConditionTerm.FALSE);
+            if (!quoted) {
+                if (ch == '(') {
+                    depth++;
+                } else if (ch == ')') {
+                    if (depth == 0) {
+                        return List.of(expr);
+                    }
+                    depth--;
+                } else if (depth == 0 && ch == '|' && i + 1 < literal.length() && literal.charAt(i + 1) == '|') {
+                    String term = current.toString().trim();
+                    if (term.isEmpty()) {
+                        return List.of(expr);
+                    }
+                    literals.add(term);
+                    current.setLength(0);
+                    i++;
+                    continue;
+                }
             }
-            terms.add(term);
+            current.append(ch);
         }
-        return terms.isEmpty() ? List.of() : List.copyOf(terms);
+        if (quoted || depth != 0) {
+            return List.of(expr);
+        }
+        String term = current.toString().trim();
+        if (term.isEmpty()) {
+            return List.of(expr);
+        }
+        literals.add(term);
+        return Lists.map(literals, Expression::create);
     }
 
-    private Reachability translatePruningTerms(Node node,
-                                               List<ConditionTerm> terms,
-                                               Scope scope,
-                                               Map<String, ConstantBindings> bindings,
-                                               Map<String, Reachability> definitions) {
-        Reachability reach = trueReach();
-        for (ConditionTerm term : terms) {
-            ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, bindings, definitions, false, false);
-            ExpressionAnalysis analysis = analyzer.analyze(term.tokens);
-            if (analysis.reach == null) {
-                throw new IllegalStateException("Unsupported pruning expression for: " + node);
-            }
-            reach = reach.and(analysis.reach);
-            if (reach.isFalse()) {
-                return reach;
-            }
+    private Expression orTerms(List<Expression> terms) {
+        Expression expr = Expression.FALSE;
+        for (Expression term : terms) {
+            expr = expr == Expression.FALSE ? term : expr.or(term);
         }
-        return reach;
+        return expr;
+    }
+
+    private Expression andTerms(List<Expression> terms) {
+        Expression expr = Expression.TRUE;
+        for (Expression term : terms) {
+            expr = expr == Expression.TRUE ? term : expr.and(term);
+        }
+        return expr;
     }
 
     private Value<?> constantValue(Node node) {
         try {
             Value<?> value = Value.typed(node.value(), node.kind().valueType());
+            if (!value.isPresent()) {
+                return null;
+            }
             if (value.type() == Type.STRING && value.getString().matches("^\\$\\{~?[\\w.-]+}$")) {
                 return null;
             }
@@ -1173,32 +1383,29 @@ public class ScriptCompiler {
 
     private final class ExpressionAnalyzer {
         private final Scope scope;
-        private final Map<String, ConstantBindings> bindings;
-        private final Map<String, Reachability> definitions;
+        private final Map<String, Fact> facts;
         private final boolean validate;
         private final boolean capture;
+        private final boolean projected;
+
+        ExpressionAnalyzer(Scope scope, Map<String, Fact> facts, boolean validate, boolean capture) {
+            this(scope, facts, validate, capture, false);
+        }
 
         ExpressionAnalyzer(Scope scope,
-                           Map<String, ConstantBindings> bindings,
-                           Map<String, Reachability> definitions,
+                           Map<String, Fact> facts,
                            boolean validate,
-                           boolean capture) {
+                           boolean capture,
+                           boolean projected) {
             this.scope = scope;
-            this.bindings = bindings;
-            this.definitions = definitions;
+            this.facts = facts;
             this.validate = validate;
             this.capture = capture;
+            this.projected = projected;
         }
 
         ExpressionAnalysis analyze(Expression expr) {
             return analyze(expr.tokens(), expr);
-        }
-
-        ExpressionAnalysis analyze(List<Token> tokens) {
-            if (capture) {
-                throw new IllegalStateException("Expression source required when capturing supported terms");
-            }
-            return analyze(tokens, null);
         }
 
         ExpressionAnalysis analyze(List<Token> tokens, Expression source) {
@@ -1262,9 +1469,9 @@ public class ScriptCompiler {
                             evaluationError,
                             supportedTerms(source));
                 }
-                Map<String, Reachability> demands = new HashMap<>();
+                Map<String, Guard> demands = new HashMap<>();
                 AnalysisBoolean result = booleanTerm(stack.pop());
-                result.collect(trueReach(), demands);
+                result.collect(trueGuard(), demands);
                 return new ExpressionAnalysis(result.translated,
                         demands,
                         variables,
@@ -1283,28 +1490,28 @@ public class ScriptCompiler {
             }
         }
 
-        SupportedTerms supportedTerms(Expression expr) {
+        ResolvedGuard supportedTerms(Expression expr) {
             if (!capture || expr == null) {
                 return null;
             }
-            Reachability supported = trueReach();
+            Guard supported = trueGuard();
             Expression unsupported = Expression.TRUE;
             boolean hasSupportedTerms = false;
             for (Expression term : conjunctionTerms(expr)) {
-                ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, bindings, definitions, false, false);
+                ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, facts, false, false);
                 ExpressionAnalysis analysis = analyzer.analyze(term);
                 if (analysis.reach != null) {
-                    supported = supported.and(analysis.reach);
+                    supported = and(supported, analysis.reach);
                     hasSupportedTerms = true;
                 } else {
-                    unsupported = unsupported.and(term);
+                    unsupported = unsupported.and(normalize(term, scope));
                 }
             }
-            return new SupportedTerms(supported, unsupported.reduce(), hasSupportedTerms);
+            return new ResolvedGuard(supported, unsupported.reduce(), hasSupportedTerms);
         }
 
-        SupportedTerms supportedTerms(Reachability reach) {
-            return capture ? SupportedTerms.fullySupported(reach) : null;
+        ResolvedGuard supportedTerms(Guard reach) {
+            return capture ? ResolvedGuard.fullySupported(reach) : null;
         }
 
         String evaluationError(Expression source, List<Token> tokens) {
@@ -1344,7 +1551,7 @@ public class ScriptCompiler {
             if (term instanceof AnalysisValue) {
                 Value<?> value = ((AnalysisValue) term).value;
                 if (value.type() == Type.BOOLEAN) {
-                    Reachability truthy = value.getBoolean() ? trueReach() : falseReach();
+                    Guard truthy = value.getBoolean() ? trueGuard() : falseGuard();
                     return new AnalysisBoolean(truthy, truthy, (demand, output) -> {
                     });
                 }
@@ -1352,16 +1559,20 @@ public class ScriptCompiler {
             }
             if (term instanceof AnalysisRef) {
                 String key = ((AnalysisRef) term).key;
-                return new AnalysisBoolean(translatedBooleanReachability(key),
-                        demandBooleanReachability(key),
+                Flow.SymbolInfo info = symbolInfo(key);
+                if (info == null || info.symbol().domain().kind() != Domain.Spec.Kind.BOOLEAN) {
+                    return new AnalysisBoolean(null, null, term::collect);
+                }
+                return new AnalysisBoolean(translatedEquality(key, Value.TRUE),
+                        demandEquality(key, Value.TRUE),
                         term::collect);
             }
             return new AnalysisBoolean(null, null, term::collect);
         }
 
         AnalysisBoolean equality(AnalysisTerm right, AnalysisTerm left, boolean negate) {
-            Reachability translated = translatedEquality(left, right);
-            Reachability demand = demandEquality(left, right);
+            Guard translated = translatedEquality(left, right);
+            Guard demand = demandEquality(left, right);
             if (negate) {
                 translated = negate(translated);
                 demand = negate(demand);
@@ -1372,54 +1583,46 @@ public class ScriptCompiler {
             });
         }
 
-        Reachability translatedEquality(AnalysisTerm left, AnalysisTerm right) {
+        Guard translatedEquality(AnalysisTerm left, AnalysisTerm right) {
             if (left instanceof AnalysisValue && right instanceof AnalysisValue) {
                 Value<?> leftValue = ((AnalysisValue) left).value;
                 Value<?> rightValue = ((AnalysisValue) right).value;
-                return Value.isEqual(leftValue, rightValue) ? trueReach() : falseReach();
+                return Value.isEqual(leftValue, rightValue) ? trueGuard() : falseGuard();
             }
             if (left instanceof AnalysisRef && right instanceof AnalysisValue) {
-                String leftKey = ((AnalysisRef) left).key;
-                Value<?> rightValue = ((AnalysisValue) right).value;
-                return translatedEquality(leftKey, rightValue);
+                return translatedEquality(((AnalysisRef) left).key, ((AnalysisValue) right).value);
             }
             if (left instanceof AnalysisValue && right instanceof AnalysisRef) {
-                String rightKey = ((AnalysisRef) right).key;
-                Value<?> leftValue = ((AnalysisValue) left).value;
-                return translatedEquality(rightKey, leftValue);
+                return translatedEquality(((AnalysisRef) right).key, ((AnalysisValue) left).value);
             }
             return null;
         }
 
-        Reachability demandEquality(AnalysisTerm left, AnalysisTerm right) {
+        Guard demandEquality(AnalysisTerm left, AnalysisTerm right) {
             if (left instanceof AnalysisValue && right instanceof AnalysisValue) {
                 Value<?> leftValue = ((AnalysisValue) left).value;
                 Value<?> rightValue = ((AnalysisValue) right).value;
-                return Value.isEqual(leftValue, rightValue) ? trueReach() : falseReach();
+                return Value.isEqual(leftValue, rightValue) ? trueGuard() : falseGuard();
             }
             if (left instanceof AnalysisRef && right instanceof AnalysisValue) {
-                String leftKey = ((AnalysisRef) left).key;
-                Value<?> rightValue = ((AnalysisValue) right).value;
-                return demandEquality(leftKey, rightValue);
+                return demandEquality(((AnalysisRef) left).key, ((AnalysisValue) right).value);
             }
             if (left instanceof AnalysisValue && right instanceof AnalysisRef) {
-                String rightKey = ((AnalysisRef) right).key;
-                Value<?> leftValue = ((AnalysisValue) left).value;
-                return demandEquality(rightKey, leftValue);
+                return demandEquality(((AnalysisRef) right).key, ((AnalysisValue) left).value);
             }
             return null;
         }
 
         AnalysisBoolean contains(AnalysisTerm right, AnalysisTerm left) {
-            Reachability translatedTruthy = translatedContains(left, right);
-            Reachability demandTruthy = demandContains(left, right);
+            Guard translatedTruthy = translatedContains(left, right);
+            Guard demandTruthy = demandContains(left, right);
             return new AnalysisBoolean(translatedTruthy, demandTruthy, (demand, output) -> {
                 left.collect(demand, output);
                 right.collect(demand, output);
             });
         }
 
-        Reachability translatedContains(AnalysisTerm left, AnalysisTerm right) {
+        Guard translatedContains(AnalysisTerm left, AnalysisTerm right) {
             if (left instanceof AnalysisRef && right instanceof AnalysisValue) {
                 return translatedListContains(((AnalysisRef) left).key, ((AnalysisValue) right).value);
             }
@@ -1436,14 +1639,14 @@ public class ScriptCompiler {
                     Set<String> required = containsValues(rightValue);
                     if (required != null) {
                         Set<String> values = new HashSet<>(leftValue.getList());
-                        return values.containsAll(required) ? trueReach() : falseReach();
+                        return values.containsAll(required) ? trueGuard() : falseGuard();
                     }
                 }
             }
             return null;
         }
 
-        Reachability demandContains(AnalysisTerm left, AnalysisTerm right) {
+        Guard demandContains(AnalysisTerm left, AnalysisTerm right) {
             if (left instanceof AnalysisRef && right instanceof AnalysisValue) {
                 return demandListContains(((AnalysisRef) left).key, ((AnalysisValue) right).value);
             }
@@ -1460,161 +1663,216 @@ public class ScriptCompiler {
                     Set<String> required = containsValues(rightValue);
                     if (required != null) {
                         Set<String> values = new HashSet<>(leftValue.getList());
-                        return values.containsAll(required) ? trueReach() : falseReach();
+                        return values.containsAll(required) ? trueGuard() : falseGuard();
                     }
                 }
             }
             return null;
         }
 
-        Reachability translatedBooleanReachability(String key) {
-            ConstantBindings binding = bindingFor(key);
-            if (binding != null) {
-                if (binding.type != Type.BOOLEAN) {
-                    return null;
-                }
-            } else {
-                InputDomain domain = domains.get(key);
-                if (domain == null || !domain.isBoolean()) {
-                    return null;
-                }
-            }
-            return translatedEquality(key, Value.TRUE);
-        }
-
-        Reachability demandBooleanReachability(String key) {
-            InputDomain domain = domains.get(key);
-            if (domain == null || !domain.isBoolean()) {
-                return null;
-            }
-            Reachability raw = Reachability.scalar(key, Set.of("true"), domains);
-            Reachability defined = definitionFor(key);
-            return defined == null ? raw : defined.and(raw);
-        }
-
-        Reachability translatedEquality(String key, Value<?> value) {
-            ConstantBindings binding = bindingFor(key);
-            Reachability bound = binding != null ? binding.match(value) : null;
-            Reachability raw = rawEquality(key, value);
+        Guard translatedEquality(String key, Value<?> value) {
+            Fact fact = factFor(key);
+            Guard bound = fact == null ? falseGuard() : fact.match(value, guards());
+            Guard raw = rawEquality(key, value);
             return combine(key, bound, raw);
         }
 
-        Reachability demandEquality(String key, Value<?> value) {
-            Reachability raw = rawEquality(key, value);
-            Reachability defined = definitionFor(key);
+        Guard demandEquality(String key, Value<?> value) {
+            Guard raw = rawEquality(key, value);
+            Guard defined = definitionFor(key);
             if (raw == null) {
                 return null;
             }
-            return defined == null ? raw : defined.and(raw);
+            return defined == null ? raw : and(defined, raw);
         }
 
-        Reachability translatedScalarAny(String key, Set<String> values) {
-            ConstantBindings binding = bindingFor(key);
-            Reachability bound = binding != null ? binding.scalarAny(values) : null;
-            Reachability raw = rawScalarAny(key, values);
+        Guard translatedScalarAny(String key, Set<String> values) {
+            Fact fact = factFor(key);
+            Guard bound = fact == null ? falseGuard() : fact.scalarAny(values, guards());
+            Guard raw = rawScalarAny(key, values);
             return combine(key, bound, raw);
         }
 
-        Reachability demandScalarAny(String key, Set<String> values) {
-            Reachability raw = rawScalarAny(key, values);
-            Reachability defined = definitionFor(key);
+        Guard demandScalarAny(String key, Set<String> values) {
+            Guard raw = rawScalarAny(key, values);
+            Guard defined = definitionFor(key);
             if (raw == null) {
                 return null;
             }
-            return defined == null ? raw : defined.and(raw);
+            return defined == null ? raw : and(defined, raw);
         }
 
-        Reachability translatedListContains(String key, Value<?> value) {
+        Guard translatedListContains(String key, Value<?> value) {
             Set<String> required = containsValues(value);
             if (required == null) {
                 return null;
             }
-            ConstantBindings binding = bindingFor(key);
-            Reachability bound = binding != null ? binding.listContains(required) : null;
-            Reachability raw = rawListContains(key, required);
+            Fact fact = factFor(key);
+            Guard bound = fact == null ? falseGuard() : fact.listContains(required, guards());
+            Guard raw = rawListContains(key, required);
             return combine(key, bound, raw);
         }
 
-        Reachability demandListContains(String key, Value<?> value) {
+        Guard demandListContains(String key, Value<?> value) {
             Set<String> required = containsValues(value);
             if (required == null) {
                 return null;
             }
-            Reachability raw = rawListContains(key, required);
-            Reachability defined = definitionFor(key);
+            Guard raw = rawListContains(key, required);
+            Guard defined = definitionFor(key);
             if (raw == null) {
                 return null;
             }
-            return defined == null ? raw : defined.and(raw);
+            return defined == null ? raw : and(defined, raw);
         }
 
-        Reachability combine(String key, Reachability bound, Reachability raw) {
-            ConstantBindings binding = bindingFor(key);
-            Reachability defined = definitionFor(key);
-            if (binding == null) {
+        Guard combine(String key, Guard bound, Guard raw) {
+            Fact fact = factFor(key);
+            Guard defined = definitionFor(key);
+            if (fact == null) {
                 if (raw == null) {
                     return bound;
                 }
-                return defined == null ? raw : defined.and(raw);
+                return defined == null ? raw : and(defined, raw);
             }
             if (raw == null) {
+                if (bound == null) {
+                    return null;
+                }
+                if (isFalse(bound)) {
+                    Guard exact = fact.exactDefined(guards());
+                    if (defined == null || isFalse(exact) || !ScriptCompiler.this.contains(exact, defined)) {
+                        return null;
+                    }
+                }
                 return bound;
             }
-            Reachability available = defined == null ? trueReach() : defined;
-            Reachability unresolved = available.subtract(binding.defined()).and(raw);
-            return bound == null ? unresolved : bound.or(unresolved);
+            Guard available = defined == null ? trueGuard() : defined;
+            Guard exact = fact.exactDefined(guards());
+            Guard unresolved = and(minus(available, exact), raw);
+            return or(bound, unresolved);
         }
 
-        ConstantBindings bindingFor(String key) {
-            ConstantBindings binding = bindings.get(key);
-            if (binding != null || key.startsWith("~")) {
-                return binding;
+        Fact factFor(String key) {
+            return ScriptCompiler.this.fact(facts, key);
+        }
+
+        Guard definitionFor(String key) {
+            Fact fact = factFor(key);
+            if (fact != null) {
+                return fact.definedUnder();
             }
-            return bindings.get("~" + key);
+            Flow.SymbolInfo info = symbolInfo(key);
+            return info == null ? null : info.definition();
         }
 
-        Reachability definitionFor(String key) {
-            Reachability definition = definitions.get(key);
-            if (definition != null || key.startsWith("~")) {
-                return definition;
-            }
-            return definitions.get("~" + key);
-        }
-
-        Reachability rawEquality(String key, Value<?> value) {
+        Guard rawEquality(String key, Value<?> value) {
             String scalarValue = scalarLiteral(value);
             if (scalarValue == null) {
                 return null;
             }
-            InputDomain domain = domains.get(key);
-            if (domain == null || domain.kind != InputDomain.Kind.SCALAR) {
+            Flow.SymbolInfo info = symbolInfo(key);
+            if (info == null) {
                 return null;
             }
-            if (!domain.scalarValues.contains(scalarValue)) {
-                return falseReach();
+            Domain.Symbol symbol = info.symbol();
+            if (symbol.guardable() && !symbol.tainted()) {
+                switch (symbol.domain().kind()) {
+                    case BOOLEAN:
+                        return Set.of("false", "true").contains(scalarValue)
+                                ? available(info, scalarValue, guards().eq(symbol.id(), scalarValue))
+                                : falseGuard();
+                    case CHOICE:
+                        return ((Domain.Spec.Choice) symbol.domain()).values().contains(scalarValue)
+                                ? available(info, scalarValue, guards().eq(symbol.id(), scalarValue))
+                                : falseGuard();
+                    case FINITE_TEXT:
+                        return ((Domain.Spec.FiniteText) symbol.domain()).values().contains(scalarValue)
+                                ? available(info, scalarValue, guards().eq(symbol.id(), scalarValue))
+                                : falseGuard();
+                    default:
+                        break;
+                }
             }
-            return Reachability.scalar(key, Set.of(scalarValue), domains);
+            return fallbackScalarEquality(info, key, scalarValue);
         }
 
-        Reachability rawScalarAny(String key, Set<String> values) {
-            InputDomain domain = domains.get(key);
-            if (domain == null || domain.kind != InputDomain.Kind.SCALAR) {
+        Guard rawScalarAny(String key, Set<String> values) {
+            Flow.SymbolInfo info = symbolInfo(key);
+            if (info == null) {
                 return null;
             }
+            Domain.Symbol symbol = info.symbol();
             Set<String> allowed = new TreeSet<>(values);
-            allowed.retainAll(domain.scalarValues);
-            return allowed.isEmpty() ? falseReach() : Reachability.scalar(key, allowed, domains);
+            if (symbol.guardable() && !symbol.tainted()) {
+                switch (symbol.domain().kind()) {
+                    case BOOLEAN:
+                        allowed.retainAll(Set.of("false", "true"));
+                        break;
+                    case CHOICE:
+                        allowed.retainAll(((Domain.Spec.Choice) symbol.domain()).values());
+                        break;
+                    case FINITE_TEXT:
+                        allowed.retainAll(((Domain.Spec.FiniteText) symbol.domain()).values());
+                        break;
+                    default:
+                        allowed.clear();
+                        break;
+                }
+                Guard raw = falseGuard();
+                for (String value : allowed) {
+                    raw = or(raw, available(info, value, guards().eq(symbol.id(), value)));
+                }
+                return raw;
+            }
+            Guard raw = falseGuard();
+            for (String value : allowed) {
+                Guard equality = fallbackScalarEquality(info, key, value);
+                if (equality != null) {
+                    raw = or(raw, equality);
+                }
+            }
+            return isFalse(raw) ? null : raw;
         }
 
-        Reachability rawListContains(String key, Set<String> required) {
-            InputDomain domain = domains.get(key);
-            if (domain == null || domain.kind != InputDomain.Kind.LIST) {
+        Guard rawListContains(String key, Set<String> required) {
+            Flow.SymbolInfo info = symbolInfo(key);
+            if (info == null) {
                 return null;
             }
-            if (!domain.listItems.containsAll(required)) {
-                return falseReach();
+            Domain.Symbol symbol = info.symbol();
+            if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Domain.Spec.Kind.MEMBERSHIP) {
+                return null;
             }
-            return Reachability.listContains(key, required, domains);
+            Set<String> items = ((Domain.Spec.Membership) symbol.domain()).items();
+            if (!items.containsAll(required)) {
+                return falseGuard();
+            }
+            Guard raw = trueGuard();
+            for (String value : required) {
+                raw = and(raw, available(info, value, guards().contains(symbol.id(), value)));
+            }
+            return raw;
+        }
+
+        Guard available(Flow.SymbolInfo info, String value, Guard direct) {
+            if (projected) {
+                return direct;
+            }
+            Guard availability = info.availability(value);
+            return availability == null ? falseGuard() : and(availability, direct);
+        }
+
+        Guard fallbackScalarEquality(Flow.SymbolInfo info, String key, String value) {
+            if (projected) {
+                return residualGuard(Expression.create(String.format("${%s} == '%s'", key, value)));
+            }
+            Guard availability = info.availability(value);
+            if (availability == null) {
+                return null;
+            }
+            Expression expr = Expression.create(String.format("${%s} == '%s'", key, value));
+            return and(availability, residualGuard(expr));
         }
 
         Set<String> containsValues(Value<?> value) {
@@ -1629,19 +1887,19 @@ public class ScriptCompiler {
             }
         }
 
-        void addDemand(String key, Reachability demand, Map<String, Reachability> output) {
-            if (demand == null || demand.isFalse()) {
+        void addDemand(String key, Guard demand, Map<String, Guard> output) {
+            if (isFalse(demand)) {
                 return;
             }
-            output.compute(key, (k, current) -> current == null ? demand : current.or(demand));
+            output.compute(key, (k, current) -> current == null ? demand : or(current, demand));
         }
 
-        Reachability negate(Reachability reach) {
-            return reach == null ? null : trueReach().subtract(reach);
+        Guard negate(Guard reach) {
+            return reach == null ? null : guards().not(reach);
         }
 
         private abstract class AnalysisTerm {
-            abstract void collect(Reachability demand, Map<String, Reachability> output);
+            abstract void collect(Guard demand, Map<String, Guard> output);
         }
 
         private final class AnalysisValue extends AnalysisTerm {
@@ -1652,7 +1910,7 @@ public class ScriptCompiler {
             }
 
             @Override
-            public void collect(Reachability demand, Map<String, Reachability> output) {
+            public void collect(Guard demand, Map<String, Guard> output) {
             }
         }
 
@@ -1664,7 +1922,7 @@ public class ScriptCompiler {
             }
 
             @Override
-            public void collect(Reachability demand, Map<String, Reachability> output) {
+            public void collect(Guard demand, Map<String, Guard> output) {
                 addDemand(key, demand, output);
             }
         }
@@ -1677,7 +1935,7 @@ public class ScriptCompiler {
             }
 
             @Override
-            void collect(Reachability demand, Map<String, Reachability> output) {
+            void collect(Guard demand, Map<String, Guard> output) {
                 for (AnalysisTerm term : terms) {
                     term.collect(demand, output);
                 }
@@ -1685,13 +1943,11 @@ public class ScriptCompiler {
         }
 
         private final class AnalysisBoolean extends AnalysisTerm {
-            private final Reachability translated;
-            private final Reachability demand;
-            private final BiConsumer<Reachability, Map<String, Reachability>> collector;
+            private final Guard translated;
+            private final Guard demand;
+            private final BiConsumer<Guard, Map<String, Guard>> collector;
 
-            AnalysisBoolean(Reachability translated,
-                            Reachability demand,
-                            BiConsumer<Reachability, Map<String, Reachability>> collector) {
+            AnalysisBoolean(Guard translated, Guard demand, BiConsumer<Guard, Map<String, Guard>> collector) {
                 this.translated = translated;
                 this.demand = demand;
                 this.collector = collector;
@@ -1704,56 +1960,55 @@ public class ScriptCompiler {
             }
 
             AnalysisBoolean and(AnalysisBoolean left) {
-                Reachability translated = left.translated == null || this.translated == null
+                Guard translated = left.translated == null || this.translated == null
                         ? null
-                        : left.translated.and(this.translated);
-                Reachability demand = left.demand == null || this.demand == null
+                        : ScriptCompiler.this.and(left.translated, this.translated);
+                Guard demand = left.demand == null || this.demand == null
                         ? null
-                        : left.demand.and(this.demand);
+                        : ScriptCompiler.this.and(left.demand, this.demand);
                 return new AnalysisBoolean(translated, demand, (d, o) -> {
                     left.collect(d, o);
-                    Reachability right = left.demand == null ? d : d.and(left.demand);
+                    Guard right = left.demand == null ? d : ScriptCompiler.this.and(d, left.demand);
                     collect(right, o);
                 });
             }
 
             AnalysisBoolean or(AnalysisBoolean left) {
-                Reachability translated = left.translated == null || this.translated == null
+                Guard translated = left.translated == null || this.translated == null
                         ? null
-                        : left.translated.or(this.translated);
-                Reachability demand = left.demand == null || this.demand == null
+                        : ScriptCompiler.this.or(left.translated, this.translated);
+                Guard demand = left.demand == null || this.demand == null
                         ? null
-                        : left.demand.or(this.demand);
+                        : ScriptCompiler.this.or(left.demand, this.demand);
                 return new AnalysisBoolean(translated, demand, (d, o) -> {
                     left.collect(d, o);
-                    Reachability right = left.demand == null
-                            ? d
-                            : d.and(trueReach().subtract(left.demand));
+                    Guard right = left.demand == null ? d
+                            : ScriptCompiler.this.and(d, ScriptCompiler.this.minus(trueGuard(), left.demand));
                     collect(right, o);
                 });
             }
 
             @Override
-            public void collect(Reachability demand, Map<String, Reachability> output) {
+            public void collect(Guard demand, Map<String, Guard> output) {
                 collector.accept(demand, output);
             }
         }
     }
 
     private static final class ExpressionAnalysis {
-        private final Reachability reach;
-        private final Map<String, Reachability> variableDemands;
+        private final Guard reach;
+        private final Map<String, Guard> variableDemands;
         private final Map<String, String> variables;
         private final List<Expression.Operator> incompatibleOps;
         private final String evaluationError;
-        private final SupportedTerms supportedTerms;
+        private final ResolvedGuard supportedTerms;
 
-        ExpressionAnalysis(Reachability reach,
-                           Map<String, Reachability> variableDemands,
+        ExpressionAnalysis(Guard reach,
+                           Map<String, Guard> variableDemands,
                            Map<String, String> variables,
                            List<Expression.Operator> incompatibleOps,
                            String evaluationError,
-                           SupportedTerms supportedTerms) {
+                           ResolvedGuard supportedTerms) {
             this.reach = reach;
             this.variableDemands = Map.copyOf(variableDemands);
             this.variables = Map.copyOf(variables);
@@ -1779,65 +2034,6 @@ public class ScriptCompiler {
         }
     }
 
-    private Reachability optionReachability(Node node) {
-        Node input = node.ancestor(Kind::isInput).orElseThrow();
-        String key = scopeId(input);
-        switch (input.kind()) {
-            case INPUT_ENUM:
-                return Reachability.scalar(key, Set.of(node.value().getString()), domains);
-            case INPUT_LIST:
-                return Reachability.listContains(key, Set.of(node.value().getString()), domains);
-            default:
-                return null;
-        }
-    }
-
-    private void rememberOptionAvailability(Node node, Reachability reach) {
-        if (reach == null || reach.isFalse()) {
-            return;
-        }
-        Node input = node.ancestor(Kind::isInput).orElse(null);
-        if (input == null) {
-            return;
-        }
-        InputDomain domain = domains.get(scopeId(input));
-        if (domain != null) {
-            domain.addAvailability(node.value().getString(), reach);
-        }
-    }
-
-    private void rememberInputDefinition(String key, Node node, Reachability reach) {
-        if (reach == null || reach.isFalse()) {
-            return;
-        }
-        InputDomain domain = domains.get(key);
-        if (domain != null) {
-            domain.addDefinition(reach);
-            if (node.kind() == Kind.INPUT_BOOLEAN) {
-                domain.addAvailability("true", reach);
-                domain.addAvailability("false", reach);
-            }
-        }
-    }
-
-    private void rememberImplicitDefinition(String key, Reachability reach, Value<?> value) {
-        if (reach == null || reach.isFalse()) {
-            return;
-        }
-        InputDomain domain = domains.get(key);
-        if (domain == null || !domain.isBoolean()) {
-            return;
-        }
-        domain.addDefinition(reach);
-        String scalar = value == null ? null : scalarLiteral(value);
-        if (scalar == null) {
-            domain.addAvailability("true", reach);
-            domain.addAvailability("false", reach);
-        } else {
-            domain.addAvailability(scalar, reach);
-        }
-    }
-
     private Expression expressionContribution(Node node, Function<Node, String> key) {
         switch (node.kind()) {
             case CONDITION:
@@ -1860,16 +2056,6 @@ public class ScriptCompiler {
                     default:
                         return Expression.TRUE;
                 }
-            default:
-                return Expression.TRUE;
-        }
-    }
-
-    private Expression pruningContribution(Node node) {
-        switch (node.kind()) {
-            case INPUT_BOOLEAN:
-            case INPUT_OPTION:
-                return expressionContribution(node, this::scopeId);
             default:
                 return Expression.TRUE;
         }
@@ -1959,359 +2145,32 @@ public class ScriptCompiler {
         }
     }
 
-    private final class RefsInvoker extends ScriptInvoker {
-
-        private final Map<String, Reachability> currentReachByRef = new HashMap<>();
-        private final Map<String, ConstantBindings> currentBindings = new HashMap<>();
-        private final Deque<ReachabilityState> reachStack = new ArrayDeque<>(
-                List.of(ReachabilityState.of(trueReach())));
-        private final Set<Node> modifiedSteps = new HashSet<>();
-        private int nextId = 0;
-
-        RefsInvoker() {
-            super(ctx);
-        }
-
-        void snapshotNodeContext(Node node) {
-            refReachByNode.put(node, Map.copyOf(currentReachByRef));
-            refBindingsByNode.put(node, snapshotBindings(currentBindings));
-        }
-
-        Reachability normalizeDefinitionReachability(Reachability reach, Scope scope) {
-            if (reach == null || currentBindings.isEmpty()) {
-                return reach;
-            }
-            ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope,
-                    currentBindings,
-                    currentReachByRef,
-                    false,
-                    false);
-            ExpressionAnalysis analysis = analyzer.analyze(reachabilityExpression(reach, scope));
-            return analysis.reach == null ? reach : analysis.reach;
-        }
-
-        void rememberDefinitionReachability(Node node, Reachability reach, Scope scope) {
-            if (reach != null) {
-                definitionReachByNode.put(node, normalizeDefinitionReachability(reach, scope));
-            }
-        }
-
-        void cacheConditionSemantics(Node node,
-                                             ReachabilityState nodeState,
-                                             Expression localPruning,
-                                             Expression localUnsupported) {
-            if (node.parent() == null) {
-                conditionSemanticsByNode.put(node, ConditionSemantics.root(nodeState.known));
-                return;
-            }
-            ConditionSemantics parentSemantics = conditionSemantics(node.parent());
-            conditionSemanticsByNode.put(node,
-                    parentSemantics.and(nodeState.known,
-                            expressionTerms(localPruning),
-                            expressionTerms(localUnsupported)));
-        }
-
-        @Override
-        public boolean visit(Node node) {
-            node.id(nextId++);
-            Scope scope = ctx.scope();
-            ReachabilityState currentState = reachStack.peek();
-            ReachabilityState nodeState = currentState;
-            Expression pruning = Expression.TRUE;
-            Expression unsupported = Expression.TRUE;
-            switch (node.kind()) {
-                case SOURCE:
-                case EXEC:
-                    scopes.put(node, scope.key());
-                    cacheConditionSemantics(node, nodeState, pruning, unsupported);
-                    if (node.attribute("url").isPresent()) {
-                        // skip url invocation
-                        reachStack.push(nodeState);
-                        return false;
-                    }
-                    break;
-                case CONDITION:
-                    scopes.put(node, scope.key());
-                    snapshotNodeContext(node);
-                    Expression expr = node.expression();
-                    pruning = normalize(expr, scope);
-                    ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, currentBindings, currentReachByRef, false, true);
-                    ExpressionAnalysis analysis = analyzer.analyze(expr);
-                    SupportedTerms conditionTerms = analysis.supportedTerms;
-                    if (dependsOnTextInput(analysis.refs(), new HashSet<>())) {
-                        errors.add(String.format(
-                                "%s %s: '%s'",
-                                node.location(),
-                                EXPR_TEXT_INPUT_CONTROL_FLOW,
-                                expr.literal()));
-                    }
-                    Reachability conditionReachability = analysis.reach;
-                    if (conditionReachability == null) {
-                        if (conditionTerms.hasSupportedTerms) {
-                            // Keep the exact translatable slice that survives on the
-                            // residual-ized path so post-visit pruning can re-evaluate
-                            // it under later bindings without reparsing the full path.
-                            pruning = residualExpression(conditionTerms.supported,
-                                    conditionReach(node, currentState),
-                                    scope);
-                            expr = pruning.and(conditionTerms.unsupported).reduce();
-                            analyzer = new ExpressionAnalyzer(scope, currentBindings, currentReachByRef, false, false);
-                            analysis = analyzer.analyze(expr);
-                            conditionReachability = analysis.reach;
-                        } else {
-                            pruning = Expression.TRUE;
-                        }
-                        if (conditionReachability == null) {
-                            unsupported = conditionTerms.unsupported;
-                        } else {
-                            pruning = normalize(expr, scope);
-                        }
-                    }
-                    if (expr != Expression.FALSE) {
-                        node.expression(expr);
-                        if (conditionReachability != null) {
-                            nodeState = currentState.and(conditionReachability);
-                        } else {
-                            Reachability knownConditionReachability = conditionTerms.hasSupportedTerms
-                                            ? conditionTerms.supported
-                                            : null;
-                            nodeState = currentState.andKnown(knownConditionReachability);
-                        }
-                        cacheConditionSemantics(node, nodeState, pruning, unsupported);
-                        if (nodeState.isFalse()) {
-                            node.expression(Expression.FALSE);
-                            reachByNode.put(node, nodeState.reach);
-                            rememberDefinitionReachability(node, nodeState.reach, scope);
-                            reachStack.push(nodeState);
-                            return false;
-                        }
-                        if (nodeState.supported()) {
-                            reachByNode.put(node, nodeState.reach);
-                            rememberDefinitionReachability(node, nodeState.reach, scope);
-                        }
-                        reachStack.push(nodeState);
-                        return true;
-                    }
-                    // condition is always false
-                    // skip traversal and prune (postVisit)
-                    node.expression(Expression.FALSE);
-                    ReachabilityState falseState = ReachabilityState.of(falseReach());
-                    cacheConditionSemantics(node, falseState, Expression.FALSE, Expression.TRUE);
-                    reachByNode.put(node, falseState.reach);
-                    reachStack.push(falseState);
-                    return false;
-                case INPUT_TEXT:
-                case INPUT_BOOLEAN:
-                case INPUT_LIST:
-                case INPUT_ENUM:
-                    scope = ctx.pushScope(s -> s.getOrCreate(node));
-                    scopes.put(node, scope.key());
-                    pruning = pruningContribution(node);
-                    snapshotNodeContext(node);
-                    definedRefs.computeIfAbsent(scope.key(), k -> new LinkedHashSet<>()).add(node);
-                    refTypes.putIfAbsent(scope.key(), node.kind().valueType());
-                    if (node.kind() == Kind.INPUT_TEXT) {
-                        textInputRefs.add(scope.key());
-                    }
-                    registerDomain(node, scope.key());
-                    if (currentState.supported()) {
-                        rememberInputDefinition(scope.key(), node, currentState.reach);
-                    }
-                    if (currentState.supported()) {
-                        Reachability parentReachability = currentState.reach;
-                        currentReachByRef.compute(scope.key(),
-                                (k, v) -> v == null ? parentReachability : v.or(parentReachability));
-                        if (currentState.isFalse()) {
-                            return skipPrunedNode(node, currentState);
-                        }
-                    }
-                    if (node.kind() == Kind.INPUT_BOOLEAN) {
-                        Reachability translated = translatedPruningReachability(node, scope);
-                        nodeState = currentState.and(translated == null
-                                ? Reachability.scalar(scope.key(), Set.of("true"), domains)
-                                : translated);
-                    }
-                    if (shouldPrune(nodeState)) {
-                        return skipPrunedNode(node, nodeState);
-                    }
-                    break;
-                case INPUT_OPTION:
-                    scopes.put(node, scope.key());
-                    pruning = pruningContribution(node);
-                    snapshotNodeContext(node);
-                    if (currentState.supported()) {
-                        rememberOptionAvailability(node, currentState.reach);
-                    }
-                    Reachability translated = translatedPruningReachability(node, scope);
-                    nodeState = currentState.and(translated == null ? optionReachability(node) : translated);
-                    if (shouldPrune(nodeState)) {
-                        return skipPrunedNode(node, nodeState);
-                    }
-                    break;
-                case VARIABLE_TEXT:
-                case VARIABLE_ENUM:
-                case VARIABLE_BOOLEAN:
-                case VARIABLE_LIST:
-                case PRESET_TEXT:
-                case PRESET_ENUM:
-                case PRESET_BOOLEAN:
-                case PRESET_LIST:
-                    scope = scope.getOrCreate("~" + Context.Key.normalize(node.attribute("path").getString()));
-                    scopes.put(node, scope.key());
-                    definedRefs.computeIfAbsent(scope.key(), k -> new LinkedHashSet<>()).add(node);
-                    declaredValues.computeIfAbsent(scope.key(), k -> new LinkedHashSet<>()).add(node);
-                    refTypes.putIfAbsent(scope.key(), node.kind().valueType());
-                    registerImplicitDomain(scope.key(), node.kind().valueType());
-                    markDomainOpen(scope.key(), node.kind().valueType());
-                    if (currentState.supported()) {
-                        Reachability parentReachability = currentState.reach;
-                        currentReachByRef.compute(scope.key(),
-                                (k, v) -> v == null ? parentReachability : v.or(parentReachability));
-                        Value<?> value = constantValue(node);
-                        rememberImplicitDefinition(scope.key(), parentReachability, value);
-                        if (value != null) {
-                            currentBindings.computeIfAbsent(scope.key(),
-                                    k -> new ConstantBindings(node.kind().valueType()))
-                                    .add(value, parentReachability);
-                        }
-                    }
-                    if (nodeState.supported()) {
-                        reachByNode.put(node, nodeState.reach);
-                        rememberDefinitionReachability(node, nodeState.reach, scope);
-                    }
-                    cacheConditionSemantics(node, nodeState, pruning, unsupported);
-                    reachStack.push(nodeState);
-                    return true;
-                default:
-            }
-            if (nodeState.supported()) {
-                reachByNode.put(node, nodeState.reach);
-                rememberDefinitionReachability(node, nodeState.reach, scope);
-            }
-            cacheConditionSemantics(node, nodeState, pruning, unsupported);
-            reachStack.push(nodeState);
-            return super.visit(node);
-        }
-
-        @Override
-        public void postVisit(Node node) {
-            switch (node.kind()) {
-                case SOURCE:
-                case EXEC:
-                    if (node.attribute("url").isPresent()) {
-                        // skip url invocation
-                        reachStack.pop();
-                        return;
-                    }
-                    break;
-                case CONDITION:
-                    if (node.expression() == Expression.FALSE) {
-                        remove(node);
-                    }
-                    break;
-                case INPUT_BOOLEAN:
-                case INPUT_TEXT:
-                    if (unreachable(node) || prunedByReachability(node)) {
-                        remove(node);
-                        node.ancestor(Kind.STEP::equals).ifPresent(modifiedSteps::add);
-                    }
-                    ctx.popScope();
-                    break;
-                case INPUT_LIST:
-                case INPUT_ENUM:
-                    if (unreachable(node) || prunedByReachability(node) || node.children().isEmpty()) {
-                        remove(node);
-                        node.ancestor(Kind.STEP::equals).ifPresent(modifiedSteps::add);
-                    }
-                    ctx.popScope();
-                    break;
-                case INPUT_OPTION:
-                    if (unreachable(node) || prunedByReachability(node)) {
-                        remove(node);
-                    }
-                    break;
-                case STEP:
-                    if (modifiedSteps.remove(node)) {
-                        // only remove steps that have been modified
-                        // to detect steps without inputs during validation
-                        List<Node> inputs = node.collect(Kind::isInput);
-                        if (inputs.isEmpty()) {
-                            if (node.children().isEmpty()) {
-                                node.remove();
-                            } else {
-                                node.replace(node.children());
-                            }
-                        }
-                    }
-                    break;
-                default:
-            }
-            reachStack.pop();
-            super.postVisit(node);
-        }
-
-        boolean shouldPrune(ReachabilityState nodeState) {
-            return nodeState.supported() && nodeState.isFalse();
-        }
-
-        Reachability translatedPruningReachability(Node node, Scope scope) {
-            Expression pruning = pruningContribution(node);
-            if (pruning == Expression.TRUE) {
-                return trueReach();
-            }
-            ExpressionAnalysis analysis = new ExpressionAnalyzer(scope,
-                    currentBindings,
-                    currentReachByRef,
-                    false,
-                    false).analyze(pruning);
-            return analysis.reach;
-        }
-
-        boolean skipPrunedNode(Node node, ReachabilityState nodeState) {
-            Reachability reach = nodeState.supported() ? nodeState.reach : falseReach();
-            ReachabilityState prunedState = nodeState.supported() ? nodeState : ReachabilityState.of(reach);
-            reachByNode.put(node, reach);
-            rememberDefinitionReachability(node, reach, scope(node));
-            cacheConditionSemantics(node, prunedState, pruningContribution(node), Expression.TRUE);
-            reachStack.push(prunedState);
-            return false;
-        }
-
-        void remove(Node node) {
-            Log.debug("Removing %s, path: %s, expression: %s",
-                    node,
-                    Maps.mapValue(path(node), v -> Value.toString(v)),
-                    activationCondition(node.parent()));
-            node.remove();
-        }
-    }
-
     private class InputVisitor implements Node.Visitor {
         private final Deque<Node> stack = new ArrayDeque<>();
         private final Map<Node, Node> mirrors;
-        private final Map<Node, ConditionSemantics> renderedConditionSemantics;
-        private final Map<Node, Reachability> reachableBlocks;
+        private final Set<Node> hoistedSteps = Collections.newSetFromMap(new IdentityHashMap<>());
+        private final Map<Node, Guard> reachableNodes = new IdentityHashMap<>();
+        private final Map<Node, Guard> reachableBlocks;
         private final Map<Node, Set<String>> conditionRefs;
-        private final Map<Node, Map<String, Reachability>> conditionDemands;
         private final Image image;
 
         InputVisitor(Image image,
                      Map<Node, Node> mirrors,
-                     Map<Node, ConditionSemantics> renderedConditionSemantics,
-                     Map<Node, Reachability> reachableBlocks,
-                     Map<Node, Set<String>> conditionRefs,
-                     Map<Node, Map<String, Reachability>> conditionDemands) {
+                     Map<Node, Guard> reachableBlocks,
+                     Map<Node, Set<String>> conditionRefs) {
             this.image = image;
             this.mirrors = mirrors;
-            this.renderedConditionSemantics = renderedConditionSemantics;
             this.reachableBlocks = reachableBlocks;
             this.conditionRefs = conditionRefs;
-            this.conditionDemands = conditionDemands;
             this.stack.push(image.node);
+            this.reachableNodes.put(image.node, trueGuard());
         }
 
         @Override
         public boolean visit(Node node) {
+            if (skipCompiledNode(node)) {
+                return false;
+            }
             switch (node.kind()) {
                 case PRESET_BOOLEAN:
                 case PRESET_ENUM:
@@ -2320,7 +2179,7 @@ public class ScriptCompiler {
                     // use ~ to be parented at the root context node
                     // to maintain scope.key == scope.internalKey
                     Node preset = process(node, (b, n) -> Nodes.ensureLast(b, Kind.PRESETS).append(n));
-                    preset.attribute("path", "~" + scopeId(node));
+                    preset.attribute("path", "~" + flowModel.key(node));
                     stack.push(preset);
                     break;
                 case VARIABLE_BOOLEAN:
@@ -2333,7 +2192,7 @@ public class ScriptCompiler {
                         // use ~ to be parented at the root context node
                         // to maintain scope.key == scope.internalKey
                         Node variable = process(node, (b, n) -> Nodes.ensureLast(b, Kind.VARIABLES).append(n));
-                        variable.attribute("path", "~" + scopeId(node));
+                        variable.attribute("path", "~" + flowModel.key(node));
                         stack.push(variable);
                     }
                     break;
@@ -2343,6 +2202,9 @@ public class ScriptCompiler {
                 case INPUT_LIST:
                     // flatten inputs to maintain scope.key == scope.internalKey (!)
                     // I.e. inputs are only nested to produce a dotted path
+                    if (redundantBooleanInput(node)) {
+                        return false;
+                    }
 
                     // flatten if enclosing input is effectively global (discrete)
                     // I.e., input is global or enclosing input is global
@@ -2365,6 +2227,9 @@ public class ScriptCompiler {
                             }
 
                             // create the step
+                            if (discrete) {
+                                hoistedSteps.add(step);
+                            }
                             stepCopy = process(step, Node::append);
                             stack.push(stepCopy);
                         } else if (discrete) {
@@ -2403,7 +2268,7 @@ public class ScriptCompiler {
                     Map<String, Set<Node>> refs = new LinkedHashMap<>();
                     for (Node step : steps) {
                         for (Node input : step.traverse(Kind::isInput)) {
-                            refs.computeIfAbsent(scopeId(mirror(input)), k -> new LinkedHashSet<>()).add(step);
+                            refs.computeIfAbsent(flowModel.key(mirror(input)), k -> new LinkedHashSet<>()).add(step);
                         }
                     }
 
@@ -2439,44 +2304,50 @@ public class ScriptCompiler {
         }
 
         Node process(Node node, BiConsumer<Node, Node> appender) {
-            Node blockCopy = stack.getFirst();
-            Node block = mirrors.get(blockCopy);
-
-            Scope scope = scope(block);
-            ConditionSemantics blockSemantics = renderedConditionSemantics(blockCopy);
-            ConditionSemantics nodeSemantics = conditionSemantics(node.parent());
-
-            // "relativize" the expression within the block
-            Reachability blockReach = reachability(block);
-            Reachability nodeReach = reachability(node.parent());
-            Expression expr;
-            if (blockReach != null && nodeReach != null) {
-                expr = residualExpression(nodeReach, blockReach, scope);
-            } else {
-                expr = nodeSemantics.relativeCondition(blockSemantics, scope, blockReach);
+            Node parentCopy = stack.getFirst();
+            Guard parentReach = parentCopy == image.node
+                    ? trueGuard()
+                    : requireNonNull(reachableNodes.get(parentCopy), "parent reachability not found");
+            Guard nodeRenderReach = renderGuard(node);
+            Guard projectedRenderReach = renderGuardsByNode.get(node);
+            boolean useProjectedStep = node.kind() == Kind.STEP && hoistedSteps.contains(node) && projectedRenderReach != null;
+            boolean useProjectedCondition = node.parent() != null && node.parent().kind() == Kind.CONDITION
+                    && projectedRenderReach != null;
+            boolean useProjected = useProjectedStep || useProjectedCondition;
+            Map<String, Fact> emissionFacts = useProjected ? Map.of() : facts(node);
+            if (useProjected) {
+                nodeRenderReach = projectedRenderReach;
             }
+            if (nodeRenderReach.equals(trueGuard())
+                    && projectedRenderReach != null
+                    && !projectedRenderReach.equals(trueGuard())) {
+                nodeRenderReach = projectedRenderReach;
+            }
+            Expression expr = residualExpression(nodeRenderReach, parentReach, rootScope(), emissionFacts);
 
             // create copy
             Node copy = node.copy();
             Node wrappedCopy = copy.wrap(expr);
-            appender.accept(blockCopy, wrappedCopy);
-            rememberConditionRefs(wrappedCopy, expr, scope, conditionRefs, conditionDemands);
-            renderedConditionSemantics.put(copy, nodeSemantics);
+            appender.accept(parentCopy, wrappedCopy);
+            rememberConditionRefs(wrappedCopy, expr, conditionRefs);
+            Guard nodeActiveReach = activeGuard(node);
+            Guard projectedActiveReach = activeGuardsByNode.get(node);
+            if (useProjected && projectedActiveReach != null) {
+                nodeActiveReach = projectedActiveReach;
+            }
+            if (nodeActiveReach.equals(trueGuard())
+                    && projectedActiveReach != null
+                    && !projectedActiveReach.equals(trueGuard())) {
+                nodeActiveReach = projectedActiveReach;
+            }
+            reachableNodes.put(copy, nodeActiveReach);
             if (node.kind().isBlock()) {
-                reachableBlocks.put(copy, reachability(node));
+                reachableBlocks.put(copy, nodeActiveReach);
             }
 
             mirrors.put(node, copy);
             mirrors.put(copy, node);
             return copy;
-        }
-
-        ConditionSemantics renderedConditionSemantics(Node node) {
-            ConditionSemantics semantics = renderedConditionSemantics.get(node);
-            if (semantics != null) {
-                return semantics;
-            }
-            throw new IllegalStateException("Rendered condition semantics not found: " + node);
         }
 
         Node mirror(Node node) {
@@ -2490,23 +2361,22 @@ public class ScriptCompiler {
     }
 
     private final class OutputVisitor implements Node.Visitor {
-        private final Map<String, Map<List<FileOp>, Reachability>> fileOps = new HashMap<>();
+        private final Map<String, Map<List<FileOp>, Guard>> fileOps = new HashMap<>();
         private final Set<FileObject> files = new TreeSet<>();
         private final Set<FileObject> templates = new TreeSet<>();
         private final Map<Node, Set<String>> conditionRefs;
-        private final Map<Node, Map<String, Reachability>> conditionDemands;
         private final Image image;
 
-        OutputVisitor(Image image,
-                      Map<Node, Set<String>> conditionRefs,
-                      Map<Node, Map<String, Reachability>> conditionDemands) {
+        OutputVisitor(Image image, Map<Node, Set<String>> conditionRefs) {
             this.image = image;
             this.conditionRefs = conditionRefs;
-            this.conditionDemands = conditionDemands;
         }
 
         @Override
         public boolean visit(Node node) {
+            if (skipCompiledNode(node)) {
+                return false;
+            }
             switch (node.kind()) {
                 case TRANSFORMATION:
                     List<FileOp> ops = new ArrayList<>();
@@ -2515,11 +2385,11 @@ public class ScriptCompiler {
                                 n.attribute("regex").getString(),
                                 n.attribute("replacement").getString()));
                     }
-                    Reachability nodeReach = outputReachability(node);
+                    Guard nodeReach = activeGuard(node);
                     fileOps.computeIfAbsent(node.attribute("id").getString(), k -> new HashMap<>())
                             .compute(ops, (k, v) -> {
-                                Reachability reach = v != null ? v : falseReach();
-                                return reach.or(nodeReach);
+                                Guard reach = v != null ? v : falseGuard();
+                                return or(reach, nodeReach);
                             });
                     break;
                 case FILE:
@@ -2579,7 +2449,7 @@ public class ScriptCompiler {
             String checksum = checksum(path);
             image.blobs.putIfAbsent(checksum, readAllBytes(path));
             List<FileOp> fileOps = List.of(new FileOp(Pattern.quote(checksum), target));
-            return new FileObject(checksum, fileOps, outputReachability(node), scope(node));
+            return new FileObject(checksum, fileOps, outputCondition(node, scope(node)));
         }
 
         Set<FileObject> resolveFiles(Node node) {
@@ -2587,20 +2457,21 @@ public class ScriptCompiler {
 
             // resolve variations of transformations
             List<List<FileOps>> allOps = Lists.filter(Combinatorics.cartesianProduct(fileOps(node)), l -> !l.isEmpty());
-            Set<FileOps> resolvedOps = new TreeSet<>(Lists.map(allOps, FileOps::combine));
+            Set<FileOps> resolvedOps = new TreeSet<>(Lists.map(allOps, this::combineFileOps));
 
-            Map<String, Reachability> includes = new HashMap<>();
-            Map<String, Reachability> excludes = new HashMap<>();
+            Map<String, Guard> includes = new HashMap<>();
+            Map<String, Guard> excludes = new HashMap<>();
 
             Scope scope = scope(node);
-            Reachability nodeReach = outputReachability(node);
+            Map<String, Fact> facts = facts(node);
+            Guard nodeReach = activeGuard(node);
             for (Node n : node.traverse()) {
                 switch (n.kind()) {
                     case INCLUDE:
                     case EXCLUDE:
-                        Map<String, Reachability> map = n.kind() == Kind.INCLUDE ? includes : excludes;
-                        Reachability filterReach = outputReachability(n);
-                        map.compute(n.value().getString(), (k, v) -> v == null ? filterReach : v.or(filterReach));
+                        Map<String, Guard> map = n.kind() == Kind.INCLUDE ? includes : excludes;
+                        Guard filterReach = activeGuard(n);
+                        map.compute(n.value().getString(), (k, v) -> v == null ? filterReach : or(v, filterReach));
                         break;
                     default:
                 }
@@ -2609,17 +2480,17 @@ public class ScriptCompiler {
             Path directory = workDirs.get(node).resolve(node.attribute("directory").getString());
             for (SourcePath file : SourcePath.scan(directory)) {
 
-                Reachability includeReach = includes.isEmpty() ? trueReach() : falseReach();
-                for (Reachability v : Maps.filterKey(includes, file::matches).values()) {
-                    includeReach = includeReach.or(v);
+                Guard includeReach = includes.isEmpty() ? trueGuard() : falseGuard();
+                for (Guard v : Maps.filterKey(includes, file::matches).values()) {
+                    includeReach = or(includeReach, v);
                 }
-                Reachability excludeReach = falseReach();
-                for (Reachability v : Maps.filterKey(excludes, file::matches).values()) {
-                    excludeReach = excludeReach.or(v);
+                Guard excludeReach = falseGuard();
+                for (Guard v : Maps.filterKey(excludes, file::matches).values()) {
+                    excludeReach = or(excludeReach, v);
                 }
 
-                Reachability blobReach = nodeReach.and(includeReach).subtract(excludeReach);
-                if (!blobReach.isFalse()) {
+                Guard blobReach = minus(and(nodeReach, includeReach), excludeReach);
+                if (!isFalse(blobReach)) {
                     String source = file.asString(false);
                     Path path = directory.resolve(source);
 
@@ -2629,13 +2500,13 @@ public class ScriptCompiler {
 
                     if (resolvedOps.isEmpty()) {
                         List<FileOp> fileOps = List.of(new FileOp(Pattern.quote(checksum), source));
-                        fileObjects.add(new FileObject(checksum, fileOps, blobReach, scope));
+                        fileObjects.add(new FileObject(checksum, fileOps, reachabilityExpression(blobReach, scope, facts)));
                     } else {
                         // create a unique file object for each transformation variation
                         for (FileOps e : resolvedOps) {
                             List<FileOp> fileOps = e.resolve(checksum, source);
-                            Reachability fileReach = blobReach.and(e.reach);
-                            fileObjects.add(new FileObject(checksum, fileOps, fileReach, scope));
+                            Guard fileReach = and(blobReach, e.reach);
+                            fileObjects.add(new FileObject(checksum, fileOps, reachabilityExpression(fileReach, scope, facts)));
                         }
                     }
                 }
@@ -2693,7 +2564,7 @@ public class ScriptCompiler {
                     if (expr != Expression.FALSE) {
                         Node include = Nodes.include(f.checksum);
                         Node wrappedInclude = include.wrap(expr);
-                        rememberConditionRefs(wrappedInclude, expr, f.scope, conditionRefs, conditionDemands);
+                        rememberConditionRefs(wrappedInclude, expr, conditionRefs);
                         includes.append(wrappedInclude);
                     }
                 }
@@ -2709,18 +2580,22 @@ public class ScriptCompiler {
             List<List<FileOps>> ops = new ArrayList<>();
             List<String> ids = node.attribute("transformations").asList().orElse(List.of());
             for (String id : ids) {
-                Map<List<FileOp>, Reachability> idOps = fileOps.getOrDefault(id, Map.of());
-                ops.add(Lists.map(idOps.entrySet(), e -> new FileOps(e.getKey(), e.getValue())));
+                Map<List<FileOp>, Guard> idOps = fileOps.getOrDefault(id, Map.of());
+                ops.add(Lists.map(idOps.entrySet(), e -> new FileOps(e.getKey(), e.getValue(), guardExpression(e.getValue()).literal())));
             }
             return ops;
         }
 
-        Reachability outputReachability(Node node) {
-            Reachability reach = reachability(node);
-            if (reach == null) {
-                throw new IllegalStateException("Missing reachability for output node: " + node);
+        FileOps combineFileOps(List<FileOps> list) {
+            List<FileOp> ops = new ArrayList<>();
+            Guard reach = list.get(0).reach;
+            for (FileOps e : list) {
+                ops.addAll(e.ops);
             }
-            return reach;
+            for (int i = 1; i < list.size(); i++) {
+                reach = and(reach, list.get(i).reach);
+            }
+            return new FileOps(ops, reach, guardExpression(reach).literal());
         }
 
         List<Node> renderModels() {
@@ -2766,10 +2641,10 @@ public class ScriptCompiler {
                             }
                         }
                         for (Node condition : copy.traverse(Kind.CONDITION::equals)) {
-                            rememberConditionRefs(condition, scope, conditionRefs, conditionDemands);
+                            rememberConditionRefs(condition, conditionRefs);
                         }
                         Node wrappedCopy = copy.wrap(expr);
-                        rememberConditionRefs(wrappedCopy, expr, scope, conditionRefs, conditionDemands);
+                        rememberConditionRefs(wrappedCopy, expr, conditionRefs);
                         nodes.add(wrappedCopy);
                     }
                 }
@@ -2787,19 +2662,17 @@ public class ScriptCompiler {
     }
 
     private class StubsVisitor implements Node.Visitor {
-        private final Map<String, Reachability> currentReachByRef = new HashMap<>();
-        private final Map<String, ConstantBindings> currentBindings = new HashMap<>();
-        private final Map<Node, Map<String, Reachability>> reachRefs = new LinkedHashMap<>();
-        private final Map<Node, Map<String, ConstantBindings>> bindingRefs = new LinkedHashMap<>();
+        private final Map<String, Fact> currentFacts = new HashMap<>();
+        private final Map<Node, Map<String, Fact>> factRefs = new LinkedHashMap<>();
         private final Map<Node, Map<String, Set<List<Token>>>> existingConditionsByBlock = new IdentityHashMap<>();
         private final Map<Node, Map<String, Set<List<Token>>>> existingConditionsByContainer = new IdentityHashMap<>();
         private final Map<Node, Map<String, StubState>> emittedStubsByContainer = new IdentityHashMap<>();
         private final Map<Node, Node> mirrors;
-        private final Map<Node, Reachability> reachableBlocks;
+        private final Map<Node, Guard> reachableBlocks;
         private final Map<Node, Set<String>> conditionRefs;
 
         StubsVisitor(Map<Node, Node> mirrors,
-                     Map<Node, Reachability> reachableBlocks,
+                     Map<Node, Guard> reachableBlocks,
                      Map<Node, Set<String>> conditionRefs) {
             this.mirrors = mirrors;
             this.reachableBlocks = reachableBlocks;
@@ -2817,43 +2690,50 @@ public class ScriptCompiler {
                 case VARIABLE_ENUM:
                 case VARIABLE_LIST:
                 case VARIABLE_TEXT:
+                    rememberFact(mirror(node), definitionGuard(mirror(node)), constantValue(node));
+                    break;
                 case INPUT_BOOLEAN:
                 case INPUT_ENUM:
                 case INPUT_TEXT:
                 case INPUT_LIST:
-                    Node mirror = mirror(node);
-                    Reachability reach = definitionReachability(mirror);
-                    if (reach != null) {
-                        String key = scopeId(mirror);
-                        currentReachByRef.compute(key, (k, v) -> v == null ? reach : v.or(reach));
-                        Value<?> value = constantValue(node);
-                        if (value != null
-                                && node.kind().is(Kind.PRESET_BOOLEAN,
-                                                  Kind.PRESET_ENUM,
-                                                  Kind.PRESET_LIST,
-                                                  Kind.PRESET_TEXT,
-                                                  Kind.VARIABLE_BOOLEAN,
-                                                  Kind.VARIABLE_ENUM,
-                                                  Kind.VARIABLE_LIST,
-                                                  Kind.VARIABLE_TEXT)) {
-                            currentBindings.computeIfAbsent(key, k -> new ConstantBindings(node.kind().valueType()))
-                                    .add(value, reach);
-                        }
-                    }
+                    rememberFact(mirror(node), renderGuard(mirror(node)), null);
                     break;
                 case CONDITION:
-                    reachRefs.put(node, Map.copyOf(currentReachByRef));
-                    bindingRefs.put(node, snapshotBindings(currentBindings));
+                    factRefs.put(node, Map.copyOf(currentFacts));
                     break;
                 default:
             }
             return true;
         }
 
+        private void rememberFact(Node node, Guard definition, Value<?> exactValue) {
+            if (isFalse(definition)) {
+                return;
+            }
+            String key = flowModel.key(node);
+            Flow.SymbolInfo info = symbolInfo(key);
+            if (info == null) {
+                return;
+            }
+            Domain.Value value = Domain.Value.top(info.symbol().domain());
+            Fact next = exactValue == null
+                    ? new Fact(definition, value)
+                    : Fact.exact(definition, value, exactValue);
+            currentFacts.merge(key, next, (left, right) -> Fact.merge(left, right, guards()));
+        }
+
+        private <T> Map<String, T> withoutControlKey(Map<String, T> values, String key) {
+            Map<String, T> trimmed = withoutKey(values, key);
+            if (key.startsWith("~")) {
+                return withoutKey(trimmed, key.substring(1));
+            }
+            return withoutKey(trimmed, "~" + key);
+        }
+
         @Override
         public void postVisit(Node node) {
             if (node.kind() == Kind.SCRIPT) {
-                reachRefs.forEach((n, snapshot) -> {
+                factRefs.forEach((n, snapshot) -> {
                     List<StubSpec> stubs = resolveStubs(n, snapshot);
                     if (!stubs.isEmpty()) {
                         addVariables(n, stubs);
@@ -2951,9 +2831,7 @@ public class ScriptCompiler {
                         // to their own inputs container
                         Node inputs = Nodes.inputs();
                         parent.parent().append(p + 2, inputs);
-                        for (int j = index, size = parent.children().size(); j < size; j++) {
-                            inputs.append(parent.children().remove(index));
-                        }
+                        moveChildren(parent, index, inputs);
                     }
                 } else if (parent.kind().isBlock()) {
                     container = Nodes.ensureBefore(n, Kind.VARIABLES);
@@ -2965,13 +2843,22 @@ public class ScriptCompiler {
             return container;
         }
 
+        private void moveChildren(Node parent, int startIndex, Node target) {
+            List<Node> children = parent.children();
+            List<Node> moved = new ArrayList<>(children.subList(startIndex, children.size()));
+            children.subList(startIndex, children.size()).clear();
+            for (Node child : moved) {
+                target.append(child);
+            }
+        }
+
         List<Token> nodeConditionTokens(Node node) {
             return node.kind() == Kind.CONDITION
                     ? node.expression().tokens()
                     : Expression.TRUE.tokens();
         }
 
-        List<StubSpec> resolveStubs(Node node, Map<String, Reachability> snapshots) {
+        List<StubSpec> resolveStubs(Node node, Map<String, Fact> snapshots) {
             Set<String> variables = conditionRefs.get(node);
             if (variables == null) {
                 throw new IllegalStateException("Condition refs not found: " + node);
@@ -2980,75 +2867,70 @@ public class ScriptCompiler {
                 return List.of();
             }
 
-            List<StubSpec> nodes = new ArrayList<>();
+            List<StubSpec> stubs = new ArrayList<>();
             Node block = node.ancestor(Kind::isBlock).orElseThrow();
             Scope scope = scope(mirror(block));
-            Reachability reach = reachability(block);
-            if (reach == null) {
-                // validation already reports unsupported condition shapes; do not reintroduce expression fallback here
-                return List.of();
-            }
-            Map<String, ConstantBindings> bindings = bindingRefs.getOrDefault(node, Map.of());
-            Map<String, Reachability> demands = conditionDemands(node.expression(), scope, bindings, snapshots);
+            Guard base = reachability(block);
+            Map<String, Guard> demands = conditionDemands(node.expression(), scope, snapshots);
             for (String ref : variables) {
-
-                // normalize the ref
                 String key = scope.key(ref);
-
-                Reachability required = reach;
-                Reachability demand = demands.get(key);
+                Guard required = base;
+                Guard demand = demands.get(key);
                 if (demand != null) {
-                    required = required.and(demand);
+                    required = and(required, demand);
                 }
-                Reachability refReach = snapshots.getOrDefault(key, falseReach());
-                Reachability missing = required.subtract(refReach);
-                if (missing.isFalse()) {
+                Fact snapshot = fact(snapshots, key);
+                Guard defined = snapshot == null ? falseGuard() : snapshot.definedUnder();
+                Guard missing = normalizeGuard(minus(required, defined), scope, snapshots);
+                if (isFalse(missing)) {
                     continue;
                 }
                 Type type = refTypes.getOrDefault(key, Type.EMPTY);
-                nodes.add(new StubSpec(type, key, missing, reach, scope, bindings, snapshots));
+                stubs.add(new StubSpec(type, key, missing, base, scope, snapshots));
             }
-            return nodes;
+            return stubs;
         }
 
         Expression definitionComplementStubExpression(String key,
-                                                     Reachability missing,
-                                                     Reachability base,
-                                                     Scope scope,
-                                                     Map<String, Reachability> definitions) {
-            Reachability definition = definitions.getOrDefault(key, falseReach());
-            if (!equivalent(base.subtract(definition), missing)) {
+                                                      Guard missing,
+                                                      Guard base,
+                                                      Scope scope,
+                                                      Map<String, Fact> facts) {
+            Fact definitionFact = fact(facts, key);
+            Guard definition = definitionFact == null ? falseGuard() : definitionFact.definedUnder();
+            if (!equivalent(minus(base, definition), missing)) {
                 return null;
             }
-            Expression expr = Expression.create("!(" + reachabilityExpression(definition, scope).literal() + ")");
-            return expr.reduce(base.toExpression(scope));
+            Expression definitionExpr = guardExpression(definition, scope);
+            Guard translated = new ExpressionAnalyzer(scope, facts, false, false).analyze(definitionExpr).reach;
+            if (translated == null) {
+                return Expression.TRUE;
+            }
+            return Expression.create("!(" + definitionExpr.literal() + ")").reduce(guardExpression(base));
         }
 
         Expression nestedDefinitionComplementStubExpression(String key,
-                                                           Reachability missing,
-                                                           Reachability base,
-                                                           Scope scope,
-                                                           Map<String, ConstantBindings> bindings,
-                                                           Map<String, Reachability> definitions) {
-            return nestedDefinitionComplementStubExpression(key, missing, base, scope, bindings, definitions, false);
+                                                            Guard missing,
+                                                            Guard base,
+                                                            Scope scope,
+                                                            Map<String, Fact> facts) {
+            return nestedDefinitionComplementStubExpression(key, missing, base, scope, facts, false);
         }
 
         Expression coveringNestedDefinitionComplementStubExpression(String key,
-                                                                   Reachability missing,
-                                                                   Reachability base,
-                                                                   Scope scope,
-                                                                   Map<String, ConstantBindings> bindings,
-                                                                   Map<String, Reachability> definitions) {
-            return nestedDefinitionComplementStubExpression(key, missing, base, scope, bindings, definitions, true);
+                                                                    Guard missing,
+                                                                    Guard base,
+                                                                    Scope scope,
+                                                                    Map<String, Fact> facts) {
+            return nestedDefinitionComplementStubExpression(key, missing, base, scope, facts, true);
         }
 
         private Expression nestedDefinitionComplementStubExpression(String key,
-                                                                   Reachability missing,
-                                                                   Reachability base,
-                                                                   Scope scope,
-                                                                   Map<String, ConstantBindings> bindings,
-                                                                   Map<String, Reachability> definitions,
-                                                                   boolean allowCovering) {
+                                                                    Guard missing,
+                                                                    Guard base,
+                                                                    Scope scope,
+                                                                    Map<String, Fact> facts,
+                                                                    boolean allowCovering) {
             int dot = key.lastIndexOf('.');
             if (dot < 0) {
                 return null;
@@ -3057,49 +2939,153 @@ public class ScriptCompiler {
             if (refTypes.getOrDefault(parentKey, Type.EMPTY) != Type.BOOLEAN) {
                 return null;
             }
-            Reachability definition = definitions.get(key);
-            if (definition == null || definition.isFalse()) {
+            Flow.SymbolInfo info = symbolInfo(key);
+            Guard definition = info == null ? null : info.definition();
+            if (isFalse(definition)) {
                 return null;
             }
+            Expression direct = simpleNestedDefinitionComplementStubExpression(parentKey,
+                    definition,
+                    missing,
+                    base,
+                    scope,
+                    allowCovering);
+            if (direct != null) {
+                return direct;
+            }
             Expression parentExpr = Expression.create(String.format("${%s}", scope.key(parentKey)));
-            ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, bindings, definitions, false, false);
-            Reachability parentReach = analyzer.analyze(parentExpr).reach;
-            if (parentReach == null || !parentReach.contains(definition)) {
+            Map<String, Fact> parentFacts = withoutControlKey(facts, parentKey);
+            ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, parentFacts, false, false);
+            Guard parentReach = analyzer.analyze(parentExpr).reach;
+            if (!contains(parentReach, definition)) {
                 return null;
             }
             Expression tail = residualExpression(definition, parentReach, scope);
             Expression definitionExpr = parentExpr.and(tail).reduce();
-            Reachability candidateDefinition = analyzer.analyze(definitionExpr).reach;
+            Guard candidateDefinition = analyzer.analyze(definitionExpr).reach;
             if (!equivalent(candidateDefinition, definition)) {
                 return null;
             }
             Expression parentComplement = Expression.create(String.format("!${%s}", scope.key(parentKey)));
-            Reachability tailReach = tail == Expression.TRUE ? trueReach() : analyzer.analyze(tail).reach;
+            Guard parentComplementReach = analyzer.analyze(parentComplement).reach;
+            Guard tailReach = tail == Expression.TRUE ? trueGuard() : analyzer.analyze(tail).reach;
             Expression tailComplement = tail == Expression.TRUE
                     ? Expression.FALSE
                     : tailReach == null
                             ? Expression.create("!(" + tail.literal() + ")").reduce()
-                            : reachabilityExpression(trueReach().subtract(tailReach), scope);
-            Expression expr = parentComplement.or(tailComplement).reduce(base.toExpression(scope));
-            Reachability candidateMissing = analyzer.analyze(expr).reach;
+                            : reachabilityExpression(minus(trueGuard(), tailReach), scope);
+            Expression expr = parentComplement.or(tailComplement).reduce(guardExpression(base));
+            Guard candidateMissing = analyzer.analyze(expr).reach;
             if (candidateMissing == null) {
                 return null;
             }
-            if (!allowCovering) {
-                return equivalent(candidateMissing, missing) ? expr : null;
+            Expression normalized = reachabilityExpression(candidateMissing, scope).reduce(guardExpression(base));
+            normalized = eliminateParentCoveredTerms(normalized, parentExpr, parentComplement, scope, facts,
+                    guardExpression(base));
+            Expression simplified = normalized;
+            if (parentComplementReach != null) {
+                Guard residualMissing = minus(candidateMissing, parentComplementReach);
+                Guard constrainedResidual = residualMissing;
+                if (!isFalse(residualMissing)) {
+                    Guard constrained = new ExpressionAnalyzer(scope, facts, false, false)
+                            .analyze(reachabilityExpression(residualMissing, scope))
+                            .reach;
+                    if (constrained != null) {
+                        constrainedResidual = constrained;
+                    }
+                }
+                Guard parentResidual = and(parentReach, constrainedResidual);
+                simplified = isFalse(parentResidual)
+                        ? parentComplement.reduce(guardExpression(base))
+                        : parentComplement.or(reachabilityExpression(parentResidual, scope)).reduce(guardExpression(base));
+                simplified = eliminateParentCoveredTerms(simplified,
+                        parentExpr,
+                        parentComplement,
+                        scope,
+                        facts,
+                        guardExpression(base));
             }
-            Reachability complement = trueReach().subtract(definition);
-            return candidateMissing.contains(missing) && complement.contains(candidateMissing)
-                    ? expr
-                    : null;
+            if (!allowCovering) {
+                if (!equivalent(candidateMissing, missing)) {
+                    return null;
+                }
+                normalized = minimizeDisjunction(normalized,
+                        missing,
+                        missing,
+                        true,
+                        scope,
+                        parentFacts,
+                        guardExpression(base));
+                simplified = minimizeDisjunction(simplified,
+                        missing,
+                        missing,
+                        true,
+                        scope,
+                        parentFacts,
+                        guardExpression(base));
+                return simplified.tokens().size() < normalized.tokens().size() ? simplified : normalized;
+            }
+            Guard complement = minus(trueGuard(), definition);
+            if (!contains(candidateMissing, missing) || !contains(complement, candidateMissing)) {
+                return null;
+            }
+            normalized = minimizeDisjunction(normalized,
+                    missing,
+                    complement,
+                    false,
+                    scope,
+                    parentFacts,
+                    guardExpression(base));
+            simplified = minimizeDisjunction(simplified,
+                    missing,
+                    complement,
+                    false,
+                    scope,
+                    parentFacts,
+                    guardExpression(base));
+            return simplified.tokens().size() < normalized.tokens().size() ? simplified : normalized;
+        }
+
+        private Expression simpleNestedDefinitionComplementStubExpression(String parentKey,
+                                                                          Guard definition,
+                                                                          Guard missing,
+                                                                          Guard base,
+                                                                          Scope scope,
+                                                                          boolean allowCovering) {
+            Expression parentExpr = Expression.create(String.format("${%s}", scope.key(parentKey)));
+            ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, Map.of(), false, false);
+            Guard parentReach = analyzer.analyze(parentExpr).reach;
+            if (!contains(parentReach, definition)) {
+                return null;
+            }
+
+            Expression parentComplement = Expression.create(String.format("!${%s}", scope.key(parentKey)));
+            Expression tail = residualExpression(definition, parentReach, scope, Map.of());
+            Expression expr = tail == Expression.TRUE
+                    ? parentComplement
+                    : parentComplement.or(Expression.create("!(" + tail.literal() + ")")).reduce();
+            Guard candidate = analyzer.analyze(expr).reach;
+            if (candidate == null) {
+                return null;
+            }
+
+            Guard limited = base == null ? candidate : and(base, candidate);
+            Guard complement = minus(trueGuard(), definition);
+            if (allowCovering) {
+                if (!contains(limited, missing) || !contains(complement, limited)) {
+                    return null;
+                }
+            } else if (!equivalent(limited, missing)) {
+                return null;
+            }
+            return reachabilityExpression(limited, scope).reduce(guardExpression(base));
         }
 
         Expression nestedBooleanStubExpression(String key,
-                                               Reachability missing,
-                                               Reachability base,
+                                               Guard missing,
+                                               Guard base,
                                                Scope scope,
-                                               Map<String, ConstantBindings> bindings,
-                                               Map<String, Reachability> definitions) {
+                                               Map<String, Fact> facts) {
             int dot = key.lastIndexOf('.');
             if (dot < 0) {
                 return null;
@@ -3109,76 +3095,174 @@ public class ScriptCompiler {
                 return null;
             }
             Expression expr = Expression.create(String.format("!${%s}", scope.key(parentKey)));
-            Reachability candidate = new ExpressionAnalyzer(scope, bindings, definitions, false, false)
+            Guard candidate = new ExpressionAnalyzer(
+                    scope,
+                    withoutControlKey(facts, parentKey),
+                    false,
+                    false)
                     .analyze(expr)
                     .reach;
             if (candidate == null) {
                 return null;
             }
-            Reachability relative = base == null ? candidate : base.and(candidate);
+            Guard relative = base == null ? candidate : and(base, candidate);
             return equivalent(relative, missing) ? expr : null;
         }
 
-        boolean equivalent(Reachability left, Reachability right) {
-            return left != null
-                    && right != null
-                    && left.contains(right)
-                    && right.contains(left);
+        private Expression minimizeDisjunction(Expression expr,
+                                               Guard required,
+                                               Guard limit,
+                                               boolean exact,
+                                               Scope scope,
+                                               Map<String, Fact> facts,
+                                               Expression base) {
+            Expression minimized = expr;
+            boolean changed;
+            do {
+                changed = false;
+                List<Expression> disjunctions = new ArrayList<>(disjunctionTerms(minimized));
+                if (disjunctions.size() > 1) {
+                    for (int i = 0; i < disjunctions.size(); i++) {
+                        List<Expression> remaining = Lists.withoutIndex(disjunctions, i);
+                        Expression candidate = orTerms(remaining).reduce(base);
+                        Guard candidateReach = new ExpressionAnalyzer(scope, facts, false, false)
+                                .analyze(candidate)
+                                .reach;
+                        if (acceptable(candidateReach, required, limit, exact)) {
+                            minimized = candidate;
+                            changed = true;
+                            break;
+                        }
+                    }
+                    if (changed) {
+                        continue;
+                    }
+                }
+
+                for (int i = 0; i < disjunctions.size(); i++) {
+                    List<Expression> conjunctions = new ArrayList<>(conjunctionTerms(disjunctions.get(i)));
+                    if (conjunctions.size() < 2) {
+                        continue;
+                    }
+                    for (int j = 0; j < conjunctions.size(); j++) {
+                        List<Expression> reducedConjunctions = Lists.withoutIndex(conjunctions, j);
+                        List<Expression> reducedDisjunctions = new ArrayList<>(disjunctions);
+                        reducedDisjunctions.set(i, andTerms(reducedConjunctions));
+                        Expression candidate = orTerms(reducedDisjunctions).reduce(base);
+                        Guard candidateReach = new ExpressionAnalyzer(scope, facts, false, false)
+                                .analyze(candidate)
+                                .reach;
+                        if (acceptable(candidateReach, required, limit, exact)) {
+                            minimized = candidate;
+                            changed = true;
+                            break;
+                        }
+                    }
+                    if (changed) {
+                        break;
+                    }
+                }
+            } while (changed);
+            return minimized;
+        }
+
+        private Expression eliminateParentCoveredTerms(Expression expr,
+                                                       Expression parentExpr,
+                                                       Expression parentComplement,
+                                                       Scope scope,
+                                                       Map<String, Fact> facts,
+                                                       Expression base) {
+            List<Expression> terms = new ArrayList<>(disjunctionTerms(expr));
+            if (terms.size() < 2) {
+                return expr;
+            }
+            boolean changed;
+            do {
+                changed = false;
+                for (int i = 0; i < terms.size(); i++) {
+                    Expression term = terms.get(i);
+                    if (term.tokens().equals(parentComplement.tokens())) {
+                        continue;
+                    }
+                    Guard overlap = new ExpressionAnalyzer(scope, facts, false, false)
+                            .analyze(term.and(parentExpr).reduce(base))
+                            .reach;
+                    if (isFalse(overlap)) {
+                        terms = Lists.withoutIndex(terms, i);
+                        expr = orTerms(terms).reduce(base);
+                        changed = true;
+                        break;
+                    }
+                }
+            } while (changed && terms.size() > 1);
+            return expr;
+        }
+
+        private boolean acceptable(Guard candidate,
+                                   Guard required,
+                                   Guard limit,
+                                   boolean exact) {
+            if (candidate == null) {
+                return false;
+            }
+            if (exact) {
+                return equivalent(candidate, required);
+            }
+            return contains(candidate, required) && contains(limit, candidate);
+        }
+
+        private Expression orTerms(List<Expression> terms) {
+            Expression expr = Expression.FALSE;
+            for (Expression term : terms) {
+                expr = expr == Expression.FALSE ? term : expr.or(term);
+            }
+            return expr;
+        }
+
+        private Expression andTerms(List<Expression> terms) {
+            Expression expr = Expression.TRUE;
+            for (Expression term : terms) {
+                expr = expr == Expression.TRUE ? term : expr.and(term);
+            }
+            return expr;
         }
 
         private final class StubSpec {
             private final Type type;
             private final String key;
-            private final Reachability missing;
-            private final Reachability base;
+            private final Guard missing;
+            private final Guard base;
             private final Scope scope;
-            private final Map<String, ConstantBindings> bindings;
-            private final Map<String, Reachability> definitions;
+            private final Map<String, Fact> facts;
 
-            private StubSpec(Type type,
-                             String key,
-                             Reachability missing,
-                             Reachability base,
-                             Scope scope,
-                             Map<String, ConstantBindings> bindings,
-                             Map<String, Reachability> definitions) {
+            private StubSpec(Type type, String key, Guard missing, Guard base, Scope scope, Map<String, Fact> facts) {
                 this.type = type;
                 this.key = key;
                 this.missing = missing;
                 this.base = base;
                 this.scope = scope;
-                this.bindings = bindings;
-                this.definitions = definitions;
+                this.facts = facts;
             }
 
             private String path() {
                 return "~" + key;
             }
 
-            private StubSpec withMissing(Reachability nextMissing) {
-                return new StubSpec(type, key, nextMissing, base, scope, bindings, definitions);
+            private StubSpec withMissing(Guard nextMissing) {
+                return new StubSpec(type, key, nextMissing, base, scope, facts);
             }
 
             private Node render() {
                 Expression residual = residualExpression(missing, base, scope);
-                Expression expr = nestedBooleanStubExpression(key, missing, base, scope, bindings, definitions);
+                Expression expr = nestedBooleanStubExpression(key, missing, base, scope, facts);
                 if (expr == null) {
-                    expr = nestedDefinitionComplementStubExpression(key, missing, base, scope, bindings, definitions);
+                    expr = nestedDefinitionComplementStubExpression(key, missing, base, scope, facts);
                 }
                 if (expr == null) {
-                    Expression covering = coveringNestedDefinitionComplementStubExpression(
-                            key,
-                            missing,
-                            base,
-                            scope,
-                            bindings,
-                            definitions);
-                    if (covering != null && covering.tokens().size() < residual.tokens().size()) {
-                        expr = covering;
-                    }
+                    expr = coveringNestedDefinitionComplementStubExpression(key, missing, base, scope, facts);
                 }
                 if (expr == null) {
-                    Expression complement = definitionComplementStubExpression(key, missing, base, scope, definitions);
+                    Expression complement = definitionComplementStubExpression(key, missing, base, scope, facts);
                     expr = complement != null && complement.tokens().size() < residual.tokens().size()
                             ? complement
                             : residual;
@@ -3199,8 +3283,8 @@ public class ScriptCompiler {
             private boolean merge(StubSpec other,
                                   Map<String, Set<List<Token>>> existingInContainer,
                                   Map<String, Set<List<Token>>> existingInBlock) {
-                Reachability merged = stub.missing.or(other.missing);
-                if (merged.equals(stub.missing)) {
+                Guard merged = or(stub.missing, other.missing);
+                if (equivalent(merged, stub.missing)) {
                     return true;
                 }
 
@@ -3237,7 +3321,7 @@ public class ScriptCompiler {
             }
         }
 
-        Reachability reachability(Node node) {
+        Guard reachability(Node node) {
             if (reachableBlocks.containsKey(node)) {
                 return reachableBlocks.get(node);
             }
@@ -3308,101 +3392,82 @@ public class ScriptCompiler {
         }
 
         Expression mergedCondition(List<Node> group) {
-            Set<Node> anchors = mergedActivationAnchors(group);
-            Reachability mergedReach = mergedActivationReachability(group, anchors);
+            Scope scope = scope(mirror(group.get(0)));
+            Set<Node> parents = mergedActivationAnchors(group);
+            Guard mergedReach = mergedActivationReachability(group);
             if (mergedReach != null) {
-                return reachabilityExpression(mergedReach, scope(group.get(0)));
+                return simplifyMergedConditionExpression(reachabilityExpression(mergedReach, scope), scope);
             }
 
-            if (anchors.size() == group.size()) {
-                Expression condition = currentCondition(group.get(0));
-                for (int i = 1; i < group.size(); i++) {
-                    condition = condition.or(activationCondition(mirror(group.get(i)).parent()));
-                }
-                return condition;
+            Expression condition = Expression.FALSE;
+            for (Node parent : parents) {
+                condition = condition.or(flowModel.activationCondition(parent));
             }
-
-            Node firstAnchor = anchors.iterator().next();
-            Expression condition = activationCondition(firstAnchor);
-            for (Node anchor : anchors) {
-                if (anchor != firstAnchor) {
-                    condition = condition.or(activationCondition(anchor));
-                }
-            }
-            return condition;
+            return simplifyMergedConditionExpression(condition, scope);
         }
 
-        Reachability mergedActivationReachability(List<Node> group, Set<Node> anchors) {
-            if (anchors.size() > 4) {
-                return null;
-            }
-            Scope scope = scope(group.get(0));
-            Reachability merged = null;
-            for (Node anchor : anchors) {
-                ExpressionAnalysis analysis = new ExpressionAnalyzer(scope, Map.of(), Map.of(), false, false)
-                        .analyze(activationCondition(anchor));
-                Reachability reach = analysis.reach;
+        Guard mergedActivationReachability(List<Node> group) {
+            Scope scope = scope(mirror(group.get(0)));
+            Guard merged = null;
+            for (Node parent : mergedActivationAnchors(group)) {
+                Guard reach = localProjectedReach(flowModel.activationCondition(parent), scope);
                 if (reach == null) {
                     return null;
                 }
-                merged = merged == null ? reach : merged.or(reach);
+                merged = merged == null ? reach : or(merged, reach);
             }
             return merged;
         }
 
-        Expression currentCondition(Node step) {
-            Node parent = step.parent();
-            return parent.kind() == Kind.CONDITION ? parent.expression() : Expression.TRUE;
-        }
-
         Set<Node> mergedActivationAnchors(List<Node> group) {
-            LinkedHashSet<Node> anchors = new LinkedHashSet<>();
+            LinkedHashSet<Node> parents = new LinkedHashSet<>();
             for (Node step : group) {
-                Node anchor = mirror(step).parent();
-                if (anchor == null) {
+                Node parent = mirror(step).parent();
+                if (parent == null) {
                     throw new IllegalStateException("Merged step is missing an activation anchor: " + step);
                 }
-                anchors.add(anchor);
+                parents.add(parent);
             }
-            collapseEnumCoverage(anchors);
+            LinkedHashSet<Node> anchors = new LinkedHashSet<>();
+            Map<Node, Set<Node>> enumParentsByInput = new LinkedHashMap<>();
+            for (Node parent : parents) {
+                if (parent.kind() != Kind.INPUT_OPTION) {
+                    anchors.add(parent);
+                    continue;
+                }
+                Node input = parent.ancestor(Kind::isInput).orElse(null);
+                if (input == null || input.kind() != Kind.INPUT_ENUM) {
+                    anchors.add(parent);
+                    continue;
+                }
+                enumParentsByInput.computeIfAbsent(input, key -> new LinkedHashSet<>()).add(parent);
+            }
+            for (Map.Entry<Node, Set<Node>> entry : enumParentsByInput.entrySet()) {
+                if (coversAllEnumOptions(entry.getKey(), entry.getValue())) {
+                    anchors.add(entry.getKey());
+                } else {
+                    anchors.addAll(entry.getValue());
+                }
+            }
             return anchors;
         }
 
-        void collapseEnumCoverage(Set<Node> anchors) {
-            boolean changed;
-            do {
-                changed = false;
-
-                Map<Node, Set<Node>> optionsByInput = new LinkedHashMap<>();
-                for (Node anchor : anchors) {
-                    if (anchor.kind() == Kind.INPUT_OPTION) {
-                        Node input = anchor.ancestor(Kind::isInput).orElse(null);
-                        if (input != null && input.kind() == Kind.INPUT_ENUM) {
-                            optionsByInput.computeIfAbsent(input, k -> new LinkedHashSet<>()).add(anchor);
-                        }
-                    }
+        private boolean coversAllEnumOptions(Node input, Set<Node> coveredParents) {
+            Set<String> coveredValues = new LinkedHashSet<>();
+            for (Node parent : coveredParents) {
+                coveredValues.add(parent.value().getString());
+            }
+            Set<String> reachableValues = new LinkedHashSet<>();
+            for (Node child : input.children()) {
+                if (skipCompiledNode(child)) {
+                    continue;
                 }
-
-                for (Entry<Node, Set<Node>> entry : optionsByInput.entrySet()) {
-                    Node input = entry.getKey();
-                    Set<Node> options = entry.getValue();
-                    if (anchors.contains(input)) {
-                        changed = anchors.removeAll(options) || changed;
-                        continue;
-                    }
-                    boolean coversAllOptions = true;
-                    for (Node option : input.children(Kind.INPUT_OPTION::equals)) {
-                        if (!options.contains(option)) {
-                            coversAllOptions = false;
-                            break;
-                        }
-                    }
-                    if (coversAllOptions) {
-                        changed = anchors.removeAll(options) || changed;
-                        changed = anchors.add(input) || changed;
-                    }
+                Node option = child.unwrap();
+                if (option.kind() == Kind.INPUT_OPTION) {
+                    reachableValues.add(option.value().getString());
                 }
-            } while (changed);
+            }
+            return !reachableValues.isEmpty() && coveredValues.equals(reachableValues);
         }
 
         Node mirror(Node node) {
@@ -3414,1268 +3479,39 @@ public class ScriptCompiler {
         }
     }
 
-    private static final class ReachabilityState {
-        private final Reachability reach;
-        private final Reachability known;
-
-        ReachabilityState(Reachability reach, Reachability known) {
-            this.reach = reach;
-            this.known = Objects.requireNonNull(known);
-        }
-
-        static ReachabilityState of(Reachability reach) {
-            Reachability known = Objects.requireNonNull(reach);
-            return new ReachabilityState(reach, known);
-        }
-
-        static ReachabilityState unsupported(Reachability known) {
-            return new ReachabilityState(null, Objects.requireNonNull(known));
-        }
-
-        boolean supported() {
-            return reach != null;
-        }
-
-        boolean isFalse() {
-            return supported() && reach.isFalse();
-        }
-
-        ReachabilityState and(Reachability other) {
-            Reachability next = other == null ? known : known.and(other);
-            if (!supported() || other == null) {
-                return unsupported(next);
-            }
-            return new ReachabilityState(reach.and(other), next);
-        }
-
-        ReachabilityState andKnown(Reachability other) {
-            Reachability next = other == null ? known : known.and(other);
-            return unsupported(next);
-        }
-    }
-
-    private static final class ConditionSemantics {
-        private final Reachability known;
-        private final List<ConditionTerm> pruning;
-        private final List<ConditionTerm> unsupported;
-
-        ConditionSemantics(Reachability known, List<ConditionTerm> pruning, List<ConditionTerm> unsupported) {
-            this.known = Objects.requireNonNull(known);
-            this.pruning = List.copyOf(pruning);
-            this.unsupported = List.copyOf(unsupported);
-        }
-
-        static ConditionSemantics root(Reachability known) {
-            return new ConditionSemantics(known, List.of(), List.of());
-        }
-
-        ConditionSemantics and(Reachability next, List<ConditionTerm> pruning, List<ConditionTerm> unsupported) {
-            return new ConditionSemantics(next,
-                    mergeTerms(this.pruning, pruning),
-                    mergeTerms(this.unsupported, unsupported));
-        }
-
-        Expression emittedCondition(Scope scope) {
-            return reachabilityExpression(known, scope)
-                    .and(expression(unsupported))
-                    .reduce();
-        }
-
-        Expression relativeCondition(ConditionSemantics base, Scope scope, Reachability reach) {
-            Reachability relative = reach != null ? reach : base.known;
-            return residualExpression(known, relative, scope)
-                    .and(expression(relativeTerms(unsupported, base.unsupported)))
-                    .reduce();
-        }
-
-        static List<ConditionTerm> mergeTerms(List<ConditionTerm> current, List<ConditionTerm> local) {
-            if (current.size() == 1 && current.get(0).isFalse() || local.isEmpty()) {
-                return current;
-            }
-            if (local.size() == 1 && local.get(0).isFalse() || current.isEmpty()) {
-                return local;
-            }
-            LinkedHashSet<ConditionTerm> merged = new LinkedHashSet<>(current);
-            merged.addAll(local);
-            return merged.size() == current.size() ? current : List.copyOf(merged);
-        }
-
-        static List<ConditionTerm> relativeTerms(List<ConditionTerm> terms, List<ConditionTerm> baseTerms) {
-            if (terms.isEmpty() || baseTerms.isEmpty()) {
-                return terms;
-            }
-            Set<ConditionTerm> base = Set.copyOf(baseTerms);
-            List<ConditionTerm> relative = new ArrayList<>();
-            for (ConditionTerm term : terms) {
-                if (!base.contains(term)) {
-                    relative.add(term);
-                }
-            }
-            return relative;
-        }
-
-        static Expression expression(List<ConditionTerm> terms) {
-            Expression expr = Expression.TRUE;
-            for (ConditionTerm term : terms) {
-                expr = expr.and(term.expression());
-            }
-            return expr.reduce();
-        }
-    }
-
-    private static final class ConditionTerm {
-        private static final ConditionTerm TRUE = new ConditionTerm(Expression.TRUE.tokens());
-        private static final ConditionTerm FALSE = new ConditionTerm(Expression.FALSE.tokens());
-
-        private final List<Token> tokens;
-
-        ConditionTerm(List<Token> tokens) {
-            this.tokens = List.copyOf(tokens);
-        }
-
-        static ConditionTerm of(Expression expression) {
-            Expression reduced = expression.reduce();
-            if (reduced == Expression.TRUE) {
-                return TRUE;
-            }
-            if (reduced == Expression.FALSE) {
-                return FALSE;
-            }
-            return new ConditionTerm(reduced.tokens());
-        }
-
-        boolean isTrue() {
-            return tokens.equals(Expression.TRUE.tokens());
-        }
-
-        boolean isFalse() {
-            return tokens.equals(Expression.FALSE.tokens());
-        }
-
-        Expression expression() {
-            if (isTrue()) {
-                return Expression.TRUE;
-            }
-            if (isFalse()) {
-                return Expression.FALSE;
-            }
-            return new Expression(tokens, true);
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (!(o instanceof ConditionTerm)) {
-                return false;
-            }
-            ConditionTerm other = (ConditionTerm) o;
-            return tokens.equals(other.tokens);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(tokens);
-        }
-    }
-
-    private static final class InputDomain {
-        enum Kind {
-            SCALAR,
-            LIST
-        }
-
-        private final Kind kind;
-        private final Set<String> scalarValues;
-        private final Set<String> listItems;
-        private boolean closed = true;
-        private Reachability definition;
-        private final Map<String, Reachability> scalarAvailability = new LinkedHashMap<>();
-        private final Map<String, Reachability> listAvailability = new LinkedHashMap<>();
-
-        InputDomain(Kind kind, Set<String> scalarValues, Set<String> listItems) {
-            this.kind = kind;
-            this.scalarValues = Set.copyOf(new TreeSet<>(scalarValues));
-            this.listItems = Set.copyOf(new TreeSet<>(listItems));
-        }
-
-        static InputDomain booleanDomain() {
-            return scalar(Set.of("false", "true"));
-        }
-
-        static InputDomain scalar(Set<String> values) {
-            return new InputDomain(Kind.SCALAR, values, Set.of());
-        }
-
-        static InputDomain list(Set<String> values) {
-            return new InputDomain(Kind.LIST, Set.of(), values);
-        }
-
-        InputDomain merge(InputDomain other) {
-            if (kind != other.kind) {
-                return this;
-            }
-            Set<String> mergedScalars = new TreeSet<>(scalarValues);
-            mergedScalars.addAll(other.scalarValues);
-            Set<String> mergedLists = new TreeSet<>(listItems);
-            mergedLists.addAll(other.listItems);
-            InputDomain merged = new InputDomain(kind, mergedScalars, mergedLists);
-            merged.closed = closed && other.closed;
-            merged.definition = mergedReachability(definition, other.definition);
-            scalarAvailability.forEach(merged::addScalarAvailability);
-            other.scalarAvailability.forEach(merged::addScalarAvailability);
-            listAvailability.forEach(merged::addListAvailability);
-            other.listAvailability.forEach(merged::addListAvailability);
-            return merged;
-        }
-
-        private static Reachability mergedReachability(Reachability left, Reachability right) {
-            if (left == null) {
-                return right;
-            }
-            if (right == null) {
-                return left;
-            }
-            return left.or(right);
-        }
-
-        void addDefinition(Reachability reach) {
-            definition = mergedReachability(definition, reach);
-        }
-
-        void addAvailability(String value, Reachability reach) {
-            if (kind == Kind.SCALAR) {
-                addScalarAvailability(value, reach);
-            } else if (kind == Kind.LIST) {
-                addListAvailability(value, reach);
-            }
-        }
-
-        void addScalarAvailability(String value, Reachability reach) {
-            if (kind != Kind.SCALAR || !scalarValues.contains(value)) {
-                return;
-            }
-            scalarAvailability.compute(value, (k, current) -> current == null ? reach : current.or(reach));
-        }
-
-        private void addListAvailability(String value, Reachability reach) {
-            if (kind != Kind.LIST || !listItems.contains(value)) {
-                return;
-            }
-            listAvailability.compute(value, (k, current) -> current == null ? reach : current.or(reach));
-        }
-
-        Reachability definition() {
-            return definition;
-        }
-
-        boolean closed() {
-            return closed;
-        }
-
-        void markOpen() {
-            closed = false;
-        }
-
-        Reachability selectionAvailability(Set<String> values, Map<String, InputDomain> domains) {
-            if (kind != Kind.SCALAR) {
-                return null;
-            }
-            return availability0(values, scalarAvailability, domains);
-        }
-
-        Reachability requiredAvailability(Set<String> values, Map<String, InputDomain> domains) {
-            if (kind != Kind.LIST) {
-                return null;
-            }
-            Reachability reach = null;
-            for (String value : values) {
-                Reachability availability = listAvailability.get(value);
-                if (availability == null) {
-                    return null;
-                }
-                reach = reach == null ? availability : reach.and(availability);
-            }
-            return reach == null ? Reachability.trueValue(domains) : reach;
-        }
-
-        private Reachability availability0(Set<String> values,
-                                           Map<String, Reachability> availabilityByValue,
-                                           Map<String, InputDomain> domains) {
-            Reachability reach = null;
-            for (String value : values) {
-                Reachability availability = availabilityByValue.get(value);
-                if (availability == null) {
-                    return null;
-                }
-                reach = reach == null ? availability : reach.or(availability);
-            }
-            return reach == null ? Reachability.falseValue(domains) : reach;
-        }
-
-        boolean isBoolean() {
-            return kind == Kind.SCALAR && scalarValues.equals(Set.of("false", "true"));
-        }
-    }
-
-    private final class ConstantBindings {
-        private final Type type;
-        private final List<ConstantCase> cases = new ArrayList<>();
-        private Reachability defined = falseReach();
-
-        ConstantBindings(Type type) {
-            this.type = type;
-        }
-
-        Reachability defined() {
-            return defined;
-        }
-
-        ConstantBindings copy() {
-            ConstantBindings copy = new ConstantBindings(type);
-            copy.defined = defined;
-            for (ConstantCase constantCase : cases) {
-                copy.cases.add(new ConstantCase(constantCase.value, constantCase.reach));
-            }
-            return copy;
-        }
-
-        void add(Value<?> value, Reachability reach) {
-            if (reach == null || reach.isFalse()) {
-                return;
-            }
-            ListIterator<ConstantCase> it = cases.listIterator();
-            while (it.hasNext()) {
-                ConstantCase next = it.next();
-                Reachability remaining = next.reach.subtract(reach);
-                if (remaining.isFalse()) {
-                    it.remove();
-                } else {
-                    next.reach = remaining;
-                }
-            }
-            for (ConstantCase constantCase : cases) {
-                if (Value.isEqual(constantCase.value, value)) {
-                    constantCase.reach = constantCase.reach.or(reach);
-                    defined = defined.or(reach);
-                    return;
-                }
-            }
-            cases.add(new ConstantCase(value, reach));
-            defined = defined.or(reach);
-        }
-
-        Reachability match(Value<?> value) {
-            Reachability reach = falseReach();
-            for (ConstantCase constantCase : cases) {
-                if (Value.isEqual(constantCase.value, value)) {
-                    reach = reach.or(constantCase.reach);
-                }
-            }
-            return reach;
-        }
-
-        Reachability scalarAny(Set<String> values) {
-            Reachability reach = falseReach();
-            for (ConstantCase constantCase : cases) {
-                String value = scalarLiteral(constantCase.value);
-                if (value != null && values.contains(value)) {
-                    reach = reach.or(constantCase.reach);
-                }
-            }
-            return reach;
-        }
-
-        Reachability listContains(Set<String> required) {
-            Reachability reach = falseReach();
-            if (type != Type.LIST) {
-                return reach;
-            }
-            for (ConstantCase constantCase : cases) {
-                if (constantCase.value.type() == Type.LIST) {
-                    Set<String> values = new HashSet<>(constantCase.value.getList());
-                    if (values.containsAll(required)) {
-                        reach = reach.or(constantCase.reach);
-                    }
-                }
-            }
-            return reach;
-        }
-    }
-
-    private static final class ConstantCase {
-        private final Value<?> value;
-        private Reachability reach;
-
-        ConstantCase(Value<?> value, Reachability reach) {
-            this.value = value;
-            this.reach = reach;
-        }
-    }
-
-    private static final class SupportedTerms {
-        private final Reachability supported;
+    private static final class ResolvedGuard {
+        private final Guard supported;
         private final Expression unsupported;
         private final boolean hasSupportedTerms;
 
-        SupportedTerms(Reachability supported, Expression unsupported, boolean hasSupportedTerms) {
+        ResolvedGuard(Guard supported, Expression unsupported, boolean hasSupportedTerms) {
             this.supported = supported;
             this.unsupported = unsupported;
             this.hasSupportedTerms = hasSupportedTerms;
         }
 
-        static SupportedTerms fullySupported(Reachability reach) {
-            return new SupportedTerms(reach, Expression.TRUE, true);
-        }
-    }
-
-    private static final class Reachability {
-        private final Map<String, InputDomain> domains;
-        private final List<ConstraintSet> constraintSets;
-
-        Reachability(Map<String, InputDomain> domains, List<ConstraintSet> constraintSets) {
-            this.domains = domains;
-            this.constraintSets = List.copyOf(constraintSets);
-        }
-
-        static Reachability trueValue(Map<String, InputDomain> domains) {
-            return new Reachability(domains, List.of(new ConstraintSet()));
-        }
-
-        static Reachability falseValue(Map<String, InputDomain> domains) {
-            return new Reachability(domains, List.of());
-        }
-
-        static Reachability scalar(String key, Set<String> allowed, Map<String, InputDomain> domains) {
-            InputDomain domain = domains.get(key);
-            if (domain == null || domain.kind != InputDomain.Kind.SCALAR) {
-                return null;
-            }
-            Set<String> actual = new TreeSet<>(allowed);
-            actual.retainAll(domain.scalarValues);
-            if (actual.isEmpty()) {
-                return falseValue(domains);
-            }
-            if (actual.equals(domain.scalarValues) && domain.closed()) {
-                return trueValue(domains);
-            }
-            return of(List.of(new ConstraintSet(
-                    Map.of(key, new ScalarConstraint(actual)),
-                    Map.of())), domains);
-        }
-
-        static Reachability listContains(String key, Set<String> required, Map<String, InputDomain> domains) {
-            InputDomain domain = domains.get(key);
-            if (domain == null || domain.kind != InputDomain.Kind.LIST) {
-                return null;
-            }
-            if (!domain.listItems.containsAll(required)) {
-                return falseValue(domains);
-            }
-            if (required.isEmpty()) {
-                return trueValue(domains);
-            }
-            ListConstraint listConstraint = new ListConstraint(required, Set.of());
-            ConstraintSet constraintSet = new ConstraintSet(Map.of(), Map.of(key, listConstraint));
-            return of(List.of(constraintSet), domains);
-        }
-
-        static Reachability of(List<ConstraintSet> constraintSets, Map<String, InputDomain> domains) {
-            if (constraintSets.isEmpty()) {
-                return falseValue(domains);
-            }
-            List<ConstraintSet> normalized = new ArrayList<>();
-            for (ConstraintSet set : constraintSets) {
-                ConstraintSet next = set.normalized(domains);
-                if (next == null) {
-                    continue;
-                }
-                if (next.isTrue()) {
-                    return trueValue(domains);
-                }
-                if (!normalized.contains(next)) {
-                    normalized.add(next);
-                }
-            }
-            boolean changed = true;
-            while (changed) {
-                int removeIndex = -1;
-                int mergeIndex = -1;
-                ConstraintSet merged = null;
-                for (int i = 0; i < normalized.size() && removeIndex < 0; i++) {
-                    for (int j = i + 1; j < normalized.size(); j++) {
-                        ConstraintSet left = normalized.get(i);
-                        ConstraintSet right = normalized.get(j);
-                        if (left.subsetOf(right, domains)) {
-                            removeIndex = i;
-                            break;
-                        }
-                        if (right.subsetOf(left, domains)) {
-                            removeIndex = j;
-                            break;
-                        }
-                        ConstraintSet candidate = left.tryMerge(right, domains);
-                        if (candidate != null) {
-                            merged = candidate;
-                            mergeIndex = i;
-                            removeIndex = j;
-                            break;
-                        }
-                    }
-                }
-                changed = removeIndex >= 0;
-                if (changed) {
-                    if (mergeIndex >= 0) {
-                        normalized.set(mergeIndex, merged);
-                    }
-                    normalized.remove(removeIndex);
-                }
-            }
-            normalized.sort(Comparator.comparing(ConstraintSet::literal));
-            return normalized.isEmpty() ? falseValue(domains) : new Reachability(domains, normalized);
-        }
-
-        boolean isFalse() {
-            return constraintSets.isEmpty();
-        }
-
-        Reachability and(Reachability other) {
-            if (isFalse() || other.isFalse()) {
-                return falseValue(domains);
-            }
-            if (constraintSets.size() == 1 && constraintSets.get(0).isTrue()) {
-                return other;
-            }
-            if (other.constraintSets.size() == 1 && other.constraintSets.get(0).isTrue()) {
-                return this;
-            }
-            List<ConstraintSet> result = new ArrayList<>();
-            for (ConstraintSet left : constraintSets) {
-                for (ConstraintSet right : other.constraintSets) {
-                    ConstraintSet intersected = left.intersect(right, domains);
-                    if (intersected != null) {
-                        result.add(intersected);
-                    }
-                }
-            }
-            return of(result, domains);
-        }
-
-        Reachability or(Reachability other) {
-            if (isFalse()) {
-                return other;
-            }
-            if (other.isFalse()) {
-                return this;
-            }
-            List<ConstraintSet> result = new ArrayList<>(constraintSets);
-            result.addAll(other.constraintSets);
-            return of(result, domains);
-        }
-
-        Reachability subtract(Reachability other) {
-            if (isFalse() || other.isFalse()) {
-                return this;
-            }
-            if (other.constraintSets.size() == 1 && other.constraintSets.get(0).isTrue()) {
-                return falseValue(domains);
-            }
-            List<ConstraintSet> remaining = new ArrayList<>(constraintSets);
-            for (ConstraintSet right : other.constraintSets) {
-                List<ConstraintSet> next = new ArrayList<>();
-                for (ConstraintSet left : remaining) {
-                    next.addAll(left.subtract(right, domains));
-                }
-                remaining = next;
-                if (remaining.isEmpty()) {
-                    return falseValue(domains);
-                }
-            }
-            return of(remaining, domains);
-        }
-
-        boolean contains(Reachability other) {
-            return other.subtract(this).isFalse();
-        }
-
-        Expression toExpression(Scope scope) {
-            if (isFalse()) {
-                return Expression.FALSE;
-            }
-            Expression expr = Expression.FALSE;
-            for (ConstraintSet constraintSet : constraintSets) {
-                expr = expr.or(constraintSet.toExpression(scope, domains));
-            }
-            return expr;
-        }
-
-        String literal() {
-            StringBuilder builder = new StringBuilder();
-            for (ConstraintSet constraintSet : constraintSets) {
-                if (builder.length() > 0) {
-                    builder.append("||");
-                }
-                builder.append(constraintSet.literal());
-            }
-            return builder.toString();
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            return o instanceof Reachability
-                   && constraintSets.equals(((Reachability) o).constraintSets);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(constraintSets);
-        }
-    }
-
-    private static final class ConstraintSet {
-        private final Map<String, ScalarConstraint> scalars;
-        private final Map<String, ListConstraint> lists;
-
-        ConstraintSet() {
-            this(Map.of(), Map.of());
-        }
-
-        ConstraintSet(Map<String, ScalarConstraint> scalars, Map<String, ListConstraint> lists) {
-            this.scalars = new TreeMap<>(scalars);
-            this.lists = new TreeMap<>(lists);
-        }
-
-        boolean isTrue() {
-            return scalars.isEmpty() && lists.isEmpty();
-        }
-
-        ConstraintSet normalized(Map<String, InputDomain> domains) {
-            Map<String, ScalarConstraint> normalizedScalars = new TreeMap<>();
-            for (Entry<String, ScalarConstraint> entry : scalars.entrySet()) {
-                InputDomain domain = domains.get(entry.getKey());
-                boolean alwaysDefined = false;
-                if (domain != null && domain.kind == InputDomain.Kind.SCALAR) {
-                    Reachability definition = domain.definition();
-                    alwaysDefined = definition != null
-                            && definition.constraintSets.size() == 1
-                            && definition.constraintSets.get(0).isTrue();
-                }
-                if (domain == null || domain.kind != InputDomain.Kind.SCALAR
-                    || !domain.scalarValues.equals(entry.getValue().allowed)
-                    || !domain.closed()
-                    || !alwaysDefined) {
-                    normalizedScalars.put(entry.getKey(), entry.getValue());
-                }
-            }
-            Map<String, ListConstraint> normalizedLists = new TreeMap<>();
-            for (Entry<String, ListConstraint> entry : lists.entrySet()) {
-                if (!entry.getValue().isEmpty()) {
-                    normalizedLists.put(entry.getKey(), entry.getValue());
-                }
-            }
-            return new ConstraintSet(normalizedScalars, normalizedLists).normalizeAvailability(domains);
-        }
-
-        ConstraintSet intersect(ConstraintSet other, Map<String, InputDomain> domains) {
-            Map<String, ScalarConstraint> mergedScalars = new TreeMap<>(scalars);
-            for (Entry<String, ScalarConstraint> entry : other.scalars.entrySet()) {
-                ScalarConstraint current = mergedScalars.get(entry.getKey());
-                if (current == null) {
-                    mergedScalars.put(entry.getKey(), entry.getValue());
-                } else {
-                    ScalarConstraint intersected = current.intersect(entry.getValue());
-                    if (intersected == null) {
-                        return null;
-                    }
-                    mergedScalars.put(entry.getKey(), intersected);
-                }
-            }
-            Map<String, ListConstraint> mergedLists = new TreeMap<>(lists);
-            for (Entry<String, ListConstraint> entry : other.lists.entrySet()) {
-                ListConstraint current = mergedLists.get(entry.getKey());
-                if (current == null) {
-                    mergedLists.put(entry.getKey(), entry.getValue());
-                } else {
-                    ListConstraint intersected = current.intersect(entry.getValue());
-                    if (intersected == null) {
-                        return null;
-                    }
-                    mergedLists.put(entry.getKey(), intersected);
-                }
-            }
-            return new ConstraintSet(mergedScalars, mergedLists).normalized(domains);
-        }
-
-        boolean subsetOf(ConstraintSet other, Map<String, InputDomain> domains) {
-            Set<String> scalarKeys = new HashSet<>(scalars.keySet());
-            scalarKeys.addAll(other.scalars.keySet());
-            for (String key : scalarKeys) {
-                InputDomain domain = domains.get(key);
-                if (domain == null || domain.kind != InputDomain.Kind.SCALAR) {
-                    ScalarConstraint left = scalars.get(key);
-                    ScalarConstraint right = other.scalars.get(key);
-                    if (left == null) {
-                        if (right != null) {
-                            return false;
-                        }
-                    } else if (right != null && !right.allowed.containsAll(left.allowed)) {
-                        return false;
-                    }
-                    continue;
-                }
-                Set<String> leftAllowed = effectiveAllowed(key, domain, domains);
-                Set<String> rightAllowed = other.effectiveAllowed(key, domain, domains);
-                if (domain.closed() || !other.scalars.containsKey(key)
-                        || !rightAllowed.equals(domain.scalarValues)) {
-                    if (!rightAllowed.containsAll(leftAllowed)) {
-                        return false;
-                    }
-                } else if (!scalars.containsKey(key) && other.scalars.containsKey(key)) {
-                    return false;
-                }
-            }
-            Set<String> listKeys = new HashSet<>(lists.keySet());
-            listKeys.addAll(other.lists.keySet());
-            for (String key : listKeys) {
-                ListConstraint left = lists.getOrDefault(key, ListConstraint.EMPTY);
-                ListConstraint right = other.lists.getOrDefault(key, ListConstraint.EMPTY);
-                if (!left.required.containsAll(right.required) || !left.forbidden.containsAll(right.forbidden)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        ConstraintSet tryMerge(ConstraintSet other, Map<String, InputDomain> domains) {
-            if (!lists.equals(other.lists)) {
-                return null;
-            }
-            String diffKey = null;
-            Map<String, ScalarConstraint> mergedScalars = new TreeMap<>();
-            Set<String> keys = new TreeSet<>(scalars.keySet());
-            keys.addAll(other.scalars.keySet());
-            for (String key : keys) {
-                InputDomain domain = domains.get(key);
-                if (domain == null || domain.kind != InputDomain.Kind.SCALAR) {
-                    return null;
-                }
-                Set<String> leftAllowed = effectiveAllowed(key, domain, domains);
-                Set<String> rightAllowed = other.effectiveAllowed(key, domain, domains);
-                if (!leftAllowed.equals(rightAllowed)) {
-                    if (diffKey != null) {
-                        return null;
-                    }
-                    diffKey = key;
-                    Set<String> union = new TreeSet<>(leftAllowed);
-                    union.addAll(rightAllowed);
-                    if (!union.equals(domain.scalarValues) || !domain.closed()) {
-                        mergedScalars.put(key, new ScalarConstraint(union));
-                    }
-                } else if (!leftAllowed.equals(domain.scalarValues) || !domain.closed()) {
-                    mergedScalars.put(key, new ScalarConstraint(leftAllowed));
-                }
-            }
-            return diffKey == null ? null : new ConstraintSet(mergedScalars, lists).normalized(domains);
-        }
-
-        List<ConstraintSet> subtract(ConstraintSet other, Map<String, InputDomain> domains) {
-            ConstraintSet intersection = intersect(other, domains);
-            if (intersection == null) {
-                return List.of(this);
-            }
-            if (subsetOf(other, domains)) {
-                return List.of();
-            }
-            Split split = splitAgainst(other, domains);
-            if (split == null) {
-                return List.of(this);
-            }
-            List<ConstraintSet> result = new ArrayList<>();
-            if (split.outside != null) {
-                if (split.outside.equals(this)) {
-                    return List.of(this);
-                }
-                result.add(split.outside);
-            }
-            if (split.overlap == null || split.overlap.equals(this)) {
-                return result;
-            }
-            result.addAll(split.overlap.subtract(other, domains));
-            return result;
-        }
-
-        Expression toExpression(Scope scope, Map<String, InputDomain> domains) {
-            Expression expr = Expression.TRUE;
-            for (Entry<String, ScalarConstraint> entry : scalars.entrySet()) {
-                expr = expr.and(entry.getValue().toExpression(scope.key(entry.getKey()), domains.get(entry.getKey())));
-            }
-            for (Entry<String, ListConstraint> entry : lists.entrySet()) {
-                expr = expr.and(entry.getValue().toExpression(scope.key(entry.getKey())));
-            }
-            return expr;
-        }
-
-        String literal() {
-            return scalars + "|" + lists;
-        }
-
-        ConstraintSet normalizeAvailability(Map<String, InputDomain> domains) {
-            Map<String, ScalarConstraint> nextScalars = new TreeMap<>(scalars);
-            Map<String, ListConstraint> nextLists = new TreeMap<>(lists);
-            boolean changed;
-            do {
-                changed = false;
-                ConstraintSet current = new ConstraintSet(nextScalars, nextLists);
-                for (Entry<String, ScalarConstraint> entry : new ArrayList<>(nextScalars.entrySet())) {
-                    InputDomain domain = domains.get(entry.getKey());
-                    if (domain == null || domain.kind != InputDomain.Kind.SCALAR) {
-                        continue;
-                    }
-                    ConstraintSet base = current.withoutScalar(entry.getKey());
-                    Set<String> possible = base.possibleValues(domain, domains);
-                    Set<String> allowed = new TreeSet<>(entry.getValue().allowed);
-                    allowed.retainAll(possible);
-                    if (allowed.isEmpty()) {
-                        return null;
-                    }
-                    if (!allowed.equals(entry.getValue().allowed)) {
-                        nextScalars.put(entry.getKey(), new ScalarConstraint(allowed));
-                        changed = true;
-                        break;
-                    }
-                    Reachability definition = domain.definition();
-                    if (domain.closed()
-                        && definition != null && definition.constraintSets.size() == 1
-                        && base.subsetOf(definition.constraintSets.get(0), domains)
-                        && allowed.equals(possible)) {
-                        nextScalars.remove(entry.getKey());
-                        changed = true;
-                        break;
-                    }
-                    Reachability availability = domain.selectionAvailability(allowed, domains);
-                    if (availability == null) {
-                        continue;
-                    }
-                    if (base.incompatibleWith(availability, domains)) {
-                        return null;
-                    }
-                    if (availability.constraintSets.size() != 1) {
-                        continue;
-                    }
-                    ConstraintSet implied = availability.constraintSets.get(0);
-                    ConstraintSet baseline = definition != null && definition.constraintSets.size() == 1
-                            ? definition.constraintSets.get(0)
-                            : null;
-                    if (current.removeImpliedDifference(implied, baseline, entry.getKey(), nextScalars, nextLists)) {
-                        changed = true;
-                        break;
-                    }
-                }
-                if (changed) {
-                    continue;
-                }
-                for (Entry<String, ListConstraint> entry : new ArrayList<>(nextLists.entrySet())) {
-                    InputDomain domain = domains.get(entry.getKey());
-                    if (domain == null || domain.kind != InputDomain.Kind.LIST || entry.getValue().required.isEmpty()) {
-                        continue;
-                    }
-                    ConstraintSet base = current.withoutList(entry.getKey());
-                    Reachability availability = domain.requiredAvailability(entry.getValue().required, domains);
-                    if (availability == null) {
-                        continue;
-                    }
-                    if (base.incompatibleWith(availability, domains)) {
-                        return null;
-                    }
-                    if (availability.constraintSets.size() != 1) {
-                        continue;
-                    }
-                    Reachability definition = domain.definition();
-                    ConstraintSet baseline = definition != null && definition.constraintSets.size() == 1
-                            ? definition.constraintSets.get(0)
-                            : null;
-                    if (current.removeImpliedDifference(availability.constraintSets.get(0),
-                            baseline,
-                            entry.getKey(),
-                            nextScalars,
-                            nextLists)) {
-                        changed = true;
-                        break;
-                    }
-                }
-            } while (changed);
-            return new ConstraintSet(nextScalars, nextLists);
-        }
-
-        boolean compatibleWith(ConstraintSet other, Map<String, InputDomain> domains) {
-            Set<String> scalarKeys = new HashSet<>(scalars.keySet());
-            scalarKeys.retainAll(other.scalars.keySet());
-            for (String key : scalarKeys) {
-                InputDomain domain = domains.get(key);
-                if (domain == null || domain.kind != InputDomain.Kind.SCALAR) {
-                    continue;
-                }
-                Set<String> allowed = new TreeSet<>(allowed(key, domain));
-                allowed.retainAll(other.allowed(key, domain));
-                if (allowed.isEmpty()) {
-                    return false;
-                }
-            }
-            Set<String> listKeys = new HashSet<>(lists.keySet());
-            listKeys.retainAll(other.lists.keySet());
-            for (String key : listKeys) {
-                ListConstraint left = lists.get(key);
-                ListConstraint right = other.lists.get(key);
-                if (left != null && right != null && left.intersect(right) == null) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        boolean incompatibleWith(Reachability reachability, Map<String, InputDomain> domains) {
-            if (reachability == null || reachability.isFalse()) {
-                return true;
-            }
-            for (ConstraintSet constraintSet : reachability.constraintSets) {
-                if (compatibleWith(constraintSet, domains)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        boolean removeImpliedDifference(ConstraintSet implied,
-                                        ConstraintSet baseline,
-                                        String skipKey,
-                                        Map<String, ScalarConstraint> nextScalars,
-                                        Map<String, ListConstraint> nextLists) {
-            boolean changed = false;
-            for (Entry<String, ScalarConstraint> entry : implied.scalars.entrySet()) {
-                if (entry.getKey().equals(skipKey)) {
-                    continue;
-                }
-                if (baseline != null && entry.getValue().equals(baseline.scalars.get(entry.getKey()))) {
-                    continue;
-                }
-                ScalarConstraint current = nextScalars.get(entry.getKey());
-                if (entry.getValue().equals(current)) {
-                    nextScalars.remove(entry.getKey());
-                    changed = true;
-                }
-            }
-            for (Entry<String, ListConstraint> entry : implied.lists.entrySet()) {
-                if (baseline != null && entry.getValue().equals(baseline.lists.get(entry.getKey()))) {
-                    continue;
-                }
-                ListConstraint current = nextLists.get(entry.getKey());
-                if (entry.getValue().equals(current)) {
-                    nextLists.remove(entry.getKey());
-                    changed = true;
-                }
-            }
-            return changed;
-        }
-
-        Split splitAgainst(ConstraintSet other, Map<String, InputDomain> domains) {
-            for (Entry<String, ScalarConstraint> entry : other.scalars.entrySet()) {
-                InputDomain domain = domains.get(entry.getKey());
-                if (domain == null || domain.kind != InputDomain.Kind.SCALAR) {
-                    continue;
-                }
-                Reachability definition = domain.definition();
-                if (definition != null && definition.constraintSets.size() == 1) {
-                    ConstraintSet defined = definition.constraintSets.get(0);
-                    if (!defined.isTrue() && !subsetOf(defined, domains)) {
-                        Split split = splitAgainst(defined, domains);
-                        if (split != null) {
-                            return split;
-                        }
-                    }
-                }
-                Set<String> leftAllowed = allowed(entry.getKey(), domain);
-                Set<String> rightAllowed = other.allowed(entry.getKey(), domain);
-                if (!rightAllowed.containsAll(leftAllowed)) {
-                    Set<String> outside = new TreeSet<>(leftAllowed);
-                    outside.removeAll(rightAllowed);
-                    Set<String> overlap = new TreeSet<>(leftAllowed);
-                    overlap.retainAll(rightAllowed);
-                    return new Split(withScalar(entry.getKey(), outside, domain, domains),
-                            withScalar(entry.getKey(), overlap, domain, domains));
-                }
-            }
-            for (Entry<String, ListConstraint> entry : other.lists.entrySet()) {
-                String key = entry.getKey();
-                ListConstraint left = lists.getOrDefault(key, ListConstraint.EMPTY);
-                for (String required : entry.getValue().required) {
-                    if (!left.required.contains(required) && !left.forbidden.contains(required)) {
-                        return new Split(withListForbidden(key, required, domains),
-                                withListRequired(key, required, domains));
-                    }
-                }
-                for (String forbidden : entry.getValue().forbidden) {
-                    if (!left.forbidden.contains(forbidden) && !left.required.contains(forbidden)) {
-                        return new Split(withListRequired(key, forbidden, domains),
-                                withListForbidden(key, forbidden, domains));
-                    }
-                }
-            }
-            return null;
-        }
-
-        ConstraintSet withScalar(String key, Set<String> allowed, InputDomain domain, Map<String, InputDomain> domains) {
-            Map<String, ScalarConstraint> next = new TreeMap<>(scalars);
-            Reachability definition = domain.definition();
-            boolean alwaysDefined = definition != null
-                    && definition.constraintSets.size() == 1
-                    && definition.constraintSets.get(0).isTrue();
-            if (allowed.equals(domain.scalarValues) && domain.closed() && alwaysDefined) {
-                next.remove(key);
-            } else {
-                next.put(key, new ScalarConstraint(allowed));
-            }
-            return new ConstraintSet(next, lists).normalized(domains);
-        }
-
-        ConstraintSet withListRequired(String key, String value, Map<String, InputDomain> domains) {
-            Map<String, ListConstraint> next = new TreeMap<>(lists);
-            ListConstraint constraint = next.getOrDefault(key, ListConstraint.EMPTY);
-            next.put(key, constraint.withRequired(value));
-            return new ConstraintSet(scalars, next).normalized(domains);
-        }
-
-        ConstraintSet withListForbidden(String key, String value, Map<String, InputDomain> domains) {
-            Map<String, ListConstraint> next = new TreeMap<>(lists);
-            ListConstraint constraint = next.getOrDefault(key, ListConstraint.EMPTY);
-            next.put(key, constraint.withForbidden(value));
-            return new ConstraintSet(scalars, next).normalized(domains);
-        }
-
-        Set<String> allowed(String key, InputDomain domain) {
-            ScalarConstraint constraint = scalars.get(key);
-            return constraint == null ? domain.scalarValues : constraint.allowed;
-        }
-
-        ConstraintSet withoutScalar(String key) {
-            Map<String, ScalarConstraint> nextScalars = new TreeMap<>(scalars);
-            nextScalars.remove(key);
-            return new ConstraintSet(nextScalars, lists);
-        }
-
-        ConstraintSet withoutList(String key) {
-            Map<String, ListConstraint> nextLists = new TreeMap<>(lists);
-            nextLists.remove(key);
-            return new ConstraintSet(scalars, nextLists);
-        }
-
-        Set<String> possibleValues(InputDomain domain, Map<String, InputDomain> domains) {
-            Set<String> values = new TreeSet<>(domain.scalarValues);
-            values.removeIf(value -> {
-                Reachability availability = domain.selectionAvailability(Set.of(value), domains);
-                return availability != null && incompatibleWith(availability, domains);
-            });
-            return values;
-        }
-
-        Set<String> effectiveAllowed(String key, InputDomain domain, Map<String, InputDomain> domains) {
-            Set<String> values = possibleValues(domain, domains);
-            values.retainAll(allowed(key, domain));
-            return values;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (!(o instanceof ConstraintSet)) {
-                return false;
-            }
-            ConstraintSet other = (ConstraintSet) o;
-            return scalars.equals(other.scalars) && lists.equals(other.lists);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(scalars, lists);
-        }
-    }
-
-    private static final class ScalarConstraint {
-        private final Set<String> allowed;
-
-        ScalarConstraint(Set<String> allowed) {
-            this.allowed = Set.copyOf(new TreeSet<>(allowed));
-        }
-
-        ScalarConstraint intersect(ScalarConstraint other) {
-            Set<String> intersection = new TreeSet<>(allowed);
-            intersection.retainAll(other.allowed);
-            return intersection.isEmpty() ? null : new ScalarConstraint(intersection);
-        }
-
-        Expression toExpression(String key, InputDomain domain) {
-            if (domain != null && domain.isBoolean()) {
-                if (allowed.equals(Set.of("true"))) {
-                    return Expression.create(String.format("${%s}", key));
-                }
-                if (allowed.equals(Set.of("false"))) {
-                    return Expression.create(String.format("!${%s}", key));
-                }
-            }
-            if (domain != null && domain.kind == InputDomain.Kind.SCALAR) {
-                Set<String> excluded = new TreeSet<>(domain.scalarValues);
-                excluded.removeAll(allowed);
-                if (domain.closed() && excluded.size() == 1) {
-                    return Expression.create(String.format("${%s} != '%s'", key, excluded.iterator().next()));
-                }
-            }
-            Expression expr = Expression.FALSE;
-            for (String value : allowed) {
-                expr = expr.or(Expression.create(String.format("${%s} == '%s'", key, value)));
-            }
-            return expr.reduce();
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            return o instanceof ScalarConstraint && allowed.equals(((ScalarConstraint) o).allowed);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(allowed);
-        }
-
-        @Override
-        public String toString() {
-            return allowed.toString();
-        }
-    }
-
-    private static final class ListConstraint {
-        private static final ListConstraint EMPTY = new ListConstraint(Set.of(), Set.of());
-
-        private final Set<String> required;
-        private final Set<String> forbidden;
-
-        ListConstraint(Set<String> required, Set<String> forbidden) {
-            this.required = Set.copyOf(new TreeSet<>(required));
-            this.forbidden = Set.copyOf(new TreeSet<>(forbidden));
-        }
-
-        boolean isEmpty() {
-            return required.isEmpty() && forbidden.isEmpty();
-        }
-
-        ListConstraint intersect(ListConstraint other) {
-            Set<String> nextRequired = new TreeSet<>(required);
-            nextRequired.addAll(other.required);
-            Set<String> nextForbidden = new TreeSet<>(forbidden);
-            nextForbidden.addAll(other.forbidden);
-            for (String value : nextRequired) {
-                if (nextForbidden.contains(value)) {
-                    return null;
-                }
-            }
-            return new ListConstraint(nextRequired, nextForbidden);
-        }
-
-        ListConstraint withRequired(String value) {
-            Set<String> next = new TreeSet<>(required);
-            next.add(value);
-            return new ListConstraint(next, forbidden);
-        }
-
-        ListConstraint withForbidden(String value) {
-            Set<String> next = new TreeSet<>(forbidden);
-            next.add(value);
-            return new ListConstraint(required, next);
-        }
-
-        Expression toExpression(String key) {
-            Expression expr = Expression.TRUE;
-            for (String value : required) {
-                expr = expr.and(Expression.create(String.format("${%s} contains '%s'", key, value)));
-            }
-            for (String value : forbidden) {
-                expr = expr.and(Expression.create(String.format("!(${%s} contains '%s')", key, value)));
-            }
-            return expr;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (!(o instanceof ListConstraint)) {
-                return false;
-            }
-            ListConstraint other = (ListConstraint) o;
-            return required.equals(other.required) && forbidden.equals(other.forbidden);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(required, forbidden);
-        }
-
-        @Override
-        public String toString() {
-            return required + "!" + forbidden;
-        }
-    }
-
-    private static final class Split {
-        private final ConstraintSet outside;
-        private final ConstraintSet overlap;
-
-        Split(ConstraintSet outside, ConstraintSet overlap) {
-            this.outside = outside;
-            this.overlap = overlap;
+        static ResolvedGuard fullySupported(Guard reach) {
+            return new ResolvedGuard(reach, Expression.TRUE, true);
         }
     }
 
     private static final class FileObject implements Comparable<FileObject> {
         private final String checksum;
         private final List<FileOp> ops;
-        private final Reachability reachability;
-        private final Scope scope;
-        private String conditionLiteral;
-        private List<Expression.Token> conditionTokens;
+        private final Expression condition;
 
-        FileObject(String checksum, List<FileOp> ops, Reachability reachability, Scope scope) {
+        FileObject(String checksum, List<FileOp> ops, Expression condition) {
             this.checksum = checksum;
-            this.ops = ops;
-            this.reachability = Objects.requireNonNull(reachability);
-            this.scope = Objects.requireNonNull(scope);
+            this.ops = List.copyOf(ops);
+            this.condition = condition.reduce();
         }
 
         Expression condition() {
-            if (reachability.isFalse()) {
-                return Expression.FALSE;
-            }
-            String literal = conditionLiteral();
-            return Expression.TRUE.literal().equals(literal)
-                    ? Expression.TRUE
-                    : Expression.create(literal);
-        }
-
-        String conditionLiteral() {
-            String literal = conditionLiteral;
-            if (literal == null) {
-                literal = reachabilityExpression(reachability, scope).literal();
-                conditionLiteral = literal;
-            }
-            return literal;
+            return condition;
         }
 
         List<Expression.Token> conditionTokens() {
-            if (reachability.isFalse()) {
-                return Expression.FALSE.tokens();
-            }
-            List<Expression.Token> tokens = conditionTokens;
-            if (tokens == null) {
-                String literal = conditionLiteral();
-                tokens = Expression.TRUE.literal().equals(literal)
-                        ? Expression.TRUE.tokens()
-                        : Expression.parseTokens(literal);
-                conditionTokens = tokens;
-            }
-            return tokens;
+            return condition.tokens();
         }
 
         @Override
@@ -4709,17 +3545,19 @@ public class ScriptCompiler {
 
     private static final class FileOps implements Comparable<FileOps> {
         private static final Pattern VAR_PATTERN = Pattern.compile("\\$\\{[^}]+}");
-        private final Reachability reach;
+        private final Guard reach;
+        private final String reachLiteral;
         private final List<FileOp> ops;
 
-        FileOps(List<FileOp> ops, Reachability reach) {
+        FileOps(List<FileOp> ops, Guard reach, String reachLiteral) {
             this.reach = reach;
-            this.ops = ops;
+            this.reachLiteral = reachLiteral;
+            this.ops = List.copyOf(ops);
         }
 
         @Override
         public int compareTo(FileOps o) {
-            int r = reach.literal().compareTo(o.reach.literal());
+            int r = reachLiteral.compareTo(o.reachLiteral);
             if (r == 0) {
                 r = Lists.compare(ops, o.ops);
             }
@@ -4777,19 +3615,6 @@ public class ScriptCompiler {
                 }
             }
             return true;
-        }
-
-        static FileOps combine(List<FileOps> list) {
-            List<FileOp> ops = new ArrayList<>();
-            FileOps first = list.get(0);
-            Reachability reach = first.reach;
-            for (FileOps e : list) {
-                ops.addAll(e.ops);
-            }
-            for (int i = 1; i < list.size(); i++) {
-                reach = reach.and(list.get(i).reach);
-            }
-            return new FileOps(ops, reach);
         }
     }
 

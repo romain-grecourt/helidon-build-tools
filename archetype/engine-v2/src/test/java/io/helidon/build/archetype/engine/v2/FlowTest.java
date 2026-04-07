@@ -16,6 +16,7 @@
 package io.helidon.build.archetype.engine.v2;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -114,5 +115,38 @@ class FlowTest {
                         .map(use -> ir.symbols().symbol(use.symbolId()).name())
                         .collect(Collectors.toSet()),
                 containsInAnyOrder("enabled", "flag"));
+    }
+
+    @Test
+    void testIrLoweringGuardsNestedBooleanAndOptionDefinitions() {
+        Context.Scope scope = new Context().scope();
+        Node script = Nodes.script(
+                Nodes.inputs(
+                        Nodes.inputBoolean("enabled",
+                                Nodes.variables(Nodes.variableBoolean("enabled-flag", true))),
+                        Nodes.inputEnum("flavor",
+                                Nodes.inputOption("mp", "mp",
+                                        Nodes.variables(Nodes.variableBoolean("mp-flag", true))),
+                                Nodes.inputOption("se", "se",
+                                        Nodes.variables(Nodes.variableBoolean("se-flag", true))))));
+
+        Flow.Ir ir = Flow.ir(script, scope);
+        Flow.Analysis analysis = Flow.analyze(ir);
+        Map<String, Domain.Guard> pathsBySymbol = ir.ops().stream()
+                .filter(op -> op.kind() == Flow.Op.Kind.DEFINE_VALUE)
+                .collect(Collectors.toMap(
+                        op -> ir.symbols().symbol(op.symbolId()).name(),
+                        op -> analysis.beforeByOp().get(op.id()).path()));
+        int enabled = ir.symbols().findId("enabled");
+        int flavor = ir.symbols().findId("flavor");
+
+        assertThat(ir.blocks().stream()
+                        .map(Flow.Block::terminator)
+                        .filter(t -> t.kind() == Flow.Terminator.Kind.BRANCH)
+                        .count(),
+                is(3L));
+        assertThat(ir.guards().equivalent(pathsBySymbol.get("enabled-flag"), ir.guards().eq(enabled, "true")), is(true));
+        assertThat(ir.guards().equivalent(pathsBySymbol.get("mp-flag"), ir.guards().eq(flavor, "mp")), is(true));
+        assertThat(ir.guards().equivalent(pathsBySymbol.get("se-flag"), ir.guards().eq(flavor, "se")), is(true));
     }
 }

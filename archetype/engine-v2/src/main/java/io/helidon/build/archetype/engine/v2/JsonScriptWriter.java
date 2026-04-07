@@ -106,7 +106,7 @@ public final class JsonScriptWriter implements Script.Writer {
             }
             child.attributes().forEach((key, value) -> {
                 if (key.equals("default") && child.kind() == Kind.INPUT_BOOLEAN) {
-                    directive.put(key, scalar(value.asBoolean().or(() -> Value.FALSE)));
+                    directive.put(key, scalar(booleanDefault(value)));
                 } else {
                     directive.put(key, scalar(value));
                 }
@@ -125,6 +125,11 @@ public final class JsonScriptWriter implements Script.Writer {
             directives.add(directive);
         }
         return directives;
+    }
+
+    private Value<?> booleanDefault(Value<?> value) {
+        Value<Boolean> booleanValue = value.asBoolean();
+        return booleanValue.isPresent() ? booleanValue : value;
     }
 
     private List<Map<String, Object>> tokens(Expression expression) {

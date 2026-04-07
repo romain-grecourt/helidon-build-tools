@@ -66,4 +66,11 @@ class ListsTest {
     void testSubtract() {
         assertThat(Lists.subtract(List.of("a", "b", "c", "d"), List.of("b", "d")), is(List.of("a", "c")));
     }
+
+    @Test
+    void testWithoutIndex() {
+        assertThat(Lists.withoutIndex(List.of("a", "b", "c"), 0), is(List.of("b", "c")));
+        assertThat(Lists.withoutIndex(List.of("a", "b", "c"), 1), is(List.of("a", "c")));
+        assertThat(Lists.withoutIndex(List.of("a", "b", "c"), 2), is(List.of("a", "b")));
+    }
 }

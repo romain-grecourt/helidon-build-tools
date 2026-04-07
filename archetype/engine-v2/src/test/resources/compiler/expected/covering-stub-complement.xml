@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Copyright (c) 2026 Oracle and/or its affiliates.
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
+<archetype-script xmlns="https://helidon.io/archetype/2.0"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
+    <step name="Flavor">
+        <inputs>
+            <enum id="flavor" name="Flavor" global="true">
+                <option name="SE" value="se"/>
+                <option name="MP" value="mp"/>
+            </enum>
+        </inputs>
+    </step>
+    <step name="Application Type" if="${flavor} != &apos;mp&apos;">
+        <inputs>
+            <enum id="app-type" name="App Type" global="true">
+                <option name="Quickstart" value="quickstart">
+                    <presets>
+                        <boolean path="~db">false</boolean>
+                    </presets>
+                </option>
+                <option name="Database" value="database">
+                    <presets>
+                        <boolean path="~db">true</boolean>
+                    </presets>
+                </option>
+                <option name="Custom" value="custom"/>
+            </enum>
+        </inputs>
+    </step>
+    <step name="Application Type" if="${flavor} != &apos;se&apos;">
+        <inputs>
+            <enum id="app-type" name="App Type" global="true">
+                <option name="Quickstart" value="quickstart">
+                    <presets>
+                        <boolean path="~db">false</boolean>
+                    </presets>
+                </option>
+                <option name="Database" value="database">
+                    <presets>
+                        <boolean path="~db">true</boolean>
+                    </presets>
+                </option>
+                <option name="Custom" value="custom"/>
+                <option name="OCI" value="oci">
+                    <presets>
+                        <boolean path="~db">false</boolean>
+                    </presets>
+                </option>
+            </enum>
+        </inputs>
+    </step>
+    <step name="Database"
+          optional="true"
+          if="${flavor} != &apos;mp&apos; &amp;&amp; (${app-type} == &apos;custom&apos; || ${app-type} == &apos;database&apos;)">
+        <inputs>
+            <boolean id="db" name="Database Support" default="false" optional="true"/>
+        </inputs>
+    </step>
+    <step name="Database"
+          optional="true"
+          if="${flavor} != &apos;se&apos; &amp;&amp; (${app-type} == &apos;custom&apos; || ${app-type} == &apos;database&apos;)">
+        <inputs>
+            <boolean id="db" name="Database Support" default="false" optional="true">
+                <inputs>
+                    <enum id="cp" name="Connection Pool" default="hikaricp" optional="true">
+                        <option name="HikariCP" value="hikaricp"/>
+                        <option name="UCP" value="ucp"/>
+                    </enum>
+                </inputs>
+            </boolean>
+        </inputs>
+    </step>
+    <variables>
+        <text path="~db.cp" if="!${db} || ${flavor} != &apos;mp&apos;"><![CDATA[]]></text>
+    </variables>
+    <output>
+        <transformation id="template-blobs-1">
+            <replace regex="\QE6197498B2583A54326376711FD20A1F\E" replacement="README.md.mustache"/>
+        </transformation>
+        <templates engine="mustache" transformations="template-blobs-1">
+            <directory>blobs</directory>
+            <includes>
+                <include>E6197498B2583A54326376711FD20A1F</include>
+                <include><![CDATA[]]></include>
+            </includes>
+        </templates>
+        <model>
+            <list key="database-cp">
+                <map if="${app-type} == &apos;database&apos; &amp;&amp; ${db.cp} == &apos;ucp&apos;">
+                    <value key="name">database</value>
+                    <value key="value">ucp</value>
+                </map>
+            </list>
+            <list key="custom-cp">
+                <map if="${app-type} == &apos;custom&apos; &amp;&amp; ${db} &amp;&amp; ${db.cp} == &apos;hikaricp&apos;">
+                    <value key="name">custom</value>
+                    <value key="value">hikaricp</value>
+                </map>
+            </list>
+        </model>
+    </output>
+</archetype-script>

@@ -253,6 +253,21 @@ public class Lists {
     }
 
     /**
+     * Create a new list without the element at the given index.
+     *
+     * @param list  input list
+     * @param index index to remove
+     * @param <T>   element type
+     * @return new list
+     */
+    public static <T> List<T> withoutIndex(List<T> list, int index) {
+        List<T> filtered = new ArrayList<>(list.size() - 1);
+        filtered.addAll(list.subList(0, index));
+        filtered.addAll(list.subList(index + 1, list.size()));
+        return filtered;
+    }
+
+    /**
      * Map and join the given list.
      *
      * @param list      input list

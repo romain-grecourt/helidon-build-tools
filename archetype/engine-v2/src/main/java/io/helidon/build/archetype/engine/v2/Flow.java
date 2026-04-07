@@ -21,6 +21,7 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +52,13 @@ final class Flow {
 
     static Analysis analyze(Ir ir) {
         return new Analyzer(requireNonNull(ir, "ir is null")).analyze();
+    }
+
+    static Model model(Ir ir, Analysis analysis, Node root, Scope rootScope) {
+        return new Projector(requireNonNull(ir, "ir is null"),
+                requireNonNull(analysis, "analysis is null"),
+                requireNonNull(root, "root is null"),
+                requireNonNull(rootScope, "rootScope is null")).project();
     }
 
     static final class Ir {
@@ -363,14 +371,26 @@ final class Flow {
     }
 
     static final class Analysis {
+        private final List<State> entryByBlock;
+        private final List<State> exitByBlock;
         private final List<State> beforeByOp;
         private final List<State> afterByOp;
         private final List<Use> usesById;
 
-        Analysis(List<State> beforeByOp, List<State> afterByOp, List<Use> usesById) {
+        Analysis(List<State> entryByBlock, List<State> exitByBlock, List<State> beforeByOp, List<State> afterByOp, List<Use> usesById) {
+            this.entryByBlock = List.copyOf(entryByBlock);
+            this.exitByBlock = List.copyOf(exitByBlock);
             this.beforeByOp = List.copyOf(beforeByOp);
             this.afterByOp = List.copyOf(afterByOp);
             this.usesById = List.copyOf(usesById);
+        }
+
+        List<State> entryByBlock() {
+            return entryByBlock;
+        }
+
+        List<State> exitByBlock() {
+            return exitByBlock;
         }
 
         List<State> beforeByOp() {
@@ -386,10 +406,871 @@ final class Flow {
         }
     }
 
+    static final class Model {
+        private final Ir ir;
+        private final Analysis analysis;
+        private final Scope rootScope;
+        private final Map<Node, NodeFacts> nodes;
+        private final List<SymbolInfo> symbols;
+
+        Model(Ir ir, Analysis analysis, Scope rootScope, Map<Node, NodeFacts> nodes, List<SymbolInfo> symbols) {
+            this.ir = requireNonNull(ir, "ir is null");
+            this.analysis = requireNonNull(analysis, "analysis is null");
+            this.rootScope = requireNonNull(rootScope, "rootScope is null");
+            Map<Node, NodeFacts> copy = new IdentityHashMap<>();
+            copy.putAll(nodes);
+            this.nodes = Collections.unmodifiableMap(copy);
+            this.symbols = List.copyOf(symbols);
+        }
+
+        Ir ir() {
+            return ir;
+        }
+
+        Analysis analysis() {
+            return analysis;
+        }
+
+        Guards guards() {
+            return ir.guards();
+        }
+
+        Table symbols() {
+            return ir.symbols();
+        }
+
+        Guard trueGuard() {
+            return ir.guards().trueGuard();
+        }
+
+        Guard falseGuard() {
+            return ir.guards().falseGuard();
+        }
+
+        NodeFacts node(Node node) {
+            return nodes.get(node);
+        }
+
+        String key(Node node) {
+            return node == null ? rootScope.key() : node(node).key();
+        }
+
+        Scope scope(Node node) {
+            if (node == null) {
+                return rootScope;
+            }
+            String key = key(node);
+            return key.isEmpty() ? rootScope : rootScope.get("~" + key);
+        }
+
+        Guard renderGuard(Node node) {
+            return node == null ? trueGuard() : node(node).renderGuard();
+        }
+
+        Guard activeGuard(Node node) {
+            return node == null ? trueGuard() : node(node).activeGuard();
+        }
+
+        State before(Node node) {
+            return node == null ? analysis.entryByBlock().get(0) : node(node).before();
+        }
+
+        SymbolInfo symbol(int symbolId) {
+            return symbols.get(symbolId);
+        }
+
+        SymbolInfo symbol(String name) {
+            Integer symbolId = ir.symbols().findId(name);
+            return symbolId == null ? null : symbols.get(symbolId);
+        }
+
+        Integer findSymbolId(String name) {
+            return ir.symbols().findId(name);
+        }
+
+        Guard lower(Expression expression, Scope scope) {
+            return new ConditionLowerer(ir.symbols(), ir.guards(), scope).lower(expression);
+        }
+
+        Expression expression(Guard guard, Scope scope) {
+            return ir.guards().toExpression(guard, scope).reduce();
+        }
+
+        Expression activationCondition(Node node) {
+            if (node == null) {
+                return Expression.TRUE;
+            }
+            Scope scope = scope(node);
+            if (node.kind() == Kind.CONDITION) {
+                return expression(activeGuard(node), scope).reduce(expression(renderGuard(node), scope));
+            }
+            return expression(activeGuard(node), scope);
+        }
+
+        Value<?> declaredValue(Node node, String key) {
+            Fact fact = fact(node, key);
+            Guard required = activeGuard(node == null ? null : node.parent());
+            if (fact == null || !guards().implies(required, fact.definedUnder())) {
+                return Value.empty();
+            }
+            Value<?> exact = exactValue(fact, required, valueType(key));
+            return exact != null ? exact : singletonValue(fact.value());
+        }
+
+        private Fact fact(Node node, String key) {
+            State before = before(node);
+            if (before.env().isEmpty()) {
+                return null;
+            }
+            Integer symbolId = findSymbolId(key);
+            if (symbolId == null && !key.startsWith("~")) {
+                symbolId = findSymbolId("~" + key);
+            }
+            return symbolId == null ? null : before.env().get(symbolId);
+        }
+
+        private Value.Type valueType(String key) {
+            SymbolInfo info = symbol(key);
+            if (info == null && !key.startsWith("~")) {
+                info = symbol("~" + key);
+            }
+            if (info == null) {
+                return Value.Type.EMPTY;
+            }
+            switch (info.symbol().domain().kind()) {
+                case BOOLEAN:
+                    return Value.Type.BOOLEAN;
+                case MEMBERSHIP:
+                    return Value.Type.LIST;
+                case CHOICE:
+                case OPEN_TEXT:
+                case FINITE_TEXT:
+                    return Value.Type.STRING;
+                default:
+                    return Value.Type.EMPTY;
+            }
+        }
+
+        private Value<?> exactValue(Fact fact, Guard required, Value.Type type) {
+            if (fact.exactCases().isEmpty()) {
+                return null;
+            }
+            Value<?> exact = null;
+            Guard coverage = falseGuard();
+            for (Fact.ExactCase exactCase : fact.exactCases()) {
+                Guard overlap = guards().and(required, exactCase.guard());
+                if (overlap.equals(falseGuard())) {
+                    continue;
+                }
+                if (exact == null) {
+                    exact = type == Value.Type.EMPTY ? exactCase.value() : Value.typed(exactCase.value(), type);
+                } else if (!Value.isEqual(exact, exactCase.value())) {
+                    return null;
+                }
+                coverage = guards().or(coverage, overlap);
+            }
+            return exact != null && guards().implies(required, coverage) ? exact : null;
+        }
+
+        private Value<?> singletonValue(Domain.Value value) {
+            if (value instanceof Domain.Value.BooleanSet) {
+                Set<Boolean> values = ((Domain.Value.BooleanSet) value).values();
+                return values.size() == 1 ? Value.of(values.iterator().next()) : Value.empty();
+            }
+            if (value instanceof Domain.Value.ChoiceSet) {
+                Set<String> values = ((Domain.Value.ChoiceSet) value).values();
+                return values.size() == 1 ? Value.of(values.iterator().next()) : Value.empty();
+            }
+            if (value instanceof Domain.Value.FiniteText) {
+                Set<String> values = ((Domain.Value.FiniteText) value).values();
+                return values.size() == 1 ? Value.of(values.iterator().next()) : Value.empty();
+            }
+            if (value instanceof Domain.Value.OpenText) {
+                String sample = ((Domain.Value.OpenText) value).sample();
+                return sample == null ? Value.empty() : Value.of(sample);
+            }
+            return Value.empty();
+        }
+    }
+
+    static final class NodeFacts {
+        private final State before;
+        private final String key;
+        private final Guard renderGuard;
+        private final Guard activeGuard;
+
+        NodeFacts(State before, String key, Guard renderGuard, Guard activeGuard) {
+            this.before = requireNonNull(before, "before is null");
+            this.key = requireNonNull(key, "key is null");
+            this.renderGuard = requireNonNull(renderGuard, "renderGuard is null");
+            this.activeGuard = requireNonNull(activeGuard, "activeGuard is null");
+        }
+
+        State before() {
+            return before;
+        }
+
+        String key() {
+            return key;
+        }
+
+        Guard renderGuard() {
+            return renderGuard;
+        }
+
+        Guard activeGuard() {
+            return activeGuard;
+        }
+    }
+
+    static final class SymbolInfo {
+        private final Symbol symbol;
+        private final Guard definition;
+        private final Map<String, Guard> availabilityByValue;
+
+        SymbolInfo(Symbol symbol, Guard definition, Map<String, Guard> availabilityByValue) {
+            this.symbol = requireNonNull(symbol, "symbol is null");
+            this.definition = definition;
+            this.availabilityByValue = Map.copyOf(availabilityByValue);
+        }
+
+        Symbol symbol() {
+            return symbol;
+        }
+
+        Guard definition() {
+            return definition;
+        }
+
+        Guard availability(String value) {
+            return availabilityByValue.get(value);
+        }
+    }
+
+    private static final class Projector {
+        private final Ir ir;
+        private final Analysis analysis;
+        private final Node root;
+        private final Scope rootScope;
+        private final Guards guards;
+        private final Map<Node, List<Integer>> opsByNode = new IdentityHashMap<>();
+        private final Map<Node, BranchInfo> branchesByNode = new IdentityHashMap<>();
+        private final List<SymbolInfoBuilder> symbolInfos = new ArrayList<>();
+
+        private Projector(Ir ir, Analysis analysis, Node root, Scope rootScope) {
+            this.ir = ir;
+            this.analysis = analysis;
+            this.root = root;
+            this.rootScope = rootScope;
+            this.guards = ir.guards();
+            for (Symbol symbol : ir.symbols().symbols()) {
+                symbolInfos.add(new SymbolInfoBuilder(symbol));
+            }
+        }
+
+        private Model project() {
+            indexAnchors();
+            scanSymbols();
+            Map<Node, NodeFacts> nodes = new IdentityHashMap<>();
+            projectNode(root, rootScope, analysis.entryByBlock().get(0), nodes);
+            List<SymbolInfo> builtSymbols = new ArrayList<>(symbolInfos.size());
+            for (SymbolInfoBuilder builder : symbolInfos) {
+                builtSymbols.add(builder.build(guards));
+            }
+            return new Model(ir, analysis, rootScope, nodes, builtSymbols);
+        }
+
+        private void indexAnchors() {
+            for (Op op : ir.ops()) {
+                opsByNode.computeIfAbsent(op.source().node(), key -> new ArrayList<>()).add(op.id());
+            }
+            for (Block block : ir.blocks()) {
+                Terminator terminator = block.terminator();
+                if (terminator.kind() != Terminator.Kind.BRANCH) {
+                    continue;
+                }
+                int joinId = terminator.falseId();
+                Terminator falseTerminator = ir.blocks().get(terminator.falseId()).terminator();
+                if (falseTerminator.kind() == Terminator.Kind.GOTO) {
+                    joinId = falseTerminator.targetId();
+                }
+                branchesByNode.put(terminator.source().node(), new BranchInfo(terminator.trueId(), joinId));
+            }
+        }
+
+        private void scanSymbols() {
+            for (Op op : ir.ops()) {
+                State before = analysis.beforeByOp().get(op.id());
+                switch (op.kind()) {
+                    case DECLARE_INPUT: {
+                        SymbolInfoBuilder builder = symbolInfos.get(op.symbolId());
+                        builder.addDefinition(before.path(), guards);
+                        if (builder.symbol.domain().kind() == Spec.Kind.BOOLEAN) {
+                            builder.addAvailability("true", before.path(), guards);
+                            builder.addAvailability("false", before.path(), guards);
+                        }
+                        break;
+                    }
+                    case DECLARE_OPTION: {
+                        SymbolInfoBuilder builder = symbolInfos.get(op.symbolId());
+                        builder.addAvailability(op.source().node().value().getString(), before.path(), guards);
+                        break;
+                    }
+                    case DEFINE_VALUE: {
+                        SymbolInfoBuilder builder = symbolInfos.get(op.symbolId());
+                        Fact fact = analysis.afterByOp().get(op.id()).env().get(op.symbolId());
+                        if (fact != null) {
+                            builder.addDefinition(fact.definedUnder(), guards);
+                            recordAvailability(builder, fact);
+                        }
+                        break;
+                    }
+                    default:
+                        break;
+                }
+            }
+        }
+
+        private void recordAvailability(SymbolInfoBuilder builder, Fact fact) {
+            if (!fact.exactCases().isEmpty()) {
+                for (Fact.ExactCase exactCase : fact.exactCases()) {
+                    recordExactAvailability(builder, exactCase);
+                }
+                return;
+            }
+            switch (builder.symbol.domain().kind()) {
+                case BOOLEAN:
+                    if (fact.value() instanceof Domain.Value.BooleanSet) {
+                        for (boolean value : ((Domain.Value.BooleanSet) fact.value()).values()) {
+                            builder.addAvailability(String.valueOf(value), fact.definedUnder(), guards);
+                        }
+                    }
+                    break;
+                case CHOICE:
+                    if (fact.value() instanceof Domain.Value.ChoiceSet) {
+                        for (String value : ((Domain.Value.ChoiceSet) fact.value()).values()) {
+                            builder.addAvailability(value, fact.definedUnder(), guards);
+                        }
+                    }
+                    break;
+                case FINITE_TEXT:
+                    if (fact.value() instanceof Domain.Value.FiniteText) {
+                        for (String value : ((Domain.Value.FiniteText) fact.value()).values()) {
+                            builder.addAvailability(value, fact.definedUnder(), guards);
+                        }
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        private void recordExactAvailability(SymbolInfoBuilder builder, Fact.ExactCase exactCase) {
+            switch (builder.symbol.domain().kind()) {
+                case BOOLEAN:
+                case CHOICE:
+                case FINITE_TEXT:
+                    String scalar = exactCase.scalarLiteral();
+                    if (scalar != null) {
+                        builder.addAvailability(scalar, exactCase.guard(), guards);
+                    }
+                    break;
+                case MEMBERSHIP:
+                    if (exactCase.value().type() == Value.Type.LIST) {
+                        for (String value : exactCase.value().getList()) {
+                            builder.addAvailability(value, exactCase.guard(), guards);
+                        }
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        private State projectNode(Node node, Scope scope, State current, Map<Node, NodeFacts> nodes) {
+            Scope childScope = childScope(scope, node);
+            Scope nodeScope = node.kind().isInput() ? childScope : scope;
+            List<Integer> opIds = opsByNode.getOrDefault(node, List.of());
+            State before = opIds.isEmpty() ? current : constrainPath(analysis.beforeByOp().get(opIds.get(0)), current.path());
+            State afterOps = opIds.isEmpty() ? before : constrainPath(analysis.afterByOp().get(opIds.get(opIds.size() - 1)),
+                    current.path());
+            BranchInfo branch = branchesByNode.get(node);
+            State branchEntry = branch == null ? null : constrainPath(analysis.entryByBlock().get(branch.trueId), current.path());
+            Guard activeGuard = branch != null ? activeGuard(node, nodeScope, branchEntry) : activeGuard(node, nodeScope, afterOps);
+            nodes.put(node, new NodeFacts(before, nodeKey(node, scope, childScope), before.path(), activeGuard));
+
+            Scope descendantScope = node.kind().isInput() ? childScope : scope;
+            if (branch != null) {
+                State cursor = constrainPath(branchEntry, activeGuard);
+                for (Node child : node.children()) {
+                    cursor = projectNode(child, descendantScope, cursor, nodes);
+                }
+                return constrainPath(analysis.entryByBlock().get(branch.joinId), current.path());
+            }
+
+            State cursor = afterOps;
+            for (Node child : node.children()) {
+                cursor = projectNode(child, descendantScope, cursor, nodes);
+            }
+            return cursor;
+        }
+
+        private String nodeKey(Node node, Scope scope, Scope childScope) {
+            switch (node.kind()) {
+                case INPUT_BOOLEAN:
+                case INPUT_ENUM:
+                case INPUT_LIST:
+                case INPUT_TEXT:
+                    return childScope.key();
+                case PRESET_BOOLEAN:
+                case PRESET_ENUM:
+                case PRESET_LIST:
+                case PRESET_TEXT:
+                case VARIABLE_BOOLEAN:
+                case VARIABLE_ENUM:
+                case VARIABLE_LIST:
+                case VARIABLE_TEXT:
+                    return Lowerer.definitionId(scope, node);
+                default:
+                    return scope.key();
+            }
+        }
+
+        private State constrainPath(State state, Guard required) {
+            if (state.path().equals(required)) {
+                return state;
+            }
+            Guard constrained = guards.and(state.path(), required);
+            return constrained.equals(state.path()) ? state : new State(constrained, state.env());
+        }
+
+        private Guard activeGuard(Node node, Scope nodeScope, State afterOps) {
+            Guard control = controlGuard(node, nodeScope, afterOps);
+            return control == null ? afterOps.path() : guards.and(afterOps.path(), control);
+        }
+
+        private Guard controlGuard(Node node, Scope nodeScope, State state) {
+            switch (node.kind()) {
+                case CONDITION:
+                    return translatedCondition(node.expression(), nodeScope, state);
+                case INPUT_BOOLEAN:
+                    return translatedCondition(Expression.create("${" + nodeScope.key() + "}"), nodeScope, state);
+                case INPUT_OPTION:
+                    Node input = node.ancestor(Kind::isInput).orElse(null);
+                    if (input == null) {
+                        return null;
+                    }
+                    switch (input.kind()) {
+                        case INPUT_ENUM:
+                            return translatedCondition(Expression.create("${" + nodeScope.key() + "} == '"
+                                            + node.value().getString() + "'"),
+                                    nodeScope,
+                                    state);
+                        case INPUT_LIST:
+                            return translatedCondition(Expression.create("${" + nodeScope.key() + "} contains '"
+                                            + node.value().getString() + "'"),
+                                    nodeScope,
+                                    state);
+                        default:
+                            return null;
+                    }
+                default:
+                    return null;
+            }
+        }
+
+        private Guard translatedCondition(Expression expression, Scope scope, State state) {
+            Guard translated = translatedCondition0(expression, scope, state);
+            return translated != null ? translated : new ConditionLowerer(ir.symbols(), guards, scope).lower(expression);
+        }
+
+        private Guard translatedCondition0(Expression expression, Scope scope, State state) {
+            Deque<ProjectedTerm> stack = new ArrayDeque<>();
+            for (Token token : expression.tokens()) {
+                if (token.isVariable()) {
+                    stack.push(ProjectedTerm.ref(scope.key(token.variable())));
+                    continue;
+                }
+                if (token.isOperand()) {
+                    stack.push(ProjectedTerm.value(token.operand()));
+                    continue;
+                }
+                switch (token.operator()) {
+                    case NOT:
+                        Guard negated = booleanGuard(stack.pop(), state);
+                        if (negated == null) {
+                            return null;
+                        }
+                        stack.push(ProjectedTerm.guard(guards.not(negated)));
+                        break;
+                    case AND: {
+                        Guard right = booleanGuard(stack.pop(), state);
+                        Guard left = booleanGuard(stack.pop(), state);
+                        if (left == null || right == null) {
+                            return null;
+                        }
+                        stack.push(ProjectedTerm.guard(guards.and(left, right)));
+                        break;
+                    }
+                    case OR: {
+                        Guard right = booleanGuard(stack.pop(), state);
+                        Guard left = booleanGuard(stack.pop(), state);
+                        if (left == null || right == null) {
+                            return null;
+                        }
+                        stack.push(ProjectedTerm.guard(guards.or(left, right)));
+                        break;
+                    }
+                    case EQUAL:
+                    case NOT_EQUAL: {
+                        ProjectedTerm right = stack.pop();
+                        ProjectedTerm left = stack.pop();
+                        Guard equality = equalityGuard(left, right, state);
+                        if (equality == null) {
+                            return null;
+                        }
+                        stack.push(ProjectedTerm.guard(token.operator() == Expression.Operator.EQUAL
+                                ? equality
+                                : guards.not(equality)));
+                        break;
+                    }
+                    case CONTAINS: {
+                        ProjectedTerm right = stack.pop();
+                        ProjectedTerm left = stack.pop();
+                        Guard contains = containsGuard(left, right, state);
+                        if (contains == null) {
+                            return null;
+                        }
+                        stack.push(ProjectedTerm.guard(contains));
+                        break;
+                    }
+                    default:
+                        return null;
+                }
+            }
+            return stack.size() == 1 ? booleanGuard(stack.pop(), state) : null;
+        }
+
+        private Guard booleanGuard(ProjectedTerm term, State state) {
+            if (term.guard != null) {
+                return term.guard;
+            }
+            if (term.ref != null) {
+                Flow.SymbolInfo info = symbolInfo(term.ref);
+                if (info == null || info.symbol().domain().kind() != Spec.Kind.BOOLEAN) {
+                    return null;
+                }
+                return translatedEquality(term.ref, Value.TRUE, state);
+            }
+            if (term.literal != null && term.literal.type() == Value.Type.BOOLEAN) {
+                return term.literal.getBoolean() ? guards.trueGuard() : guards.falseGuard();
+            }
+            return null;
+        }
+
+        private Guard equalityGuard(ProjectedTerm left, ProjectedTerm right, State state) {
+            if (left.literal != null && right.literal != null) {
+                return Value.isEqual(left.literal, right.literal) ? guards.trueGuard() : guards.falseGuard();
+            }
+            if (left.ref != null && right.literal != null) {
+                return translatedEquality(left.ref, right.literal, state);
+            }
+            if (left.literal != null && right.ref != null) {
+                return translatedEquality(right.ref, left.literal, state);
+            }
+            return null;
+        }
+
+        private Guard containsGuard(ProjectedTerm left, ProjectedTerm right, State state) {
+            if (left.ref != null && right.literal != null) {
+                return translatedListContains(left.ref, right.literal, state);
+            }
+            if (left.literal != null && right.ref != null && left.literal.type() == Value.Type.LIST) {
+                return translatedScalarAny(right.ref, new TreeSet<>(left.literal.getList()), state);
+            }
+            if (left.literal != null && right.literal != null && left.literal.type() == Value.Type.LIST) {
+                return left.literal.getList().containsAll(containsValues(right.literal))
+                        ? guards.trueGuard()
+                        : guards.falseGuard();
+            }
+            return null;
+        }
+
+        private Guard translatedEquality(String key, Value<?> value, State state) {
+            Fact fact = factFor(state, key);
+            Guard bound = fact == null ? guards.falseGuard() : fact.match(value, guards);
+            Guard raw = rawEquality(key, value);
+            return combine(key, fact, bound, raw);
+        }
+
+        private Guard translatedScalarAny(String key, Set<String> values, State state) {
+            Fact fact = factFor(state, key);
+            Guard bound = fact == null ? guards.falseGuard() : fact.scalarAny(values, guards);
+            Guard raw = rawScalarAny(key, values);
+            return combine(key, fact, bound, raw);
+        }
+
+        private Guard translatedListContains(String key, Value<?> value, State state) {
+            Set<String> required = containsValues(value);
+            if (required == null) {
+                return null;
+            }
+            Fact fact = factFor(state, key);
+            Guard bound = fact == null ? guards.falseGuard() : fact.listContains(required, guards);
+            Guard raw = rawListContains(key, required);
+            return combine(key, fact, bound, raw);
+        }
+
+        private Guard combine(String key, Fact fact, Guard bound, Guard raw) {
+            Guard defined = definitionFor(key, fact);
+            if (fact == null) {
+                if (raw == null) {
+                    return bound;
+                }
+                return defined == null ? raw : guards.and(defined, raw);
+            }
+            if (raw == null) {
+                if (bound == null) {
+                    return null;
+                }
+                if (bound.equals(guards.falseGuard())) {
+                    Guard exact = fact.exactDefined(guards);
+                    if (defined == null || exact.equals(guards.falseGuard()) || !guards.implies(exact, defined)) {
+                        return null;
+                    }
+                }
+                return bound;
+            }
+            Guard available = defined == null ? guards.trueGuard() : defined;
+            Guard exact = fact.exactDefined(guards);
+            Guard unresolved = guards.and(guards.minus(available, exact), raw);
+            return guards.or(bound, unresolved);
+        }
+
+        private Fact factFor(State state, String key) {
+            Integer symbolId = ir.symbols().findId(key);
+            return symbolId == null ? null : state.env().get(symbolId);
+        }
+
+        private Guard definitionFor(String key, Fact fact) {
+            if (fact != null) {
+                return fact.definedUnder();
+            }
+            Flow.SymbolInfo info = symbolInfo(key);
+            return info == null ? null : info.definition();
+        }
+
+        private Flow.SymbolInfo symbolInfo(String key) {
+            Integer symbolId = ir.symbols().findId(key);
+            return symbolId == null ? null : symbolInfos.get(symbolId).build(guards);
+        }
+
+        private Guard rawEquality(String key, Value<?> value) {
+            String scalar = scalarLiteral(value);
+            if (scalar == null) {
+                return null;
+            }
+            Flow.SymbolInfo info = symbolInfo(key);
+            if (info == null) {
+                return null;
+            }
+            Symbol symbol = info.symbol();
+            if (symbol.guardable() && !symbol.tainted()) {
+                switch (symbol.domain().kind()) {
+                    case BOOLEAN:
+                        return Set.of("false", "true").contains(scalar)
+                                ? available(info, scalar, guards.eq(symbol.id(), scalar))
+                                : guards.falseGuard();
+                    case CHOICE:
+                        return ((Spec.Choice) symbol.domain()).values().contains(scalar)
+                                ? available(info, scalar, guards.eq(symbol.id(), scalar))
+                                : guards.falseGuard();
+                    case FINITE_TEXT:
+                        return ((Spec.FiniteText) symbol.domain()).values().contains(scalar)
+                                ? available(info, scalar, guards.eq(symbol.id(), scalar))
+                                : guards.falseGuard();
+                    default:
+                        break;
+                }
+            }
+            return fallbackScalarEquality(info, key, scalar);
+        }
+
+        private Guard rawScalarAny(String key, Set<String> values) {
+            Flow.SymbolInfo info = symbolInfo(key);
+            if (info == null) {
+                return null;
+            }
+            Symbol symbol = info.symbol();
+            Set<String> allowed = new TreeSet<>(values);
+            if (symbol.guardable() && !symbol.tainted()) {
+                switch (symbol.domain().kind()) {
+                    case BOOLEAN:
+                        allowed.retainAll(Set.of("false", "true"));
+                        break;
+                    case CHOICE:
+                        allowed.retainAll(((Spec.Choice) symbol.domain()).values());
+                        break;
+                    case FINITE_TEXT:
+                        allowed.retainAll(((Spec.FiniteText) symbol.domain()).values());
+                        break;
+                    default:
+                        allowed.clear();
+                        break;
+                }
+                Guard raw = guards.falseGuard();
+                for (String value : allowed) {
+                    raw = guards.or(raw, available(info, value, guards.eq(symbol.id(), value)));
+                }
+                return raw;
+            }
+            Guard raw = guards.falseGuard();
+            for (String value : allowed) {
+                Guard equality = fallbackScalarEquality(info, key, value);
+                if (equality != null) {
+                    raw = guards.or(raw, equality);
+                }
+            }
+            return raw.equals(guards.falseGuard()) ? null : raw;
+        }
+
+        private Guard rawListContains(String key, Set<String> required) {
+            Flow.SymbolInfo info = symbolInfo(key);
+            if (info == null) {
+                return null;
+            }
+            Symbol symbol = info.symbol();
+            if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Spec.Kind.MEMBERSHIP) {
+                return null;
+            }
+            Set<String> items = ((Spec.Membership) symbol.domain()).items();
+            if (!items.containsAll(required)) {
+                return guards.falseGuard();
+            }
+            Guard raw = guards.trueGuard();
+            for (String value : required) {
+                raw = guards.and(raw, available(info, value, guards.contains(symbol.id(), value)));
+            }
+            return raw;
+        }
+
+        private Guard available(Flow.SymbolInfo info, String value, Guard direct) {
+            Guard availability = info.availability(value);
+            return availability == null ? guards.falseGuard() : guards.and(availability, direct);
+        }
+
+        private Guard fallbackScalarEquality(Flow.SymbolInfo info, String key, String value) {
+            Guard availability = info.availability(value);
+            if (availability == null) {
+                return null;
+            }
+            return guards.and(availability, residualGuard(Expression.create("${" + key + "} == '" + value + "'")));
+        }
+
+        private Guard residualGuard(Expression expression) {
+            return new Guard(guards.trueGuard().id(), expression.reduce());
+        }
+
+        private Set<String> containsValues(Value<?> value) {
+            switch (value.type()) {
+                case STRING:
+                case DYNAMIC:
+                    return Set.of(value.getString());
+                case LIST:
+                    return new TreeSet<>(value.getList());
+                default:
+                    return null;
+            }
+        }
+
+        private String scalarLiteral(Value<?> value) {
+            switch (value.type()) {
+                case STRING:
+                case DYNAMIC:
+                    return value.getString();
+                case BOOLEAN:
+                    return String.valueOf(value.getBoolean());
+                default:
+                    return null;
+            }
+        }
+
+        private Scope childScope(Scope scope, Node node) {
+            switch (node.kind()) {
+                case INPUT_BOOLEAN:
+                case INPUT_ENUM:
+                case INPUT_LIST:
+                case INPUT_TEXT:
+                    return scope.getOrCreate(node);
+                default:
+                    return scope;
+            }
+        }
+    }
+
+    private static final class ProjectedTerm {
+        private final Guard guard;
+        private final String ref;
+        private final Value<?> literal;
+
+        private ProjectedTerm(Guard guard, String ref, Value<?> literal) {
+            this.guard = guard;
+            this.ref = ref;
+            this.literal = literal;
+        }
+
+        private static ProjectedTerm guard(Guard guard) {
+            return new ProjectedTerm(guard, null, null);
+        }
+
+        private static ProjectedTerm ref(String ref) {
+            return new ProjectedTerm(null, ref, null);
+        }
+
+        private static ProjectedTerm value(Value<?> literal) {
+            return new ProjectedTerm(null, null, literal);
+        }
+    }
+
+    private static final class BranchInfo {
+        private final int trueId;
+        private final int joinId;
+
+        private BranchInfo(int trueId, int joinId) {
+            this.trueId = trueId;
+            this.joinId = joinId;
+        }
+    }
+
+    private static final class SymbolInfoBuilder {
+        private final Symbol symbol;
+        private Guard definition;
+        private final Map<String, Guard> availabilityByValue = new LinkedHashMap<>();
+
+        private SymbolInfoBuilder(Symbol symbol) {
+            this.symbol = symbol;
+        }
+
+        private void addDefinition(Guard guard, Guards guards) {
+            definition = definition == null ? guard : guards.or(definition, guard);
+        }
+
+        private void addAvailability(String value, Guard guard, Guards guards) {
+            availabilityByValue.compute(value, (key, current) -> current == null ? guard : guards.or(current, guard));
+        }
+
+        private SymbolInfo build(Guards guards) {
+            return new SymbolInfo(symbol,
+                    definition == null ? guards.falseGuard() : definition,
+                    availabilityByValue);
+        }
+    }
+
     private static final class Lowerer {
         private final Scope rootScope;
         private final Table.Builder symbolBuilder = Table.builder();
         private final Map<String, SymbolSeed> symbolSeeds = new LinkedHashMap<>();
+        private final Map<String, SymbolSeed> declaredInputSymbols = new LinkedHashMap<>();
         private final List<BlockBuilder> blocks = new ArrayList<>();
         private final List<Op> ops = new ArrayList<>();
         private Table symbols;
@@ -401,78 +1282,126 @@ final class Flow {
         }
 
         Ir lower(Node root) {
-            collectSymbols(root);
+            collectDeclaredInputs(root, rootScope);
+            collectSymbols(root, rootScope);
+            for (SymbolSeed seed : symbolSeeds.values()) {
+                symbolBuilder.define(seed.name, seed.spec, seed.guardable, seed.tainted);
+            }
             symbols = symbolBuilder.build();
             guards = new Guards(symbols);
 
             int entryBlock = newBlock();
-            int exitBlock = lowerChildren(root.children(), entryBlock);
-            terminateIfMissing(exitBlock, Terminator.ret(anchor(root)));
+            int exitBlock = lowerChildren(root.children(), entryBlock, rootScope);
+            terminateIfMissing(exitBlock, Terminator.ret(anchor(root, rootScope)));
 
             List<Block> loweredBlocks = new ArrayList<>(blocks.size());
             for (BlockBuilder block : blocks) {
                 Terminator terminator = block.terminator;
                 if (terminator == null) {
-                    terminator = Terminator.unreachable(anchor(root));
+                    terminator = Terminator.unreachable(anchor(root, rootScope));
                 }
                 loweredBlocks.add(new Block(block.id, block.ops, terminator));
             }
             return new Ir(loweredBlocks, symbols, ops, guards);
         }
 
-        void collectSymbols(Node root) {
-            for (Node node : root.traverse()) {
-                switch (node.kind()) {
-                    case INPUT_BOOLEAN:
-                        rememberSymbol(inputId(node), new Spec.Boolean(), true, false);
-                        break;
-                    case INPUT_ENUM:
-                        rememberSymbol(inputId(node), inputSpec(node), !optionValues(node).isEmpty(), false);
-                        break;
-                    case INPUT_LIST:
-                        rememberSymbol(inputId(node), inputSpec(node), !optionValues(node).isEmpty(), false);
-                        break;
-                    case INPUT_TEXT:
-                        rememberSymbol(inputId(node), new Spec.OpenText(), false, true);
-                        break;
-                    case PRESET_BOOLEAN:
-                    case VARIABLE_BOOLEAN:
-                        rememberSymbol(definitionId(node), new Spec.Boolean(), true, false);
-                        break;
-                    case PRESET_ENUM:
-                    case PRESET_LIST:
-                    case VARIABLE_ENUM:
-                    case VARIABLE_LIST:
-                        rememberSymbol(definitionId(node), new Spec.OpenText(), false, false);
-                        break;
-                    case PRESET_TEXT:
-                    case VARIABLE_TEXT:
-                        rememberSymbol(definitionId(node), new Spec.OpenText(), false, true);
-                        break;
-                    default:
-                        break;
-                }
+        void collectDeclaredInputs(Node node, Scope scope) {
+            Scope childScope = scope;
+            switch (node.kind()) {
+                case INPUT_BOOLEAN:
+                    childScope = scope.getOrCreate(node);
+                    rememberDeclaredInput(childScope.key(), new Spec.Boolean(), true, false);
+                    break;
+                case INPUT_ENUM:
+                    childScope = scope.getOrCreate(node);
+                    rememberDeclaredInput(childScope.key(), inputSpec(node), !optionValues(node).isEmpty(), false);
+                    break;
+                case INPUT_LIST:
+                    childScope = scope.getOrCreate(node);
+                    rememberDeclaredInput(childScope.key(), inputSpec(node), !optionValues(node).isEmpty(), false);
+                    break;
+                case INPUT_TEXT:
+                    childScope = scope.getOrCreate(node);
+                    rememberDeclaredInput(childScope.key(), new Spec.OpenText(), false, true);
+                    break;
+                default:
+                    break;
             }
-            for (SymbolSeed seed : symbolSeeds.values()) {
-                symbolBuilder.define(seed.name(), seed.spec(), seed.guardable(), seed.tainted());
+            for (Node child : node.children()) {
+                collectDeclaredInputs(child, childScope);
             }
         }
 
-        int lowerChildren(List<Node> nodes, int blockId) {
+        void collectSymbols(Node node, Scope scope) {
+            Scope childScope = scope;
+            switch (node.kind()) {
+                case INPUT_BOOLEAN:
+                    childScope = scope.getOrCreate(node);
+                    rememberSymbol(childScope.key(), new Spec.Boolean(), true, false);
+                    break;
+                case INPUT_ENUM:
+                    childScope = scope.getOrCreate(node);
+                    rememberSymbol(childScope.key(), inputSpec(node), !optionValues(node).isEmpty(), false);
+                    break;
+                case INPUT_LIST:
+                    childScope = scope.getOrCreate(node);
+                    rememberSymbol(childScope.key(), inputSpec(node), !optionValues(node).isEmpty(), false);
+                    break;
+                case INPUT_TEXT:
+                    childScope = scope.getOrCreate(node);
+                    rememberSymbol(childScope.key(), new Spec.OpenText(), false, true);
+                    break;
+                case PRESET_BOOLEAN:
+                case VARIABLE_BOOLEAN:
+                    rememberSymbol(definitionId(scope, node), new Spec.Boolean(), true, false);
+                    break;
+                case PRESET_ENUM:
+                case PRESET_LIST:
+                case VARIABLE_ENUM:
+                case VARIABLE_LIST: {
+                    String key = definitionId(scope, node);
+                    SymbolSeed declared = declaredInputSymbols.get(key);
+                    if (declared != null) {
+                        rememberSymbol(key, declared.spec, declared.guardable, declared.tainted);
+                    } else {
+                        rememberSymbol(key, new Spec.OpenText(), false, false);
+                    }
+                    break;
+                }
+                case PRESET_TEXT:
+                case VARIABLE_TEXT:
+                    rememberSymbol(definitionId(scope, node), new Spec.OpenText(), false, true);
+                    break;
+                default:
+                    break;
+            }
+            for (Node child : node.children()) {
+                collectSymbols(child, childScope);
+            }
+        }
+
+        void rememberDeclaredInput(String name, Spec spec, boolean guardable, boolean tainted) {
+            declaredInputSymbols.merge(
+                    name,
+                    new SymbolSeed(name, spec, guardable, tainted),
+                    SymbolSeed::merge);
+        }
+
+        int lowerChildren(List<Node> nodes, int blockId, Scope scope) {
             int current = blockId;
             for (Node node : nodes) {
-                current = lower(node, current);
+                current = lower(node, current, scope);
             }
             return current;
         }
 
-        int lower(Node node, int blockId) {
+        int lower(Node node, int blockId, Scope scope) {
             switch (node.kind()) {
                 case INPUT_BOOLEAN:
                 case INPUT_ENUM:
                 case INPUT_LIST:
                 case INPUT_TEXT:
-                    return lowerInput(node, blockId);
+                    return lowerInput(node, blockId, scope);
                 case PRESET_BOOLEAN:
                 case PRESET_ENUM:
                 case PRESET_LIST:
@@ -481,69 +1410,100 @@ final class Flow {
                 case VARIABLE_ENUM:
                 case VARIABLE_LIST:
                 case VARIABLE_TEXT:
-                    return lowerDefinition(node, blockId);
+                    return lowerDefinition(node, blockId, scope);
                 case CONDITION:
-                    return lowerCondition(node, blockId);
+                    return lowerCondition(node, blockId, scope);
                 case STEP:
-                    append(blockId, Op.emit(nextOpId(), blockId, anchor(node), Op.EmitKind.STEP, nextRefId++));
-                    return lowerChildren(node.children(), blockId);
+                    append(blockId, Op.emit(nextOpId(), blockId, anchor(node, scope), Op.EmitKind.STEP, nextRefId++));
+                    return lowerChildren(node.children(), blockId, scope);
                 case FILE:
-                    append(blockId, Op.emit(nextOpId(), blockId, anchor(node), Op.EmitKind.FILE, nextRefId++));
-                    return lowerChildren(node.children(), blockId);
+                    append(blockId, Op.emit(nextOpId(), blockId, anchor(node, scope), Op.EmitKind.FILE, nextRefId++));
+                    return lowerChildren(node.children(), blockId, scope);
                 case MODEL:
-                    append(blockId, Op.emit(nextOpId(), blockId, anchor(node), Op.EmitKind.MODEL, nextRefId++));
-                    return lowerChildren(node.children(), blockId);
+                    append(blockId, Op.emit(nextOpId(), blockId, anchor(node, scope), Op.EmitKind.MODEL, nextRefId++));
+                    return lowerChildren(node.children(), blockId, scope);
                 case INPUT_OPTION:
-                    return lowerChildren(node.children(), blockId);
+                    return lowerOption(node, blockId, scope);
                 default:
-                    return lowerChildren(node.children(), blockId);
+                    return lowerChildren(node.children(), blockId, scope);
             }
         }
 
-        int lowerInput(Node node, int blockId) {
-            int symbolId = symbols.findId(inputId(node));
-            append(blockId, Op.declareInput(nextOpId(), blockId, anchor(node), symbolId, symbolId));
-            if (node.kind() == Kind.INPUT_ENUM || node.kind() == Kind.INPUT_LIST) {
-                for (Node option : node.children(Kind.INPUT_OPTION::equals)) {
-                    append(blockId, Op.declareOption(nextOpId(), blockId, anchor(option), symbolId, nextRefId++));
-                }
+        int lowerInput(Node node, int blockId, Scope scope) {
+            Scope inputScope = scope.getOrCreate(node);
+            int symbolId = symbols.findId(inputScope.key());
+            append(blockId, Op.declareInput(nextOpId(), blockId, anchor(node, inputScope), symbolId, symbolId));
+            switch (node.kind()) {
+                case INPUT_BOOLEAN:
+                    return lowerGuardedChildren(node,
+                            blockId,
+                            guard(Expression.create("${" + inputScope.key() + "}"), inputScope),
+                            node.children(),
+                            inputScope);
+                case INPUT_ENUM:
+                case INPUT_LIST:
+                    return lowerChildren(node.children(), blockId, inputScope);
+                default:
+                    return lowerChildren(node.children(), blockId, inputScope);
             }
-            return lowerChildren(node.children(), blockId);
         }
 
-        int lowerDefinition(Node node, int blockId) {
-            Integer symbolId = symbols.findId(definitionId(node));
-            if (symbolId != null && node.value().isPresent()) {
+        int lowerOption(Node node, int blockId, Scope scope) {
+            Node input = node.ancestor(Kind::isInput).orElseThrow(() ->
+                    new IllegalStateException("Option without input parent: " + node));
+            Integer symbolId = symbols.findId(scope.key());
+            if (symbolId == null) {
+                throw new IllegalStateException("Missing option symbol for scope: " + scope.key());
+            }
+            append(blockId, Op.declareOption(nextOpId(), blockId, anchor(node, scope), symbolId, nextRefId++));
+            return lowerGuardedChildren(node, blockId, optionGuard(input, node, scope), node.children(), scope);
+        }
+
+        int lowerDefinition(Node node, int blockId, Scope scope) {
+            Integer symbolId = symbols.findId(definitionId(scope, node));
+            if (symbolId != null) {
                 append(blockId, Op.defineValue(nextOpId(),
                         blockId,
-                        anchor(node),
+                        anchor(node, scope),
                         symbolId,
                         new Expression(List.of(Token.of(node.value())), true)));
             }
-            return lowerChildren(node.children(), blockId);
+            return lowerChildren(node.children(), blockId, scope);
         }
 
-        int lowerCondition(Node node, int blockId) {
-            recordUses(node.expression(), blockId, node);
-            return lowerGuardedChildren(node, blockId, guard(node.expression()), node.children());
+        int lowerCondition(Node node, int blockId, Scope scope) {
+            recordUses(node.expression(), blockId, node, scope);
+            return lowerGuardedChildren(node, blockId, guard(node.expression(), scope), node.children(), scope);
         }
 
-        int lowerGuardedChildren(Node node, int blockId, Guard guard, List<Node> children) {
+        Guard optionGuard(Node input, Node option, Scope scope) {
+            String key = scope.key();
+            switch (input.kind()) {
+                case INPUT_ENUM:
+                    return guard(Expression.create("${" + key + "} == '" + option.value().getString() + "'"), scope);
+                case INPUT_LIST:
+                    return guard(Expression.create("${" + key + "} contains '" + option.value().getString() + "'"), scope);
+                default:
+                    throw new IllegalArgumentException("Unsupported option parent: " + input.kind());
+            }
+        }
+
+        int lowerGuardedChildren(Node node, int blockId, Guard guard, List<Node> children, Scope scope) {
             if (children.isEmpty()) {
                 return blockId;
             }
             int trueBlock = newBlock();
             int falseBlock = newBlock();
             int joinBlock = newBlock();
-            terminate(blockId, Terminator.branch(anchor(node), guard, trueBlock, falseBlock));
-            int trueExit = lowerChildren(children, trueBlock);
-            terminateIfMissing(trueExit, Terminator.jump(anchor(node), joinBlock));
-            terminateIfMissing(falseBlock, Terminator.jump(anchor(node), joinBlock));
+            terminate(blockId, Terminator.branch(anchor(node, scope), guard, trueBlock, falseBlock));
+            int trueExit = lowerChildren(children, trueBlock, scope);
+            terminateIfMissing(trueExit, Terminator.jump(anchor(node, scope), joinBlock));
+            terminateIfMissing(falseBlock, Terminator.jump(anchor(node, scope), joinBlock));
             return joinBlock;
         }
 
-        Guard guard(Expression expression) {
-            return new ConditionLowerer(symbols, guards).lower(requireNonNull(expression, "expression is null"));
+        Guard guard(Expression expression, Scope scope) {
+            return new ConditionLowerer(symbols, guards, scope).lower(requireNonNull(expression, "expression is null"));
         }
 
         void append(int blockId, Op op) {
@@ -551,11 +1511,11 @@ final class Flow {
             ops.add(op);
         }
 
-        void recordUses(Expression expression, int blockId, Node node) {
+        void recordUses(Expression expression, int blockId, Node node, Scope scope) {
             for (String variable : expression.variables()) {
-                Integer symbolId = symbols.findId(refId(variable));
+                Integer symbolId = symbols.findId(refId(scope, variable));
                 if (symbolId != null) {
-                    append(blockId, Op.recordUse(nextOpId(), blockId, anchor(node), symbolId, nextRefId++));
+                    append(blockId, Op.recordUse(nextOpId(), blockId, anchor(node, scope), symbolId, nextRefId++));
                 }
             }
         }
@@ -581,8 +1541,8 @@ final class Flow {
             }
         }
 
-        SourceAnchor anchor(Node node) {
-            return new SourceAnchor(node, rootScope.key());
+        SourceAnchor anchor(Node node, Scope scope) {
+            return new SourceAnchor(node, scope.key());
         }
 
         int newBlock() {
@@ -601,8 +1561,11 @@ final class Flow {
 
         static Set<String> optionValues(Node input) {
             Set<String> values = new TreeSet<>();
-            for (Node option : input.children(Kind.INPUT_OPTION::equals)) {
-                values.add(option.value().getString());
+            for (Node child : input.children()) {
+                Node option = child.unwrap();
+                if (option.kind() == Kind.INPUT_OPTION) {
+                    values.add(option.value().getString());
+                }
             }
             return values;
         }
@@ -617,16 +1580,16 @@ final class Flow {
                     : new Spec.Membership(values);
         }
 
-        static String inputId(Node node) {
-            return node.attribute("id").getString();
+        static String inputId(Scope scope, Node node) {
+            return scope.getOrCreate(node).key();
         }
 
-        static String definitionId(Node node) {
-            return Context.Key.normalize(node.attribute("path").getString());
+        static String definitionId(Scope scope, Node node) {
+            return scope.getOrCreate("~" + Context.Key.normalize(node.attribute("path").getString())).key();
         }
 
-        static String refId(String variable) {
-            return Context.Key.normalize(variable);
+        static String refId(Scope scope, String variable) {
+            return scope.key(variable);
         }
     }
 
@@ -641,22 +1604,6 @@ final class Flow {
             this.spec = requireNonNull(spec, "spec is null");
             this.guardable = guardable;
             this.tainted = tainted;
-        }
-
-        String name() {
-            return name;
-        }
-
-        Spec spec() {
-            return spec;
-        }
-
-        boolean guardable() {
-            return guardable;
-        }
-
-        boolean tainted() {
-            return tainted;
         }
 
         SymbolSeed merge(SymbolSeed other) {
@@ -709,10 +1656,12 @@ final class Flow {
     private static final class ConditionLowerer {
         private final Table symbols;
         private final Guards guards;
+        private final Scope scope;
 
-        ConditionLowerer(Table symbols, Guards guards) {
+        ConditionLowerer(Table symbols, Guards guards, Scope scope) {
             this.symbols = symbols;
             this.guards = guards;
+            this.scope = requireNonNull(scope, "scope is null");
         }
 
         Guard lower(Expression expression) {
@@ -725,7 +1674,8 @@ final class Flow {
             Deque<ConditionValue> stack = new ArrayDeque<>();
             for (Token token : expression.tokens()) {
                 if (token.isVariable()) {
-                    stack.push(ConditionValue.variable(token.variable(), findSymbol(token.variable())));
+                    String key = scope.key(token.variable());
+                    stack.push(ConditionValue.variable(key, findSymbol(key)));
                     continue;
                 }
                 if (token.isOperand()) {
@@ -760,20 +1710,20 @@ final class Flow {
             }
             ConditionValue value = stack.pop();
             Guard guard = value.asGuard(guards);
-            return guard != null ? guard : residual(value.expression());
+            return guard != null ? guard : residual(value.expression);
         }
 
         ConditionValue not(ConditionValue value) {
             Guard guard = value.asGuard(guards);
-            Expression expression = negate(value.expression());
+            Expression expression = negate(value.expression);
             return guard != null ? ConditionValue.guard(guards.not(guard), expression)
-                    : ConditionValue.expression(negate(value.expression()));
+                    : ConditionValue.expression(negate(value.expression));
         }
 
         ConditionValue and(ConditionValue right, ConditionValue left) {
             Guard leftGuard = left.asGuard(guards);
             Guard rightGuard = right.asGuard(guards);
-            Expression expression = combine(left.expression(), "&&", right.expression());
+            Expression expression = combine(left.expression, "&&", right.expression);
             return leftGuard != null && rightGuard != null
                     ? ConditionValue.guard(guards.and(leftGuard, rightGuard), expression)
                     : ConditionValue.expression(expression);
@@ -782,7 +1732,7 @@ final class Flow {
         ConditionValue or(ConditionValue right, ConditionValue left) {
             Guard leftGuard = left.asGuard(guards);
             Guard rightGuard = right.asGuard(guards);
-            Expression expression = combine(left.expression(), "||", right.expression());
+            Expression expression = combine(left.expression, "||", right.expression);
             return leftGuard != null && rightGuard != null
                     ? ConditionValue.guard(guards.or(leftGuard, rightGuard), expression)
                     : ConditionValue.expression(expression);
@@ -793,7 +1743,7 @@ final class Flow {
             if (direct == null) {
                 direct = compareGuard(right, left);
             }
-            Expression expression = combine(left.expression(), equal ? "==" : "!=", right.expression());
+            Expression expression = combine(left.expression, equal ? "==" : "!=", right.expression);
             if (direct != null) {
                 return ConditionValue.guard(equal ? direct : guards.not(direct), expression);
             }
@@ -801,20 +1751,20 @@ final class Flow {
         }
 
         Guard compareGuard(ConditionValue symbolValue, ConditionValue literalValue) {
-            if (symbolValue.symbol() == null || literalValue.literal() == null) {
+            if (symbolValue.symbol == null || literalValue.literal == null) {
                 return null;
             }
-            Symbol symbol = symbolValue.symbol();
+            Symbol symbol = symbolValue.symbol;
             if (!symbol.guardable() || symbol.tainted()) {
                 return null;
             }
             switch (symbol.domain().kind()) {
                 case BOOLEAN:
-                    if (literalValue.literal().type() == Value.Type.BOOLEAN) {
-                        return guards.eq(symbol.id(), String.valueOf(literalValue.literal().getBoolean()));
+                    if (literalValue.literal.type() == Value.Type.BOOLEAN) {
+                        return guards.eq(symbol.id(), String.valueOf(literalValue.literal.getBoolean()));
                     }
-                    if (literalValue.literal().type() == Value.Type.STRING) {
-                        String literal = literalValue.literal().getString();
+                    if (literalValue.literal.type() == Value.Type.STRING) {
+                        String literal = literalValue.literal.getString();
                         if ("true".equals(literal) || "false".equals(literal)) {
                             return guards.eq(symbol.id(), literal);
                         }
@@ -822,8 +1772,8 @@ final class Flow {
                     return null;
                 case CHOICE:
                 case FINITE_TEXT:
-                    return literalValue.literal().type() == Value.Type.STRING
-                            ? guards.eq(symbol.id(), literalValue.literal().getString())
+                    return literalValue.literal.type() == Value.Type.STRING
+                            ? guards.eq(symbol.id(), literalValue.literal.getString())
                             : null;
                 default:
                     return null;
@@ -832,7 +1782,7 @@ final class Flow {
 
         ConditionValue contains(ConditionValue right, ConditionValue left) {
             Guard direct = containsGuard(left, right);
-            Expression expression = combine(left.expression(), "contains", right.expression());
+            Expression expression = combine(left.expression, "contains", right.expression);
             if (direct == null) {
                 return ConditionValue.expression(expression);
             }
@@ -840,19 +1790,19 @@ final class Flow {
         }
 
         Guard containsGuard(ConditionValue symbolValue, ConditionValue literalValue) {
-            if (symbolValue.symbol() == null || literalValue.literal() == null) {
+            if (symbolValue.symbol == null || literalValue.literal == null) {
                 return null;
             }
-            Symbol symbol = symbolValue.symbol();
+            Symbol symbol = symbolValue.symbol;
             if (symbol.domain().kind() != Spec.Kind.MEMBERSHIP || !symbol.guardable() || symbol.tainted()) {
                 return null;
             }
-            if (literalValue.literal().type() == Value.Type.STRING) {
-                return guards.contains(symbol.id(), literalValue.literal().getString());
+            if (literalValue.literal.type() == Value.Type.STRING) {
+                return guards.contains(symbol.id(), literalValue.literal.getString());
             }
-            if (literalValue.literal().type() == Value.Type.LIST) {
+            if (literalValue.literal.type() == Value.Type.LIST) {
                 Guard result = guards.trueGuard();
-                for (String item : literalValue.literal().getList()) {
+                for (String item : literalValue.literal.getList()) {
                     result = guards.and(result, guards.contains(symbol.id(), item));
                 }
                 return result;
@@ -913,18 +1863,6 @@ final class Flow {
             return new ConditionValue(new Expression(List.of(Token.of(literal)), true), null, null, literal);
         }
 
-        Expression expression() {
-            return expression;
-        }
-
-        Symbol symbol() {
-            return symbol;
-        }
-
-        Value<?> literal() {
-            return literal;
-        }
-
         Guard asGuard(Guards guards) {
             if (guard != null) {
                 return guard;
@@ -966,6 +1904,7 @@ final class Flow {
 
         Analysis analyze() {
             List<State> entries = new ArrayList<>(Collections.nCopies(ir.blocks().size(), unreachable));
+            List<State> exits = new ArrayList<>(Collections.nCopies(ir.blocks().size(), unreachable));
             entries.set(0, new State(guards.trueGuard(), Map.of()));
             Deque<Integer> work = new ArrayDeque<>();
             work.add(0);
@@ -983,26 +1922,31 @@ final class Flow {
                     current = transfer(op, current);
                     afterByOp.set(opId, current);
                 }
+                exits.set(blockId, current);
                 propagate(block.terminator(), current, entries, work);
             }
-            return new Analysis(beforeByOp, afterByOp, usesById);
+            return new Analysis(entries, exits, beforeByOp, afterByOp, usesById);
         }
 
         State transfer(Op op, State state) {
             switch (op.kind()) {
-                case DECLARE_INPUT:
-                    return define(state, op.symbolId(), new Fact(
+                case DECLARE_INPUT: {
+                    Fact declared = new Fact(
                             state.path(),
-                            Domain.Value.top(ir.symbols().symbol(op.symbolId()).domain())));
+                            Domain.Value.top(ir.symbols().symbol(op.symbolId()).domain()));
+                    Fact existing = state.env().get(op.symbolId());
+                    return define(state,
+                            op.symbolId(),
+                            existing == null ? declared : Fact.merge(existing, declared, guards));
+                }
                 case DEFINE_VALUE:
                     Symbol symbol = ir.symbols().symbol(op.symbolId());
-                    Domain.Value value = evaluate(op.expression(), symbol, state);
-                    return define(state, op.symbolId(), new Fact(state.path(), value));
+                    return define(state, op.symbolId(), evaluateFact(op.expression(), symbol, state));
                 case RECORD_USE:
                     int useIndex = useIndexByOp.get(op.id());
                     Use existing = usesById.get(useIndex);
                     usesById.set(useIndex,
-                            new Use(existing.id(), existing.symbolId(), guards.or(existing.guard(), state.path())));
+                            new Use(existing.id(), existing.symbolId(), mergeGuard(existing.guard(), state.path())));
                     return state;
                 case EMIT:
                 case PHI:
@@ -1051,7 +1995,10 @@ final class Flow {
             if (incoming.path().equals(guards.falseGuard())) {
                 return current;
             }
-            Guard path = guards.or(current.path(), incoming.path());
+            if (current.equals(incoming)) {
+                return current;
+            }
+            Guard path = mergeGuard(current.path(), incoming.path());
             Map<Integer, Fact> env = new LinkedHashMap<>(current.env());
             Set<Integer> keys = new HashSet<>(current.env().keySet());
             keys.addAll(incoming.env().keySet());
@@ -1062,13 +2009,28 @@ final class Flow {
                     env.put(symbolId, right);
                 } else if (right == null) {
                     env.put(symbolId, left);
+                } else if (left.equals(right)) {
+                    env.put(symbolId, left);
                 } else {
-                    env.put(symbolId, new Fact(
-                            guards.or(left.definedUnder(), right.definedUnder()),
-                            Domain.Value.join(left.value(), right.value())));
+                    env.put(symbolId, Fact.merge(left, right, guards));
                 }
             }
             return new State(path, env);
+        }
+
+        Guard mergeGuard(Guard left, Guard right) {
+            if (left.equals(right)) {
+                return left;
+            }
+            if (left.residual() == Expression.TRUE && right.residual() == Expression.TRUE) {
+                if (guards.implies(left, right)) {
+                    return right;
+                }
+                if (guards.implies(right, left)) {
+                    return left;
+                }
+            }
+            return guards.or(left, right);
         }
 
         State define(State state, int symbolId, Fact fact) {
@@ -1077,7 +2039,15 @@ final class Flow {
             return new State(state.path(), env);
         }
 
-        Domain.Value evaluate(Expression expression, Symbol symbol, State state) {
+        Fact evaluateFact(Expression expression, Symbol symbol, State state) {
+            Domain.Value value = evaluateValue(expression, symbol, state);
+            io.helidon.build.archetype.engine.v2.Value<?> exactValue = exactValue(expression, state);
+            return exactValue == null
+                    ? new Fact(state.path(), value)
+                    : Fact.exact(state.path(), value, exactValue);
+        }
+
+        Domain.Value evaluateValue(Expression expression, Symbol symbol, State state) {
             List<Token> tokens = expression.tokens();
             if (tokens.size() == 1) {
                 Token token = tokens.get(0);
@@ -1095,6 +2065,43 @@ final class Flow {
                 }
             }
             return Domain.Value.top(symbol.domain());
+        }
+
+        io.helidon.build.archetype.engine.v2.Value<?> exactValue(Expression expression, State state) {
+            List<Token> tokens = expression.tokens();
+            if (tokens.size() != 1) {
+                return null;
+            }
+            Token token = tokens.get(0);
+            if (token.isOperand()) {
+                return token.operand();
+            }
+            if (token.isVariable()) {
+                Integer symbolId = ir.symbols().findId(token.variable());
+                if (symbolId == null) {
+                    return null;
+                }
+                Fact fact = state.env().get(symbolId);
+                if (fact == null || fact.exactCases().isEmpty()) {
+                    return null;
+                }
+                io.helidon.build.archetype.engine.v2.Value<?> value = null;
+                Guard covered = guards.falseGuard();
+                for (Fact.ExactCase exactCase : fact.exactCases()) {
+                    if (!guards.implies(exactCase.guard(), state.path())) {
+                        covered = guards.or(covered, exactCase.guard());
+                        continue;
+                    }
+                    if (value == null) {
+                        value = exactCase.value();
+                    } else if (!io.helidon.build.archetype.engine.v2.Value.isEqual(value, exactCase.value())) {
+                        return null;
+                    }
+                    covered = guards.or(covered, exactCase.guard());
+                }
+                return value != null && guards.implies(state.path(), covered) ? value : null;
+            }
+            return null;
         }
 
         static Domain.Value literalValue(Spec spec, Value<?> literal) {
