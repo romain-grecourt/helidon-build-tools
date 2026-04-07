@@ -208,28 +208,28 @@ class ScriptCompilerTest {
     }
 
     @Test
-    void testBranchSpecificInputPruning() {
+    void testBranchPruning() {
         Path outputDir = compile("compiler/branch-pruning", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/branch-pruning.xml")));
     }
 
     @Test
-    void testDuplicateDiscreteStepsPreserveMergedCondition() {
+    void testDuplicateDiscreteSteps() {
         Path outputDir = compile("compiler/duplicate-discrete-steps", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/duplicate-discrete-steps.xml")));
     }
 
     @Test
-    void testDuplicateCrossProductStepsCollapseCoveredDimension() {
+    void testDuplicateCrossProductCoveredDimension() {
         Path outputDir = compile("compiler/duplicate-cross-product-covered-dimension", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/duplicate-cross-product-covered-dimension.xml")));
     }
 
     @Test
-    void testOptionSpecificValueImplicationRemovesRedundantParentGuard() {
+    void testOptionSpecificValueImplication() {
         Path outputDir = compile("compiler/option-specific-value-implication", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/option-specific-value-implication.xml")));
@@ -243,77 +243,77 @@ class ScriptCompilerTest {
     }
 
     @Test
-    void testDuplicateCrossProductStepsCollapseUnsupportedOptionComplement() {
+    void testDuplicateCrossProductUnsupportedOptionComplement() {
         Path outputDir = compile("compiler/duplicate-cross-product-unsupported-option-complement", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/duplicate-cross-product-unsupported-option-complement.xml")));
     }
 
     @Test
-    void testConditionallyDefinedEnumValuePrunesImpossibleUnsupportedFlavorBranch() {
+    void testConditionalJsonLibPrunesImpossibleJsonp() {
         Path outputDir = compile("compiler/conditional-json-lib", "main.xml");
         String actual = normalizeXml(outputDir.resolve("main.xml"));
         assertThat(actual, not(containsString("name=\"Impossible JSONP\"")));
     }
 
     @Test
-    void testConditionallyDefinedEnumValueKeepsSelectedValueGuard() {
+    void testConditionalJsonLibValue() {
         Path outputDir = compile("compiler/conditional-json-lib", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/conditional-json-lib.xml")));
     }
 
     @Test
-    void testConditionallyDefinedEnumComplementDropsUnsupportedValueGuard() {
+    void testConditionalJsonLibComplement() {
         Path outputDir = compile("compiler/conditional-json-lib", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/conditional-json-lib.xml")));
     }
 
     @Test
-    void testOpenScalarDomainDoesNotEmitClosedComplement() {
+    void testOpenDomainComplement() {
         Path outputDir = compile("compiler/open-domain-complement", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/open-domain-complement.xml")));
     }
 
     @Test
-    void testOpenScalarDomainKeepsOptionSpecificOutputGuard() {
+    void testOpenDomainOptionOutput() {
         Path outputDir = compile("compiler/open-domain-option-output", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/open-domain-option-output.xml")));
     }
 
     @Test
-    void testListOptionAvailabilityRemovesRedundantFlavorGuard() {
+    void testListOptionAvailability() {
         Path outputDir = compile("compiler/list-option-availability", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/list-option-availability.xml")));
     }
 
     @Test
-    void testListOptionAvailabilityPrunesImpossibleFlavorBranch() {
+    void testListOptionAvailabilityPrunesImpossibleWebClient() {
         Path outputDir = compile("compiler/list-option-availability", "main.xml");
         String actual = normalizeXml(outputDir.resolve("main.xml"));
         assertThat(actual, not(containsString("name=\"Impossible WebClient\"")));
     }
 
     @Test
-    void testUnsupportedConditionStillPrunesBranchSpecificInputs() {
+    void testUnsupportedPruning() {
         Path outputDir = compile("compiler/unsupported-pruning", "main.xml", IGNORE_ERRORS);
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/unsupported-pruning.xml")));
     }
 
     @Test
-    void testUnsupportedParentConditionStillRelativizesBranchSpecificInputs() {
+    void testUnsupportedBlockPruning() {
         Path outputDir = compile("compiler/unsupported-block-pruning", "main.xml", IGNORE_ERRORS);
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/unsupported-block-pruning.xml")));
     }
 
     @Test
-    void testConstantVariableConditionUsesInputReachability() {
+    void testPresetCondition() {
         Path outputDir = compile("compiler/preset-condition", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/preset-condition.xml")));
@@ -336,35 +336,35 @@ class ScriptCompilerTest {
     }
 
     @Test
-    void testPresetImpliedBooleanPrunesImpossibleNestedInputStubBranch() {
+    void testPresetImpliedNestedInput() {
         Path outputDir = compile("compiler/preset-implied-nested-input", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/preset-implied-nested-input.xml")));
     }
 
     @Test
-    void testMergedNestedDefinitionStubsUseDefinitionComplement() {
+    void testMergedStubComplement() {
         Path outputDir = compile("compiler/merged-stub-complement", "main.xml", IGNORE_ERRORS);
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/merged-stub-complement.xml")));
     }
 
     @Test
-    void testCoveringNestedDefinitionStubUsesDefinitionComplement() {
+    void testCoveringStubComplement() {
         Path outputDir = compile("compiler/covering-stub-complement", "main.xml", IGNORE_ERRORS);
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/covering-stub-complement.xml")));
     }
 
     @Test
-    void testUnsupportedConditionKeepsBindingBackedReachability() {
+    void testUnsupportedBindingCondition() {
         Path outputDir = compile("compiler/unsupported-binding-condition", "main.xml", IGNORE_ERRORS);
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/unsupported-binding-condition.xml")));
     }
 
     @Test
-    void testUnsupportedConditionKeepsBindingBackedModelOutputCondition() {
+    void testUnsupportedOutputModelCondition() {
         Path outputDir = compile("compiler/unsupported-output-model-condition", "main.xml", IGNORE_ERRORS);
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/unsupported-output-model-condition.xml")));
@@ -389,43 +389,43 @@ class ScriptCompilerTest {
     }
 
     @Test
-    void testRootVariableOutputConditionRemainsResolvedAfterConditionalRedefinition() {
+    void testRootVariableOutputCondition() {
         compile("compiler/root-variable-output-condition", "main.xml", VALIDATE_ONLY);
     }
 
     @Test
-    void testSharedDefinitionUnionDoesNotDropLaterBranchAvailability() {
+    void testSharedDefinitionUnion() {
         compile("compiler/shared-definition-union", "main.xml", VALIDATE_ONLY);
     }
 
     @Test
-    void testBooleanInputConditionDoesNotGenerateStubVariable() {
+    void testNoBooleanStubs() {
         Path outputDir = compile("compiler/no-boolean-stubs", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/no-boolean-stubs.xml")));
     }
 
     @Test
-    void testInvalidScriptBooleanDefaultIsNotPruned() {
+    void testInvalidBooleanDefault() {
         Path outputDir = compile("compiler/invalid-boolean-default", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/invalid-boolean-default.xml")));
     }
 
     @Test
-    void testResidualListConditions() {
+    void testResidualList() {
         Path outputDir = compile("compiler/residual-list", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")), is(normalizeXml("compiler/expected/residual-list.xml")));
     }
 
     @Test
-    void testNormalizedExpressions() {
+    void testNormalizedExpr() {
         Path outputDir = compile("compiler/normalized-expr", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")), is(normalizeXml("compiler/expected/normalized-expr.xml")));
     }
 
     @Test
-    void testMergedStepConditionUsesPreReducedEmission() {
+    void testMergedStepDomain() {
         Path outputDir = compile("compiler/merged-step-domain", "main.xml");
         String actual = normalizeXml(outputDir.resolve("main.xml"));
         assertThat(actual, containsString("<step name=\"Packaging\" optional=\"true\">"));
