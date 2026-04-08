@@ -24,7 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import io.helidon.build.archetype.engine.v2.ScriptCompiler;
+import io.helidon.build.archetype.engine.v2.VariationEngine;
 import io.helidon.build.archetype.engine.v2.Variations;
 import io.helidon.build.common.xml.XMLElement;
 
@@ -153,13 +153,12 @@ class VariationPlanTest {
     @Test
     void testMergePlanVariations() {
         Path cwd = resource("script").toAbsolutePath().normalize();
-        ScriptCompiler compiler = new ScriptCompiler(() -> cwd.resolve("main.xml"), cwd);
+        VariationEngine variationEngine = new VariationEngine(() -> cwd.resolve("main.xml"), cwd);
         List<VariationPlan> plans = VariationPlan.load(resource("plans.xml"));
 
         List<Variations> computed = new ArrayList<>();
         for (VariationPlan plan : plans) {
-            computed.add(Variations.compute(
-                    compiler,
+            computed.add(variationEngine.compute(
                     plan.filters(),
                     plan.externalValues(),
                     plan.externalDefaults(),

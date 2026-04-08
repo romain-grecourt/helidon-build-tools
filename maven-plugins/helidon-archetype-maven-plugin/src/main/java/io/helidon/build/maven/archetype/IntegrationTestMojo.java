@@ -39,7 +39,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import io.helidon.build.archetype.engine.v2.ArchetypeEngineV2;
-import io.helidon.build.archetype.engine.v2.ScriptCompiler;
+import io.helidon.build.archetype.engine.v2.VariationEngine;
 import io.helidon.build.archetype.engine.v2.Variations;
 import io.helidon.build.common.Lists;
 import io.helidon.build.common.Maps;
@@ -415,12 +415,12 @@ public class IntegrationTestMojo extends AbstractMojo {
                 : maxIntermediateVariations;
         try (FileSystem fs = newFileSystem(archetypeFile, this.getClass().getClassLoader())) {
             Path cwd = fs.getPath("/");
-            ScriptCompiler compiler = new ScriptCompiler(() -> cwd.resolve("main.xml"), cwd);
+            VariationEngine variationEngine = new VariationEngine(() -> cwd.resolve("main.xml"), cwd);
             List<VariationPlan> plans = plans();
             try {
                 Variations variations = plans.isEmpty()
-                        ? Variations.compute(compiler, List.of(), externalValues, externalDefaults, max)
-                        : variations(compiler, plans, max);
+                        ? variationEngine.compute(List.of(), externalValues, externalDefaults, max)
+                        : variations(variationEngine, plans, max);
                 if (failOnUnbounded && !variations.exhaustive()) {
                     throw new MojoFailureException(
                             "Variations must be exhaustive, unbounded inputs: "
@@ -447,7 +447,7 @@ public class IntegrationTestMojo extends AbstractMojo {
         }
     }
 
-    private Variations variations(ScriptCompiler compiler,
+    private Variations variations(VariationEngine variationEngine,
                                   List<VariationPlan> plans,
                                   long maxIntermediateVariations) {
         List<Variations> computed = new ArrayList<>();
@@ -458,8 +458,7 @@ public class IntegrationTestMojo extends AbstractMojo {
             planValues.putAll(plan.externalValues());
             Map<String, String> planDefaults = new LinkedHashMap<>(externalDefaults);
             planDefaults.putAll(plan.externalDefaults());
-            Variations computedPlan = Variations.compute(
-                    compiler,
+            Variations computedPlan = variationEngine.compute(
                     plan.filters(),
                     planValues,
                     planDefaults,

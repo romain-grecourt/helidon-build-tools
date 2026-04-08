@@ -282,10 +282,6 @@ public class ScriptCompiler {
         }
     }
 
-    Path cwd() {
-        return ctx.cwd();
-    }
-
     private void init() {
         if (initialized) {
             return;
@@ -295,21 +291,6 @@ public class ScriptCompiler {
         indexer.index(sourceNode);
         flow.process(sourceNode);
         projectSourceGuards();
-    }
-
-    Flow.Ir flowIr() {
-        init();
-        return flow.ir();
-    }
-
-    Flow.Analysis flowAnalysis() {
-        init();
-        return flow.analysis();
-    }
-
-    Flow.Model flowModel() {
-        init();
-        return flow.model();
     }
 
     private void projectSourceGuards() {
@@ -1475,7 +1456,7 @@ public class ScriptCompiler {
             }
             Expression expr = source != null ? source : new Expression(tokens, false);
             try {
-                expr.eval(variable -> ScriptCompiler.this.validationValue(scope, variable));
+                expr.eval(variable -> validationValue(scope, variable));
                 return null;
             } catch (RuntimeException ex) {
                 return ex.getMessage();
@@ -1722,7 +1703,7 @@ public class ScriptCompiler {
         }
 
         Guard rawEquality(String key, Value<?> value) {
-            String scalarValue = scalarLiteral(value);
+            String scalarValue = Value.scalarLiteral(value);
             if (scalarValue == null) {
                 return null;
             }
@@ -1974,18 +1955,6 @@ public class ScriptCompiler {
 
         Set<String> refs() {
             return new LinkedHashSet<>(variables.values());
-        }
-    }
-
-    private String scalarLiteral(Value<?> value) {
-        switch (value.type()) {
-            case STRING:
-            case DYNAMIC:
-                return value.getString();
-            case BOOLEAN:
-                return String.valueOf(value.getBoolean());
-            default:
-                return null;
         }
     }
 

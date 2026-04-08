@@ -356,13 +356,13 @@ class VariationsTest {
         try (FileSystem fs = VirtualFileSystem.create(targetDir.resolve("test-classes"))) {
             Path cwd = fs.getPath(path);
             Path source = cwd.resolve(entrypoint).toAbsolutePath().normalize();
-            ScriptCompiler compiler = new ScriptCompiler(() -> source, cwd);
-            return Variations.compute(compiler, filters, externalValues, externalDefaults, max);
+            return new VariationEngine(() -> source, cwd).compute(filters, externalValues, externalDefaults, max);
         } catch (IOException ex) {
             throw new UncheckedIOException(ex.getMessage(), ex);
         }
     }
 
+    @SuppressWarnings("SameParameterValue")
     static void validate(String path, String entrypoint) {
         Path targetDir = targetDir(VariationsTest.class);
         try (FileSystem fs = VirtualFileSystem.create(targetDir.resolve("test-classes"))) {
