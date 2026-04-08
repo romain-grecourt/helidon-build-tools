@@ -398,6 +398,28 @@ public class Lists {
     }
 
     /**
+     * Test if two collections share at least one element.
+     *
+     * @param left left collection
+     * @param right right collection
+     * @param <T> the collection element type
+     * @return {@code true} if the collections intersect, {@code false} otherwise
+     */
+    public static <T> boolean intersects(Collection<T> left, Collection<T> right) {
+        if (left.isEmpty() || right.isEmpty()) {
+            return false;
+        }
+        Collection<T> smaller = left.size() <= right.size() ? left : right;
+        Collection<T> larger = smaller == left ? right : left;
+        for (T element : smaller) {
+            if (larger.contains(element)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Intersect two sorted lists.
      *
      * @param left left list

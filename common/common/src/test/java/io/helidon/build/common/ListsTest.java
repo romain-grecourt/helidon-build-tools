@@ -63,6 +63,13 @@ class ListsTest {
     }
 
     @Test
+    void testIntersects() {
+        assertThat(Lists.intersects(List.of("a", "b"), List.of("c", "d")), is(false));
+        assertThat(Lists.intersects(List.of("a", "b"), List.of("b", "c")), is(true));
+        assertThat(Lists.intersects(List.of(), List.of("b", "c")), is(false));
+    }
+
+    @Test
     void testSubtract() {
         assertThat(Lists.subtract(List.of("a", "b", "c", "d"), List.of("b", "d")), is(List.of("a", "c")));
     }

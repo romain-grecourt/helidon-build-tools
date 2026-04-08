@@ -56,7 +56,9 @@ import static java.util.stream.Collectors.toMap;
  */
 public final class Expression implements Comparable<Expression> {
     private static final int QMC_MAX_TERMS = 1 << 16;
+    private static final int QMC_MAX_VARIABLES = 12;
     private static final long QMC_MAX_MERGE_PAIRS = 500_000L;
+    private static final long QMC_MAX_MERGE_WORK = 500_000L;
     private static final long QMC_MAX_TABLE_BYTES = 64L * 1024 * 1024;
     private static final long QMC_TERM_OVERHEAD_BYTES = 96L;
 
@@ -122,10 +124,14 @@ public final class Expression implements Comparable<Expression> {
      * @return Expression
      */
     public Expression and(Expression expr) {
-        if (expr == null || expr == TRUE || this == FALSE) {
+        if (expr == null || expr == TRUE) {
             return this;
+        } else if (expr == FALSE || this == FALSE) {
+            return FALSE;
         } else if (this == TRUE) {
             return expr;
+        } else if (equals(expr)) {
+            return this;
         } else {
             return new Expression(Lists.addAll(tokens, expr.tokens, Token.AND), false);
         }
@@ -138,10 +144,14 @@ public final class Expression implements Comparable<Expression> {
      * @return Expression
      */
     public Expression or(Expression expr) {
-        if (expr == null || expr == FALSE || this == TRUE) {
+        if (expr == null || expr == FALSE) {
             return this;
+        } else if (expr == TRUE || this == TRUE) {
+            return TRUE;
         } else if (this == FALSE) {
             return expr;
+        } else if (equals(expr)) {
+            return this;
         } else {
             return new Expression(Lists.addAll(tokens, expr.tokens, Token.OR), false);
         }
@@ -302,6 +312,17 @@ public final class Expression implements Comparable<Expression> {
         }
     }
 
+    Expression foldConstants() {
+        if (this == TRUE || this == FALSE || !variables().isEmpty()) {
+            return this;
+        }
+        try {
+            return eval() ? TRUE : FALSE;
+        } catch (RuntimeException e) {
+            return this;
+        }
+    }
+
     /**
      * Inline variables.
      *
@@ -320,7 +341,7 @@ public final class Expression implements Comparable<Expression> {
             }
             inlined.add(token);
         }
-        return new Expression(inlined, false).reduce();
+        return new Expression(inlined, false).foldConstants();
     }
 
     /**
@@ -368,6 +389,7 @@ public final class Expression implements Comparable<Expression> {
 
         // find implicants
         TermTable tmp = new TermTable(); // write-table
+        long mergeWork = 0;
         while (true) {
             tmp.clear();
             BitSet bitmap = new BitSet();
@@ -377,7 +399,12 @@ public final class Expression implements Comparable<Expression> {
                     Term term1 = table.terms.get(i1);
                     boolean merged = false;
                     if (g + 1 < table.groups.size()) { // compare nth and nth+1
-                        for (int i2 = l1, l2 = table.groups.get(g + 1); i2 < l2; i2++) {
+                        int l2 = table.groups.get(g + 1);
+                        mergeWork += l2 - l1;
+                        if (mergeWork > QMC_MAX_MERGE_WORK) {
+                            throw new QmcLimitException("QMC merge work limit exceeded");
+                        }
+                        for (int i2 = l1; i2 < l2; i2++) {
                             Term term2 = table.terms.get(i2);
                             if (term1.mark == term2.mark) {
                                 int delta = term1.bits ^ term2.bits;
@@ -536,7 +563,7 @@ public final class Expression implements Comparable<Expression> {
         if (numVars == 0) {
             return truthExpr.eval() && expr.eval() ? TRUE : FALSE;
         }
-        if (numVars > Integer.numberOfTrailingZeros(QMC_MAX_TERMS)) {
+        if (numVars > QMC_MAX_VARIABLES) {
             throw new QmcLimitException("QMC variable limit exceeded");
         }
 

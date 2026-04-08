@@ -553,12 +553,12 @@ public class ScriptCompiler {
     }
 
     private Value<?> validationValue(Scope scope, String variable) {
-        Type type = indexer.refTypes.getOrDefault(scope.key(variable), Type.EMPTY);
+        Type type = indexer.refType(scope.key(variable));
         return Value.typed(type);
     }
 
     private boolean hasPriorDefinition(Node node, String key) {
-        for (Node definition : indexer.definedRefs.getOrDefault(key, Set.of())) {
+        for (Node definition : indexer.definedRefs(key)) {
             if (node.id() <= definition.id()) {
                 continue;
             }
@@ -588,9 +588,9 @@ public class ScriptCompiler {
         if (!visitingRefs.add(key)) {
             return false;
         }
-        boolean result = indexer.textInputRefs.contains(key);
+        boolean result = indexer.textInputRef(key);
         if (!result) {
-            for (Node node : indexer.declaredValues.getOrDefault(key, Set.of())) {
+            for (Node node : indexer.declaredValues(key)) {
                 if (attached(node) && declarationDependsOnTextInput(node, visitingRefs)) {
                     result = true;
                     break;
@@ -798,14 +798,7 @@ public class ScriptCompiler {
     }
 
     private Guard residualGuard(Expression expr) {
-        Expression reduced = expr.reduce();
-        if (reduced == Expression.FALSE) {
-            return falseGuard();
-        }
-        if (reduced == Expression.TRUE) {
-            return trueGuard();
-        }
-        return new Guard(trueGuard().id(), reduced);
+        return guards().residualGuard(expr);
     }
 
     private boolean isFalse(Guard guard) {
@@ -2421,7 +2414,8 @@ public class ScriptCompiler {
             List<String> ids = node.attribute("transformations").asList().orElse(List.of());
             for (String id : ids) {
                 Map<List<FileOp>, Guard> idOps = fileOps.getOrDefault(id, Map.of());
-                ops.add(Lists.map(idOps.entrySet(), e -> new FileOps(e.getKey(), e.getValue(), guardExpression(e.getValue()).literal())));
+                ops.add(Lists.map(idOps.entrySet(),
+                        e -> new FileOps(e.getKey(), e.getValue(), guardExpression(e.getValue()).reduce().literal())));
             }
             return ops;
         }
@@ -2435,7 +2429,7 @@ public class ScriptCompiler {
             for (int i = 1; i < list.size(); i++) {
                 reach = and(reach, list.get(i).reach);
             }
-            return new FileOps(ops, reach, guardExpression(reach).literal());
+            return new FileOps(ops, reach, guardExpression(reach).reduce().literal());
         }
 
         List<Node> renderModels() {
@@ -2725,7 +2719,7 @@ public class ScriptCompiler {
                 if (isFalse(missing)) {
                     continue;
                 }
-                Type type = indexer.refTypes.getOrDefault(key, Type.EMPTY);
+                Type type = indexer.refType(key);
                 stubs.add(new StubSpec(type, key, missing, base, scope, snapshots));
             }
             return stubs;
@@ -2776,7 +2770,7 @@ public class ScriptCompiler {
                 return null;
             }
             String parentKey = key.substring(0, dot);
-            if (indexer.refTypes.getOrDefault(parentKey, Type.EMPTY) != Type.BOOLEAN) {
+            if (indexer.refType(parentKey) != Type.BOOLEAN) {
                 return null;
             }
             Flow.SymbolInfo info = symbolInfo(key);
@@ -2931,7 +2925,7 @@ public class ScriptCompiler {
                 return null;
             }
             String parentKey = key.substring(0, dot);
-            if (indexer.refTypes.getOrDefault(parentKey, Type.EMPTY) != Type.BOOLEAN) {
+            if (indexer.refType(parentKey) != Type.BOOLEAN) {
                 return null;
             }
             Expression expr = Expression.create(String.format("!${%s}", scope.key(parentKey)));

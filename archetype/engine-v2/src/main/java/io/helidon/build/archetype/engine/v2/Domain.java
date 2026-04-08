@@ -16,6 +16,7 @@
 package io.helidon.build.archetype.engine.v2;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -29,6 +30,7 @@ import java.util.TreeSet;
 import java.util.function.IntFunction;
 
 import io.helidon.build.archetype.engine.v2.Context.Scope;
+import io.helidon.build.common.Lists;
 
 import static java.util.Objects.requireNonNull;
 
@@ -896,6 +898,8 @@ final class Domain {
     static final class Guards {
         private static final int FALSE_ID = 0;
         private static final int TRUE_ID = 1;
+        private static final int COMPACT_MAX_VARIABLES = 8;
+        private static final int COMPACT_MAX_TOKENS = 64;
 
         private final Symbol.Table symbols;
         private final List<Decision> decisions = new ArrayList<>();
@@ -925,7 +929,9 @@ final class Domain {
                 return falseGuard();
             }
             Decision decision = decision(left).and(decision(right), symbols);
-            Expression residual = left.residual().and(right.residual()).reduce();
+            Expression residual = left.residual().equals(right.residual())
+                    ? left.residual()
+                    : left.residual().and(right.residual());
             return guard(decision, residual);
         }
 
@@ -939,17 +945,28 @@ final class Domain {
             if (isFalse(right)) {
                 return left;
             }
-            Guard cached = cachedOr(left, right);
-            if (cached != null) {
-                return cached;
+            boolean cacheable = cacheable(left) && cacheable(right);
+            if (cacheable) {
+                Guard cached = cachedOr(left, right);
+                if (cached != null) {
+                    return cached;
+                }
             }
             Guard result;
-            if (isPure(left) && isPure(right)) {
-                result = guard(decision(left).or(decision(right), symbols), Expression.TRUE);
+            Decision leftDecision = decision(left);
+            Decision rightDecision = decision(right);
+            if (left.residual().equals(right.residual())) {
+                result = guard(leftDecision.or(rightDecision, symbols), left.residual());
+            } else if (leftDecision.equals(rightDecision)) {
+                result = guard(leftDecision, compact(left.residual().or(right.residual())));
+            } else if (isPure(left) && isPure(right)) {
+                result = guard(leftDecision.or(rightDecision, symbols), Expression.TRUE);
             } else {
-                result = residualGuard(rawExpression(left).or(rawExpression(right)).reduce());
+                result = residualGuard(compact(rawExpression(left).or(rawExpression(right))));
             }
-            rememberOr(left, right, result);
+            if (cacheable && cacheable(result)) {
+                rememberOr(left, right, result);
+            }
             return result;
         }
 
@@ -977,7 +994,7 @@ final class Domain {
             if (isPure(left) && isPure(right)) {
                 return decision(left).subtract(decision(right), symbols).isFalse();
             }
-            return rawExpression(left).equals(rawExpression(right));
+            return equivalentExpressions(rawExpression(left), rawExpression(right));
         }
 
         boolean equivalent(Guard left, Guard right) {
@@ -987,7 +1004,7 @@ final class Domain {
             if (isPure(left) && isPure(right)) {
                 return decision(left).equals(decision(right));
             }
-            return rawExpression(left).equals(rawExpression(right));
+            return equivalentExpressions(rawExpression(left), rawExpression(right));
         }
 
         Guard eq(int symbolId, String value) {
@@ -1049,7 +1066,7 @@ final class Domain {
             if (residual == Expression.TRUE) {
                 return supported;
             }
-            return supported.and(residual).reduce();
+            return supported.and(residual);
         }
 
         private Symbol guardableScalar(int symbolId) {
@@ -1068,7 +1085,7 @@ final class Domain {
         }
 
         private Guard guard(Decision decision, Expression residual) {
-            Expression normalizedResidual = residual.reduce();
+            Expression normalizedResidual = residual.foldConstants();
             if (decision.isFalse() || normalizedResidual == Expression.FALSE) {
                 return falseGuard();
             }
@@ -1079,8 +1096,8 @@ final class Domain {
             return new Guard(id, normalizedResidual);
         }
 
-        private Guard residualGuard(Expression expression) {
-            return guard(Decision.TRUE, expression.reduce());
+        Guard residualGuard(Expression expression) {
+            return guard(Decision.TRUE, expression);
         }
 
         private Guard cachedOr(Guard left, Guard right) {
@@ -1134,7 +1151,7 @@ final class Domain {
             if (guard.residual() == Expression.TRUE) {
                 return supported;
             }
-            return supported.and(guard.residual()).reduce();
+            return supported.and(guard.residual());
         }
 
         private static Expression negate(Expression expression) {
@@ -1144,7 +1161,29 @@ final class Domain {
             if (expression == Expression.FALSE) {
                 return Expression.TRUE;
             }
-            return Expression.create("!(" + expression.literal() + ")").reduce();
+            return Expression.create("!(" + expression.literal() + ")");
+        }
+
+        private static boolean equivalentExpressions(Expression left, Expression right) {
+            return left.equals(right) || left.reduce().equals(right.reduce());
+        }
+
+        private static Expression compact(Expression expression) {
+            if (expression == Expression.TRUE || expression == Expression.FALSE) {
+                return expression;
+            }
+            if (expression.tokens().size() > COMPACT_MAX_TOKENS
+                    || expression.variables().size() > COMPACT_MAX_VARIABLES) {
+                return expression.foldConstants();
+            }
+            return expression.reduce();
+        }
+
+        private static boolean cacheable(Guard guard) {
+            return guard.residual() == Expression.TRUE
+                    || guard.residual() == Expression.FALSE
+                    || guard.residual().tokens().size() <= COMPACT_MAX_TOKENS
+                    && guard.residual().variables().size() <= COMPACT_MAX_VARIABLES;
         }
     }
 
@@ -1290,7 +1329,7 @@ final class Domain {
             for (DecisionShape shape : shapes) {
                 expression = expression.or(shape.toExpression(keyResolver, symbols));
             }
-            return expression.reduce();
+            return expression;
         }
 
         @Override
@@ -1452,7 +1491,7 @@ final class Domain {
             for (Map.Entry<Integer, MembershipShape> entry : memberships.entrySet()) {
                 expression = expression.and(entry.getValue().toExpression(keyResolver.apply(entry.getKey())));
             }
-            return expression.reduce();
+            return expression;
         }
 
         String literal() {
@@ -1562,6 +1601,9 @@ final class Domain {
                 }
             }
             Set<String> domainValues = scalarValues(spec);
+            if (allowed.equals(domainValues)) {
+                return Expression.TRUE;
+            }
             Set<String> excluded = new TreeSet<>(domainValues);
             excluded.removeAll(allowed);
             if (excluded.size() == 1) {
@@ -1571,7 +1613,7 @@ final class Domain {
             for (String value : allowed) {
                 expression = expression.or(Expression.create("${" + key + "} == '" + value + "'"));
             }
-            return expression.reduce();
+            return expression;
         }
 
         @Override
@@ -1594,7 +1636,7 @@ final class Domain {
         private MembershipShape(Set<String> required, Set<String> forbidden) {
             Set<String> nextRequired = new TreeSet<>(required);
             Set<String> nextForbidden = new TreeSet<>(forbidden);
-            if (!disjoint(nextRequired, nextForbidden)) {
+            if (Lists.intersects(nextRequired, nextForbidden)) {
                 throw new IllegalArgumentException("Membership required and forbidden items must be disjoint");
             }
             this.required = Set.copyOf(nextRequired);
@@ -1614,7 +1656,7 @@ final class Domain {
             nextRequired.addAll(other.required);
             Set<String> nextForbidden = new TreeSet<>(forbidden);
             nextForbidden.addAll(other.forbidden);
-            if (!disjoint(nextRequired, nextForbidden)) {
+            if (Lists.intersects(nextRequired, nextForbidden)) {
                 return null;
             }
             return new MembershipShape(nextRequired, nextForbidden);
@@ -1644,7 +1686,7 @@ final class Domain {
                         + item
                         + "')"));
             }
-            return expression.reduce();
+            return expression;
         }
 
         @Override
@@ -1670,14 +1712,5 @@ final class Domain {
             this.outside = outside;
             this.overlap = overlap;
         }
-    }
-
-    private static boolean disjoint(Set<String> left, Set<String> right) {
-        for (String value : left) {
-            if (right.contains(value)) {
-                return false;
-            }
-        }
-        return true;
     }
 }

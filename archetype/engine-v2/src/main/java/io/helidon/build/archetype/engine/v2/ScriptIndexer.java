@@ -27,10 +27,10 @@ import io.helidon.build.archetype.engine.v2.Context.Scope;
 import io.helidon.build.archetype.engine.v2.Value.Type;
 
 final class ScriptIndexer implements Node.Visitor {
-    final Map<String, Set<Node>> declaredValues = new HashMap<>();
-    final Map<String, Set<Node>> definedRefs = new HashMap<>();
-    final Map<String, Type> refTypes = new HashMap<>();
-    final Set<String> textInputRefs = new HashSet<>();
+    private final Map<String, Set<Node>> declaredValues = new HashMap<>();
+    private final Map<String, Set<Node>> definedRefs = new HashMap<>();
+    private final Map<String, Type> refTypes = new HashMap<>();
+    private final Set<String> textInputRefs = new HashSet<>();
 
     private final Scope rootScope;
     private final Deque<Scope> scopes = new ArrayDeque<>();
@@ -44,6 +44,22 @@ final class ScriptIndexer implements Node.Visitor {
         scopes.push(rootScope);
         node.visit(this);
         scopes.pop();
+    }
+
+    Set<Node> declaredValues(String key) {
+        return declaredValues.getOrDefault(key, Set.of());
+    }
+
+    Set<Node> definedRefs(String key) {
+        return definedRefs.getOrDefault(key, Set.of());
+    }
+
+    Type refType(String key) {
+        return refTypes.getOrDefault(key, Type.EMPTY);
+    }
+
+    boolean textInputRef(String key) {
+        return textInputRefs.contains(key);
     }
 
     @Override

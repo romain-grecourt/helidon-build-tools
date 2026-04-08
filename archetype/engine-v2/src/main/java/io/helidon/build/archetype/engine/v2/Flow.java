@@ -1201,7 +1201,7 @@ final class Flow {
         }
 
         private Guard residualGuard(Expression expression) {
-            return new Guard(guards.trueGuard().id(), expression.reduce());
+            return guards.residualGuard(expression);
         }
 
         private Set<String> containsValues(Value<?> value) {
@@ -1737,7 +1737,7 @@ final class Flow {
         ConditionValue and(ConditionValue right, ConditionValue left) {
             Guard leftGuard = left.asGuard(guards);
             Guard rightGuard = right.asGuard(guards);
-            Expression expression = combine(left.expression, "&&", right.expression);
+            Expression expression = left.expression.and(right.expression);
             return leftGuard != null && rightGuard != null
                     ? ConditionValue.guard(guards.and(leftGuard, rightGuard), expression)
                     : ConditionValue.expression(expression);
@@ -1746,7 +1746,7 @@ final class Flow {
         ConditionValue or(ConditionValue right, ConditionValue left) {
             Guard leftGuard = left.asGuard(guards);
             Guard rightGuard = right.asGuard(guards);
-            Expression expression = combine(left.expression, "||", right.expression);
+            Expression expression = left.expression.or(right.expression);
             return leftGuard != null && rightGuard != null
                     ? ConditionValue.guard(guards.or(leftGuard, rightGuard), expression)
                     : ConditionValue.expression(expression);
@@ -1825,7 +1825,7 @@ final class Flow {
         }
 
         Guard residual(Expression expression) {
-            return new Guard(guards.trueGuard().id(), expression.reduce());
+            return guards.residualGuard(expression);
         }
 
         Symbol findSymbol(String name) {
@@ -1834,7 +1834,7 @@ final class Flow {
         }
 
         static Expression combine(Expression left, String operator, Expression right) {
-            return Expression.create("(" + left.literal() + ") " + operator + " (" + right.literal() + ")").reduce();
+            return Expression.create("(" + left.literal() + ") " + operator + " (" + right.literal() + ")");
         }
 
         static Expression negate(Expression expression) {
@@ -1844,7 +1844,7 @@ final class Flow {
             if (expression == Expression.FALSE) {
                 return Expression.TRUE;
             }
-            return Expression.create("!(" + expression.literal() + ")").reduce();
+            return Expression.create("!(" + expression.literal() + ")");
         }
     }
 

@@ -780,7 +780,7 @@ public final class VariationEngine {
 
         Row(BitSet bits, Expression expr) {
             this.bits = bits;
-            this.expr = expr.reduce();
+            this.expr = expr.foldConstants();
         }
 
         @Override
@@ -813,7 +813,7 @@ public final class VariationEngine {
         }
 
         void addRow(BitSet bits, Expression expr) {
-            expr = expr.reduce();
+            expr = expr.foldConstants();
             if (expr != Expression.FALSE) {
                 rows.add(new Row(bits, expr));
             }
