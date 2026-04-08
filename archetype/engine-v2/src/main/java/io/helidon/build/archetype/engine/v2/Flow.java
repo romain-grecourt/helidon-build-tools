@@ -42,23 +42,52 @@ import io.helidon.build.archetype.engine.v2.Node.Kind;
 import static java.util.Objects.requireNonNull;
 
 final class Flow {
+    private final Scope scope;
+    private Ir ir;
+    private Analysis analysis;
+    private Model model;
 
-    private Flow() {
+    Flow(Scope scope) {
+        this.scope = requireNonNull(scope, "scope is null");
     }
 
-    static Ir ir(Node root, Scope rootScope) {
-        return new Lowerer(requireNonNull(rootScope, "rootScope is null")).lower(requireNonNull(root, "root is null"));
+    void process(Node root) {
+        requireNonNull(root, "root is null");
+        ir = lower(root);
+        analysis = analyze(ir);
+        model = project(root);
     }
 
-    static Analysis analyze(Ir ir) {
-        return new Analyzer(requireNonNull(ir, "ir is null")).analyze();
+    void process(Ir ir, Node root) {
+        this.ir = requireNonNull(ir, "ir is null");
+        analysis = analyze(ir);
+        model = project(root);
     }
 
-    static Model model(Ir ir, Analysis analysis, Node root, Scope rootScope) {
-        return new Projector(requireNonNull(ir, "ir is null"),
-                requireNonNull(analysis, "analysis is null"),
-                requireNonNull(root, "root is null"),
-                requireNonNull(rootScope, "rootScope is null")).project();
+    Ir ir() {
+        return ir;
+    }
+
+    Analysis analysis() {
+        return analysis;
+    }
+
+    Model model() {
+        return model;
+    }
+
+    private Ir lower(Node root) {
+        return new Lowerer(scope).lower(root);
+    }
+
+    private Analysis analyze(Ir ir) {
+        requireNonNull(ir, "ir is null");
+        return new Analyzer(ir).analyze();
+    }
+
+    private Model project(Node root) {
+        requireNonNull(root, "root is null");
+        return new Projector(ir, analysis, root, scope).project();
     }
 
     static final class Ir {
@@ -377,7 +406,11 @@ final class Flow {
         private final List<State> afterByOp;
         private final List<Use> usesById;
 
-        Analysis(List<State> entryByBlock, List<State> exitByBlock, List<State> beforeByOp, List<State> afterByOp, List<Use> usesById) {
+        Analysis(List<State> entryByBlock,
+                 List<State> exitByBlock,
+                 List<State> beforeByOp,
+                 List<State> afterByOp,
+                 List<Use> usesById) {
             this.entryByBlock = List.copyOf(entryByBlock);
             this.exitByBlock = List.copyOf(exitByBlock);
             this.beforeByOp = List.copyOf(beforeByOp);
@@ -409,17 +442,15 @@ final class Flow {
     static final class Model {
         private final Ir ir;
         private final Analysis analysis;
-        private final Scope rootScope;
+        private final Scope scope;
         private final Map<Node, NodeFacts> nodes;
         private final List<SymbolInfo> symbols;
 
-        Model(Ir ir, Analysis analysis, Scope rootScope, Map<Node, NodeFacts> nodes, List<SymbolInfo> symbols) {
+        Model(Ir ir, Analysis analysis, Scope scope, Map<Node, NodeFacts> nodes, List<SymbolInfo> symbols) {
             this.ir = requireNonNull(ir, "ir is null");
             this.analysis = requireNonNull(analysis, "analysis is null");
-            this.rootScope = requireNonNull(rootScope, "rootScope is null");
-            Map<Node, NodeFacts> copy = new IdentityHashMap<>();
-            copy.putAll(nodes);
-            this.nodes = Collections.unmodifiableMap(copy);
+            this.scope = requireNonNull(scope, "scope is null");
+            this.nodes = Collections.unmodifiableMap(new IdentityHashMap<>(nodes));
             this.symbols = List.copyOf(symbols);
         }
 
@@ -452,15 +483,15 @@ final class Flow {
         }
 
         String key(Node node) {
-            return node == null ? rootScope.key() : node(node).key();
+            return node == null ? scope.key() : node(node).key();
         }
 
         Scope scope(Node node) {
             if (node == null) {
-                return rootScope;
+                return scope;
             }
             String key = key(node);
-            return key.isEmpty() ? rootScope : rootScope.get("~" + key);
+            return key.isEmpty() ? scope : scope.get("~" + key);
         }
 
         Guard renderGuard(Node node) {
@@ -651,17 +682,17 @@ final class Flow {
         private final Ir ir;
         private final Analysis analysis;
         private final Node root;
-        private final Scope rootScope;
+        private final Scope scope;
         private final Guards guards;
         private final Map<Node, List<Integer>> opsByNode = new IdentityHashMap<>();
         private final Map<Node, BranchInfo> branchesByNode = new IdentityHashMap<>();
         private final List<SymbolInfoBuilder> symbolInfos = new ArrayList<>();
 
-        private Projector(Ir ir, Analysis analysis, Node root, Scope rootScope) {
+        private Projector(Ir ir, Analysis analysis, Node root, Scope scope) {
             this.ir = ir;
             this.analysis = analysis;
             this.root = root;
-            this.rootScope = rootScope;
+            this.scope = scope;
             this.guards = ir.guards();
             for (Symbol symbol : ir.symbols().symbols()) {
                 symbolInfos.add(new SymbolInfoBuilder(symbol));
@@ -672,12 +703,12 @@ final class Flow {
             indexAnchors();
             scanSymbols();
             Map<Node, NodeFacts> nodes = new IdentityHashMap<>();
-            projectNode(root, rootScope, analysis.entryByBlock().get(0), nodes);
+            projectNode(root, scope, analysis.entryByBlock().get(0), nodes);
             List<SymbolInfo> builtSymbols = new ArrayList<>(symbolInfos.size());
             for (SymbolInfoBuilder builder : symbolInfos) {
                 builtSymbols.add(builder.build(guards));
             }
-            return new Model(ir, analysis, rootScope, nodes, builtSymbols);
+            return new Model(ir, analysis, scope, nodes, builtSymbols);
         }
 
         private void indexAnchors() {
@@ -796,7 +827,9 @@ final class Flow {
                     current.path());
             BranchInfo branch = branchesByNode.get(node);
             State branchEntry = branch == null ? null : constrainPath(analysis.entryByBlock().get(branch.trueId), current.path());
-            Guard activeGuard = branch != null ? activeGuard(node, nodeScope, branchEntry) : activeGuard(node, nodeScope, afterOps);
+            Guard activeGuard = branch != null
+                    ? activeGuard(node, nodeScope, branchEntry)
+                    : activeGuard(node, nodeScope, afterOps);
             nodes.put(node, new NodeFacts(before, nodeKey(node, scope, childScope), before.path(), activeGuard));
 
             Scope descendantScope = node.kind().isInput() ? childScope : scope;
@@ -863,12 +896,12 @@ final class Flow {
                     switch (input.kind()) {
                         case INPUT_ENUM:
                             return translatedCondition(Expression.create("${" + nodeScope.key() + "} == '"
-                                            + node.value().getString() + "'"),
+                                                                         + node.value().getString() + "'"),
                                     nodeScope,
                                     state);
                         case INPUT_LIST:
                             return translatedCondition(Expression.create("${" + nodeScope.key() + "} contains '"
-                                            + node.value().getString() + "'"),
+                                                                         + node.value().getString() + "'"),
                                     nodeScope,
                                     state);
                         default:
@@ -1066,7 +1099,7 @@ final class Flow {
         }
 
         private Guard rawEquality(String key, Value<?> value) {
-            String scalar = scalarLiteral(value);
+            String scalar = Value.scalarLiteral(value);
             if (scalar == null) {
                 return null;
             }
@@ -1183,18 +1216,6 @@ final class Flow {
             }
         }
 
-        private String scalarLiteral(Value<?> value) {
-            switch (value.type()) {
-                case STRING:
-                case DYNAMIC:
-                    return value.getString();
-                case BOOLEAN:
-                    return String.valueOf(value.getBoolean());
-                default:
-                    return null;
-            }
-        }
-
         private Scope childScope(Scope scope, Node node) {
             switch (node.kind()) {
                 case INPUT_BOOLEAN:
@@ -1267,7 +1288,7 @@ final class Flow {
     }
 
     private static final class Lowerer {
-        private final Scope rootScope;
+        private final Scope scope;
         private final Table.Builder symbolBuilder = Table.builder();
         private final Map<String, SymbolSeed> symbolSeeds = new LinkedHashMap<>();
         private final Map<String, SymbolSeed> declaredInputSymbols = new LinkedHashMap<>();
@@ -1277,13 +1298,13 @@ final class Flow {
         private Guards guards;
         private int nextRefId;
 
-        Lowerer(Scope rootScope) {
-            this.rootScope = rootScope;
+        Lowerer(Scope scope) {
+            this.scope = scope;
         }
 
         Ir lower(Node root) {
-            collectDeclaredInputs(root, rootScope);
-            collectSymbols(root, rootScope);
+            collectDeclaredInputs(root, scope);
+            collectSymbols(root, scope);
             for (SymbolSeed seed : symbolSeeds.values()) {
                 symbolBuilder.define(seed.name, seed.spec, seed.guardable, seed.tainted);
             }
@@ -1291,14 +1312,14 @@ final class Flow {
             guards = new Guards(symbols);
 
             int entryBlock = newBlock();
-            int exitBlock = lowerChildren(root.children(), entryBlock, rootScope);
-            terminateIfMissing(exitBlock, Terminator.ret(anchor(root, rootScope)));
+            int exitBlock = lowerChildren(root.children(), entryBlock, scope);
+            terminateIfMissing(exitBlock, Terminator.ret(anchor(root, scope)));
 
             List<Block> loweredBlocks = new ArrayList<>(blocks.size());
             for (BlockBuilder block : blocks) {
                 Terminator terminator = block.terminator;
                 if (terminator == null) {
-                    terminator = Terminator.unreachable(anchor(root, rootScope));
+                    terminator = Terminator.unreachable(anchor(root, scope));
                 }
                 loweredBlocks.add(new Block(block.id, block.ops, terminator));
             }
@@ -1313,9 +1334,6 @@ final class Flow {
                     rememberDeclaredInput(childScope.key(), new Spec.Boolean(), true, false);
                     break;
                 case INPUT_ENUM:
-                    childScope = scope.getOrCreate(node);
-                    rememberDeclaredInput(childScope.key(), inputSpec(node), !optionValues(node).isEmpty(), false);
-                    break;
                 case INPUT_LIST:
                     childScope = scope.getOrCreate(node);
                     rememberDeclaredInput(childScope.key(), inputSpec(node), !optionValues(node).isEmpty(), false);
@@ -1340,9 +1358,6 @@ final class Flow {
                     rememberSymbol(childScope.key(), new Spec.Boolean(), true, false);
                     break;
                 case INPUT_ENUM:
-                    childScope = scope.getOrCreate(node);
-                    rememberSymbol(childScope.key(), inputSpec(node), !optionValues(node).isEmpty(), false);
-                    break;
                 case INPUT_LIST:
                     childScope = scope.getOrCreate(node);
                     rememberSymbol(childScope.key(), inputSpec(node), !optionValues(node).isEmpty(), false);
@@ -1442,7 +1457,6 @@ final class Flow {
                             inputScope);
                 case INPUT_ENUM:
                 case INPUT_LIST:
-                    return lowerChildren(node.children(), blockId, inputScope);
                 default:
                     return lowerChildren(node.children(), blockId, inputScope);
             }

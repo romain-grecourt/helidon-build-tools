@@ -190,7 +190,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         }
 
         Node sourceNode = compiler.sourceNode();
-        Collection<Entry> variations = new ArrayList<>();
+        List<Entry> variations = new ArrayList<>();
         sourceNode.visit(new VisitorImpl(
                 compiler,
                 sourceNode,

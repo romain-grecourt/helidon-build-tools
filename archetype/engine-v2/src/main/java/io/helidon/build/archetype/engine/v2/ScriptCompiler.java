@@ -196,21 +196,17 @@ public class ScriptCompiler {
     static final String EXPR_TEXT_INPUT_CONTROL_FLOW = "Expression depends on a user text input";
 
     private boolean initialized;
-    private final Map<String, Set<Node>> declaredValues = new HashMap<>();
     private final Map<Node, Map<String, Fact>> factCache = new IdentityHashMap<>();
     private final Map<Node, Guard> renderGuardsByNode = new IdentityHashMap<>();
     private final Map<Node, Guard> activeGuardsByNode = new IdentityHashMap<>();
-    private final Map<String, Set<Node>> definedRefs = new HashMap<>();
-    private final Map<String, Type> refTypes = new HashMap<>();
-    private final Set<String> textInputRefs = new HashSet<>();
     private final Map<String, Boolean> textInputProvenance = new HashMap<>();
-    private final Map<Node, Path> workDirs = new HashMap<>();
     private final Set<String> errors = new LinkedHashSet<>();
-    private Flow.Ir flowIr;
-    private Flow.Analysis flowAnalysis;
-    private Flow.Model flowModel;
-    private final Node sourceNode;
+    private final Script.Source source;
     private final Context ctx = new Context();
+    private final ScriptInliner inliner;
+    private final ScriptIndexer indexer;
+    private final Flow flow;
+    private Node sourceNode;
     private List<Option> options;
 
     /**
@@ -221,7 +217,10 @@ public class ScriptCompiler {
      */
     public ScriptCompiler(Script.Source source, Path cwd) {
         this.ctx.pushCwd(requireNonNull(cwd, "cwd is null"));
-        this.sourceNode = Script.load(requireNonNull(source, "source is null"), false);
+        this.source = requireNonNull(source, "source is null");
+        this.flow = new Flow(ctx.scope());
+        this.inliner = new ScriptInliner(ctx);
+        this.indexer = new ScriptIndexer(rootScope());
     }
 
     /**
@@ -292,69 +291,25 @@ public class ScriptCompiler {
             return;
         }
         initialized = true;
-        new InlineInvoker().invoke(sourceNode); // inline call sites
-        indexSourceTree();
-        flowIr = Flow.ir(sourceNode, rootScope());
-        flowAnalysis = Flow.analyze(flowIr);
-        flowModel = Flow.model(flowIr, flowAnalysis, sourceNode, rootScope());
+        sourceNode = inliner.inline(source);
+        indexer.index(sourceNode);
+        flow.process(sourceNode);
         projectSourceGuards();
-    }
-
-    private void indexSourceTree() {
-        indexNode(sourceNode, rootScope(), 0);
-    }
-
-    private int indexNode(Node node, Scope currentScope, int nextId) {
-        node.id(nextId++);
-        Scope childScope = currentScope;
-        switch (node.kind()) {
-            case INPUT_BOOLEAN:
-            case INPUT_ENUM:
-            case INPUT_LIST:
-            case INPUT_TEXT:
-                childScope = currentScope.getOrCreate(node);
-                definedRefs.computeIfAbsent(childScope.key(), k -> new LinkedHashSet<>()).add(node);
-                refTypes.putIfAbsent(childScope.key(), node.kind().valueType());
-                if (node.kind() == Kind.INPUT_TEXT) {
-                    textInputRefs.add(childScope.key());
-                }
-                break;
-            case PRESET_BOOLEAN:
-            case PRESET_ENUM:
-            case PRESET_LIST:
-            case PRESET_TEXT:
-            case VARIABLE_BOOLEAN:
-            case VARIABLE_ENUM:
-            case VARIABLE_LIST:
-            case VARIABLE_TEXT:
-                String key = currentScope.getOrCreate("~" + Context.Key.normalize(node.attribute("path").getString())).key();
-                definedRefs.computeIfAbsent(key, k -> new LinkedHashSet<>()).add(node);
-                declaredValues.computeIfAbsent(key, k -> new LinkedHashSet<>()).add(node);
-                refTypes.putIfAbsent(key, node.kind().valueType());
-                break;
-            case INPUT_OPTION:
-            default:
-                break;
-        }
-        for (Node child : node.children()) {
-            nextId = indexNode(child, childScope, nextId);
-        }
-        return nextId;
     }
 
     Flow.Ir flowIr() {
         init();
-        return flowIr;
+        return flow.ir();
     }
 
     Flow.Analysis flowAnalysis() {
         init();
-        return flowAnalysis;
+        return flow.analysis();
     }
 
     Flow.Model flowModel() {
         init();
-        return flowModel;
+        return flow.model();
     }
 
     private void projectSourceGuards() {
@@ -450,8 +405,8 @@ public class ScriptCompiler {
             if (inactiveInput(node)) {
                 continue;
             }
-            String key = flowModel.key(node);
-            Value<?> value = flowModel.declaredValue(node, key);
+            String key = flow.model().key(node);
+            Value<?> value = flow.model().declaredValue(node, key);
             if (value.type() == Type.EMPTY || value.type() == Type.BOOLEAN) {
                 continue;
             }
@@ -470,7 +425,7 @@ public class ScriptCompiler {
     private void validatePresets() {
         Map<String, List<Node>> inputs = new HashMap<>();
         for (Node node : sourceNode.traverse(Kind::isInput)) {
-            inputs.computeIfAbsent(flowModel.key(node), k -> new ArrayList<>()).add(node);
+            inputs.computeIfAbsent(flow.model().key(node), k -> new ArrayList<>()).add(node);
         }
         for (Node node : sourceNode.traverse(Kind::isPreset)) {
             String path = node.attribute("path").getString();
@@ -504,7 +459,7 @@ public class ScriptCompiler {
             if (inactiveInput(node)) {
                 continue;
             }
-            String scopeId = flowModel.key(node);
+            String scopeId = flow.model().key(node);
             Kind expected = kinds.computeIfAbsent(scopeId, k -> node.kind());
             if (expected != node.kind()) {
                 errors.add(String.format("%s %s: '%s'",
@@ -617,12 +572,12 @@ public class ScriptCompiler {
     }
 
     private Value<?> validationValue(Scope scope, String variable) {
-        Type type = refTypes.getOrDefault(scope.key(variable), Type.EMPTY);
+        Type type = indexer.refTypes.getOrDefault(scope.key(variable), Type.EMPTY);
         return Value.typed(type);
     }
 
     private boolean hasPriorDefinition(Node node, String key) {
-        for (Node definition : definedRefs.getOrDefault(key, Set.of())) {
+        for (Node definition : indexer.definedRefs.getOrDefault(key, Set.of())) {
             if (node.id() <= definition.id()) {
                 continue;
             }
@@ -652,9 +607,9 @@ public class ScriptCompiler {
         if (!visitingRefs.add(key)) {
             return false;
         }
-        boolean result = textInputRefs.contains(key);
+        boolean result = indexer.textInputRefs.contains(key);
         if (!result) {
-            for (Node node : declaredValues.getOrDefault(key, Set.of())) {
+            for (Node node : indexer.declaredValues.getOrDefault(key, Set.of())) {
                 if (attached(node) && declarationDependsOnTextInput(node, visitingRefs)) {
                     result = true;
                     break;
@@ -830,27 +785,27 @@ public class ScriptCompiler {
     }
 
     Scope scope(Node node) {
-        return flowModel.scope(node);
+        return flow.model().scope(node);
     }
 
     private Guards guards() {
-        return flowModel.guards();
+        return flow.model().guards();
     }
 
     private Guard trueGuard() {
-        return flowModel.trueGuard();
+        return flow.model().trueGuard();
     }
 
     private Guard falseGuard() {
-        return flowModel.falseGuard();
+        return flow.model().falseGuard();
     }
 
     private Guard renderGuard(Node node) {
-        return node == null ? trueGuard() : flowModel.renderGuard(node);
+        return node == null ? trueGuard() : flow.model().renderGuard(node);
     }
 
     private Guard activeGuard(Node node) {
-        return node == null ? trueGuard() : flowModel.activeGuard(node);
+        return node == null ? trueGuard() : flow.model().activeGuard(node);
     }
 
     private Expression guardExpression(Guard guard) {
@@ -858,7 +813,7 @@ public class ScriptCompiler {
     }
 
     private Expression guardExpression(Guard guard, Scope scope) {
-        return flowModel.expression(guard, scope);
+        return flow.model().expression(guard, scope);
     }
 
     private Guard residualGuard(Expression expr) {
@@ -914,7 +869,7 @@ public class ScriptCompiler {
                 return node.expression();
             case INPUT_BOOLEAN:
             case INPUT_OPTION:
-                return expressionContribution(node, n -> flowModel.key(n));
+                return expressionContribution(node, n -> flow.model().key(n));
             default:
                 return Expression.TRUE;
         }
@@ -925,12 +880,12 @@ public class ScriptCompiler {
     }
 
     private Map<String, Fact> facts0(Node node) {
-        Flow.NodeFacts facts = flowModel.node(node);
+        Flow.NodeFacts facts = flow.model().node(node);
         if (facts == null || facts.before().env().isEmpty()) {
             return Map.of();
         }
         Map<String, Fact> byName = new LinkedHashMap<>();
-        facts.before().env().forEach((symbolId, fact) -> byName.put(flowModel.symbols().symbol(symbolId).name(), fact));
+        facts.before().env().forEach((symbolId, fact) -> byName.put(flow.model().symbols().symbol(symbolId).name(), fact));
         return Map.copyOf(byName);
     }
 
@@ -943,11 +898,11 @@ public class ScriptCompiler {
     }
 
     private Flow.SymbolInfo symbolInfo(String key) {
-        Flow.SymbolInfo info = flowModel.symbol(key);
+        Flow.SymbolInfo info = flow.model().symbol(key);
         if (info != null || key.startsWith("~")) {
             return info;
         }
-        return flowModel.symbol("~" + key);
+        return flow.model().symbol("~" + key);
     }
 
     private boolean attached(Node node) {
@@ -994,7 +949,7 @@ public class ScriptCompiler {
         if (node.kind() != Kind.INPUT_BOOLEAN) {
             return false;
         }
-        Value<?> exact = flowModel.declaredValue(node, flowModel.key(node));
+        Value<?> exact = flow.model().declaredValue(node, flow.model().key(node));
         if (exact.type() != Type.BOOLEAN || exact.getBoolean()) {
             return false;
         }
@@ -2061,90 +2016,6 @@ public class ScriptCompiler {
         }
     }
 
-    private final class InlineInvoker extends ScriptInvoker {
-        private final Deque<Node> callStack = new ArrayDeque<>();
-        private final Map<String, Node> methods = new HashMap<>();
-
-        InlineInvoker() {
-            super(ctx);
-        }
-
-        @Override
-        protected Node load(Script.Loader loader, Script.Source source) {
-            // disable caching to get unique nodes for each invocation
-            return source.readScript(false, Script.Loader.EMPTY);
-        }
-
-        @Override
-        public boolean visit(Node node) {
-            switch (node.kind()) {
-                case CALL:
-                    Script script = node.script();
-                    String method = node.attribute("method").getString();
-                    Node prototype = methods.computeIfAbsent(script.path() + ":" + method, k -> script.methods().get(method));
-                    if (prototype == null) {
-                        throw new IllegalStateException("Method not found: " + method);
-                    }
-                    String hash = md5(node.location());
-                    script.methods().put(hash, prototype.deepCopy().attribute("name", hash));
-                    callStack.push(node.attribute("method", hash));
-                    break;
-                case SOURCE:
-                case EXEC:
-                    if (node.attribute("url").isPresent()) {
-                        // skip url invocation
-                        return false;
-                    }
-                    callStack.push(node);
-                    break;
-                case FILE:
-                case TEMPLATE:
-                case FILES:
-                case TEMPLATES:
-                case OUTPUT:
-                    workDirs.put(node, ctx.cwd());
-                    break;
-                case CONDITION:
-                case VARIABLE_TEXT:
-                case VARIABLE_ENUM:
-                case VARIABLE_BOOLEAN:
-                case VARIABLE_LIST:
-                case PRESET_TEXT:
-                case PRESET_ENUM:
-                case PRESET_BOOLEAN:
-                case PRESET_LIST:
-                    return true;
-                default:
-            }
-            return super.visit(node);
-        }
-
-        @Override
-        public void postVisit(Node node) {
-            switch (node.kind()) {
-                case CALL:
-                    String method = node.attribute("method").getString();
-                    node.script().methods().remove(method);
-                    break;
-                case SOURCE:
-                case EXEC:
-                    if (node.attribute("url").isPresent()) {
-                        // skip url invocation
-                        return;
-                    }
-                    break;
-                case METHOD:
-                case SCRIPT:
-                    if (!callStack.isEmpty()) {
-                        callStack.pop().replace(node.children());
-                    }
-                    break;
-                default:
-            }
-            super.postVisit(node);
-        }
-    }
-
     private class InputVisitor implements Node.Visitor {
         private final Deque<Node> stack = new ArrayDeque<>();
         private final Map<Node, Node> mirrors;
@@ -2179,7 +2050,7 @@ public class ScriptCompiler {
                     // use ~ to be parented at the root context node
                     // to maintain scope.key == scope.internalKey
                     Node preset = process(node, (b, n) -> Nodes.ensureLast(b, Kind.PRESETS).append(n));
-                    preset.attribute("path", "~" + flowModel.key(node));
+                    preset.attribute("path", "~" + flow.model().key(node));
                     stack.push(preset);
                     break;
                 case VARIABLE_BOOLEAN:
@@ -2192,7 +2063,7 @@ public class ScriptCompiler {
                         // use ~ to be parented at the root context node
                         // to maintain scope.key == scope.internalKey
                         Node variable = process(node, (b, n) -> Nodes.ensureLast(b, Kind.VARIABLES).append(n));
-                        variable.attribute("path", "~" + flowModel.key(node));
+                        variable.attribute("path", "~" + flow.model().key(node));
                         stack.push(variable);
                     }
                     break;
@@ -2268,7 +2139,7 @@ public class ScriptCompiler {
                     Map<String, Set<Node>> refs = new LinkedHashMap<>();
                     for (Node step : steps) {
                         for (Node input : step.traverse(Kind::isInput)) {
-                            refs.computeIfAbsent(flowModel.key(mirror(input)), k -> new LinkedHashSet<>()).add(step);
+                            refs.computeIfAbsent(flow.model().key(mirror(input)), k -> new LinkedHashSet<>()).add(step);
                         }
                     }
 
@@ -2445,7 +2316,7 @@ public class ScriptCompiler {
         FileObject resolveFile(Node node) {
             String source = node.attribute("source").getString();
             String target = node.attribute("target").getString();
-            Path path = workDirs.get(node).resolve(source);
+            Path path = inliner.workDir(node).resolve(source);
             String checksum = checksum(path);
             image.blobs.putIfAbsent(checksum, readAllBytes(path));
             List<FileOp> fileOps = List.of(new FileOp(Pattern.quote(checksum), target));
@@ -2477,7 +2348,7 @@ public class ScriptCompiler {
                 }
             }
 
-            Path directory = workDirs.get(node).resolve(node.attribute("directory").getString());
+            Path directory = inliner.workDir(node).resolve(node.attribute("directory").getString());
             for (SourcePath file : SourcePath.scan(directory)) {
 
                 Guard includeReach = includes.isEmpty() ? trueGuard() : falseGuard();
@@ -2606,7 +2477,7 @@ public class ScriptCompiler {
                     parent = parent.parent();
                 }
                 if (parent != null && parent.kind() == Kind.MODEL) {
-                    Path basedir = workDirs.get(node.ancestor(Kind.OUTPUT::equals).orElseThrow());
+                    Path basedir = inliner.workDir(node.ancestor(Kind.OUTPUT::equals).orElseThrow());
                     if (basedir == null) {
                         throw new IllegalStateException("Unresolved cwd");
                     }
@@ -2710,7 +2581,7 @@ public class ScriptCompiler {
             if (isFalse(definition)) {
                 return;
             }
-            String key = flowModel.key(node);
+            String key = flow.model().key(node);
             Flow.SymbolInfo info = symbolInfo(key);
             if (info == null) {
                 return;
@@ -2885,7 +2756,7 @@ public class ScriptCompiler {
                 if (isFalse(missing)) {
                     continue;
                 }
-                Type type = refTypes.getOrDefault(key, Type.EMPTY);
+                Type type = indexer.refTypes.getOrDefault(key, Type.EMPTY);
                 stubs.add(new StubSpec(type, key, missing, base, scope, snapshots));
             }
             return stubs;
@@ -2936,7 +2807,7 @@ public class ScriptCompiler {
                 return null;
             }
             String parentKey = key.substring(0, dot);
-            if (refTypes.getOrDefault(parentKey, Type.EMPTY) != Type.BOOLEAN) {
+            if (indexer.refTypes.getOrDefault(parentKey, Type.EMPTY) != Type.BOOLEAN) {
                 return null;
             }
             Flow.SymbolInfo info = symbolInfo(key);
@@ -3091,7 +2962,7 @@ public class ScriptCompiler {
                 return null;
             }
             String parentKey = key.substring(0, dot);
-            if (refTypes.getOrDefault(parentKey, Type.EMPTY) != Type.BOOLEAN) {
+            if (indexer.refTypes.getOrDefault(parentKey, Type.EMPTY) != Type.BOOLEAN) {
                 return null;
             }
             Expression expr = Expression.create(String.format("!${%s}", scope.key(parentKey)));
@@ -3401,7 +3272,7 @@ public class ScriptCompiler {
 
             Expression condition = Expression.FALSE;
             for (Node parent : parents) {
-                condition = condition.or(flowModel.activationCondition(parent));
+                condition = condition.or(flow.model().activationCondition(parent));
             }
             return simplifyMergedConditionExpression(condition, scope);
         }
@@ -3410,7 +3281,7 @@ public class ScriptCompiler {
             Scope scope = scope(mirror(group.get(0)));
             Guard merged = null;
             for (Node parent : mergedActivationAnchors(group)) {
-                Guard reach = localProjectedReach(flowModel.activationCondition(parent), scope);
+                Guard reach = localProjectedReach(flow.model().activationCondition(parent), scope);
                 if (reach == null) {
                     return null;
                 }

@@ -474,6 +474,26 @@ public interface Value<T> {
     }
 
     /**
+     * Convert the given scalar value to a string literal.
+     *
+     * @param value value
+     * @return scalar string literal, or {@code null} if not scalar
+     */
+    static String scalarLiteral(Value<?> value) {
+        if (value != null) {
+            switch (value.type()) {
+                case DYNAMIC:
+                case STRING:
+                    return value.getString();
+                case BOOLEAN:
+                    return String.valueOf(value.getBoolean());
+                default:
+            }
+        }
+        return null;
+    }
+
+    /**
      * Compare two values.
      *
      * @param v1 value

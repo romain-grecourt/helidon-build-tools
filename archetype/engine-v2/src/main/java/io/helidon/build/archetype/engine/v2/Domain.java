@@ -400,19 +400,11 @@ final class Domain {
                     if (value.type() != io.helidon.build.archetype.engine.v2.Value.Type.LIST) {
                         return false;
                     }
-                    return value.getList().containsAll(required);
+                    return new HashSet<>(value.getList()).containsAll(required);
                 }
 
                 String scalarLiteral() {
-                    switch (value.type()) {
-                        case STRING:
-                        case DYNAMIC:
-                            return value.getString();
-                        case BOOLEAN:
-                            return String.valueOf(value.getBoolean());
-                        default:
-                            return null;
-                    }
+                    return io.helidon.build.archetype.engine.v2.Value.scalarLiteral(value);
                 }
 
                 @Override

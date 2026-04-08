@@ -45,7 +45,9 @@ class FlowTest {
                         Nodes.condition("${features} contains 'rest'",
                                 Nodes.file("src/main/resources/pom.xml", "pom.xml"))));
 
-        Flow.Ir ir = Flow.ir(script, scope);
+        Flow flow = new Flow(scope);
+        flow.process(script);
+        Flow.Ir ir = flow.ir();
 
         assertThat(ir.symbols().size(), is(3));
         assertThat(ir.symbols().symbols().stream().map(Domain.Symbol::name).collect(Collectors.toList()),
@@ -83,7 +85,9 @@ class FlowTest {
 
         Flow.Ir ir = new Flow.Ir(List.of(entry, mp, se, exit), symbols,
                 List.of(declareEnabled, defineMp, defineSe, useFlavor), guards);
-        Flow.Analysis analysis = Flow.analyze(ir);
+        Flow flow = new Flow(new Context().scope());
+        flow.process(ir, anchor.node());
+        Flow.Analysis analysis = flow.analysis();
 
         Flow.State beforeUse = analysis.beforeByOp().get(3);
         Domain.Symbol.Fact fact = beforeUse.env().get(flavor);
@@ -106,8 +110,10 @@ class FlowTest {
                 Nodes.condition("${enabled} && ${flag}",
                         Nodes.step("Go")));
 
-        Flow.Ir ir = Flow.ir(script, scope);
-        Flow.Analysis analysis = Flow.analyze(ir);
+        Flow flow = new Flow(scope);
+        flow.process(script);
+        Flow.Ir ir = flow.ir();
+        Flow.Analysis analysis = flow.analysis();
 
         assertThat(ir.ops().stream().filter(op -> op.kind() == Flow.Op.Kind.DEFINE_VALUE).count(), is(1L));
         assertThat(ir.ops().stream().filter(op -> op.kind() == Flow.Op.Kind.RECORD_USE).count(), is(2L));
@@ -130,8 +136,10 @@ class FlowTest {
                                 Nodes.inputOption("se", "se",
                                         Nodes.variables(Nodes.variableBoolean("se-flag", true))))));
 
-        Flow.Ir ir = Flow.ir(script, scope);
-        Flow.Analysis analysis = Flow.analyze(ir);
+        Flow flow = new Flow(scope);
+        flow.process(script);
+        Flow.Ir ir = flow.ir();
+        Flow.Analysis analysis = flow.analysis();
         Map<String, Domain.Guard> pathsBySymbol = ir.ops().stream()
                 .filter(op -> op.kind() == Flow.Op.Kind.DEFINE_VALUE)
                 .collect(Collectors.toMap(
