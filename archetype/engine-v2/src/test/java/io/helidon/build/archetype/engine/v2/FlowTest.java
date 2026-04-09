@@ -195,6 +195,23 @@ class FlowTest {
     }
 
     @Test
+    void testIrLoweringHandlesMembershipSymbolContainsLiteralList() {
+        Context.Scope scope = new Context().scope();
+        Node script = load("flow/literal-list-contains-membership.xml");
+
+        Flow flow = new Flow(scope);
+        flow.process(script);
+        Flow.Model model = flow.model();
+        int features = model.findSymbolId("features");
+        Node required = findCondition(script, "${features} contains ['grpc','rest']");
+        Node impossible = findCondition(script, "${features} contains ['rest','websocket']");
+        Domain.Guard expected = model.guards().containsAll(features, Set.of("grpc", "rest"));
+
+        assertThat(model.guards().equivalent(model.activeGuard(required), expected), is(true));
+        assertThat(model.guards().equivalent(model.activeGuard(impossible), model.falseGuard()), is(true));
+    }
+
+    @Test
     void testIrLoweringKeepsUnsupportedLiteralListContainsResidual() {
         Context.Scope scope = new Context().scope();
         Node script = load("flow/literal-list-contains-unsupported.xml");

@@ -118,6 +118,39 @@ class DomainTest {
         assertThat(guards.or(enabledMp, enabledSe), is(enabledGuard));
     }
 
+    @Test
+    void testGuardAndNarrowsMergedScalarChoice() {
+        Domain.Symbol.Table.Builder builder = Domain.Symbol.Table.builder();
+        int flavor = builder.define("flavor", new Domain.Spec.Choice(Set.of("mp", "nima", "se")), true, false);
+        Domain.Symbol.Table symbols = builder.build();
+        Domain.Guards guards = new Domain.Guards(symbols);
+        Context.Scope scope = new Context().scope();
+
+        Domain.Guard mpGuard = guards.eq(flavor, "mp");
+        Domain.Guard seGuard = guards.eq(flavor, "se");
+        Domain.Guard mpOrSe = guards.or(mpGuard, seGuard);
+
+        assertThat(guards.toExpression(mpOrSe, scope).literal(), is("${flavor} != 'nima'"));
+        assertThat(guards.equivalent(guards.and(mpOrSe, mpGuard), mpGuard), is(true));
+    }
+
+    @Test
+    void testGuardContainsAllKeepsBroaderMembershipRequirement() {
+        Domain.Symbol.Table.Builder builder = Domain.Symbol.Table.builder();
+        int features = builder.define("features", new Domain.Spec.Membership(Set.of("grpc", "metrics", "rest")), true, false);
+        Domain.Symbol.Table symbols = builder.build();
+        Domain.Guards guards = new Domain.Guards(symbols);
+
+        Domain.Guard restGuard = guards.contains(features, "rest");
+        Domain.Guard grpcGuard = guards.contains(features, "grpc");
+        Domain.Guard restAndGrpc = guards.and(restGuard, grpcGuard);
+        Domain.Guard bulk = guards.containsAll(features, Set.of("grpc", "rest"));
+
+        assertThat(guards.equivalent(restAndGrpc, bulk), is(true));
+        assertThat(guards.implies(bulk, restGuard), is(true));
+        assertThat(guards.or(bulk, restGuard), is(restGuard));
+    }
+
     @SafeVarargs
     @SuppressWarnings("unchecked")
     static <T, U extends T> Matcher<T> isSubtype(Class<U> type, Matcher<U>... matchers) {

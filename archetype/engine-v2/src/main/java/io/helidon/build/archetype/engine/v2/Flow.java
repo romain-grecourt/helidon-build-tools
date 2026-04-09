@@ -1030,7 +1030,7 @@ final class Flow {
                 if (required == null) {
                     return null;
                 }
-                return new HashSet<>(left.literal.getList()).containsAll(required)
+                return Set.copyOf(new TreeSet<>(left.literal.getList())).containsAll(required)
                         ? guards.trueGuard()
                         : guards.falseGuard();
             }
@@ -1058,7 +1058,7 @@ final class Flow {
             }
             Fact fact = factFor(state, key);
             Guard bound = fact == null ? guards.falseGuard() : fact.listContains(required, guards);
-            Guard raw = rawListContains(key, required);
+            Guard raw = rawListContains(symbolInfo(key), required);
             return combine(key, fact, bound, raw);
         }
 
@@ -1175,8 +1175,7 @@ final class Flow {
             return raw.equals(guards.falseGuard()) ? null : raw;
         }
 
-        private Guard rawListContains(String key, Set<String> required) {
-            Flow.SymbolInfo info = symbolInfo(key);
+        private Guard rawListContains(Flow.SymbolInfo info, Set<String> required) {
             if (info == null) {
                 return null;
             }
@@ -1188,11 +1187,15 @@ final class Flow {
             if (!items.containsAll(required)) {
                 return guards.falseGuard();
             }
-            Guard raw = guards.trueGuard();
+            Guard available = guards.trueGuard();
             for (String value : required) {
-                raw = guards.and(raw, available(info, value, guards.contains(symbol.id(), value)));
+                Guard availability = info.availability(value);
+                if (availability == null) {
+                    return guards.falseGuard();
+                }
+                available = guards.and(available, availability);
             }
-            return raw;
+            return guards.and(available, guards.containsAll(symbol.id(), required));
         }
 
         private Guard available(Flow.SymbolInfo info, String value, Guard direct) {
@@ -1865,11 +1868,7 @@ final class Flow {
                 return guards.contains(symbol.id(), literalValue.literal.getString());
             }
             if (literalValue.literal.type() == Value.Type.LIST) {
-                Guard result = guards.trueGuard();
-                for (String item : literalValue.literal.getList()) {
-                    result = guards.and(result, guards.contains(symbol.id(), item));
-                }
-                return result;
+                return guards.containsAll(symbol.id(), new TreeSet<>(literalValue.literal.getList()));
             }
             return null;
         }
