@@ -88,14 +88,72 @@ class FlowTest {
 
         Flow.State beforeUse = analysis.beforeByOp().get(3);
         Domain.Symbol.Fact fact = beforeUse.env().get(flavor);
+        Map<String, Domain.Guard> exactByValue = fact.exactCases().stream()
+                .collect(Collectors.toMap(Domain.Symbol.Fact.ExactCase::scalarLiteral, Domain.Symbol.Fact.ExactCase::guard));
 
         assertThat(guards.equivalent(beforeUse.path(), guards.trueGuard()), is(true));
         assertThat(guards.equivalent(fact.definedUnder(), guards.trueGuard()), is(true));
         assertThat(fact.value(), instanceOf(Domain.Value.ChoiceSet.class));
         assertThat(((Domain.Value.ChoiceSet) fact.value()).values(), is(Set.of("mp", "se")));
+        assertThat(exactByValue.keySet(), containsInAnyOrder("mp", "se"));
+        assertThat(guards.equivalent(exactByValue.get("mp"), guards.eq(enabled, "true")), is(true));
+        assertThat(guards.equivalent(exactByValue.get("se"), guards.eq(enabled, "false")), is(true));
         assertThat(analysis.usesById().size(), is(1));
         assertThat(analysis.usesById().get(0).symbolId(), is(flavor));
         assertThat(guards.equivalent(analysis.usesById().get(0).guard(), guards.trueGuard()), is(true));
+    }
+
+    @Test
+    void testAnalyzeMergesSameExactValueAcrossMultiplePaths() {
+        Domain.Symbol.Table.Builder builder = Domain.Symbol.Table.builder();
+        int primary = builder.define("primary", new Domain.Spec.Boolean(), true, false);
+        int secondary = builder.define("secondary", new Domain.Spec.Boolean(), true, false);
+        int flavor = builder.define("flavor", new Domain.Spec.Choice(Set.of("mp", "se")), true, false);
+        Domain.Symbol.Table symbols = builder.build();
+        Domain.Guards guards = new Domain.Guards(symbols);
+        Flow.SourceAnchor anchor = new Flow.SourceAnchor(Nodes.script(), "");
+
+        Flow.Op declarePrimary = Flow.Op.declareInput(0, 0, anchor, primary, primary);
+        Flow.Op declareSecondary = Flow.Op.declareInput(1, 0, anchor, secondary, secondary);
+        Flow.Op definePrimaryMp = Flow.Op.defineValue(2, 1, anchor, flavor, Expression.create("'mp'"));
+        Flow.Op defineSecondaryMp = Flow.Op.defineValue(3, 3, anchor, flavor, Expression.create("'mp'"));
+        Flow.Op defineSe = Flow.Op.defineValue(4, 4, anchor, flavor, Expression.create("'se'"));
+        Flow.Op useFlavor = Flow.Op.recordUse(5, 5, anchor, flavor, 17);
+
+        Flow.Block entry = new Flow.Block(0, List.of(0, 1),
+                Flow.Terminator.branch(anchor, guards.eq(primary, "true"), 1, 2));
+        Flow.Block primaryMp = new Flow.Block(1, List.of(2), Flow.Terminator.jump(anchor, 5));
+        Flow.Block secondaryBranch = new Flow.Block(2, List.of(),
+                Flow.Terminator.branch(anchor, guards.eq(secondary, "true"), 3, 4));
+        Flow.Block secondaryMp = new Flow.Block(3, List.of(3), Flow.Terminator.jump(anchor, 5));
+        Flow.Block se = new Flow.Block(4, List.of(4), Flow.Terminator.jump(anchor, 5));
+        Flow.Block exit = new Flow.Block(5, List.of(5), Flow.Terminator.ret(anchor));
+
+        Flow.Ir ir = new Flow.Ir(
+                List.of(entry, primaryMp, secondaryBranch, secondaryMp, se, exit),
+                symbols,
+                List.of(declarePrimary, declareSecondary, definePrimaryMp, defineSecondaryMp, defineSe, useFlavor),
+                guards);
+        Flow flow = new Flow(new Context().scope());
+        flow.process(ir, anchor.node());
+        Flow.Analysis analysis = flow.analysis();
+
+        Flow.State beforeUse = analysis.beforeByOp().get(5);
+        Domain.Symbol.Fact fact = beforeUse.env().get(flavor);
+        Map<String, Domain.Guard> exactByValue = fact.exactCases().stream()
+                .collect(Collectors.toMap(Domain.Symbol.Fact.ExactCase::scalarLiteral, Domain.Symbol.Fact.ExactCase::guard));
+
+        Domain.Guard primaryTrue = guards.eq(primary, "true");
+        Domain.Guard primaryFalse = guards.eq(primary, "false");
+        Domain.Guard secondaryTrue = guards.eq(secondary, "true");
+        Domain.Guard secondaryFalse = guards.eq(secondary, "false");
+
+        assertThat(guards.equivalent(beforeUse.path(), guards.trueGuard()), is(true));
+        assertThat(((Domain.Value.ChoiceSet) fact.value()).values(), is(Set.of("mp", "se")));
+        assertThat(exactByValue.keySet(), containsInAnyOrder("mp", "se"));
+        assertThat(guards.equivalent(exactByValue.get("mp"), guards.or(primaryTrue, guards.and(primaryFalse,
+                secondaryTrue))), is(true));
+        assertThat(guards.equivalent(exactByValue.get("se"), guards.and(primaryFalse, secondaryFalse)), is(true));
     }
 
     @Test

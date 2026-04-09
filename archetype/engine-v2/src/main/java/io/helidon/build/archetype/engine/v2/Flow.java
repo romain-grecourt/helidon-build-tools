@@ -17,6 +17,7 @@ package io.helidon.build.archetype.engine.v2;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
@@ -1964,116 +1965,80 @@ final class Flow {
 
     private static final class Analyzer {
         private static final int EXACT_CASE_MAX = 16;
+        private static final int EXACT_PROVENANCE_MAX = 16;
 
         private final Ir ir;
         private final Guards guards;
-        private final AnalysisPath falsePath;
-        private final AnalysisPath truePath;
-        private final AnalyzedState unreachable;
-        private final List<AnalyzedState> beforeByOp;
-        private final List<AnalyzedState> afterByOp;
+        private final Guard falseGuard;
+        private final Guard trueGuard;
         private final List<PendingUse> usesById;
-        private final Map<Integer, Integer> useIndexByOp = new HashMap<>();
-        private final Map<Guard, AnalysisPath> atoms = new HashMap<>();
         private final Map<Guard, Guard> negatedGuards = new HashMap<>();
-        private final Map<Long, AnalysisPath> ands = new HashMap<>();
-        private final Map<Long, AnalysisPath> ors = new HashMap<>();
-        private final Map<Long, Boolean> implicationCache = new HashMap<>();
-        private final IdentityHashMap<AnalysisPath, Guard> materializedPaths = new IdentityHashMap<>();
         private final IdentityHashMap<FactState, Fact> materializedFacts = new IdentityHashMap<>();
-        private final IdentityHashMap<AnalyzedState, State> materializedStates = new IdentityHashMap<>();
-        private int nextPathId;
+        private final IdentityHashMap<Map<Integer, FactState>, Map<Integer, Fact>> materializedEnvs =
+                new IdentityHashMap<>();
+        private final ExactProvenance[] blockProvenances;
+        private List<Guard> blockPaths;
 
         Analyzer(Ir ir) {
             this.ir = ir;
             this.guards = ir.guards();
-            this.falsePath = new AnalysisPath(nextPathId++, AnalysisPath.Kind.FALSE, null, null, null);
-            this.truePath = new AnalysisPath(nextPathId++, AnalysisPath.Kind.TRUE, null, null, null);
-            this.unreachable = new AnalyzedState(falsePath, Map.of());
-            this.beforeByOp = new ArrayList<>(Collections.nCopies(ir.ops().size(), unreachable));
-            this.afterByOp = new ArrayList<>(Collections.nCopies(ir.ops().size(), unreachable));
+            this.falseGuard = guards.falseGuard();
+            this.trueGuard = guards.trueGuard();
             this.usesById = new ArrayList<>();
+            this.blockProvenances = new ExactProvenance[ir.blocks().size()];
             for (Op op : ir.ops()) {
                 if (op.kind() == Op.Kind.RECORD_USE) {
                     int useId = usesById.size();
-                    useIndexByOp.put(op.id(), useId);
-                    usesById.add(new PendingUse(useId, op.symbolId(), falsePath));
+                    usesById.add(new PendingUse(useId, op.symbolId(), op.id()));
                 }
             }
         }
 
         Analysis analyze() {
-            List<AnalyzedState> entries = new ArrayList<>(Collections.nCopies(ir.blocks().size(), unreachable));
-            List<AnalyzedState> exits = new ArrayList<>(Collections.nCopies(ir.blocks().size(), unreachable));
-            entries.set(0, new AnalyzedState(truePath, Map.of()));
+            ControlFlow control = analyzeControl();
+            this.blockPaths = control.entryByBlock;
+            FactFlow facts = analyzeFacts(control);
+            return new Analysis(
+                    materializeStates(control.entryByBlock, facts.entryByBlock),
+                    materializeStates(control.exitByBlock, facts.exitByBlock),
+                    materializeStates(control.beforeByOp, facts.beforeByOp),
+                    materializeStates(control.afterByOp, facts.afterByOp),
+                    materializeUses(control.beforeByOp));
+        }
+
+        private ControlFlow analyzeControl() {
+            List<Guard> entries = new ArrayList<>(Collections.nCopies(ir.blocks().size(), falseGuard));
+            List<Guard> exits = new ArrayList<>(Collections.nCopies(ir.blocks().size(), falseGuard));
+            List<Guard> beforeByOp = new ArrayList<>(Collections.nCopies(ir.ops().size(), falseGuard));
+            List<Guard> afterByOp = new ArrayList<>(Collections.nCopies(ir.ops().size(), falseGuard));
+            entries.set(0, trueGuard);
             Deque<Integer> work = new ArrayDeque<>();
             work.add(0);
             while (!work.isEmpty()) {
                 int blockId = work.removeFirst();
-                AnalyzedState state = entries.get(blockId);
-                if (state.path == falsePath) {
+                Guard entry = entries.get(blockId);
+                if (entry.equals(falseGuard)) {
                     continue;
                 }
-                AnalyzedState current = state;
                 Block block = ir.blocks().get(blockId);
                 for (int opId : block.ops()) {
-                    Op op = ir.ops().get(opId);
-                    beforeByOp.set(opId, current);
-                    current = transfer(op, current);
-                    afterByOp.set(opId, current);
+                    beforeByOp.set(opId, entry);
+                    afterByOp.set(opId, entry);
                 }
-                exits.set(blockId, current);
-                propagate(block.terminator(), current, entries, work);
+                exits.set(blockId, entry);
+                propagateControl(block.terminator(), entry, entries, work);
             }
-            return new Analysis(
-                    materializeStates(entries),
-                    materializeStates(exits),
-                    materializeStates(beforeByOp),
-                    materializeStates(afterByOp),
-                    materializeUses(usesById));
+            return new ControlFlow(entries, exits, beforeByOp, afterByOp);
         }
 
-        AnalyzedState transfer(Op op, AnalyzedState state) {
-            switch (op.kind()) {
-                case DECLARE_INPUT: {
-                    FactState declared = new FactState(
-                            state.path,
-                            Domain.Value.top(ir.symbols().symbol(op.symbolId()).domain()));
-                    FactState existing = state.env.get(op.symbolId());
-                    return define(state,
-                            op.symbolId(),
-                            existing == null ? declared : mergeFact(existing, declared));
-                }
-                case DEFINE_VALUE:
-                    Symbol symbol = ir.symbols().symbol(op.symbolId());
-                    return define(state, op.symbolId(), evaluateFact(op.expression(), symbol, state));
-                case RECORD_USE:
-                    int useIndex = useIndexByOp.get(op.id());
-                    PendingUse existing = usesById.get(useIndex);
-                    usesById.set(useIndex,
-                            new PendingUse(existing.id, existing.symbolId, or(existing.guard, state.path)));
-                    return state;
-                case EMIT:
-                case PHI:
-                default:
-                    return state;
-            }
-        }
-
-        void propagate(Terminator terminator, AnalyzedState state, List<AnalyzedState> entries, Deque<Integer> work) {
+        private void propagateControl(Terminator terminator, Guard current, List<Guard> entries, Deque<Integer> work) {
             switch (terminator.kind()) {
                 case GOTO:
-                    enqueue(terminator.targetId(), state, entries, work);
+                    enqueueControl(terminator.targetId(), current, entries, work);
                     break;
                 case BRANCH:
-                    enqueue(terminator.trueId(),
-                            new AnalyzedState(and(state.path, terminator.guard()), state.env),
-                            entries,
-                            work);
-                    enqueue(terminator.falseId(),
-                            new AnalyzedState(and(state.path, negate(terminator.guard())), state.env),
-                            entries,
-                            work);
+                    enqueueControl(terminator.trueId(), guards.and(current, terminator.guard()), entries, work);
+                    enqueueControl(terminator.falseId(), guards.and(current, negate(terminator.guard())), entries, work);
                     break;
                 case RETURN:
                 case UNREACHABLE:
@@ -2082,79 +2047,157 @@ final class Flow {
             }
         }
 
-        void enqueue(int blockId, AnalyzedState incoming, List<AnalyzedState> entries, Deque<Integer> work) {
-            if (incoming.path == falsePath) {
+        private void enqueueControl(int blockId, Guard incoming, List<Guard> entries, Deque<Integer> work) {
+            if (incoming.equals(falseGuard)) {
                 return;
             }
-            AnalyzedState current = entries.get(blockId);
-            AnalyzedState merged = merge(current, incoming);
+            Guard current = entries.get(blockId);
+            Guard merged = current.equals(falseGuard) ? incoming : guards.or(current, incoming);
+            if (!merged.equals(current)) {
+                entries.set(blockId, merged);
+                work.addLast(blockId);
+            }
+        }
+
+        private FactFlow analyzeFacts(ControlFlow control) {
+            List<Map<Integer, FactState>> entries = new ArrayList<>(Collections.nCopies(ir.blocks().size(), null));
+            List<Map<Integer, FactState>> exits = new ArrayList<>(Collections.nCopies(ir.blocks().size(), null));
+            List<Map<Integer, FactState>> beforeByOp = new ArrayList<>(Collections.nCopies(ir.ops().size(), null));
+            List<Map<Integer, FactState>> afterByOp = new ArrayList<>(Collections.nCopies(ir.ops().size(), null));
+            entries.set(0, Map.of());
+            Deque<Integer> work = new ArrayDeque<>();
+            work.add(0);
+            while (!work.isEmpty()) {
+                int blockId = work.removeFirst();
+                if (control.entryByBlock.get(blockId).equals(falseGuard)) {
+                    continue;
+                }
+                Map<Integer, FactState> state = entries.get(blockId);
+                if (state == null) {
+                    continue;
+                }
+                Map<Integer, FactState> current = state;
+                Block block = ir.blocks().get(blockId);
+                for (int opId : block.ops()) {
+                    Op op = ir.ops().get(opId);
+                    Guard currentGuard = control.beforeByOp.get(opId);
+                    beforeByOp.set(opId, current);
+                    current = transfer(op, currentGuard, current);
+                    afterByOp.set(opId, current);
+                }
+                exits.set(blockId, current);
+                propagateFacts(block.terminator(), current, control, entries, work);
+            }
+            return new FactFlow(entries, exits, beforeByOp, afterByOp);
+        }
+
+        private Map<Integer, FactState> transfer(Op op, Guard currentGuard, Map<Integer, FactState> state) {
+            switch (op.kind()) {
+                case DECLARE_INPUT: {
+                    FactState declared = new FactState(
+                            provenance(op.blockId()),
+                            Domain.Value.top(ir.symbols().symbol(op.symbolId()).domain()));
+                    FactState existing = state.get(op.symbolId());
+                    return define(state,
+                            op.symbolId(),
+                            existing == null ? declared : mergeFact(existing, declared));
+                }
+                case DEFINE_VALUE:
+                    Symbol symbol = ir.symbols().symbol(op.symbolId());
+                    return define(state, op.symbolId(), evaluateFact(op, currentGuard, symbol, state));
+                case RECORD_USE:
+                case EMIT:
+                case PHI:
+                default:
+                    return state;
+            }
+        }
+
+        private void propagateFacts(Terminator terminator,
+                                    Map<Integer, FactState> current,
+                                    ControlFlow control,
+                                    List<Map<Integer, FactState>> entries,
+                                    Deque<Integer> work) {
+            switch (terminator.kind()) {
+                case GOTO:
+                    enqueueFacts(terminator.targetId(), current, control, entries, work);
+                    break;
+                case BRANCH:
+                    enqueueFacts(terminator.trueId(), current, control, entries, work);
+                    enqueueFacts(terminator.falseId(), current, control, entries, work);
+                    break;
+                case RETURN:
+                case UNREACHABLE:
+                default:
+                    break;
+            }
+        }
+
+        private void enqueueFacts(int blockId,
+                                  Map<Integer, FactState> incoming,
+                                  ControlFlow control,
+                                  List<Map<Integer, FactState>> entries,
+                                  Deque<Integer> work) {
+            if (control.entryByBlock.get(blockId).equals(falseGuard)) {
+                return;
+            }
+            Map<Integer, FactState> current = entries.get(blockId);
+            Map<Integer, FactState> merged = mergeEnv(current, incoming);
             if (merged != current) {
                 entries.set(blockId, merged);
                 work.addLast(blockId);
             }
         }
 
-        AnalyzedState merge(AnalyzedState current, AnalyzedState incoming) {
-            if (current.path == falsePath) {
+        private Map<Integer, FactState> mergeEnv(Map<Integer, FactState> current, Map<Integer, FactState> incoming) {
+            if (current == null) {
                 return incoming;
             }
-            if (incoming.path == falsePath) {
+            if (incoming == null || current == incoming || current.equals(incoming)) {
                 return current;
             }
-            if (current == incoming || current.path == incoming.path && current.env == incoming.env) {
-                return current;
-            }
-            AnalysisPath path = or(current.path, incoming.path);
-            Map<Integer, FactState> nextEnv = null;
-            boolean changed = path != current.path;
-            Set<Integer> keys = new HashSet<>(current.env.keySet());
-            keys.addAll(incoming.env.keySet());
-            for (int symbolId : keys) {
-                FactState left = current.env.get(symbolId);
-                FactState right = incoming.env.get(symbolId);
+            Map<Integer, FactState> next = null;
+            for (Map.Entry<Integer, FactState> entry : incoming.entrySet()) {
+                int symbolId = entry.getKey();
+                FactState left = current.get(symbolId);
+                FactState right = entry.getValue();
                 FactState merged;
                 if (left == null) {
                     merged = right;
-                } else if (right == null) {
-                    merged = left;
                 } else if (left == right || left.equals(right)) {
                     merged = left;
                 } else {
                     merged = mergeFact(left, right);
                 }
                 if (merged != left) {
-                    changed = true;
-                    if (nextEnv == null) {
-                        nextEnv = new LinkedHashMap<>(current.env);
+                    if (next == null) {
+                        next = new LinkedHashMap<>(current);
                     }
-                    nextEnv.put(symbolId, merged);
+                    next.put(symbolId, merged);
                 }
             }
-            if (!changed) {
-                return current;
-            }
-            return new AnalyzedState(path, nextEnv == null ? current.env : nextEnv);
+            return next == null ? current : Map.copyOf(next);
         }
 
-        AnalyzedState define(AnalyzedState state, int symbolId, FactState fact) {
-            FactState existing = state.env.get(symbolId);
+        private Map<Integer, FactState> define(Map<Integer, FactState> state, int symbolId, FactState fact) {
+            FactState existing = state.get(symbolId);
             if (Objects.equals(existing, fact)) {
                 return state;
             }
-            Map<Integer, FactState> env = new LinkedHashMap<>(state.env);
+            Map<Integer, FactState> env = new LinkedHashMap<>(state);
             env.put(symbolId, fact);
-            return new AnalyzedState(state.path, env);
+            return Map.copyOf(env);
         }
 
-        FactState evaluateFact(Expression expression, Symbol symbol, AnalyzedState state) {
-            Domain.Value value = evaluateValue(expression, symbol, state);
-            io.helidon.build.archetype.engine.v2.Value<?> exactValue = exactValue(expression, state);
+        private FactState evaluateFact(Op op, Guard currentGuard, Symbol symbol, Map<Integer, FactState> state) {
+            Domain.Value value = evaluateValue(op.expression(), symbol, state);
+            io.helidon.build.archetype.engine.v2.Value<?> exactValue = exactValue(op.expression(), currentGuard, state);
             return exactValue == null
-                    ? new FactState(state.path, value)
-                    : FactState.exact(state.path, value, exactValue);
+                    ? new FactState(provenance(op.blockId()), value)
+                    : FactState.exact(op.blockId(), value, exactValue);
         }
 
-        Domain.Value evaluateValue(Expression expression, Symbol symbol, AnalyzedState state) {
+        private Domain.Value evaluateValue(Expression expression, Symbol symbol, Map<Integer, FactState> state) {
             List<Token> tokens = expression.tokens();
             if (tokens.size() == 1) {
                 Token token = tokens.get(0);
@@ -2164,7 +2207,7 @@ final class Flow {
                 if (token.isVariable()) {
                     Integer symbolId = ir.symbols().findId(token.variable());
                     if (symbolId != null) {
-                        FactState fact = state.env.get(symbolId);
+                        FactState fact = state.get(symbolId);
                         if (fact != null) {
                             return fact.value;
                         }
@@ -2174,7 +2217,9 @@ final class Flow {
             return Domain.Value.top(symbol.domain());
         }
 
-        io.helidon.build.archetype.engine.v2.Value<?> exactValue(Expression expression, AnalyzedState state) {
+        private io.helidon.build.archetype.engine.v2.Value<?> exactValue(Expression expression,
+                                                                          Guard currentGuard,
+                                                                          Map<Integer, FactState> state) {
             List<Token> tokens = expression.tokens();
             if (tokens.size() != 1) {
                 return null;
@@ -2188,22 +2233,20 @@ final class Flow {
                 if (symbolId == null) {
                     return null;
                 }
-                FactState fact = state.env.get(symbolId);
+                FactState fact = state.get(symbolId);
                 if (fact == null) {
                     return null;
                 }
-                io.helidon.build.archetype.engine.v2.Value<?> exactFromValue = exactFromValue(fact, state.path);
+                io.helidon.build.archetype.engine.v2.Value<?> exactFromValue = exactFromValue(fact, currentGuard);
                 if (exactFromValue != null) {
                     return exactFromValue;
                 }
-                if (fact.exactCases.isEmpty()) {
+                if (fact.exactCases.isEmpty() || !implies(currentGuard, fact.exactCoverage)) {
                     return null;
                 }
                 io.helidon.build.archetype.engine.v2.Value<?> value = null;
-                AnalysisPath covered = falsePath;
                 for (ExactCaseState exactCase : fact.exactCases) {
-                    if (!implies(exactCase.guard, state.path)) {
-                        covered = or(covered, exactCase.guard);
+                    if (!overlaps(currentGuard, exactCase.provenance)) {
                         continue;
                     }
                     if (value == null) {
@@ -2211,15 +2254,14 @@ final class Flow {
                     } else if (!io.helidon.build.archetype.engine.v2.Value.isEqual(value, exactCase.value)) {
                         return null;
                     }
-                    covered = or(covered, exactCase.guard);
                 }
-                return value != null && implies(state.path, covered) ? value : null;
+                return value;
             }
             return null;
         }
 
-        private io.helidon.build.archetype.engine.v2.Value<?> exactFromValue(FactState fact, AnalysisPath path) {
-            if (!implies(path, fact.definedUnder)) {
+        private io.helidon.build.archetype.engine.v2.Value<?> exactFromValue(FactState fact, Guard currentGuard) {
+            if (!implies(currentGuard, fact.definedUnder)) {
                 return null;
             }
             if (fact.value instanceof Domain.Value.BooleanSet) {
@@ -2244,15 +2286,20 @@ final class Flow {
         }
 
         private FactState mergeFact(FactState left, FactState right) {
-            AnalysisPath definedUnder = or(left.definedUnder, right.definedUnder);
+            ExactProvenance definedUnder = ExactProvenance.merge(left.definedUnder, right.definedUnder);
             Domain.Value value = Domain.Value.join(left.value, right.value);
             if (left.exactCases.isEmpty()) {
                 return right.exactCases.isEmpty()
                         ? new FactState(definedUnder, value)
-                        : new FactState(definedUnder, value, right.exactCases);
+                        : new FactState(definedUnder, value, right.exactCoverage, right.exactCases);
             }
             if (right.exactCases.isEmpty()) {
-                return new FactState(definedUnder, value, left.exactCases);
+                return new FactState(definedUnder, value, left.exactCoverage, left.exactCases);
+            }
+            ExactProvenance coverage = ExactProvenance.merge(left.exactCoverage, right.exactCoverage,
+                    EXACT_PROVENANCE_MAX);
+            if (coverage == null) {
+                return new FactState(definedUnder, value);
             }
             List<ExactCaseState> merged = new ArrayList<>();
             for (ExactCaseState exactCase : left.exactCases) {
@@ -2265,14 +2312,19 @@ final class Flow {
                     return new FactState(definedUnder, value);
                 }
             }
-            return new FactState(definedUnder, value, merged);
+            return new FactState(definedUnder, value, coverage, merged);
         }
 
         private boolean mergeExactCase(List<ExactCaseState> merged, ExactCaseState next) {
             for (int i = 0; i < merged.size(); i++) {
                 ExactCaseState current = merged.get(i);
                 if (io.helidon.build.archetype.engine.v2.Value.isEqual(current.value, next.value)) {
-                    merged.set(i, new ExactCaseState(current.value, or(current.guard, next.guard)));
+                    ExactProvenance provenance = ExactProvenance.merge(current.provenance, next.provenance,
+                            EXACT_PROVENANCE_MAX);
+                    if (provenance == null) {
+                        return false;
+                    }
+                    merged.set(i, new ExactCaseState(current.value, provenance));
                     return true;
                 }
             }
@@ -2283,32 +2335,35 @@ final class Flow {
             return true;
         }
 
-        private List<State> materializeStates(List<AnalyzedState> states) {
-            List<State> result = new ArrayList<>(states.size());
-            for (AnalyzedState state : states) {
-                result.add(materializeState(state));
+        private List<State> materializeStates(List<Guard> paths, List<Map<Integer, FactState>> envs) {
+            List<State> result = new ArrayList<>(paths.size());
+            for (int i = 0; i < paths.size(); i++) {
+                result.add(new State(paths.get(i), materializeEnv(envs.get(i))));
             }
             return result;
         }
 
-        private State materializeState(AnalyzedState state) {
-            State cached = materializedStates.get(state);
+        private Map<Integer, Fact> materializeEnv(Map<Integer, FactState> env) {
+            if (env == null || env.isEmpty()) {
+                return Map.of();
+            }
+            Map<Integer, Fact> cached = materializedEnvs.get(env);
             if (cached != null) {
                 return cached;
             }
-            Map<Integer, Fact> env = new LinkedHashMap<>();
-            for (Map.Entry<Integer, FactState> entry : state.env.entrySet()) {
-                env.put(entry.getKey(), materializeFact(entry.getValue()));
+            Map<Integer, Fact> materialized = new LinkedHashMap<>();
+            for (Map.Entry<Integer, FactState> entry : env.entrySet()) {
+                materialized.put(entry.getKey(), materializeFact(entry.getValue()));
             }
-            State materialized = new State(materializeGuard(state.path), env);
-            materializedStates.put(state, materialized);
-            return materialized;
+            Map<Integer, Fact> result = Map.copyOf(materialized);
+            materializedEnvs.put(env, result);
+            return result;
         }
 
-        private List<Use> materializeUses(List<PendingUse> uses) {
-            List<Use> result = new ArrayList<>(uses.size());
-            for (PendingUse use : uses) {
-                result.add(new Use(use.id, use.symbolId, materializeGuard(use.guard)));
+        private List<Use> materializeUses(List<Guard> beforeByOp) {
+            List<Use> result = new ArrayList<>(usesById.size());
+            for (PendingUse use : usesById) {
+                result.add(new Use(use.id, use.symbolId, beforeByOp.get(use.opId)));
             }
             return result;
         }
@@ -2320,92 +2375,28 @@ final class Flow {
             }
             List<Fact.ExactCase> exactCases = new ArrayList<>(fact.exactCases.size());
             for (ExactCaseState exactCase : fact.exactCases) {
-                exactCases.add(new Fact.ExactCase(exactCase.value, materializeGuard(exactCase.guard)));
+                exactCases.add(new Fact.ExactCase(exactCase.value, materializeGuard(exactCase.provenance)));
             }
             Fact materialized = new Fact(materializeGuard(fact.definedUnder), fact.value, exactCases);
             materializedFacts.put(fact, materialized);
             return materialized;
         }
 
-        private boolean implies(AnalysisPath left, AnalysisPath right) {
-            if (left == right || left == falsePath || right == truePath) {
-                return true;
-            }
-            if (right == falsePath) {
-                return false;
-            }
-            long key = pairKey(left, right);
-            Boolean cached = implicationCache.get(key);
+        private boolean implies(Guard left, ExactProvenance right) {
+            return !right.isEmpty() && guards.implies(left, materializeGuard(right));
+        }
+
+        private boolean overlaps(Guard left, ExactProvenance right) {
+            return !right.isEmpty() && !guards.and(left, materializeGuard(right)).equals(falseGuard);
+        }
+
+        private ExactProvenance provenance(int blockId) {
+            ExactProvenance cached = blockProvenances[blockId];
             if (cached != null) {
                 return cached;
             }
-            boolean result = guards.implies(materializeGuard(left), materializeGuard(right));
-            implicationCache.put(key, result);
-            return result;
-        }
-
-        private AnalysisPath atom(Guard guard) {
-            if (guard.equals(guards.falseGuard())) {
-                return falsePath;
-            }
-            if (guard.equals(guards.trueGuard())) {
-                return truePath;
-            }
-            return atoms.computeIfAbsent(guard, key ->
-                    new AnalysisPath(nextPathId++, AnalysisPath.Kind.ATOM, null, null, key));
-        }
-
-        private AnalysisPath and(AnalysisPath left, Guard guard) {
-            return and(left, atom(guard));
-        }
-
-        private AnalysisPath and(AnalysisPath left, AnalysisPath right) {
-            if (left == falsePath || right == falsePath) {
-                return falsePath;
-            }
-            if (left == truePath) {
-                return right;
-            }
-            if (right == truePath || left == right) {
-                return left;
-            }
-            if (left.id > right.id) {
-                AnalysisPath swap = left;
-                left = right;
-                right = swap;
-            }
-            long key = pairKey(left, right);
-            AnalysisPath cached = ands.get(key);
-            if (cached != null) {
-                return cached;
-            }
-            AnalysisPath created = new AnalysisPath(nextPathId++, AnalysisPath.Kind.AND, left, right, null);
-            ands.put(key, created);
-            return created;
-        }
-
-        private AnalysisPath or(AnalysisPath left, AnalysisPath right) {
-            if (left == truePath || right == truePath) {
-                return truePath;
-            }
-            if (left == falsePath) {
-                return right;
-            }
-            if (right == falsePath || left == right) {
-                return left;
-            }
-            if (left.id > right.id) {
-                AnalysisPath swap = left;
-                left = right;
-                right = swap;
-            }
-            long key = pairKey(left, right);
-            AnalysisPath cached = ors.get(key);
-            if (cached != null) {
-                return cached;
-            }
-            AnalysisPath created = new AnalysisPath(nextPathId++, AnalysisPath.Kind.OR, left, right, null);
-            ors.put(key, created);
+            ExactProvenance created = ExactProvenance.of(blockId);
+            blockProvenances[blockId] = created;
             return created;
         }
 
@@ -2413,107 +2404,100 @@ final class Flow {
             return negatedGuards.computeIfAbsent(guard, guards::not);
         }
 
-        private Guard materializeGuard(AnalysisPath path) {
-            Guard cached = materializedPaths.get(path);
+        private Guard materializeGuard(ExactProvenance provenance) {
+            Guard cached = provenance.materializedGuard;
             if (cached != null) {
                 return cached;
             }
-            Guard materialized;
-            switch (path.kind) {
-                case FALSE:
-                    materialized = guards.falseGuard();
-                    break;
-                case TRUE:
-                    materialized = guards.trueGuard();
-                    break;
-                case ATOM:
-                    materialized = path.atom;
-                    break;
-                case AND:
-                    materialized = guards.and(materializeGuard(path.left), materializeGuard(path.right));
-                    break;
-                case OR:
-                    materialized = guards.or(materializeGuard(path.left), materializeGuard(path.right));
-                    break;
-                default:
-                    throw new IllegalStateException("Unsupported path kind: " + path.kind);
+            if (provenance.isEmpty()) {
+                return falseGuard;
             }
-            materializedPaths.put(path, materialized);
+            Guard materialized = blockPaths.get(provenance.blockIds[0]);
+            for (int i = 1; i < provenance.blockIds.length; i++) {
+                materialized = guards.or(materialized, blockPaths.get(provenance.blockIds[i]));
+            }
+            provenance.materializedGuard = materialized;
             return materialized;
         }
 
-        private static long pairKey(AnalysisPath left, AnalysisPath right) {
-            return ((long) left.id << 32) | Integer.toUnsignedLong(right.id);
-        }
+        private static final class ControlFlow {
+            private final List<Guard> entryByBlock;
+            private final List<Guard> exitByBlock;
+            private final List<Guard> beforeByOp;
+            private final List<Guard> afterByOp;
 
-        private static final class AnalysisPath {
-            private enum Kind {
-                FALSE,
-                TRUE,
-                ATOM,
-                AND,
-                OR
-            }
-
-            private final int id;
-            private final Kind kind;
-            private final AnalysisPath left;
-            private final AnalysisPath right;
-            private final Guard atom;
-
-            private AnalysisPath(int id, Kind kind, AnalysisPath left, AnalysisPath right, Guard atom) {
-                this.id = id;
-                this.kind = requireNonNull(kind, "kind is null");
-                this.left = left;
-                this.right = right;
-                this.atom = atom;
+            private ControlFlow(List<Guard> entryByBlock,
+                                List<Guard> exitByBlock,
+                                List<Guard> beforeByOp,
+                                List<Guard> afterByOp) {
+                this.entryByBlock = entryByBlock;
+                this.exitByBlock = exitByBlock;
+                this.beforeByOp = beforeByOp;
+                this.afterByOp = afterByOp;
             }
         }
 
-        private static final class AnalyzedState {
-            private final AnalysisPath path;
-            private final Map<Integer, FactState> env;
+        private static final class FactFlow {
+            private final List<Map<Integer, FactState>> entryByBlock;
+            private final List<Map<Integer, FactState>> exitByBlock;
+            private final List<Map<Integer, FactState>> beforeByOp;
+            private final List<Map<Integer, FactState>> afterByOp;
 
-            private AnalyzedState(AnalysisPath path, Map<Integer, FactState> env) {
-                this.path = requireNonNull(path, "path is null");
-                this.env = Map.copyOf(env);
+            private FactFlow(List<Map<Integer, FactState>> entryByBlock,
+                             List<Map<Integer, FactState>> exitByBlock,
+                             List<Map<Integer, FactState>> beforeByOp,
+                             List<Map<Integer, FactState>> afterByOp) {
+                this.entryByBlock = entryByBlock;
+                this.exitByBlock = exitByBlock;
+                this.beforeByOp = beforeByOp;
+                this.afterByOp = afterByOp;
             }
         }
 
         private static final class PendingUse {
             private final int id;
             private final int symbolId;
-            private final AnalysisPath guard;
+            private final int opId;
 
-            private PendingUse(int id, int symbolId, AnalysisPath guard) {
+            private PendingUse(int id, int symbolId, int opId) {
                 this.id = id;
                 this.symbolId = symbolId;
-                this.guard = requireNonNull(guard, "guard is null");
+                this.opId = opId;
             }
         }
 
         private static final class FactState {
-            private final AnalysisPath definedUnder;
+            private final ExactProvenance definedUnder;
             private final Domain.Value value;
+            private final ExactProvenance exactCoverage;
             private final List<ExactCaseState> exactCases;
 
-            private FactState(AnalysisPath definedUnder, Domain.Value value) {
-                this(definedUnder, value, List.of());
+            private FactState(ExactProvenance definedUnder, Domain.Value value) {
+                this(definedUnder, value, ExactProvenance.empty(), List.of());
             }
 
-            private FactState(AnalysisPath definedUnder, Domain.Value value, List<ExactCaseState> exactCases) {
+            private FactState(ExactProvenance definedUnder,
+                              Domain.Value value,
+                              ExactProvenance exactCoverage,
+                              List<ExactCaseState> exactCases) {
                 this.definedUnder = requireNonNull(definedUnder, "definedUnder is null");
                 this.value = requireNonNull(value, "value is null");
+                this.exactCoverage = requireNonNull(exactCoverage, "exactCoverage is null");
                 this.exactCases = List.copyOf(requireNonNull(exactCases, "exactCases is null"));
             }
 
-            private static FactState exact(AnalysisPath definedUnder,
+            private static FactState exact(int blockId,
                                            Domain.Value value,
                                            io.helidon.build.archetype.engine.v2.Value<?> exactValue) {
+                ExactProvenance definedUnder = ExactProvenance.of(blockId);
                 if (exactValue == null || !exactValue.isPresent()) {
                     return new FactState(definedUnder, value);
                 }
-                return new FactState(definedUnder, value, List.of(new ExactCaseState(exactValue, definedUnder)));
+                return new FactState(
+                        definedUnder,
+                        value,
+                        definedUnder,
+                        List.of(new ExactCaseState(exactValue, definedUnder)));
             }
 
             @Override
@@ -2525,26 +2509,28 @@ final class Flow {
                     return false;
                 }
                 FactState other = (FactState) o;
-                return definedUnder == other.definedUnder
+                return definedUnder.equals(other.definedUnder)
                         && value.equals(other.value)
+                        && exactCoverage.equals(other.exactCoverage)
                         && exactCases.equals(other.exactCases);
             }
 
             @Override
             public int hashCode() {
-                int result = Integer.hashCode(definedUnder.id);
+                int result = definedUnder.hashCode();
                 result = 31 * result + value.hashCode();
+                result = 31 * result + exactCoverage.hashCode();
                 return 31 * result + exactCases.hashCode();
             }
         }
 
         private static final class ExactCaseState {
             private final io.helidon.build.archetype.engine.v2.Value<?> value;
-            private final AnalysisPath guard;
+            private final ExactProvenance provenance;
 
-            private ExactCaseState(io.helidon.build.archetype.engine.v2.Value<?> value, AnalysisPath guard) {
+            private ExactCaseState(io.helidon.build.archetype.engine.v2.Value<?> value, ExactProvenance provenance) {
                 this.value = requireNonNull(value, "value is null");
-                this.guard = requireNonNull(guard, "guard is null");
+                this.provenance = requireNonNull(provenance, "provenance is null");
             }
 
             @Override
@@ -2556,13 +2542,117 @@ final class Flow {
                     return false;
                 }
                 ExactCaseState other = (ExactCaseState) o;
-                return guard == other.guard
+                return provenance.equals(other.provenance)
                         && io.helidon.build.archetype.engine.v2.Value.isEqual(value, other.value);
             }
 
             @Override
             public int hashCode() {
-                return 31 * io.helidon.build.archetype.engine.v2.Value.hash(value) + Integer.hashCode(guard.id);
+                return 31 * io.helidon.build.archetype.engine.v2.Value.hash(value) + provenance.hashCode();
+            }
+        }
+
+        private static final class ExactProvenance {
+            private static final ExactProvenance EMPTY = new ExactProvenance(new int[0]);
+
+            private final int[] blockIds;
+            private final int hashCode;
+            private Guard materializedGuard;
+
+            private ExactProvenance(int[] blockIds) {
+                this.blockIds = requireNonNull(blockIds, "blockIds is null");
+                this.hashCode = Arrays.hashCode(blockIds);
+            }
+
+            private boolean isEmpty() {
+                return blockIds.length == 0;
+            }
+
+            private static ExactProvenance empty() {
+                return EMPTY;
+            }
+
+            private static ExactProvenance of(int blockId) {
+                return new ExactProvenance(new int[] {blockId});
+            }
+
+            private static ExactProvenance merge(ExactProvenance left, ExactProvenance right) {
+                return merge(left, right, -1);
+            }
+
+            private static ExactProvenance merge(ExactProvenance left, ExactProvenance right, int maxEntries) {
+                if (left.isEmpty()) {
+                    return right;
+                }
+                if (right.isEmpty() || left == right || left.equals(right)) {
+                    return left;
+                }
+                int[] merged = new int[left.blockIds.length + right.blockIds.length];
+                int leftIndex = 0;
+                int rightIndex = 0;
+                int size = 0;
+                while (leftIndex < left.blockIds.length || rightIndex < right.blockIds.length) {
+                    int next;
+                    if (rightIndex >= right.blockIds.length) {
+                        next = left.blockIds[leftIndex++];
+                    } else if (leftIndex >= left.blockIds.length) {
+                        next = right.blockIds[rightIndex++];
+                    } else {
+                        int leftId = left.blockIds[leftIndex];
+                        int rightId = right.blockIds[rightIndex];
+                        if (leftId == rightId) {
+                            next = leftId;
+                            leftIndex++;
+                            rightIndex++;
+                        } else if (leftId < rightId) {
+                            next = leftId;
+                            leftIndex++;
+                        } else {
+                            next = rightId;
+                            rightIndex++;
+                        }
+                    }
+                    if (maxEntries > 0 && size == maxEntries) {
+                        return null;
+                    }
+                    merged[size++] = next;
+                }
+                if (matches(merged, size, left.blockIds)) {
+                    return left;
+                }
+                if (matches(merged, size, right.blockIds)) {
+                    return right;
+                }
+                return new ExactProvenance(size == merged.length ? merged : Arrays.copyOf(merged, size));
+            }
+
+            private static boolean matches(int[] merged, int size, int[] other) {
+                if (size != other.length) {
+                    return false;
+                }
+                for (int i = 0; i < size; i++) {
+                    if (merged[i] != other[i]) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            @Override
+            public boolean equals(Object o) {
+                if (this == o) {
+                    return true;
+                }
+                if (!(o instanceof ExactProvenance)) {
+                    return false;
+                }
+                ExactProvenance other = (ExactProvenance) o;
+                return Arrays.equals(blockIds, other.blockIds);
+            }
+
+            @Override
+            public int hashCode() {
+                return hashCode;
             }
         }
 
