@@ -1963,18 +1963,33 @@ final class Flow {
     }
 
     private static final class Analyzer {
+        private static final int EXACT_CASE_MAX = 16;
+
         private final Ir ir;
         private final Guards guards;
-        private final State unreachable;
-        private final List<State> beforeByOp;
-        private final List<State> afterByOp;
-        private final List<Use> usesById;
+        private final AnalysisPath falsePath;
+        private final AnalysisPath truePath;
+        private final AnalyzedState unreachable;
+        private final List<AnalyzedState> beforeByOp;
+        private final List<AnalyzedState> afterByOp;
+        private final List<PendingUse> usesById;
         private final Map<Integer, Integer> useIndexByOp = new HashMap<>();
+        private final Map<Guard, AnalysisPath> atoms = new HashMap<>();
+        private final Map<Guard, Guard> negatedGuards = new HashMap<>();
+        private final Map<Long, AnalysisPath> ands = new HashMap<>();
+        private final Map<Long, AnalysisPath> ors = new HashMap<>();
+        private final Map<Long, Boolean> implicationCache = new HashMap<>();
+        private final IdentityHashMap<AnalysisPath, Guard> materializedPaths = new IdentityHashMap<>();
+        private final IdentityHashMap<FactState, Fact> materializedFacts = new IdentityHashMap<>();
+        private final IdentityHashMap<AnalyzedState, State> materializedStates = new IdentityHashMap<>();
+        private int nextPathId;
 
         Analyzer(Ir ir) {
             this.ir = ir;
             this.guards = ir.guards();
-            this.unreachable = new State(guards.falseGuard(), Map.of());
+            this.falsePath = new AnalysisPath(nextPathId++, AnalysisPath.Kind.FALSE, null, null, null);
+            this.truePath = new AnalysisPath(nextPathId++, AnalysisPath.Kind.TRUE, null, null, null);
+            this.unreachable = new AnalyzedState(falsePath, Map.of());
             this.beforeByOp = new ArrayList<>(Collections.nCopies(ir.ops().size(), unreachable));
             this.afterByOp = new ArrayList<>(Collections.nCopies(ir.ops().size(), unreachable));
             this.usesById = new ArrayList<>();
@@ -1982,24 +1997,24 @@ final class Flow {
                 if (op.kind() == Op.Kind.RECORD_USE) {
                     int useId = usesById.size();
                     useIndexByOp.put(op.id(), useId);
-                    usesById.add(new Use(useId, op.symbolId(), guards.falseGuard()));
+                    usesById.add(new PendingUse(useId, op.symbolId(), falsePath));
                 }
             }
         }
 
         Analysis analyze() {
-            List<State> entries = new ArrayList<>(Collections.nCopies(ir.blocks().size(), unreachable));
-            List<State> exits = new ArrayList<>(Collections.nCopies(ir.blocks().size(), unreachable));
-            entries.set(0, new State(guards.trueGuard(), Map.of()));
+            List<AnalyzedState> entries = new ArrayList<>(Collections.nCopies(ir.blocks().size(), unreachable));
+            List<AnalyzedState> exits = new ArrayList<>(Collections.nCopies(ir.blocks().size(), unreachable));
+            entries.set(0, new AnalyzedState(truePath, Map.of()));
             Deque<Integer> work = new ArrayDeque<>();
             work.add(0);
             while (!work.isEmpty()) {
                 int blockId = work.removeFirst();
-                State state = entries.get(blockId);
-                if (state.path().equals(guards.falseGuard())) {
+                AnalyzedState state = entries.get(blockId);
+                if (state.path == falsePath) {
                     continue;
                 }
-                State current = state;
+                AnalyzedState current = state;
                 Block block = ir.blocks().get(blockId);
                 for (int opId : block.ops()) {
                     Op op = ir.ops().get(opId);
@@ -2010,28 +2025,33 @@ final class Flow {
                 exits.set(blockId, current);
                 propagate(block.terminator(), current, entries, work);
             }
-            return new Analysis(entries, exits, beforeByOp, afterByOp, usesById);
+            return new Analysis(
+                    materializeStates(entries),
+                    materializeStates(exits),
+                    materializeStates(beforeByOp),
+                    materializeStates(afterByOp),
+                    materializeUses(usesById));
         }
 
-        State transfer(Op op, State state) {
+        AnalyzedState transfer(Op op, AnalyzedState state) {
             switch (op.kind()) {
                 case DECLARE_INPUT: {
-                    Fact declared = new Fact(
-                            state.path(),
+                    FactState declared = new FactState(
+                            state.path,
                             Domain.Value.top(ir.symbols().symbol(op.symbolId()).domain()));
-                    Fact existing = state.env().get(op.symbolId());
+                    FactState existing = state.env.get(op.symbolId());
                     return define(state,
                             op.symbolId(),
-                            existing == null ? declared : Fact.merge(existing, declared, guards));
+                            existing == null ? declared : mergeFact(existing, declared));
                 }
                 case DEFINE_VALUE:
                     Symbol symbol = ir.symbols().symbol(op.symbolId());
                     return define(state, op.symbolId(), evaluateFact(op.expression(), symbol, state));
                 case RECORD_USE:
                     int useIndex = useIndexByOp.get(op.id());
-                    Use existing = usesById.get(useIndex);
+                    PendingUse existing = usesById.get(useIndex);
                     usesById.set(useIndex,
-                            new Use(existing.id(), existing.symbolId(), mergeGuard(existing.guard(), state.path())));
+                            new PendingUse(existing.id, existing.symbolId, or(existing.guard, state.path)));
                     return state;
                 case EMIT:
                 case PHI:
@@ -2040,18 +2060,18 @@ final class Flow {
             }
         }
 
-        void propagate(Terminator terminator, State state, List<State> entries, Deque<Integer> work) {
+        void propagate(Terminator terminator, AnalyzedState state, List<AnalyzedState> entries, Deque<Integer> work) {
             switch (terminator.kind()) {
                 case GOTO:
                     enqueue(terminator.targetId(), state, entries, work);
                     break;
                 case BRANCH:
                     enqueue(terminator.trueId(),
-                            new State(guards.and(state.path(), terminator.guard()), state.env()),
+                            new AnalyzedState(and(state.path, terminator.guard()), state.env),
                             entries,
                             work);
                     enqueue(terminator.falseId(),
-                            new State(guards.and(state.path(), guards.not(terminator.guard())), state.env()),
+                            new AnalyzedState(and(state.path, negate(terminator.guard())), state.env),
                             entries,
                             work);
                     break;
@@ -2062,37 +2082,37 @@ final class Flow {
             }
         }
 
-        void enqueue(int blockId, State incoming, List<State> entries, Deque<Integer> work) {
-            if (incoming.path().equals(guards.falseGuard())) {
+        void enqueue(int blockId, AnalyzedState incoming, List<AnalyzedState> entries, Deque<Integer> work) {
+            if (incoming.path == falsePath) {
                 return;
             }
-            State current = entries.get(blockId);
-            State merged = merge(current, incoming);
+            AnalyzedState current = entries.get(blockId);
+            AnalyzedState merged = merge(current, incoming);
             if (merged != current) {
                 entries.set(blockId, merged);
                 work.addLast(blockId);
             }
         }
 
-        State merge(State current, State incoming) {
-            if (current.path().equals(guards.falseGuard())) {
+        AnalyzedState merge(AnalyzedState current, AnalyzedState incoming) {
+            if (current.path == falsePath) {
                 return incoming;
             }
-            if (incoming.path().equals(guards.falseGuard())) {
+            if (incoming.path == falsePath) {
                 return current;
             }
-            if (current == incoming || current.path() == incoming.path() && current.env() == incoming.env()) {
+            if (current == incoming || current.path == incoming.path && current.env == incoming.env) {
                 return current;
             }
-            Guard path = mergeGuard(current.path(), incoming.path());
-            Map<Integer, Fact> env = null;
-            boolean changed = path != current.path();
-            Set<Integer> keys = new HashSet<>(current.env().keySet());
-            keys.addAll(incoming.env().keySet());
+            AnalysisPath path = or(current.path, incoming.path);
+            Map<Integer, FactState> nextEnv = null;
+            boolean changed = path != current.path;
+            Set<Integer> keys = new HashSet<>(current.env.keySet());
+            keys.addAll(incoming.env.keySet());
             for (int symbolId : keys) {
-                Fact left = current.env().get(symbolId);
-                Fact right = incoming.env().get(symbolId);
-                Fact merged;
+                FactState left = current.env.get(symbolId);
+                FactState right = incoming.env.get(symbolId);
+                FactState merged;
                 if (left == null) {
                     merged = right;
                 } else if (right == null) {
@@ -2100,64 +2120,41 @@ final class Flow {
                 } else if (left == right || left.equals(right)) {
                     merged = left;
                 } else {
-                    merged = Fact.merge(left, right, guards);
+                    merged = mergeFact(left, right);
                 }
                 if (merged != left) {
                     changed = true;
-                    if (env == null) {
-                        env = new LinkedHashMap<>(current.env());
+                    if (nextEnv == null) {
+                        nextEnv = new LinkedHashMap<>(current.env);
                     }
-                    env.put(symbolId, merged);
+                    nextEnv.put(symbolId, merged);
                 }
             }
             if (!changed) {
                 return current;
             }
-            return new State(path, env == null ? current.env() : env);
+            return new AnalyzedState(path, nextEnv == null ? current.env : nextEnv);
         }
 
-        Guard mergeGuard(Guard left, Guard right) {
-            if (left == right || left.equals(right)) {
-                return left;
-            }
-            if (left.residual() == Expression.TRUE && right.residual() == Expression.TRUE) {
-                if (guards.shapewiseImplies(left, right)) {
-                    return right;
-                }
-                if (guards.shapewiseImplies(right, left)) {
-                    return left;
-                }
-                if (guards.exactImplicationCheap(left, right)) {
-                    if (guards.implies(left, right)) {
-                        return right;
-                    }
-                    if (guards.implies(right, left)) {
-                        return left;
-                    }
-                }
-            }
-            return guards.or(left, right);
-        }
-
-        State define(State state, int symbolId, Fact fact) {
-            Fact existing = state.env().get(symbolId);
+        AnalyzedState define(AnalyzedState state, int symbolId, FactState fact) {
+            FactState existing = state.env.get(symbolId);
             if (Objects.equals(existing, fact)) {
                 return state;
             }
-            Map<Integer, Fact> env = new LinkedHashMap<>(state.env());
+            Map<Integer, FactState> env = new LinkedHashMap<>(state.env);
             env.put(symbolId, fact);
-            return new State(state.path(), env);
+            return new AnalyzedState(state.path, env);
         }
 
-        Fact evaluateFact(Expression expression, Symbol symbol, State state) {
+        FactState evaluateFact(Expression expression, Symbol symbol, AnalyzedState state) {
             Domain.Value value = evaluateValue(expression, symbol, state);
             io.helidon.build.archetype.engine.v2.Value<?> exactValue = exactValue(expression, state);
             return exactValue == null
-                    ? new Fact(state.path(), value)
-                    : Fact.exact(state.path(), value, exactValue);
+                    ? new FactState(state.path, value)
+                    : FactState.exact(state.path, value, exactValue);
         }
 
-        Domain.Value evaluateValue(Expression expression, Symbol symbol, State state) {
+        Domain.Value evaluateValue(Expression expression, Symbol symbol, AnalyzedState state) {
             List<Token> tokens = expression.tokens();
             if (tokens.size() == 1) {
                 Token token = tokens.get(0);
@@ -2167,9 +2164,9 @@ final class Flow {
                 if (token.isVariable()) {
                     Integer symbolId = ir.symbols().findId(token.variable());
                     if (symbolId != null) {
-                        Fact fact = state.env().get(symbolId);
+                        FactState fact = state.env.get(symbolId);
                         if (fact != null) {
-                            return fact.value();
+                            return fact.value;
                         }
                     }
                 }
@@ -2177,7 +2174,7 @@ final class Flow {
             return Domain.Value.top(symbol.domain());
         }
 
-        io.helidon.build.archetype.engine.v2.Value<?> exactValue(Expression expression, State state) {
+        io.helidon.build.archetype.engine.v2.Value<?> exactValue(Expression expression, AnalyzedState state) {
             List<Token> tokens = expression.tokens();
             if (tokens.size() != 1) {
                 return null;
@@ -2191,27 +2188,382 @@ final class Flow {
                 if (symbolId == null) {
                     return null;
                 }
-                Fact fact = state.env().get(symbolId);
-                if (fact == null || fact.exactCases().isEmpty()) {
+                FactState fact = state.env.get(symbolId);
+                if (fact == null) {
+                    return null;
+                }
+                io.helidon.build.archetype.engine.v2.Value<?> exactFromValue = exactFromValue(fact, state.path);
+                if (exactFromValue != null) {
+                    return exactFromValue;
+                }
+                if (fact.exactCases.isEmpty()) {
                     return null;
                 }
                 io.helidon.build.archetype.engine.v2.Value<?> value = null;
-                Guard covered = guards.falseGuard();
-                for (Fact.ExactCase exactCase : fact.exactCases()) {
-                    if (!guards.implies(exactCase.guard(), state.path())) {
-                        covered = guards.or(covered, exactCase.guard());
+                AnalysisPath covered = falsePath;
+                for (ExactCaseState exactCase : fact.exactCases) {
+                    if (!implies(exactCase.guard, state.path)) {
+                        covered = or(covered, exactCase.guard);
                         continue;
                     }
                     if (value == null) {
-                        value = exactCase.value();
-                    } else if (!io.helidon.build.archetype.engine.v2.Value.isEqual(value, exactCase.value())) {
+                        value = exactCase.value;
+                    } else if (!io.helidon.build.archetype.engine.v2.Value.isEqual(value, exactCase.value)) {
                         return null;
                     }
-                    covered = guards.or(covered, exactCase.guard());
+                    covered = or(covered, exactCase.guard);
                 }
-                return value != null && guards.implies(state.path(), covered) ? value : null;
+                return value != null && implies(state.path, covered) ? value : null;
             }
             return null;
+        }
+
+        private io.helidon.build.archetype.engine.v2.Value<?> exactFromValue(FactState fact, AnalysisPath path) {
+            if (!implies(path, fact.definedUnder)) {
+                return null;
+            }
+            if (fact.value instanceof Domain.Value.BooleanSet) {
+                Set<Boolean> values = ((Domain.Value.BooleanSet) fact.value).values();
+                if (values.size() == 1) {
+                    return Value.of(values.iterator().next());
+                }
+            }
+            if (fact.value instanceof Domain.Value.ChoiceSet) {
+                Set<String> values = ((Domain.Value.ChoiceSet) fact.value).values();
+                if (values.size() == 1) {
+                    return Value.of(values.iterator().next());
+                }
+            }
+            if (fact.value instanceof Domain.Value.FiniteText) {
+                Set<String> values = ((Domain.Value.FiniteText) fact.value).values();
+                if (values.size() == 1) {
+                    return Value.of(values.iterator().next());
+                }
+            }
+            return null;
+        }
+
+        private FactState mergeFact(FactState left, FactState right) {
+            AnalysisPath definedUnder = or(left.definedUnder, right.definedUnder);
+            Domain.Value value = Domain.Value.join(left.value, right.value);
+            if (left.exactCases.isEmpty()) {
+                return right.exactCases.isEmpty()
+                        ? new FactState(definedUnder, value)
+                        : new FactState(definedUnder, value, right.exactCases);
+            }
+            if (right.exactCases.isEmpty()) {
+                return new FactState(definedUnder, value, left.exactCases);
+            }
+            List<ExactCaseState> merged = new ArrayList<>();
+            for (ExactCaseState exactCase : left.exactCases) {
+                if (!mergeExactCase(merged, exactCase)) {
+                    return new FactState(definedUnder, value);
+                }
+            }
+            for (ExactCaseState exactCase : right.exactCases) {
+                if (!mergeExactCase(merged, exactCase)) {
+                    return new FactState(definedUnder, value);
+                }
+            }
+            return new FactState(definedUnder, value, merged);
+        }
+
+        private boolean mergeExactCase(List<ExactCaseState> merged, ExactCaseState next) {
+            for (int i = 0; i < merged.size(); i++) {
+                ExactCaseState current = merged.get(i);
+                if (io.helidon.build.archetype.engine.v2.Value.isEqual(current.value, next.value)) {
+                    merged.set(i, new ExactCaseState(current.value, or(current.guard, next.guard)));
+                    return true;
+                }
+            }
+            if (merged.size() >= EXACT_CASE_MAX) {
+                return false;
+            }
+            merged.add(next);
+            return true;
+        }
+
+        private List<State> materializeStates(List<AnalyzedState> states) {
+            List<State> result = new ArrayList<>(states.size());
+            for (AnalyzedState state : states) {
+                result.add(materializeState(state));
+            }
+            return result;
+        }
+
+        private State materializeState(AnalyzedState state) {
+            State cached = materializedStates.get(state);
+            if (cached != null) {
+                return cached;
+            }
+            Map<Integer, Fact> env = new LinkedHashMap<>();
+            for (Map.Entry<Integer, FactState> entry : state.env.entrySet()) {
+                env.put(entry.getKey(), materializeFact(entry.getValue()));
+            }
+            State materialized = new State(materializeGuard(state.path), env);
+            materializedStates.put(state, materialized);
+            return materialized;
+        }
+
+        private List<Use> materializeUses(List<PendingUse> uses) {
+            List<Use> result = new ArrayList<>(uses.size());
+            for (PendingUse use : uses) {
+                result.add(new Use(use.id, use.symbolId, materializeGuard(use.guard)));
+            }
+            return result;
+        }
+
+        private Fact materializeFact(FactState fact) {
+            Fact cached = materializedFacts.get(fact);
+            if (cached != null) {
+                return cached;
+            }
+            List<Fact.ExactCase> exactCases = new ArrayList<>(fact.exactCases.size());
+            for (ExactCaseState exactCase : fact.exactCases) {
+                exactCases.add(new Fact.ExactCase(exactCase.value, materializeGuard(exactCase.guard)));
+            }
+            Fact materialized = new Fact(materializeGuard(fact.definedUnder), fact.value, exactCases);
+            materializedFacts.put(fact, materialized);
+            return materialized;
+        }
+
+        private boolean implies(AnalysisPath left, AnalysisPath right) {
+            if (left == right || left == falsePath || right == truePath) {
+                return true;
+            }
+            if (right == falsePath) {
+                return false;
+            }
+            long key = pairKey(left, right);
+            Boolean cached = implicationCache.get(key);
+            if (cached != null) {
+                return cached;
+            }
+            boolean result = guards.implies(materializeGuard(left), materializeGuard(right));
+            implicationCache.put(key, result);
+            return result;
+        }
+
+        private AnalysisPath atom(Guard guard) {
+            if (guard.equals(guards.falseGuard())) {
+                return falsePath;
+            }
+            if (guard.equals(guards.trueGuard())) {
+                return truePath;
+            }
+            return atoms.computeIfAbsent(guard, key ->
+                    new AnalysisPath(nextPathId++, AnalysisPath.Kind.ATOM, null, null, key));
+        }
+
+        private AnalysisPath and(AnalysisPath left, Guard guard) {
+            return and(left, atom(guard));
+        }
+
+        private AnalysisPath and(AnalysisPath left, AnalysisPath right) {
+            if (left == falsePath || right == falsePath) {
+                return falsePath;
+            }
+            if (left == truePath) {
+                return right;
+            }
+            if (right == truePath || left == right) {
+                return left;
+            }
+            if (left.id > right.id) {
+                AnalysisPath swap = left;
+                left = right;
+                right = swap;
+            }
+            long key = pairKey(left, right);
+            AnalysisPath cached = ands.get(key);
+            if (cached != null) {
+                return cached;
+            }
+            AnalysisPath created = new AnalysisPath(nextPathId++, AnalysisPath.Kind.AND, left, right, null);
+            ands.put(key, created);
+            return created;
+        }
+
+        private AnalysisPath or(AnalysisPath left, AnalysisPath right) {
+            if (left == truePath || right == truePath) {
+                return truePath;
+            }
+            if (left == falsePath) {
+                return right;
+            }
+            if (right == falsePath || left == right) {
+                return left;
+            }
+            if (left.id > right.id) {
+                AnalysisPath swap = left;
+                left = right;
+                right = swap;
+            }
+            long key = pairKey(left, right);
+            AnalysisPath cached = ors.get(key);
+            if (cached != null) {
+                return cached;
+            }
+            AnalysisPath created = new AnalysisPath(nextPathId++, AnalysisPath.Kind.OR, left, right, null);
+            ors.put(key, created);
+            return created;
+        }
+
+        private Guard negate(Guard guard) {
+            return negatedGuards.computeIfAbsent(guard, guards::not);
+        }
+
+        private Guard materializeGuard(AnalysisPath path) {
+            Guard cached = materializedPaths.get(path);
+            if (cached != null) {
+                return cached;
+            }
+            Guard materialized;
+            switch (path.kind) {
+                case FALSE:
+                    materialized = guards.falseGuard();
+                    break;
+                case TRUE:
+                    materialized = guards.trueGuard();
+                    break;
+                case ATOM:
+                    materialized = path.atom;
+                    break;
+                case AND:
+                    materialized = guards.and(materializeGuard(path.left), materializeGuard(path.right));
+                    break;
+                case OR:
+                    materialized = guards.or(materializeGuard(path.left), materializeGuard(path.right));
+                    break;
+                default:
+                    throw new IllegalStateException("Unsupported path kind: " + path.kind);
+            }
+            materializedPaths.put(path, materialized);
+            return materialized;
+        }
+
+        private static long pairKey(AnalysisPath left, AnalysisPath right) {
+            return ((long) left.id << 32) | Integer.toUnsignedLong(right.id);
+        }
+
+        private static final class AnalysisPath {
+            private enum Kind {
+                FALSE,
+                TRUE,
+                ATOM,
+                AND,
+                OR
+            }
+
+            private final int id;
+            private final Kind kind;
+            private final AnalysisPath left;
+            private final AnalysisPath right;
+            private final Guard atom;
+
+            private AnalysisPath(int id, Kind kind, AnalysisPath left, AnalysisPath right, Guard atom) {
+                this.id = id;
+                this.kind = requireNonNull(kind, "kind is null");
+                this.left = left;
+                this.right = right;
+                this.atom = atom;
+            }
+        }
+
+        private static final class AnalyzedState {
+            private final AnalysisPath path;
+            private final Map<Integer, FactState> env;
+
+            private AnalyzedState(AnalysisPath path, Map<Integer, FactState> env) {
+                this.path = requireNonNull(path, "path is null");
+                this.env = Map.copyOf(env);
+            }
+        }
+
+        private static final class PendingUse {
+            private final int id;
+            private final int symbolId;
+            private final AnalysisPath guard;
+
+            private PendingUse(int id, int symbolId, AnalysisPath guard) {
+                this.id = id;
+                this.symbolId = symbolId;
+                this.guard = requireNonNull(guard, "guard is null");
+            }
+        }
+
+        private static final class FactState {
+            private final AnalysisPath definedUnder;
+            private final Domain.Value value;
+            private final List<ExactCaseState> exactCases;
+
+            private FactState(AnalysisPath definedUnder, Domain.Value value) {
+                this(definedUnder, value, List.of());
+            }
+
+            private FactState(AnalysisPath definedUnder, Domain.Value value, List<ExactCaseState> exactCases) {
+                this.definedUnder = requireNonNull(definedUnder, "definedUnder is null");
+                this.value = requireNonNull(value, "value is null");
+                this.exactCases = List.copyOf(requireNonNull(exactCases, "exactCases is null"));
+            }
+
+            private static FactState exact(AnalysisPath definedUnder,
+                                           Domain.Value value,
+                                           io.helidon.build.archetype.engine.v2.Value<?> exactValue) {
+                if (exactValue == null || !exactValue.isPresent()) {
+                    return new FactState(definedUnder, value);
+                }
+                return new FactState(definedUnder, value, List.of(new ExactCaseState(exactValue, definedUnder)));
+            }
+
+            @Override
+            public boolean equals(Object o) {
+                if (this == o) {
+                    return true;
+                }
+                if (!(o instanceof FactState)) {
+                    return false;
+                }
+                FactState other = (FactState) o;
+                return definedUnder == other.definedUnder
+                        && value.equals(other.value)
+                        && exactCases.equals(other.exactCases);
+            }
+
+            @Override
+            public int hashCode() {
+                int result = Integer.hashCode(definedUnder.id);
+                result = 31 * result + value.hashCode();
+                return 31 * result + exactCases.hashCode();
+            }
+        }
+
+        private static final class ExactCaseState {
+            private final io.helidon.build.archetype.engine.v2.Value<?> value;
+            private final AnalysisPath guard;
+
+            private ExactCaseState(io.helidon.build.archetype.engine.v2.Value<?> value, AnalysisPath guard) {
+                this.value = requireNonNull(value, "value is null");
+                this.guard = requireNonNull(guard, "guard is null");
+            }
+
+            @Override
+            public boolean equals(Object o) {
+                if (this == o) {
+                    return true;
+                }
+                if (!(o instanceof ExactCaseState)) {
+                    return false;
+                }
+                ExactCaseState other = (ExactCaseState) o;
+                return guard == other.guard
+                        && io.helidon.build.archetype.engine.v2.Value.isEqual(value, other.value);
+            }
+
+            @Override
+            public int hashCode() {
+                return 31 * io.helidon.build.archetype.engine.v2.Value.hash(value) + Integer.hashCode(guard.id);
+            }
         }
 
         static Domain.Value literalValue(Spec spec, Value<?> literal) {
