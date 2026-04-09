@@ -16,17 +16,16 @@
 package io.helidon.build.archetype.engine.v2;
 
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.function.IntFunction;
 
@@ -1095,7 +1094,7 @@ final class Domain {
             if (allowed.isEmpty()) {
                 return falseGuard();
             }
-            DecisionShape shape = new DecisionShape(Map.of(symbolId, new ScalarShape(symbol, allowed)), Map.of());
+            DecisionShape shape = DecisionShape.scalar(symbolId, new ScalarShape(symbol, allowed));
             return guard(Decision.of(List.of(shape), symbols), Expression.TRUE);
         }
 
@@ -1110,7 +1109,7 @@ final class Domain {
                 return falseGuard();
             }
             MembershipShape membership = MembershipShape.required(item);
-            DecisionShape shape = new DecisionShape(Map.of(), Map.of(symbolId, membership));
+            DecisionShape shape = DecisionShape.membership(symbolId, membership);
             return guard(Decision.of(List.of(shape), symbols), Expression.TRUE);
         }
 
@@ -1123,9 +1122,9 @@ final class Domain {
                 case BOOLEAN:
                 case CHOICE:
                 case FINITE_TEXT:
-                    return guard(Decision.of(List.of(new DecisionShape(
-                            Map.of(symbolId, new ScalarShape(symbol, scalarValues(symbol.domain()))),
-                            Map.of())), symbols), Expression.TRUE);
+                    return guard(Decision.of(List.of(DecisionShape.scalar(
+                            symbolId,
+                            new ScalarShape(symbol, scalarValues(symbol.domain())))), symbols), Expression.TRUE);
                 case MEMBERSHIP:
                     return trueGuard();
                 default:
@@ -1537,99 +1536,196 @@ final class Domain {
     }
 
     private static final class DecisionShape {
-        private final Map<Integer, ScalarShape> scalars;
-        private final Map<Integer, MembershipShape> memberships;
+        private static final int[] NO_SYMBOL_IDS = new int[0];
+        private static final ScalarShape[] NO_SCALARS = new ScalarShape[0];
+        private static final MembershipShape[] NO_MEMBERSHIPS = new MembershipShape[0];
+
+        private final int[] scalarSymbolIds;
+        private final ScalarShape[] scalarShapes;
+        private final int[] membershipSymbolIds;
+        private final MembershipShape[] membershipShapes;
         private final int membershipsHash;
+        private final int hashCode;
 
         private DecisionShape() {
-            this(Map.of(), Map.of());
+            this(NO_SYMBOL_IDS, NO_SCALARS, NO_SYMBOL_IDS, NO_MEMBERSHIPS);
         }
 
-        private DecisionShape(Map<Integer, ScalarShape> scalars, Map<Integer, MembershipShape> memberships) {
-            this.scalars = orderedByKey(scalars);
-            this.memberships = orderedByKey(memberships);
-            this.membershipsHash = this.memberships.hashCode();
+        private DecisionShape(int symbolId, ScalarShape scalarShape) {
+            this(new int[] {symbolId}, new ScalarShape[] {scalarShape}, NO_SYMBOL_IDS, NO_MEMBERSHIPS);
+        }
+
+        private DecisionShape(int[] scalarSymbolIds,
+                              ScalarShape[] scalarShapes,
+                              int[] membershipSymbolIds,
+                              MembershipShape[] membershipShapes) {
+            this.scalarSymbolIds = scalarSymbolIds;
+            this.scalarShapes = scalarShapes;
+            this.membershipSymbolIds = membershipSymbolIds;
+            this.membershipShapes = membershipShapes;
+            this.membershipsHash = entriesHash(membershipSymbolIds, membershipShapes);
+            this.hashCode = 31 * entriesHash(scalarSymbolIds, scalarShapes) + membershipsHash;
+        }
+
+        static DecisionShape scalar(int symbolId, ScalarShape scalarShape) {
+            return new DecisionShape(symbolId, scalarShape);
+        }
+
+        static DecisionShape membership(int symbolId, MembershipShape membershipShape) {
+            return new DecisionShape(
+                    NO_SYMBOL_IDS,
+                    NO_SCALARS,
+                    new int[] {symbolId},
+                    new MembershipShape[] {membershipShape});
         }
 
         boolean isTrue() {
-            return scalars.isEmpty() && memberships.isEmpty();
+            return scalarShapes.length == 0 && membershipShapes.length == 0;
         }
 
         DecisionShape normalized(Symbol.Table symbols) {
+            int nextScalarCount = scalarShapes.length;
+            int nextMembershipCount = membershipShapes.length;
             boolean changed = false;
-            Map<Integer, ScalarShape> nextScalars = new TreeMap<>();
-            for (Map.Entry<Integer, ScalarShape> entry : scalars.entrySet()) {
-                Set<String> domainValues = scalarValues(symbols.symbol(entry.getKey()).domain());
-                if (!entry.getValue().allowed.equals(domainValues)) {
-                    nextScalars.put(entry.getKey(), entry.getValue());
-                } else {
+            for (int i = 0; i < scalarShapes.length; i++) {
+                Set<String> domainValues = scalarValues(symbols.symbol(scalarSymbolIds[i]).domain());
+                if (scalarShapes[i].allowed.equals(domainValues)) {
                     changed = true;
+                    nextScalarCount--;
                 }
             }
-            Map<Integer, MembershipShape> nextMemberships = new TreeMap<>();
-            for (Map.Entry<Integer, MembershipShape> entry : memberships.entrySet()) {
-                MembershipShape constraint = entry.getValue();
-                if (!constraint.isEmpty()) {
-                    nextMemberships.put(entry.getKey(), constraint);
-                } else {
+            for (MembershipShape membershipShape : membershipShapes) {
+                if (membershipShape.isEmpty()) {
                     changed = true;
+                    nextMembershipCount--;
                 }
             }
             if (!changed) {
                 return this;
             }
-            return new DecisionShape(nextScalars, nextMemberships);
+            if (nextScalarCount == 0 && nextMembershipCount == 0) {
+                return new DecisionShape();
+            }
+            int[] nextScalarIds = nextScalarCount == 0 ? NO_SYMBOL_IDS : new int[nextScalarCount];
+            ScalarShape[] nextScalars = nextScalarCount == 0 ? NO_SCALARS : new ScalarShape[nextScalarCount];
+            int scalarIndex = 0;
+            for (int i = 0; i < scalarShapes.length; i++) {
+                Set<String> domainValues = scalarValues(symbols.symbol(scalarSymbolIds[i]).domain());
+                if (!scalarShapes[i].allowed.equals(domainValues)) {
+                    nextScalarIds[scalarIndex] = scalarSymbolIds[i];
+                    nextScalars[scalarIndex] = scalarShapes[i];
+                    scalarIndex++;
+                }
+            }
+            int[] nextMembershipIds = nextMembershipCount == 0 ? NO_SYMBOL_IDS : new int[nextMembershipCount];
+            MembershipShape[] nextMemberships = nextMembershipCount == 0
+                    ? NO_MEMBERSHIPS
+                    : new MembershipShape[nextMembershipCount];
+            int membershipIndex = 0;
+            for (int i = 0; i < membershipShapes.length; i++) {
+                if (!membershipShapes[i].isEmpty()) {
+                    nextMembershipIds[membershipIndex] = membershipSymbolIds[i];
+                    nextMemberships[membershipIndex] = membershipShapes[i];
+                    membershipIndex++;
+                }
+            }
+            return new DecisionShape(nextScalarIds, nextScalars, nextMembershipIds, nextMemberships);
         }
 
         DecisionShape intersect(DecisionShape other, Symbol.Table symbols) {
             if (this == other) {
                 return this;
             }
-            Map<Integer, ScalarShape> nextScalars = new TreeMap<>(scalars);
-            for (Map.Entry<Integer, ScalarShape> entry : other.scalars.entrySet()) {
-                ScalarShape current = nextScalars.get(entry.getKey());
-                if (current == null) {
-                    nextScalars.put(entry.getKey(), entry.getValue());
+            if (isTrue()) {
+                return other;
+            }
+            if (other.isTrue()) {
+                return this;
+            }
+            ScalarBuilder nextScalars = new ScalarBuilder(scalarShapes.length + other.scalarShapes.length);
+            int leftScalar = 0;
+            int rightScalar = 0;
+            while (leftScalar < scalarShapes.length || rightScalar < other.scalarShapes.length) {
+                if (rightScalar == other.scalarShapes.length
+                        || leftScalar < scalarShapes.length
+                        && scalarSymbolIds[leftScalar] < other.scalarSymbolIds[rightScalar]) {
+                    nextScalars.add(scalarSymbolIds[leftScalar], scalarShapes[leftScalar]);
+                    leftScalar++;
+                } else if (leftScalar == scalarShapes.length
+                        || other.scalarSymbolIds[rightScalar] < scalarSymbolIds[leftScalar]) {
+                    nextScalars.add(other.scalarSymbolIds[rightScalar], other.scalarShapes[rightScalar]);
+                    rightScalar++;
                 } else {
-                    ScalarShape intersection = current.intersect(entry.getValue(), symbols.symbol(entry.getKey()));
+                    int symbolId = scalarSymbolIds[leftScalar];
+                    ScalarShape intersection = scalarShapes[leftScalar].intersect(other.scalarShapes[rightScalar],
+                            symbols.symbol(symbolId));
                     if (intersection == null) {
                         return null;
                     }
-                    nextScalars.put(entry.getKey(), intersection);
+                    nextScalars.add(symbolId, intersection);
+                    leftScalar++;
+                    rightScalar++;
                 }
             }
-            Map<Integer, MembershipShape> nextMemberships = new TreeMap<>(memberships);
-            for (Map.Entry<Integer, MembershipShape> entry : other.memberships.entrySet()) {
-                MembershipShape current = nextMemberships.get(entry.getKey());
-                if (current == null) {
-                    nextMemberships.put(entry.getKey(), entry.getValue());
+            MembershipBuilder nextMemberships = new MembershipBuilder(membershipShapes.length + other.membershipShapes.length);
+            int leftMembership = 0;
+            int rightMembership = 0;
+            while (leftMembership < membershipShapes.length || rightMembership < other.membershipShapes.length) {
+                if (rightMembership == other.membershipShapes.length
+                        || leftMembership < membershipShapes.length
+                        && membershipSymbolIds[leftMembership] < other.membershipSymbolIds[rightMembership]) {
+                    nextMemberships.add(membershipSymbolIds[leftMembership], membershipShapes[leftMembership]);
+                    leftMembership++;
+                } else if (leftMembership == membershipShapes.length
+                        || other.membershipSymbolIds[rightMembership] < membershipSymbolIds[leftMembership]) {
+                    nextMemberships.add(other.membershipSymbolIds[rightMembership], other.membershipShapes[rightMembership]);
+                    rightMembership++;
                 } else {
-                    MembershipShape intersection = current.intersect(entry.getValue());
+                    int symbolId = membershipSymbolIds[leftMembership];
+                    MembershipShape intersection = membershipShapes[leftMembership]
+                            .intersect(other.membershipShapes[rightMembership]);
                     if (intersection == null) {
                         return null;
                     }
-                    nextMemberships.put(entry.getKey(), intersection);
+                    nextMemberships.add(symbolId, intersection);
+                    leftMembership++;
+                    rightMembership++;
                 }
             }
-            return new DecisionShape(nextScalars, nextMemberships).normalized(symbols);
+            return new DecisionShape(nextScalars.symbolIds(), nextScalars.shapes(),
+                    nextMemberships.symbolIds(), nextMemberships.shapes());
         }
 
         boolean subsetOf(DecisionShape other, Symbol.Table symbols) {
             if (this == other) {
                 return true;
             }
-            if (scalars.size() < other.scalars.size() || memberships.size() < other.memberships.size()) {
+            if (scalarShapes.length < other.scalarShapes.length || membershipShapes.length < other.membershipShapes.length) {
                 return false;
             }
-            for (Map.Entry<Integer, ScalarShape> entry : other.scalars.entrySet()) {
-                ScalarShape left = scalars.get(entry.getKey());
-                if (left == null || !left.subsetOf(entry.getValue())) {
+            int leftScalar = 0;
+            for (int rightScalar = 0; rightScalar < other.scalarShapes.length; rightScalar++) {
+                int symbolId = other.scalarSymbolIds[rightScalar];
+                while (leftScalar < scalarShapes.length && scalarSymbolIds[leftScalar] < symbolId) {
+                    leftScalar++;
+                }
+                if (leftScalar == scalarShapes.length
+                        || scalarSymbolIds[leftScalar] != symbolId
+                        || !scalarShapes[leftScalar].subsetOf(other.scalarShapes[rightScalar])) {
                     return false;
                 }
             }
-            for (Map.Entry<Integer, MembershipShape> entry : other.memberships.entrySet()) {
-                MembershipShape left = memberships.getOrDefault(entry.getKey(), MembershipShape.EMPTY);
-                MembershipShape right = entry.getValue();
+            int leftMembership = 0;
+            for (int rightMembership = 0; rightMembership < other.membershipShapes.length; rightMembership++) {
+                int symbolId = other.membershipSymbolIds[rightMembership];
+                while (leftMembership < membershipShapes.length && membershipSymbolIds[leftMembership] < symbolId) {
+                    leftMembership++;
+                }
+                if (leftMembership == membershipShapes.length || membershipSymbolIds[leftMembership] != symbolId) {
+                    return false;
+                }
+                MembershipShape left = membershipShapes[leftMembership];
+                MembershipShape right = other.membershipShapes[rightMembership];
                 if (!left.required.containsAll(right.required) || !left.forbidden.containsAll(right.forbidden)) {
                     return false;
                 }
@@ -1638,21 +1734,44 @@ final class Domain {
         }
 
         DecisionShape tryMerge(DecisionShape other, Symbol.Table symbols) {
-            if (membershipsHash != other.membershipsHash || !memberships.equals(other.memberships)) {
+            if (!membershipsEqual(other)) {
                 return null;
             }
-            if (Math.abs(scalars.size() - other.scalars.size()) > 1) {
+            if (Math.abs(scalarShapes.length - other.scalarShapes.length) > 1) {
                 return null;
             }
             Integer diffSymbolId = null;
-            Map<Integer, ScalarShape> nextScalars = new TreeMap<>();
-            Set<Integer> keys = new TreeSet<>(scalars.keySet());
-            keys.addAll(other.scalars.keySet());
-            for (int symbolId : keys) {
+            ScalarBuilder nextScalars = new ScalarBuilder(scalarShapes.length + other.scalarShapes.length);
+            int leftScalar = 0;
+            int rightScalar = 0;
+            while (leftScalar < scalarShapes.length || rightScalar < other.scalarShapes.length) {
+                int symbolId;
+                ScalarShape leftShape;
+                ScalarShape rightShape;
+                if (rightScalar == other.scalarShapes.length
+                        || leftScalar < scalarShapes.length
+                        && scalarSymbolIds[leftScalar] < other.scalarSymbolIds[rightScalar]) {
+                    symbolId = scalarSymbolIds[leftScalar];
+                    leftShape = scalarShapes[leftScalar];
+                    rightShape = null;
+                    leftScalar++;
+                } else if (leftScalar == scalarShapes.length
+                        || other.scalarSymbolIds[rightScalar] < scalarSymbolIds[leftScalar]) {
+                    symbolId = other.scalarSymbolIds[rightScalar];
+                    leftShape = null;
+                    rightShape = other.scalarShapes[rightScalar];
+                    rightScalar++;
+                } else {
+                    symbolId = scalarSymbolIds[leftScalar];
+                    leftShape = scalarShapes[leftScalar];
+                    rightShape = other.scalarShapes[rightScalar];
+                    leftScalar++;
+                    rightScalar++;
+                }
                 Symbol symbol = symbols.symbol(symbolId);
                 Set<String> domainValues = scalarValues(symbol.domain());
-                Set<String> leftAllowed = allowed(symbolId, symbols);
-                Set<String> rightAllowed = other.allowed(symbolId, symbols);
+                Set<String> leftAllowed = leftShape == null ? domainValues : leftShape.allowed;
+                Set<String> rightAllowed = rightShape == null ? domainValues : rightShape.allowed;
                 if (!leftAllowed.equals(rightAllowed)) {
                     if (diffSymbolId != null) {
                         return null;
@@ -1661,13 +1780,17 @@ final class Domain {
                     Set<String> union = new TreeSet<>(leftAllowed);
                     union.addAll(rightAllowed);
                     if (!union.equals(domainValues)) {
-                        nextScalars.put(symbolId, new ScalarShape(symbol, union));
+                        nextScalars.add(symbolId, new ScalarShape(symbol, union));
                     }
                 } else if (!leftAllowed.equals(domainValues)) {
-                    nextScalars.put(symbolId, new ScalarShape(symbol, leftAllowed));
+                    nextScalars.add(symbolId, leftShape == null ? rightShape : leftShape);
                 }
             }
-            return diffSymbolId == null ? null : new DecisionShape(nextScalars, memberships).normalized(symbols);
+            return diffSymbolId == null ? null : new DecisionShape(
+                    nextScalars.symbolIds(),
+                    nextScalars.shapes(),
+                    membershipSymbolIds,
+                    membershipShapes);
         }
 
         List<DecisionShape> subtract(DecisionShape other, Symbol.Table symbols) {
@@ -1695,25 +1818,51 @@ final class Domain {
 
         Expression toExpression(IntFunction<String> keyResolver, Symbol.Table symbols) {
             Expression expression = Expression.TRUE;
-            for (Map.Entry<Integer, ScalarShape> entry : scalars.entrySet()) {
-                Symbol symbol = symbols.symbol(entry.getKey());
-                expression = expression.and(entry.getValue().toExpression(keyResolver.apply(entry.getKey()), symbol.domain()));
+            for (int i = 0; i < scalarShapes.length; i++) {
+                Symbol symbol = symbols.symbol(scalarSymbolIds[i]);
+                expression = expression.and(scalarShapes[i].toExpression(keyResolver.apply(scalarSymbolIds[i]), symbol.domain()));
             }
-            for (Map.Entry<Integer, MembershipShape> entry : memberships.entrySet()) {
-                expression = expression.and(entry.getValue().toExpression(keyResolver.apply(entry.getKey())));
+            for (int i = 0; i < membershipShapes.length; i++) {
+                expression = expression.and(membershipShapes[i].toExpression(keyResolver.apply(membershipSymbolIds[i])));
             }
             return expression;
         }
 
         String literal() {
-            return scalars + "|" + memberships;
+            StringBuilder builder = new StringBuilder();
+            builder.append('{');
+            for (int i = 0; i < scalarShapes.length; i++) {
+                if (i > 0) {
+                    builder.append(',');
+                }
+                builder.append(scalarSymbolIds[i]).append(':').append(scalarShapes[i].allowed);
+            }
+            builder.append("}|{");
+            for (int i = 0; i < membershipShapes.length; i++) {
+                if (i > 0) {
+                    builder.append(',');
+                }
+                builder.append(membershipSymbolIds[i])
+                        .append(':')
+                        .append(membershipShapes[i].required)
+                        .append('/')
+                        .append(membershipShapes[i].forbidden);
+            }
+            builder.append('}');
+            return builder.toString();
         }
 
         private DecisionPartition splitAgainst(DecisionShape other, Symbol.Table symbols) {
-            for (Map.Entry<Integer, ScalarShape> entry : other.scalars.entrySet()) {
-                int symbolId = entry.getKey();
-                Set<String> leftAllowed = allowed(symbolId, symbols);
-                Set<String> rightAllowed = other.allowed(symbolId, symbols);
+            int leftScalar = 0;
+            for (int rightScalar = 0; rightScalar < other.scalarShapes.length; rightScalar++) {
+                int symbolId = other.scalarSymbolIds[rightScalar];
+                while (leftScalar < scalarShapes.length && scalarSymbolIds[leftScalar] < symbolId) {
+                    leftScalar++;
+                }
+                Set<String> leftAllowed = leftScalar < scalarShapes.length && scalarSymbolIds[leftScalar] == symbolId
+                        ? scalarShapes[leftScalar].allowed
+                        : scalarValues(symbols.symbol(symbolId).domain());
+                Set<String> rightAllowed = other.scalarShapes[rightScalar].allowed;
                 if (!rightAllowed.containsAll(leftAllowed)) {
                     Set<String> outside = new TreeSet<>(leftAllowed);
                     outside.removeAll(rightAllowed);
@@ -1722,19 +1871,28 @@ final class Domain {
                     return new DecisionPartition(withScalar(symbolId, outside, symbols), withScalar(symbolId, overlap, symbols));
                 }
             }
-            for (Map.Entry<Integer, MembershipShape> entry : other.memberships.entrySet()) {
-                int symbolId = entry.getKey();
-                MembershipShape left = memberships.getOrDefault(symbolId, MembershipShape.EMPTY);
-                for (String required : entry.getValue().required) {
+            int leftMembership = 0;
+            for (int rightMembership = 0; rightMembership < other.membershipShapes.length; rightMembership++) {
+                int symbolId = other.membershipSymbolIds[rightMembership];
+                while (leftMembership < membershipShapes.length && membershipSymbolIds[leftMembership] < symbolId) {
+                    leftMembership++;
+                }
+                MembershipShape left = leftMembership < membershipShapes.length && membershipSymbolIds[leftMembership] == symbolId
+                        ? membershipShapes[leftMembership]
+                        : MembershipShape.EMPTY;
+                MembershipShape right = other.membershipShapes[rightMembership];
+                for (String required : right.required) {
                     if (!left.required.contains(required) && !left.forbidden.contains(required)) {
-                        return new DecisionPartition(withMembershipForbidden(symbolId, required, symbols),
-                                withMembershipRequired(symbolId, required, symbols));
+                        return new DecisionPartition(
+                                withMembershipForbidden(symbolId, required),
+                                withMembershipRequired(symbolId, required));
                     }
                 }
-                for (String forbidden : entry.getValue().forbidden) {
+                for (String forbidden : right.forbidden) {
                     if (!left.required.contains(forbidden) && !left.forbidden.contains(forbidden)) {
-                        return new DecisionPartition(withMembershipRequired(symbolId, forbidden, symbols),
-                                withMembershipForbidden(symbolId, forbidden, symbols));
+                        return new DecisionPartition(
+                                withMembershipRequired(symbolId, forbidden),
+                                withMembershipForbidden(symbolId, forbidden));
                     }
                 }
             }
@@ -1742,57 +1900,185 @@ final class Domain {
         }
 
         private DecisionShape withScalar(int symbolId, Set<String> allowed, Symbol.Table symbols) {
-            Map<Integer, ScalarShape> nextScalars = new TreeMap<>(scalars);
             Symbol symbol = symbols.symbol(symbolId);
             Set<String> domainValues = scalarValues(symbol.domain());
             if (allowed.equals(domainValues)) {
-                nextScalars.remove(symbolId);
-            } else {
-                nextScalars.put(symbolId, new ScalarShape(symbol, allowed));
+                int index = Arrays.binarySearch(scalarSymbolIds, symbolId);
+                if (index < 0) {
+                    return this;
+                }
+                if (scalarShapes.length == 1) {
+                    return new DecisionShape(NO_SYMBOL_IDS, NO_SCALARS, membershipSymbolIds, membershipShapes);
+                }
+                return new DecisionShape(
+                        removeIndex(scalarSymbolIds, index),
+                        removeIndex(scalarShapes, index),
+                        membershipSymbolIds,
+                        membershipShapes);
             }
-            return new DecisionShape(nextScalars, memberships).normalized(symbols);
-        }
-
-        private DecisionShape withMembershipRequired(int symbolId, String item, Symbol.Table symbols) {
-            Map<Integer, MembershipShape> nextMemberships = new TreeMap<>(memberships);
-            MembershipShape current = nextMemberships.getOrDefault(symbolId, MembershipShape.EMPTY);
-            nextMemberships.put(symbolId, current.withRequired(item));
-            return new DecisionShape(scalars, nextMemberships).normalized(symbols);
-        }
-
-        private DecisionShape withMembershipForbidden(int symbolId, String item, Symbol.Table symbols) {
-            Map<Integer, MembershipShape> nextMemberships = new TreeMap<>(memberships);
-            MembershipShape current = nextMemberships.getOrDefault(symbolId, MembershipShape.EMPTY);
-            nextMemberships.put(symbolId, current.withForbidden(item));
-            return new DecisionShape(scalars, nextMemberships).normalized(symbols);
-        }
-
-        private Set<String> allowed(int symbolId, Symbol.Table symbols) {
-            ScalarShape constraint = scalars.get(symbolId);
-            return constraint == null ? scalarValues(symbols.symbol(symbolId).domain()) : constraint.allowed;
-        }
-
-        private static <T> Map<Integer, T> orderedByKey(Map<Integer, T> values) {
-            if (values.isEmpty()) {
-                return Map.of();
+            ScalarShape nextShape = new ScalarShape(symbol, allowed);
+            int index = Arrays.binarySearch(scalarSymbolIds, symbolId);
+            if (index >= 0) {
+                if (scalarShapes[index].equals(nextShape)) {
+                    return this;
+                }
+                ScalarShape[] nextScalars = Arrays.copyOf(scalarShapes, scalarShapes.length);
+                nextScalars[index] = nextShape;
+                return new DecisionShape(scalarSymbolIds, nextScalars, membershipSymbolIds, membershipShapes);
             }
-            Map<Integer, T> ordered = new LinkedHashMap<>();
-            new TreeMap<>(values).forEach(ordered::put);
-            return Collections.unmodifiableMap(ordered);
+            int insertion = -index - 1;
+            int[] nextScalarIds = insert(scalarSymbolIds, insertion, symbolId);
+            ScalarShape[] nextScalars = insert(scalarShapes, insertion, nextShape);
+            return new DecisionShape(nextScalarIds, nextScalars, membershipSymbolIds, membershipShapes);
+        }
+
+        private DecisionShape withMembershipRequired(int symbolId, String item) {
+            int index = Arrays.binarySearch(membershipSymbolIds, symbolId);
+            MembershipShape current = index < 0 ? MembershipShape.EMPTY : membershipShapes[index];
+            MembershipShape nextShape = current.withRequired(item);
+            if (nextShape.equals(current)) {
+                return this;
+            }
+            return withMembership(index, symbolId, nextShape);
+        }
+
+        private DecisionShape withMembershipForbidden(int symbolId, String item) {
+            int index = Arrays.binarySearch(membershipSymbolIds, symbolId);
+            MembershipShape current = index < 0 ? MembershipShape.EMPTY : membershipShapes[index];
+            MembershipShape nextShape = current.withForbidden(item);
+            if (nextShape.equals(current)) {
+                return this;
+            }
+            return withMembership(index, symbolId, nextShape);
+        }
+
+        private DecisionShape withMembership(int index, int symbolId, MembershipShape nextShape) {
+            if (index >= 0) {
+                MembershipShape[] nextMemberships = Arrays.copyOf(membershipShapes, membershipShapes.length);
+                nextMemberships[index] = nextShape;
+                return new DecisionShape(scalarSymbolIds, scalarShapes, membershipSymbolIds, nextMemberships);
+            }
+            int insertion = -index - 1;
+            return new DecisionShape(
+                    scalarSymbolIds,
+                    scalarShapes,
+                    insert(membershipSymbolIds, insertion, symbolId),
+                    insert(membershipShapes, insertion, nextShape));
+        }
+
+        private boolean membershipsEqual(DecisionShape other) {
+            return membershipsHash == other.membershipsHash
+                    && entriesEqual(membershipSymbolIds, membershipShapes, other.membershipSymbolIds, other.membershipShapes);
+        }
+
+        private static boolean entriesEqual(int[] leftIds, Object[] leftValues, int[] rightIds, Object[] rightValues) {
+            return Arrays.equals(leftIds, rightIds) && Arrays.equals(leftValues, rightValues);
+        }
+
+        private static int entriesHash(int[] symbolIds, Object[] values) {
+            int result = 1;
+            for (int i = 0; i < symbolIds.length; i++) {
+                result = 31 * result + Integer.hashCode(symbolIds[i]);
+                result = 31 * result + values[i].hashCode();
+            }
+            return result;
+        }
+
+        private static int[] removeIndex(int[] values, int index) {
+            int[] next = new int[values.length - 1];
+            System.arraycopy(values, 0, next, 0, index);
+            System.arraycopy(values, index + 1, next, index, values.length - index - 1);
+            return next;
+        }
+
+        private static <T> T[] removeIndex(T[] values, int index) {
+            T[] next = Arrays.copyOf(values, values.length - 1);
+            System.arraycopy(values, index + 1, next, index, values.length - index - 1);
+            return next;
+        }
+
+        private static int[] insert(int[] values, int insertion, int value) {
+            int[] next = new int[values.length + 1];
+            System.arraycopy(values, 0, next, 0, insertion);
+            next[insertion] = value;
+            System.arraycopy(values, insertion, next, insertion + 1, values.length - insertion);
+            return next;
+        }
+
+        private static <T> T[] insert(T[] values, int insertion, T value) {
+            T[] next = Arrays.copyOf(values, values.length + 1);
+            System.arraycopy(next, insertion, next, insertion + 1, values.length - insertion);
+            next[insertion] = value;
+            return next;
         }
 
         @Override
         public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
             if (!(o instanceof DecisionShape)) {
                 return false;
             }
             DecisionShape other = (DecisionShape) o;
-            return scalars.equals(other.scalars) && memberships.equals(other.memberships);
+            return hashCode == other.hashCode
+                    && entriesEqual(scalarSymbolIds, scalarShapes, other.scalarSymbolIds, other.scalarShapes)
+                    && entriesEqual(membershipSymbolIds, membershipShapes, other.membershipSymbolIds, other.membershipShapes);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(scalars, memberships);
+            return hashCode;
+        }
+
+        private static final class ScalarBuilder {
+            private final int[] symbolIds;
+            private final ScalarShape[] shapes;
+            private int size;
+
+            private ScalarBuilder(int capacity) {
+                this.symbolIds = capacity == 0 ? NO_SYMBOL_IDS : new int[capacity];
+                this.shapes = capacity == 0 ? NO_SCALARS : new ScalarShape[capacity];
+            }
+
+            void add(int symbolId, ScalarShape shape) {
+                symbolIds[size] = symbolId;
+                shapes[size] = shape;
+                size++;
+            }
+
+            int[] symbolIds() {
+                return size == 0 ? NO_SYMBOL_IDS : size == symbolIds.length ? symbolIds : Arrays.copyOf(symbolIds, size);
+            }
+
+            ScalarShape[] shapes() {
+                return size == 0 ? NO_SCALARS : size == shapes.length ? shapes : Arrays.copyOf(shapes, size);
+            }
+        }
+
+        private static final class MembershipBuilder {
+            private final int[] symbolIds;
+            private final MembershipShape[] shapes;
+            private int size;
+
+            private MembershipBuilder(int capacity) {
+                this.symbolIds = capacity == 0 ? NO_SYMBOL_IDS : new int[capacity];
+                this.shapes = capacity == 0 ? NO_MEMBERSHIPS : new MembershipShape[capacity];
+            }
+
+            void add(int symbolId, MembershipShape shape) {
+                symbolIds[size] = symbolId;
+                shapes[size] = shape;
+                size++;
+            }
+
+            int[] symbolIds() {
+                return size == 0 ? NO_SYMBOL_IDS : size == symbolIds.length ? symbolIds : Arrays.copyOf(symbolIds, size);
+            }
+
+            MembershipShape[] shapes() {
+                return size == 0 ? NO_MEMBERSHIPS : size == shapes.length ? shapes : Arrays.copyOf(shapes, size);
+            }
         }
     }
 
