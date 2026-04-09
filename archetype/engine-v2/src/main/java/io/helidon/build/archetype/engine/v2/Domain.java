@@ -207,6 +207,7 @@ final class Domain {
         private final Spec domain;
         private final boolean guardable;
         private final boolean tainted;
+        private final Map<String, Integer> scalarOrdinals;
 
         Symbol(int id, String name, Spec domain, boolean guardable, boolean tainted) {
             this.id = id;
@@ -214,6 +215,7 @@ final class Domain {
             this.domain = requireNonNull(domain, "domain is null");
             this.guardable = guardable;
             this.tainted = tainted;
+            this.scalarOrdinals = scalarOrdinals(domain);
         }
 
         int id() {
@@ -234,6 +236,45 @@ final class Domain {
 
         boolean tainted() {
             return tainted;
+        }
+
+        boolean maskableScalar() {
+            return scalarOrdinals != null;
+        }
+
+        long scalarMask(Set<String> values) {
+            if (scalarOrdinals == null) {
+                throw new IllegalStateException("Scalar mask requested for non-maskable symbol: " + name);
+            }
+            long mask = 0L;
+            for (String value : values) {
+                Integer ordinal = scalarOrdinals.get(value);
+                if (ordinal == null) {
+                    throw new IllegalArgumentException("Unknown scalar value for symbol " + name + ": " + value);
+                }
+                mask |= 1L << ordinal;
+            }
+            return mask;
+        }
+
+        private static Map<String, Integer> scalarOrdinals(Spec domain) {
+            switch (domain.kind()) {
+                case BOOLEAN:
+                case CHOICE:
+                case FINITE_TEXT:
+                    Set<String> values = new TreeSet<>(scalarValues(domain));
+                    if (values.size() > Long.SIZE) {
+                        return null;
+                    }
+                    Map<String, Integer> ordinals = new LinkedHashMap<>();
+                    int ordinal = 0;
+                    for (String value : values) {
+                        ordinals.put(value, ordinal++);
+                    }
+                    return Map.copyOf(ordinals);
+                default:
+                    return null;
+            }
         }
 
         @Override
@@ -1054,7 +1095,7 @@ final class Domain {
             if (allowed.isEmpty()) {
                 return falseGuard();
             }
-            DecisionShape shape = new DecisionShape(Map.of(symbolId, new ScalarShape(allowed)), Map.of());
+            DecisionShape shape = new DecisionShape(Map.of(symbolId, new ScalarShape(symbol, allowed)), Map.of());
             return guard(Decision.of(List.of(shape), symbols), Expression.TRUE);
         }
 
@@ -1083,7 +1124,7 @@ final class Domain {
                 case CHOICE:
                 case FINITE_TEXT:
                     return guard(Decision.of(List.of(new DecisionShape(
-                            Map.of(symbolId, new ScalarShape(scalarValues(symbol.domain()))),
+                            Map.of(symbolId, new ScalarShape(symbol, scalarValues(symbol.domain()))),
                             Map.of())), symbols), Expression.TRUE);
                 case MEMBERSHIP:
                     return trueGuard();
@@ -1505,8 +1546,8 @@ final class Domain {
         }
 
         private DecisionShape(Map<Integer, ScalarShape> scalars, Map<Integer, MembershipShape> memberships) {
-            this.scalars = new TreeMap<>(scalars);
-            this.memberships = new TreeMap<>(memberships);
+            this.scalars = orderedByKey(scalars);
+            this.memberships = orderedByKey(memberships);
             this.membershipsHash = this.memberships.hashCode();
         }
 
@@ -1550,7 +1591,7 @@ final class Domain {
                 if (current == null) {
                     nextScalars.put(entry.getKey(), entry.getValue());
                 } else {
-                    ScalarShape intersection = current.intersect(entry.getValue());
+                    ScalarShape intersection = current.intersect(entry.getValue(), symbols.symbol(entry.getKey()));
                     if (intersection == null) {
                         return null;
                     }
@@ -1580,13 +1621,9 @@ final class Domain {
             if (scalars.size() < other.scalars.size() || memberships.size() < other.memberships.size()) {
                 return false;
             }
-            for (Map.Entry<Integer, ScalarShape> entry : scalars.entrySet()) {
-                if (!other.allowed(entry.getKey(), symbols).containsAll(entry.getValue().allowed)) {
-                    return false;
-                }
-            }
-            for (int symbolId : other.scalars.keySet()) {
-                if (!scalars.containsKey(symbolId)) {
+            for (Map.Entry<Integer, ScalarShape> entry : other.scalars.entrySet()) {
+                ScalarShape left = scalars.get(entry.getKey());
+                if (left == null || !left.subsetOf(entry.getValue())) {
                     return false;
                 }
             }
@@ -1612,7 +1649,8 @@ final class Domain {
             Set<Integer> keys = new TreeSet<>(scalars.keySet());
             keys.addAll(other.scalars.keySet());
             for (int symbolId : keys) {
-                Set<String> domainValues = scalarValues(symbols.symbol(symbolId).domain());
+                Symbol symbol = symbols.symbol(symbolId);
+                Set<String> domainValues = scalarValues(symbol.domain());
                 Set<String> leftAllowed = allowed(symbolId, symbols);
                 Set<String> rightAllowed = other.allowed(symbolId, symbols);
                 if (!leftAllowed.equals(rightAllowed)) {
@@ -1623,10 +1661,10 @@ final class Domain {
                     Set<String> union = new TreeSet<>(leftAllowed);
                     union.addAll(rightAllowed);
                     if (!union.equals(domainValues)) {
-                        nextScalars.put(symbolId, new ScalarShape(union));
+                        nextScalars.put(symbolId, new ScalarShape(symbol, union));
                     }
                 } else if (!leftAllowed.equals(domainValues)) {
-                    nextScalars.put(symbolId, new ScalarShape(leftAllowed));
+                    nextScalars.put(symbolId, new ScalarShape(symbol, leftAllowed));
                 }
             }
             return diffSymbolId == null ? null : new DecisionShape(nextScalars, memberships).normalized(symbols);
@@ -1705,11 +1743,12 @@ final class Domain {
 
         private DecisionShape withScalar(int symbolId, Set<String> allowed, Symbol.Table symbols) {
             Map<Integer, ScalarShape> nextScalars = new TreeMap<>(scalars);
-            Set<String> domainValues = scalarValues(symbols.symbol(symbolId).domain());
+            Symbol symbol = symbols.symbol(symbolId);
+            Set<String> domainValues = scalarValues(symbol.domain());
             if (allowed.equals(domainValues)) {
                 nextScalars.remove(symbolId);
             } else {
-                nextScalars.put(symbolId, new ScalarShape(allowed));
+                nextScalars.put(symbolId, new ScalarShape(symbol, allowed));
             }
             return new DecisionShape(nextScalars, memberships).normalized(symbols);
         }
@@ -1733,6 +1772,15 @@ final class Domain {
             return constraint == null ? scalarValues(symbols.symbol(symbolId).domain()) : constraint.allowed;
         }
 
+        private static <T> Map<Integer, T> orderedByKey(Map<Integer, T> values) {
+            if (values.isEmpty()) {
+                return Map.of();
+            }
+            Map<Integer, T> ordered = new LinkedHashMap<>();
+            new TreeMap<>(values).forEach(ordered::put);
+            return Collections.unmodifiableMap(ordered);
+        }
+
         @Override
         public boolean equals(Object o) {
             if (!(o instanceof DecisionShape)) {
@@ -1750,27 +1798,44 @@ final class Domain {
 
     private static final class ScalarShape {
         private final Set<String> allowed;
+        private final long allowedMask;
+        private final boolean masked;
 
-        private ScalarShape(Set<String> allowed) {
+        private ScalarShape(Symbol symbol, Set<String> allowed) {
             if (allowed.isEmpty()) {
                 throw new IllegalArgumentException("Scalar constraint must not be empty");
             }
             this.allowed = canonicalStrings(allowed);
+            this.masked = symbol.maskableScalar();
+            this.allowedMask = masked ? symbol.scalarMask(this.allowed) : 0L;
         }
 
-        ScalarShape intersect(ScalarShape other) {
+        ScalarShape intersect(ScalarShape other, Symbol symbol) {
             if (allowed.equals(other.allowed)) {
                 return this;
             }
-            if (allowed.containsAll(other.allowed)) {
+            if (subsetOf(other)) {
                 return other;
             }
-            if (other.allowed.containsAll(allowed)) {
+            if (other.subsetOf(this)) {
                 return this;
             }
             Set<String> intersection = new TreeSet<>(allowed);
             intersection.retainAll(other.allowed);
-            return intersection.isEmpty() ? null : new ScalarShape(intersection);
+            return intersection.isEmpty() ? null : new ScalarShape(symbol, intersection);
+        }
+
+        boolean subsetOf(ScalarShape other) {
+            if (this == other || masked && other.masked && allowedMask == other.allowedMask || allowed.equals(other.allowed)) {
+                return true;
+            }
+            if (allowed.size() > other.allowed.size()) {
+                return false;
+            }
+            if (masked && other.masked) {
+                return (allowedMask & ~other.allowedMask) == 0L;
+            }
+            return other.allowed.containsAll(allowed);
         }
 
         Expression toExpression(String key, Spec spec) {
