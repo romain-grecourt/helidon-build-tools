@@ -101,6 +101,23 @@ class DomainTest {
         assertThat(guards.or(enabledMpResidual, enabledGuard), is(enabledGuard));
     }
 
+    @Test
+    void testGuardOrMergesPureDecisionBranches() {
+        Domain.Symbol.Table.Builder builder = Domain.Symbol.Table.builder();
+        int enabled = builder.define("enabled", new Domain.Spec.Boolean(), true, false);
+        int flavor = builder.define("flavor", new Domain.Spec.Choice(Set.of("mp", "se")), true, false);
+        Domain.Symbol.Table symbols = builder.build();
+        Domain.Guards guards = new Domain.Guards(symbols);
+
+        Domain.Guard enabledGuard = guards.eq(enabled, "true");
+        Domain.Guard mpGuard = guards.eq(flavor, "mp");
+        Domain.Guard seGuard = guards.eq(flavor, "se");
+        Domain.Guard enabledMp = guards.and(enabledGuard, mpGuard);
+        Domain.Guard enabledSe = guards.and(enabledGuard, seGuard);
+
+        assertThat(guards.or(enabledMp, enabledSe), is(enabledGuard));
+    }
+
     @SafeVarargs
     @SuppressWarnings("unchecked")
     static <T, U extends T> Matcher<T> isSubtype(Class<U> type, Matcher<U>... matchers) {

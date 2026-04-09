@@ -912,11 +912,13 @@ final class Domain {
         private static final int TRUE_ID = 1;
         private static final int COMPACT_MAX_VARIABLES = 4;
         private static final int COMPACT_MAX_TOKENS = 16;
+        private static final int EXACT_IMPLIES_MAX_SHAPES = 8;
 
         private final Symbol.Table symbols;
         private final List<Decision> decisions = new ArrayList<>();
         private final Map<Decision, Integer> ids = new HashMap<>();
         private final Map<Guard, Map<Guard, Guard>> orCache = new HashMap<>();
+        private final Map<Long, Boolean> subsetCache = new HashMap<>();
         private final Guard falseGuard;
         private final Guard trueGuard;
 
@@ -968,21 +970,21 @@ final class Domain {
             Decision leftDecision = decision(left);
             Decision rightDecision = decision(right);
             if (left.residual().equals(right.residual())) {
-                if (leftDecision.shapewiseSubsetOf(rightDecision, symbols)) {
+                if (shapewiseSubsetOf(left.id(), right.id())) {
                     return right;
                 }
-                if (rightDecision.shapewiseSubsetOf(leftDecision, symbols)) {
+                if (shapewiseSubsetOf(right.id(), left.id())) {
                     return left;
                 }
-                result = guard(leftDecision.or(rightDecision, symbols), left.residual());
+                result = guard(leftDecision.orWithoutSubsetChecks(rightDecision, symbols), left.residual());
             } else if (leftDecision.equals(rightDecision)) {
                 result = guard(leftDecision, left.residual().or(right.residual()), false);
-            } else if (isPure(right) && leftDecision.shapewiseSubsetOf(rightDecision, symbols)) {
+            } else if (isPure(right) && shapewiseSubsetOf(left.id(), right.id())) {
                 return right;
-            } else if (isPure(left) && rightDecision.shapewiseSubsetOf(leftDecision, symbols)) {
+            } else if (isPure(left) && shapewiseSubsetOf(right.id(), left.id())) {
                 return left;
             } else if (isPure(left) && isPure(right)) {
-                result = guard(leftDecision.or(rightDecision, symbols), Expression.TRUE);
+                result = guard(leftDecision.orWithoutSubsetChecks(rightDecision, symbols), Expression.TRUE);
             } else {
                 result = residualGuard(rawExpression(left).or(rawExpression(right)), false);
             }
@@ -1010,22 +1012,28 @@ final class Domain {
         }
 
         boolean implies(Guard left, Guard right) {
-            if (left.equals(right) || isFalse(left) || right.equals(trueGuard())) {
+            if (shapewiseImplies(left, right)) {
                 return true;
             }
             Decision leftDecision = decision(left);
             Decision rightDecision = decision(right);
-            if (left.residual().equals(right.residual()) && leftDecision.shapewiseSubsetOf(rightDecision, symbols)) {
-                return true;
-            }
-            if (isPure(right) && leftDecision.shapewiseSubsetOf(rightDecision, symbols)) {
-                return true;
-            }
             if (isPure(left) && isPure(right)) {
-                return leftDecision.shapewiseSubsetOf(rightDecision, symbols)
-                        || leftDecision.subtract(rightDecision, symbols).isFalse();
+                return leftDecision.subtract(rightDecision, symbols).isFalse();
             }
             return equivalentExpressions(rawExpression(left), rawExpression(right));
+        }
+
+        boolean shapewiseImplies(Guard left, Guard right) {
+            if (left.equals(right) || isFalse(left) || right.equals(trueGuard())) {
+                return true;
+            }
+            return left.residual().equals(right.residual()) && shapewiseSubsetOf(left.id(), right.id())
+                    || isPure(right) && shapewiseSubsetOf(left.id(), right.id());
+        }
+
+        boolean exactImplicationCheap(Guard left, Guard right) {
+            return decision(left).shapeCountAtMost(EXACT_IMPLIES_MAX_SHAPES)
+                    && decision(right).shapeCountAtMost(EXACT_IMPLIES_MAX_SHAPES);
         }
 
         boolean equivalent(Guard left, Guard right) {
@@ -1169,6 +1177,23 @@ final class Domain {
 
         private Decision decision(Guard guard) {
             return decisions.get(guard.id());
+        }
+
+        private boolean shapewiseSubsetOf(int leftDecisionId, int rightDecisionId) {
+            if (leftDecisionId == rightDecisionId || leftDecisionId == FALSE_ID || rightDecisionId == TRUE_ID) {
+                return true;
+            }
+            if (rightDecisionId == FALSE_ID) {
+                return false;
+            }
+            long key = ((long) leftDecisionId << 32) | Integer.toUnsignedLong(rightDecisionId);
+            Boolean cached = subsetCache.get(key);
+            if (cached != null) {
+                return cached;
+            }
+            boolean result = decisions.get(leftDecisionId).shapewiseSubsetOf(decisions.get(rightDecisionId), symbols);
+            subsetCache.put(key, result);
+            return result;
         }
 
         private boolean isPure(Guard guard) {
@@ -1348,9 +1373,57 @@ final class Domain {
             if (other.shapewiseSubsetOf(this, symbols)) {
                 return this;
             }
+            return orWithoutSubsetChecks(other, symbols);
+        }
+
+        Decision orWithoutSubsetChecks(Decision other, Symbol.Table symbols) {
             List<DecisionShape> result = new ArrayList<>(shapes);
-            result.addAll(other.shapes);
-            return of(result, symbols);
+            boolean changed = false;
+            for (DecisionShape shape : other.shapes) {
+                DecisionShape candidate = shape;
+                boolean restart;
+                do {
+                    restart = false;
+                    for (int i = 0; i < result.size(); i++) {
+                        DecisionShape existing = result.get(i);
+                        if (candidate.subsetOf(existing, symbols)) {
+                            candidate = null;
+                            break;
+                        }
+                        if (existing.subsetOf(candidate, symbols)) {
+                            result.remove(i);
+                            changed = true;
+                            restart = true;
+                            break;
+                        }
+                        if (result.size() <= TRY_MERGE_MAX_SHAPES) {
+                            DecisionShape merged = existing.tryMerge(candidate, symbols);
+                            if (merged != null) {
+                                if (merged.isTrue()) {
+                                    return TRUE;
+                                }
+                                result.remove(i);
+                                candidate = merged;
+                                changed = true;
+                                restart = true;
+                                break;
+                            }
+                        }
+                    }
+                } while (restart);
+                if (candidate != null) {
+                    if (candidate.isTrue()) {
+                        return TRUE;
+                    }
+                    result.add(candidate);
+                    changed = true;
+                }
+            }
+            if (!changed) {
+                return this;
+            }
+            result.sort(Comparator.comparing(DecisionShape::literal));
+            return new Decision(result);
         }
 
         Decision subtract(Decision other, Symbol.Table symbols) {
@@ -1416,6 +1489,10 @@ final class Domain {
             }
             return true;
         }
+
+        boolean shapeCountAtMost(int maxShapes) {
+            return shapes.size() <= maxShapes;
+        }
     }
 
     private static final class DecisionShape {
@@ -1464,7 +1541,7 @@ final class Domain {
         }
 
         DecisionShape intersect(DecisionShape other, Symbol.Table symbols) {
-            if (equals(other)) {
+            if (this == other) {
                 return this;
             }
             Map<Integer, ScalarShape> nextScalars = new TreeMap<>(scalars);
@@ -1497,6 +1574,12 @@ final class Domain {
         }
 
         boolean subsetOf(DecisionShape other, Symbol.Table symbols) {
+            if (this == other) {
+                return true;
+            }
+            if (scalars.size() < other.scalars.size() || memberships.size() < other.memberships.size()) {
+                return false;
+            }
             for (Map.Entry<Integer, ScalarShape> entry : scalars.entrySet()) {
                 if (!other.allowed(entry.getKey(), symbols).containsAll(entry.getValue().allowed)) {
                     return false;

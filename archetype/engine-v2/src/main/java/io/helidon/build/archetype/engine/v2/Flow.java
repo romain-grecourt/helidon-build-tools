@@ -2122,11 +2122,19 @@ final class Flow {
                 return left;
             }
             if (left.residual() == Expression.TRUE && right.residual() == Expression.TRUE) {
-                if (guards.implies(left, right)) {
+                if (guards.shapewiseImplies(left, right)) {
                     return right;
                 }
-                if (guards.implies(right, left)) {
+                if (guards.shapewiseImplies(right, left)) {
                     return left;
+                }
+                if (guards.exactImplicationCheap(left, right)) {
+                    if (guards.implies(left, right)) {
+                        return right;
+                    }
+                    if (guards.implies(right, left)) {
+                        return left;
+                    }
                 }
             }
             return guards.or(left, right);
