@@ -15,14 +15,22 @@
  */
 package io.helidon.build.archetype.engine.v2;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import io.helidon.build.archetype.engine.v2.Domain.Spec.FiniteText;
+
+import org.hamcrest.FeatureMatcher;
+import org.hamcrest.Matcher;
 import org.junit.jupiter.api.Test;
 
+import static io.helidon.build.common.test.utils.TestFiles.testResourcePath;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
@@ -32,18 +40,7 @@ class FlowTest {
     @Test
     void testIrLoweringBuildsInputsBranchesAndEmits() {
         Context.Scope scope = new Context().scope();
-        Node script = Nodes.script(
-                Nodes.inputs(
-                        Nodes.inputBoolean("enabled"),
-                        Nodes.inputEnum("flavor",
-                                Nodes.inputOption("mp", "mp"),
-                                Nodes.inputOption("se", "se")),
-                        Nodes.inputList("features",
-                                Nodes.inputOption("rest", "rest"))),
-                Nodes.condition("${enabled}",
-                        Nodes.step("setup"),
-                        Nodes.condition("${features} contains 'rest'",
-                                Nodes.file("src/main/resources/pom.xml", "pom.xml"))));
+        Node script = load("flow/ir-lowering.xml");
 
         Flow flow = new Flow(scope);
         flow.process(script);
@@ -104,11 +101,7 @@ class FlowTest {
     @Test
     void testIrLoweringCapturesDefinitionsAndConditionUses() {
         Context.Scope scope = new Context().scope();
-        Node script = Nodes.script(
-                Nodes.inputs(Nodes.inputBoolean("enabled")),
-                Nodes.variables(Nodes.variableBoolean("flag", true)),
-                Nodes.condition("${enabled} && ${flag}",
-                        Nodes.step("Go")));
+        Node script = load("flow/definitions-and-uses.xml");
 
         Flow flow = new Flow(scope);
         flow.process(script);
@@ -126,15 +119,7 @@ class FlowTest {
     @Test
     void testIrLoweringGuardsNestedBooleanAndOptionDefinitions() {
         Context.Scope scope = new Context().scope();
-        Node script = Nodes.script(
-                Nodes.inputs(
-                        Nodes.inputBoolean("enabled",
-                                Nodes.variables(Nodes.variableBoolean("enabled-flag", true))),
-                        Nodes.inputEnum("flavor",
-                                Nodes.inputOption("mp", "mp",
-                                        Nodes.variables(Nodes.variableBoolean("mp-flag", true))),
-                                Nodes.inputOption("se", "se",
-                                        Nodes.variables(Nodes.variableBoolean("se-flag", true))))));
+        Node script = load("flow/nested-definitions.xml");
 
         Flow flow = new Flow(scope);
         flow.process(script);
@@ -156,5 +141,104 @@ class FlowTest {
         assertThat(ir.guards().equivalent(pathsBySymbol.get("enabled-flag"), ir.guards().eq(enabled, "true")), is(true));
         assertThat(ir.guards().equivalent(pathsBySymbol.get("mp-flag"), ir.guards().eq(flavor, "mp")), is(true));
         assertThat(ir.guards().equivalent(pathsBySymbol.get("se-flag"), ir.guards().eq(flavor, "se")), is(true));
+    }
+
+    @Test
+    void testIrLoweringKeepsDeclaredChoiceForTextPresetAndFallbackVariable() {
+        Context.Scope scope = new Context().scope();
+        Node script = load("flow/declared-choice-text-preset.xml");
+
+        Flow flow = new Flow(scope);
+        flow.process(script);
+        Flow.Model model = flow.model();
+        Domain.Symbol symbol = model.symbol("media.json-lib").symbol();
+        Node impossible = findCondition(script, "${media} contains 'json' && ${media.json-lib} == 'jsonp'");
+
+        assertThat(symbol.domain(), instanceOf(Domain.Spec.Choice.class));
+        assertThat(((Domain.Spec.Choice) symbol.domain()).values(), is(Set.of("jackson", "jsonb")));
+        assertThat(symbol.guardable(), is(true));
+        assertThat(symbol.tainted(), is(false));
+        assertThat(model.guards().equivalent(model.activeGuard(impossible), model.falseGuard()), is(true));
+    }
+
+    @Test
+    void testIrLoweringPromotesFiniteLocalTextVariable() {
+        Context.Scope scope = new Context().scope();
+        Node script = load("flow/finite-local-text-variable.xml");
+
+        Flow flow = new Flow(scope);
+        flow.process(script);
+        Flow.Model model = flow.model();
+        Domain.Symbol symbol = model.symbol("json-lib").symbol();
+        Node impossible = findCondition(script, "${json-lib} == 'jsonp'");
+
+        assertThat(symbol.domain(), isSubtype(FiniteText.class,
+                hasProperty("values", FiniteText::values, is(Set.of("jackson", "jsonb")))));
+        assertThat(symbol.guardable(), is(true));
+        assertThat(symbol.tainted(), is(false));
+        assertThat(model.guards().equivalent(model.activeGuard(impossible), model.falseGuard()), is(true));
+    }
+
+    @Test
+    void testIrLoweringHandlesLiteralListContainsFiniteScalarSymbol() {
+        Context.Scope scope = new Context().scope();
+        Node script = load("flow/literal-list-contains-finite-scalar.xml");
+
+        Flow flow = new Flow(scope);
+        flow.process(script);
+        Flow.Model model = flow.model();
+        Node allowed = findCondition(script, "['jsonb','jackson'] contains ${json-lib}");
+        Node impossible = findCondition(script, "['jsonp'] contains ${json-lib}");
+
+        assertThat(model.guards().equivalent(model.activeGuard(allowed), model.trueGuard()), is(true));
+        assertThat(model.guards().equivalent(model.activeGuard(impossible), model.falseGuard()), is(true));
+    }
+
+    @Test
+    void testIrLoweringKeepsUnsupportedLiteralListContainsResidual() {
+        Context.Scope scope = new Context().scope();
+        Node script = load("flow/literal-list-contains-unsupported.xml");
+
+        Flow flow = new Flow(scope);
+        flow.process(script);
+        Flow.Model model = flow.model();
+        Node condition = findCondition(script, "['json'] contains true");
+
+        assertThat(model.activeGuard(condition).equals(model.trueGuard()), is(false));
+        assertThat(model.activeGuard(condition).equals(model.falseGuard()), is(false));
+    }
+
+    static Node load(String path) {
+        return Script.load(testResourcePath(FlowTest.class, path));
+    }
+
+    static Node findCondition(Node script, String expression) {
+        for (Node node : script.traverse(Node.Kind.CONDITION::equals)) {
+            if (expression.equals(node.expression().literal())) {
+                return node;
+            }
+        }
+        throw new IllegalArgumentException("Missing condition: " + expression);
+    }
+
+    @SafeVarargs
+    @SuppressWarnings({"unchecked", "SameParameterValue"})
+    static <T, U extends T> Matcher<T> isSubtype(Class<U> type, Matcher<U>... matchers) {
+        var list = new ArrayList<Matcher<? super T>>();
+        list.add(instanceOf(type));
+        for (Matcher<U> matcher : matchers) {
+            list.add((Matcher<T>) matcher);
+        }
+        return allOf(list);
+    }
+
+    @SuppressWarnings("SameParameterValue")
+    static <T, U> Matcher<T> hasProperty(String name, Function<T, U> extractor, Matcher<U> subMatcher) {
+        return new FeatureMatcher<>(subMatcher, "has property " + name, name) {
+            @Override
+            protected U featureValueOf(T target) {
+                return extractor.apply(target);
+            }
+        };
     }
 }

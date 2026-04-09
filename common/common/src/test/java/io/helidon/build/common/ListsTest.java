@@ -15,12 +15,14 @@
  */
 package io.helidon.build.common;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Tests {@link Lists}.
@@ -79,5 +81,49 @@ class ListsTest {
         assertThat(Lists.withoutIndex(List.of("a", "b", "c"), 0), is(List.of("b", "c")));
         assertThat(Lists.withoutIndex(List.of("a", "b", "c"), 1), is(List.of("a", "c")));
         assertThat(Lists.withoutIndex(List.of("a", "b", "c"), 2), is(List.of("a", "b")));
+    }
+
+    @Test
+    void testConcatView() {
+        List<String> actual = Lists.concatView(List.of("a", "b"), List.of("c", "d"));
+
+        assertThat(actual, is(List.of("a", "b", "c", "d")));
+        assertThat(actual.hashCode(), is(List.of("a", "b", "c", "d").hashCode()));
+        assertThrows(UnsupportedOperationException.class, () -> actual.add("e"));
+    }
+
+    @Test
+    void testAppendView() {
+        List<String> actual = Lists.appendView(List.of("a", "b"), "c");
+
+        assertThat(actual, is(List.of("a", "b", "c")));
+        assertThat(actual.hashCode(), is(List.of("a", "b", "c").hashCode()));
+    }
+
+    @Test
+    void testAppendViewDeepEqualityAndHashCode() {
+        List<Integer> left = List.of();
+        List<Integer> right = List.of();
+        List<Integer> expected = new ArrayList<>();
+        for (int i = 0; i < 256; i++) {
+            left = Lists.appendView(left, i);
+            right = Lists.appendView(right, i);
+            expected.add(i);
+        }
+
+        assertThat(left, is(expected));
+        assertThat(left, is(right));
+        assertThat(left.hashCode(), is(expected.hashCode()));
+        assertThat(left.hashCode(), is(right.hashCode()));
+    }
+
+    @Test
+    void testAppendViewWithNullTail() {
+        List<String> actual = Lists.appendView(List.of("a"), null);
+        List<String> expected = new ArrayList<>(List.of("a"));
+        expected.add(null);
+
+        assertThat(actual, is(expected));
+        assertThat(actual.hashCode(), is(expected.hashCode()));
     }
 }

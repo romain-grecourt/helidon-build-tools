@@ -15,14 +15,18 @@
  */
 package io.helidon.build.common;
 
+import java.util.AbstractList;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -206,6 +210,50 @@ public class Lists {
             list.add(it.next());
         }
         return list;
+    }
+
+    /**
+     * Return an unmodifiable concatenation view over the supplied lists.
+     * The supplied lists must not be modified after this call because the
+     * returned view may cache its hash code.
+     *
+     * @param left left list
+     * @param right right list
+     * @param <T> element type
+     * @return concatenation view
+     */
+    public static <T> List<T> concatView(List<? extends T> left, List<? extends T> right) {
+        return new ConcatViewList<>(left, right, null, false);
+    }
+
+    /**
+     * Return an unmodifiable concatenation view over the supplied lists
+     * followed by the given trailing element. The supplied lists must not
+     * be modified after this call because the returned view may cache its
+     * hash code.
+     *
+     * @param left left list
+     * @param right right list
+     * @param tail trailing element
+     * @param <T> element type
+     * @return concatenation view
+     */
+    public static <T> List<T> concatView(List<? extends T> left, List<? extends T> right, T tail) {
+        return new ConcatViewList<>(left, right, tail, true);
+    }
+
+    /**
+     * Return an unmodifiable view of the supplied list followed by the
+     * given trailing element. The supplied list must not be modified after
+     * this call because the returned view may cache its hash code.
+     *
+     * @param list input list
+     * @param tail trailing element
+     * @param <T> element type
+     * @return append view
+     */
+    public static <T> List<T> appendView(List<? extends T> list, T tail) {
+        return new ConcatViewList<>(list, List.of(), tail, true);
     }
 
     /**
@@ -626,5 +674,157 @@ public class Lists {
         List<T> drained = new ArrayList<>(list);
         list.clear();
         return drained;
+    }
+
+    private static final class ConcatViewList<T> extends AbstractList<T> {
+        private static final int HASH_BASE = 31;
+
+        private final List<? extends T> left;
+        private final List<? extends T> right;
+        private final T tail;
+        private final boolean hasTail;
+        private final int leftSize;
+        private final int rightSize;
+        private final int size;
+        private int hash;
+        private boolean hashComputed;
+
+        ConcatViewList(List<? extends T> left, List<? extends T> right, T tail, boolean hasTail) {
+            this.left = Objects.requireNonNull(left, "left is null");
+            this.right = Objects.requireNonNull(right, "right is null");
+            this.tail = tail;
+            this.hasTail = hasTail;
+            this.leftSize = left.size();
+            this.rightSize = right.size();
+            this.size = leftSize + rightSize + (hasTail ? 1 : 0);
+        }
+
+        @Override
+        public T get(int index) {
+            if (index < 0 || index >= size) {
+                throw new IndexOutOfBoundsException(index);
+            }
+            if (index < leftSize) {
+                return left.get(index);
+            }
+            int rightIndex = index - leftSize;
+            if (rightIndex < rightSize) {
+                return right.get(rightIndex);
+            }
+            return tail;
+        }
+
+        @Override
+        public int size() {
+            return size;
+        }
+
+        @Override
+        public Iterator<T> iterator() {
+            return new ConcatIterator<>(this);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (!(o instanceof List)) {
+                return false;
+            }
+            List<?> other = (List<?>) o;
+            if (size != other.size()) {
+                return false;
+            }
+            Iterator<T> leftIt = iterator();
+            Iterator<?> rightIt = other.iterator();
+            while (leftIt.hasNext() && rightIt.hasNext()) {
+                if (!Objects.equals(leftIt.next(), rightIt.next())) {
+                    return false;
+                }
+            }
+            return !leftIt.hasNext() && !rightIt.hasNext();
+        }
+
+        @Override
+        public int hashCode() {
+            if (!hashComputed) {
+                int pow31 = pow31(rightSize);
+                int combined = pow31 * left.hashCode() + (right.hashCode() - pow31);
+                hash = hasTail ? HASH_BASE * combined + Objects.hashCode(tail) : combined;
+                hashComputed = true;
+            }
+            return hash;
+        }
+
+        static int pow31(int exponent) {
+            int result = 1;
+            int base = HASH_BASE;
+            int power = exponent;
+            while (power != 0) {
+                if ((power & 1) != 0) {
+                    result *= base;
+                }
+                power >>>= 1;
+                if (power != 0) {
+                    base *= base;
+                }
+            }
+            return result;
+        }
+    }
+
+    private static final class ConcatIterator<T> implements Iterator<T> {
+        private final Deque<Object> pending = new ArrayDeque<>();
+        private T next;
+        private boolean ready;
+
+        private ConcatIterator(ConcatViewList<T> list) {
+            pending.add(list);
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public boolean hasNext() {
+            if (!ready) {
+                while (!pending.isEmpty()) {
+                    Object part = pending.removeLast();
+                    if (part instanceof ConcatViewList) {
+                        ConcatViewList<T> list = (ConcatViewList<T>) part;
+                        if (list.hasTail) {
+                            pending.addLast(Collections.singletonList(list.tail).iterator());
+                        }
+                        push(list.right);
+                        push(list.left);
+                    } else if (part instanceof Iterator) {
+                        Iterator<T> iterator = (Iterator<T>) part;
+                        if (iterator.hasNext()) {
+                            next = iterator.next();
+                            pending.addLast(iterator);
+                            ready = true;
+                            return true;
+                        }
+                    } else {
+                        next = (T) part;
+                        ready = true;
+                        return true;
+                    }
+                }
+            }
+            return ready;
+        }
+
+        @Override
+        public T next() {
+            if (!hasNext()) {
+                throw new NoSuchElementException();
+            }
+            ready = false;
+            return next;
+        }
+
+        private void push(List<? extends T> list) {
+            pending.addLast(list instanceof ConcatViewList ? list : list.iterator());
+        }
     }
 }

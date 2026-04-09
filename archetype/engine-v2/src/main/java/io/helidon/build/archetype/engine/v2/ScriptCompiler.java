@@ -334,7 +334,10 @@ public class ScriptCompiler {
             if (unsupported == Expression.FALSE) {
                 return falseGuard();
             }
-            return unsupported == Expression.TRUE ? supported : and(supported, residualGuard(unsupported));
+            if (unsupported == Expression.TRUE) {
+                return supported;
+            }
+            return and(supported, residualGuard(unsupported));
         }
         Expression normalized = normalize(expr, scope).reduce(truth);
         return residualGuard(normalized);

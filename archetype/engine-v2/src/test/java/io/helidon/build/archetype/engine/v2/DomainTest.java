@@ -15,13 +15,24 @@
  */
 package io.helidon.build.archetype.engine.v2;
 
+import java.util.ArrayList;
 import java.util.Set;
+import java.util.function.Function;
 
+import io.helidon.build.archetype.engine.v2.Domain.Value.BooleanSet;
+import io.helidon.build.archetype.engine.v2.Domain.Value.ChoiceSet;
+import io.helidon.build.archetype.engine.v2.Domain.Value.ListSummary;
+import io.helidon.build.archetype.engine.v2.Domain.Value.OpenText;
+
+import org.hamcrest.FeatureMatcher;
+import org.hamcrest.Matcher;
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.nullValue;
 
 class DomainTest {
 
@@ -32,17 +43,17 @@ class DomainTest {
         Domain.Value membershipTop = Domain.Value.top(new Domain.Spec.Membership(Set.of("rest", "grpc")));
         Domain.Value openTextTop = Domain.Value.top(new Domain.Spec.OpenText());
 
-        assertThat(booleanTop, instanceOf(Domain.Value.BooleanSet.class));
-        assertThat(((Domain.Value.BooleanSet) booleanTop).values(), is(Set.of(false, true)));
+        assertThat(booleanTop, isSubtype(BooleanSet.class,
+                hasProperty("values", BooleanSet::values, is(Set.of(false, true)))));
 
-        assertThat(choiceTop, instanceOf(Domain.Value.ChoiceSet.class));
-        assertThat(((Domain.Value.ChoiceSet) choiceTop).values(), is(Set.of("mp", "se")));
+        assertThat(choiceTop, isSubtype(ChoiceSet.class,
+                hasProperty("values", ChoiceSet::values, is(Set.of("mp", "se")))));
 
-        assertThat(membershipTop, instanceOf(Domain.Value.ListSummary.class));
-        assertThat(((Domain.Value.ListSummary) membershipTop).possible(), is(Set.of("grpc", "rest")));
+        assertThat(membershipTop, isSubtype(ListSummary.class,
+                hasProperty("possible", ListSummary::possible, is(Set.of("grpc", "rest")))));
 
-        assertThat(openTextTop, instanceOf(Domain.Value.OpenText.class));
-        assertThat(((Domain.Value.OpenText) openTextTop).sample(), is((String) null));
+        assertThat(openTextTop, isSubtype(OpenText.class,
+                hasProperty("sample", OpenText::sample, is(nullValue()))));
     }
 
     @Test
@@ -69,5 +80,44 @@ class DomainTest {
         assertThat(guards.toExpression(notRestGuard, scope).literal(), is("!(${features} contains 'rest')"));
         assertThat(guards.implies(enabledMp, enabledGuard), is(true));
         assertThat(guards.equivalent(guards.or(mpGuard, nonMpGuard), guards.trueGuard()), is(true));
+    }
+
+    @Test
+    void testGuardImplicationKeepsBroaderPureDecision() {
+        Domain.Symbol.Table.Builder builder = Domain.Symbol.Table.builder();
+        int enabled = builder.define("enabled", new Domain.Spec.Boolean(), true, false);
+        int flavor = builder.define("flavor", new Domain.Spec.Choice(Set.of("mp", "se")), true, false);
+        Domain.Symbol.Table symbols = builder.build();
+        Domain.Guards guards = new Domain.Guards(symbols);
+
+        Domain.Guard enabledGuard = guards.eq(enabled, "true");
+        Domain.Guard mpGuard = guards.eq(flavor, "mp");
+        Domain.Guard residual = guards.residualGuard(Expression.create("${unsupported}"));
+        Domain.Guard enabledMpResidual = guards.and(guards.and(enabledGuard, mpGuard), residual);
+        Domain.Guard enabledResidual = guards.and(enabledGuard, residual);
+
+        assertThat(guards.implies(enabledMpResidual, enabledGuard), is(true));
+        assertThat(guards.implies(enabledMpResidual, enabledResidual), is(true));
+        assertThat(guards.or(enabledMpResidual, enabledGuard), is(enabledGuard));
+    }
+
+    @SafeVarargs
+    @SuppressWarnings("unchecked")
+    static <T, U extends T> Matcher<T> isSubtype(Class<U> type, Matcher<U>... matchers) {
+        var list = new ArrayList<Matcher<? super T>>();
+        list.add(instanceOf(type));
+        for (Matcher<U> matcher : matchers) {
+            list.add((Matcher<T>) matcher);
+        }
+        return allOf(list);
+    }
+
+    static <T, U> Matcher<T> hasProperty(String name, Function<T, U> extractor, Matcher<U> subMatcher) {
+        return new FeatureMatcher<>(subMatcher, "has property " + name, name) {
+            @Override
+            protected U featureValueOf(T target) {
+                return extractor.apply(target);
+            }
+        };
     }
 }

@@ -55,6 +55,7 @@ import static java.util.stream.Collectors.toMap;
  * Logical expression.
  */
 public final class Expression implements Comparable<Expression> {
+    private static final int FOLD_CONSTANTS_MAX_TOKENS = 16;
     private static final int QMC_MAX_TERMS = 1 << 16;
     private static final int QMC_MAX_VARIABLES = 12;
     private static final long QMC_MAX_MERGE_PAIRS = 500_000L;
@@ -133,7 +134,7 @@ public final class Expression implements Comparable<Expression> {
         } else if (equals(expr)) {
             return this;
         } else {
-            return new Expression(Lists.addAll(tokens, expr.tokens, Token.AND), false);
+            return new Expression(Lists.concatView(tokens, expr.tokens, Token.AND), false);
         }
     }
 
@@ -153,7 +154,7 @@ public final class Expression implements Comparable<Expression> {
         } else if (equals(expr)) {
             return this;
         } else {
-            return new Expression(Lists.addAll(tokens, expr.tokens, Token.OR), false);
+            return new Expression(Lists.concatView(tokens, expr.tokens, Token.OR), false);
         }
     }
 
@@ -173,6 +174,19 @@ public final class Expression implements Comparable<Expression> {
      */
     public Set<String> variables() {
         return variables.get();
+    }
+
+    boolean variableCountAtMost(int maxVariables) {
+        if (maxVariables < 0) {
+            return false;
+        }
+        Set<String> names = new HashSet<>();
+        for (Token token : tokens) {
+            if (token.isVariable() && names.add(token.variable) && names.size() > maxVariables) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -207,67 +221,9 @@ public final class Expression implements Comparable<Expression> {
             Value<?> value;
             if (token.operator != null) {
                 Value<?> op1 = stack.pop();
-                switch (token.operator) {
-                    case NOT:
-                        value = Value.of(!op1.getBoolean());
-                        break;
-                    case SIZEOF:
-                        if (op1.type() == Value.Type.LIST) {
-                            value = Value.of(op1.getList().size());
-                        } else {
-                            value = Value.of(op1.getString().length());
-                        }
-                        break;
-                    case AS_INT:
-                        value = Value.of(op1.getInt());
-                        break;
-                    case AS_LIST:
-                        value = Value.of(op1.getList());
-                        break;
-                    case AS_STRING:
-                        value = Value.of(op1.getString());
-                        break;
-                    default:
-                        Value<?> op2 = stack.pop();
-                        switch (token.operator) {
-                            case OR:
-                                value = Value.of(op2.asBoolean().orElse(false) || op1.asBoolean().orElse(false));
-                                break;
-                            case AND:
-                                value = Value.of(op2.asBoolean().orElse(false) && op1.asBoolean().orElse(false));
-                                break;
-                            case EQUAL:
-                                value = Value.of(Value.isEqual(op2, op1));
-                                break;
-                            case NOT_EQUAL:
-                                value = Value.of(!Value.isEqual(op2, op1));
-                                break;
-                            case GREATER_THAN:
-                                value = Value.of(op2.getInt() > op1.getInt());
-                                break;
-                            case GREATER_OR_EQUAL:
-                                value = Value.of(op2.getInt() >= op1.getInt());
-                                break;
-                            case LOWER_THAN:
-                                value = Value.of(op2.getInt() < op1.getInt());
-                                break;
-                            case LOWER_OR_EQUAL:
-                                value = Value.of(op2.getInt() <= op1.getInt());
-                                break;
-                            case CONTAINS:
-                                if (op1.type() == Value.Type.LIST) {
-                                    value = Value.of(new HashSet<>(op2.getList()).containsAll(op1.getList()));
-                                } else if (op2.type() == Value.Type.LIST) {
-                                    value = Value.of(op2.getList().contains(op1.asString().orElse(null)));
-                                } else {
-                                    value = Value.of(op1.isPresent()
-                                                     && op2.asString().orElse("").contains(op1.getString()));
-                                }
-                                break;
-                            default:
-                                throw new IllegalStateException("Unsupported operator: " + token.operator);
-                        }
-                }
+                value = token.operator.valence == 1
+                        ? apply(token.operator, op1)
+                        : apply(token.operator, stack.pop(), op1);
             } else if (token.operand != null) {
                 value = token.operand;
             } else if (token.variable != null) {
@@ -313,13 +269,20 @@ public final class Expression implements Comparable<Expression> {
     }
 
     Expression foldConstants() {
-        if (this == TRUE || this == FALSE || !variables().isEmpty()) {
+        if (this == TRUE || this == FALSE) {
             return this;
         }
+        if (tokens.size() > FOLD_CONSTANTS_MAX_TOKENS) {
+            return hasVariables() ? this : constantExpression();
+        }
+        Expression folded = foldSmallConstants();
+        if (folded == this || folded.hasVariables()) {
+            return folded;
+        }
         try {
-            return eval() ? TRUE : FALSE;
+            return folded.eval() ? TRUE : FALSE;
         } catch (RuntimeException e) {
-            return this;
+            return folded;
         }
     }
 
@@ -367,16 +330,28 @@ public final class Expression implements Comparable<Expression> {
 
     @Override
     public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
         if (!(o instanceof Expression)) {
             return false;
         }
         Expression other = (Expression) o;
+        if (tokens.size() != other.tokens.size()) {
+            return false;
+        }
+        if (tokens == other.tokens) {
+            return true;
+        }
+        if (hashCode() != other.hashCode()) {
+            return false;
+        }
         return tokens.equals(other.tokens);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(tokens);
+        return tokens.hashCode();
     }
 
     // QMC algorithm
@@ -534,6 +509,192 @@ public final class Expression implements Comparable<Expression> {
         return variables;
     }
 
+    private boolean hasVariables() {
+        for (Token token : tokens) {
+            if (token.isVariable()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Expression constantExpression() {
+        try {
+            return eval() ? TRUE : FALSE;
+        } catch (RuntimeException e) {
+            return this;
+        }
+    }
+
+    private Expression foldSmallConstants() {
+        Deque<FoldPart> stack = new ArrayDeque<>();
+        boolean changed = false;
+        for (Token token : tokens) {
+            FoldPart next;
+            if (token.operator == null) {
+                next = FoldPart.of(token);
+            } else {
+                FoldPart op1 = stack.pop();
+                next = token.operator.valence == 1
+                        ? foldUnary(token.operator, op1)
+                        : foldBinary(token.operator, stack.pop(), op1);
+            }
+            changed |= next.changed();
+            stack.push(next);
+        }
+        FoldPart result = stack.pop();
+        return !changed && result.tokens().equals(tokens) ? this : result.expression();
+    }
+
+    private FoldPart foldUnary(Operator operator, FoldPart op1) {
+        if (op1.constant() != null) {
+            try {
+                return FoldPart.constant(apply(operator, op1.constant()));
+            } catch (RuntimeException e) {
+                // keep the original expression shape when constant folding
+                // cannot evaluate a typed operation safely
+                return FoldPart.expression(Lists.appendView(op1.tokens(), Token.of(operator)), op1.changed());
+            }
+        }
+        return FoldPart.expression(Lists.appendView(op1.tokens(), Token.of(operator)), op1.changed());
+    }
+
+    private FoldPart foldBinary(Operator operator, FoldPart left, FoldPart right) {
+        if (left.constant() != null && right.constant() != null) {
+            try {
+                return FoldPart.constant(apply(operator, left.constant(), right.constant()));
+            } catch (RuntimeException e) {
+                // keep the original expression shape when constant folding
+                // cannot evaluate a typed operation safely
+                return FoldPart.expression(Lists.concatView(left.tokens(), right.tokens(), Token.of(operator)),
+                        left.changed() || right.changed());
+            }
+        }
+        if (operator == Operator.AND || operator == Operator.OR) {
+            FoldPart simplified = simplifyLogical(operator, left, right);
+            if (simplified != null) {
+                return simplified;
+            }
+        }
+        return FoldPart.expression(Lists.concatView(left.tokens(), right.tokens(), Token.of(operator)),
+                left.changed() || right.changed());
+    }
+
+    private FoldPart simplifyLogical(Operator operator, FoldPart left, FoldPart right) {
+        if (left.constant() != null) {
+            return simplifyLogical(operator, left.constant(), right);
+        }
+        if (right.constant() != null) {
+            return simplifyLogical(operator, right.constant(), left);
+        }
+        return null;
+    }
+
+    private FoldPart simplifyLogical(Operator operator, Value<?> constant, FoldPart other) {
+        boolean value = constant.asBoolean().orElse(false);
+        if (operator == Operator.AND) {
+            return value ? other.withChanged() : FoldPart.constant(Value.FALSE);
+        }
+        return value ? FoldPart.constant(Value.TRUE) : other.withChanged();
+    }
+
+    private static Value<?> apply(Operator operator, Value<?> op1) {
+        switch (operator) {
+            case NOT:
+                return Value.of(!op1.getBoolean());
+            case SIZEOF:
+                return op1.type() == Value.Type.LIST
+                        ? Value.of(op1.getList().size())
+                        : Value.of(op1.getString().length());
+            case AS_INT:
+                return Value.of(op1.getInt());
+            case AS_LIST:
+                return Value.of(op1.getList());
+            case AS_STRING:
+                return Value.of(op1.getString());
+            default:
+                throw new IllegalStateException("Unsupported unary operator: " + operator);
+        }
+    }
+
+    private static Value<?> apply(Operator operator, Value<?> op2, Value<?> op1) {
+        switch (operator) {
+            case OR:
+                return Value.of(op2.asBoolean().orElse(false) || op1.asBoolean().orElse(false));
+            case AND:
+                return Value.of(op2.asBoolean().orElse(false) && op1.asBoolean().orElse(false));
+            case EQUAL:
+                return Value.of(Value.isEqual(op2, op1));
+            case NOT_EQUAL:
+                return Value.of(!Value.isEqual(op2, op1));
+            case GREATER_THAN:
+                return Value.of(op2.getInt() > op1.getInt());
+            case GREATER_OR_EQUAL:
+                return Value.of(op2.getInt() >= op1.getInt());
+            case LOWER_THAN:
+                return Value.of(op2.getInt() < op1.getInt());
+            case LOWER_OR_EQUAL:
+                return Value.of(op2.getInt() <= op1.getInt());
+            case CONTAINS:
+                if (op1.type() == Value.Type.LIST) {
+                    return Value.of(new HashSet<>(op2.getList()).containsAll(op1.getList()));
+                }
+                if (op2.type() == Value.Type.LIST) {
+                    return Value.of(op2.getList().contains(op1.asString().orElse(null)));
+                }
+                return Value.of(op1.isPresent() && op2.asString().orElse("").contains(op1.getString()));
+            default:
+                throw new IllegalStateException("Unsupported binary operator: " + operator);
+        }
+    }
+
+    private static final class FoldPart {
+        private final Value<?> constant;
+        private final List<Token> tokens;
+        private final boolean changed;
+
+        private FoldPart(Value<?> constant, List<Token> tokens, boolean changed) {
+            this.constant = constant;
+            this.tokens = tokens;
+            this.changed = changed;
+        }
+
+        static FoldPart of(Token token) {
+            return new FoldPart(token.operand, List.of(token), false);
+        }
+
+        static FoldPart constant(Value<?> value) {
+            return new FoldPart(value, List.of(Token.of(value)), true);
+        }
+
+        static FoldPart expression(List<Token> tokens, boolean changed) {
+            return new FoldPart(null, tokens, changed);
+        }
+
+        Value<?> constant() {
+            return constant;
+        }
+
+        List<Token> tokens() {
+            return tokens;
+        }
+
+        boolean changed() {
+            return changed;
+        }
+
+        FoldPart withChanged() {
+            return !changed ? new FoldPart(constant, tokens, true) : this;
+        }
+
+        Expression expression() {
+            if (constant != null && constant.type() == Value.Type.BOOLEAN) {
+                return constant.getBoolean() ? TRUE : FALSE;
+            }
+            return new Expression(tokens, false);
+        }
+    }
+
     private Expression reduce0() {
         if (this == TRUE) {
             return TRUE;
@@ -626,23 +787,23 @@ public final class Expression implements Comparable<Expression> {
                 List<Token> op1 = stack.pop();
                 Token t1 = op1.get(0);
                 String s1 = t1.variable != null ? t1.variable : t1.signature();
-                String varName;
-                switch (token.operator) {
-                    case NOT:
-                        stack.push(Lists.addAll(op1, token));
-                        break;
-                    case SIZEOF:
-                    case AS_INT:
+                    String varName;
+                    switch (token.operator) {
+                        case NOT:
+                            stack.push(Lists.appendView(op1, token));
+                            break;
+                        case SIZEOF:
+                        case AS_INT:
                     case AS_LIST:
-                    case AS_STRING:
-                        // t1 is always a variable (enforced in parse)
-                        varName = token.operator.symbol() + ' ' + s1;
-                        SyntheticVar syntheticVar = vars.vars.get(s1);
-                        tempVars.putIfAbsent(varName, Lists.addAll(
-                                syntheticVar != null ? syntheticVar.tokens : op1,
-                                token));
-                        stack.push(List.of(Token.of(varName)));
-                        break;
+                        case AS_STRING:
+                            // t1 is always a variable (enforced in parse)
+                            varName = token.operator.symbol() + ' ' + s1;
+                            SyntheticVar syntheticVar = vars.vars.get(s1);
+                            tempVars.putIfAbsent(varName, Lists.appendView(
+                                    syntheticVar != null ? syntheticVar.tokens : op1,
+                                    token));
+                            stack.push(List.of(Token.of(varName)));
+                            break;
                     case CONTAINS:
                     case EQUAL:
                     case NOT_EQUAL:
@@ -672,17 +833,17 @@ public final class Expression implements Comparable<Expression> {
                                 next.add(Token.NOT);
                             }
                             varName = s2 + ' ' + token + ' ' + s1;
-                            tempVars.putIfAbsent(varName, Lists.addAll(op2, op1, token));
+                            tempVars.putIfAbsent(varName, Lists.concatView(op2, op1, token));
                             stack.push(Lists.addAll(next, 0, Token.of(varName)));
                         } else {
-                            stack.push(Lists.addAll(op2, op1, token));
+                            stack.push(Lists.concatView(op2, op1, token));
                         }
                         break;
-                    default:
-                        stack.push(Lists.addAll(stack.pop(), op1, token));
-                }
-            } else {
-                stack.push(List.of(token));
+                        default:
+                            stack.push(Lists.concatView(stack.pop(), op1, token));
+                    }
+                } else {
+                    stack.push(List.of(token));
             }
         }
 

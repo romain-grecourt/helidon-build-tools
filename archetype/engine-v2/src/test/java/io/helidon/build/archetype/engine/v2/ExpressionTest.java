@@ -707,6 +707,58 @@ class ExpressionTest {
     }
 
     @Test
+    void testProgrammaticDeepOrChain() {
+        Expression actual = Expression.FALSE;
+        for (int i = 0; i < 256; i++) {
+            actual = actual.or(expr("${v" + i + "}"));
+        }
+
+        assertThat(actual.tokens().size(), is(511));
+        assertThat(actual.eval(name -> "v127".equals(name) ? Value.TRUE : Value.FALSE), is(true));
+        assertThat(actual.eval(name -> Value.FALSE), is(false));
+        assertThat(Expression.create(actual.literal()), is(actual));
+    }
+
+    @Test
+    void testProgrammaticDeepComparisonOrReduceSkipsQmcLimit() {
+        Expression actual = Expression.FALSE;
+        for (int i = 0; i < 32; i++) {
+            actual = actual.or(expr("${v" + i + "} == 'x'"));
+        }
+
+        assertThat(actual.reduce(), is(actual));
+    }
+
+    @Test
+    void testProgrammaticDeepOrChainEqualityAndHashCode() {
+        Expression left = Expression.FALSE;
+        Expression right = Expression.FALSE;
+        for (int i = 0; i < 256; i++) {
+            left = left.or(expr("${v" + i + "}"));
+            right = right.or(expr("${v" + i + "}"));
+        }
+
+        assertThat(left, is(right));
+        assertThat(left.hashCode(), is(right.hashCode()));
+        assertThat(left.equals(right.or(expr("${tail}"))), is(false));
+    }
+
+    @Test
+    void testVariableCountAtMost() {
+        Expression actual = expr("${a} && ${a} && ${b} && ${c}");
+
+        assertThat(actual.variableCountAtMost(2), is(false));
+        assertThat(actual.variableCountAtMost(3), is(true));
+    }
+
+    @Test
+    void testFoldConstantsKeepsUnsupportedContainsExpression() {
+        Expression actual = expr("['json'] contains true");
+
+        assertThat(actual.foldConstants(), is(actual));
+    }
+
+    @Test
     void testInlineDynamicValue() {
         Expression actual = expr("${v1} == ${v2}").inline(Map.of("v1", Value.dynamic("a"))::get);
         assertThat(actual.eval(Map.of("v2", Value.of("a"))::get), is(true));

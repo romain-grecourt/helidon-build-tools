@@ -362,16 +362,20 @@ final class Flow {
 
         @Override
         public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
             if (!(o instanceof State)) {
                 return false;
             }
             State other = (State) o;
-            return path.equals(other.path) && env.equals(other.env);
+            return (path == other.path || path.equals(other.path))
+                    && (env == other.env || env.equals(other.env));
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(path, env);
+            return 31 * path.hashCode() + env.hashCode();
         }
     }
 
@@ -1022,7 +1026,11 @@ final class Flow {
                 return translatedScalarAny(right.ref, new TreeSet<>(left.literal.getList()), state);
             }
             if (left.literal != null && right.literal != null && left.literal.type() == Value.Type.LIST) {
-                return left.literal.getList().containsAll(containsValues(right.literal))
+                Set<String> required = containsValues(right.literal);
+                if (required == null) {
+                    return null;
+                }
+                return new HashSet<>(left.literal.getList()).containsAll(required)
                         ? guards.trueGuard()
                         : guards.falseGuard();
             }
@@ -1197,7 +1205,8 @@ final class Flow {
             if (availability == null) {
                 return null;
             }
-            return guards.and(availability, residualGuard(Expression.create("${" + key + "} == '" + value + "'")));
+            Expression expression = Expression.create("${" + key + "} == '" + value + "'");
+            return guards.and(availability, residualGuard(expression));
         }
 
         private Guard residualGuard(Expression expression) {
@@ -1371,8 +1380,12 @@ final class Flow {
                     rememberSymbol(definitionId(scope, node), new Spec.Boolean(), true, false);
                     break;
                 case PRESET_ENUM:
-                case PRESET_LIST:
                 case VARIABLE_ENUM:
+                case PRESET_TEXT:
+                case VARIABLE_TEXT:
+                    rememberDefinitionSymbol(scope, node);
+                    break;
+                case PRESET_LIST:
                 case VARIABLE_LIST: {
                     String key = definitionId(scope, node);
                     SymbolSeed declared = declaredInputSymbols.get(key);
@@ -1383,10 +1396,6 @@ final class Flow {
                     }
                     break;
                 }
-                case PRESET_TEXT:
-                case VARIABLE_TEXT:
-                    rememberSymbol(definitionId(scope, node), new Spec.OpenText(), false, true);
-                    break;
                 default:
                     break;
             }
@@ -1538,6 +1547,47 @@ final class Flow {
             symbolSeeds.merge(name,
                     new SymbolSeed(name, spec, guardable, tainted),
                     SymbolSeed::merge);
+        }
+
+        void rememberDefinitionSymbol(Scope scope, Node node) {
+            SymbolSeed seed = definitionSeed(scope, node);
+            rememberSymbol(seed.name, seed.spec, seed.guardable, seed.tainted);
+        }
+
+        SymbolSeed definitionSeed(Scope scope, Node node) {
+            String key = definitionId(scope, node);
+            SymbolSeed declared = declaredInputSymbols.get(key);
+            if (declared != null) {
+                return declared;
+            }
+            switch (node.kind()) {
+                case PRESET_ENUM:
+                case VARIABLE_ENUM:
+                case PRESET_TEXT:
+                case VARIABLE_TEXT:
+                    return scalarDefinitionSeed(key, node.value());
+                case PRESET_LIST:
+                case VARIABLE_LIST:
+                default:
+                    break;
+            }
+            return new SymbolSeed(key, new Spec.OpenText(), false, false);
+        }
+
+        SymbolSeed scalarDefinitionSeed(String key, Value<?> value) {
+            String literal = literalScalar(value);
+            if (literal == null) {
+                return new SymbolSeed(key, new Spec.OpenText(), false, true);
+            }
+            return new SymbolSeed(key, new Spec.FiniteText(Set.of(literal)), true, false);
+        }
+
+        String literalScalar(Value<?> value) {
+            String literal = Value.scalarLiteral(value);
+            if (literal == null || literal.contains("${")) {
+                return null;
+            }
+            return literal;
         }
 
         void terminate(int blockId, Terminator terminator) {
@@ -1796,11 +1846,11 @@ final class Flow {
 
         ConditionValue contains(ConditionValue right, ConditionValue left) {
             Guard direct = containsGuard(left, right);
-            Expression expression = combine(left.expression, "contains", right.expression);
             if (direct == null) {
-                return ConditionValue.expression(expression);
+                direct = scalarAnyGuard(right, left);
             }
-            return ConditionValue.guard(direct, expression);
+            Expression expression = combine(left.expression, "contains", right.expression);
+            return direct == null ? ConditionValue.expression(expression) : ConditionValue.guard(direct, expression);
         }
 
         Guard containsGuard(ConditionValue symbolValue, ConditionValue literalValue) {
@@ -1822,6 +1872,28 @@ final class Flow {
                 return result;
             }
             return null;
+        }
+
+        Guard scalarAnyGuard(ConditionValue symbolValue, ConditionValue literalValue) {
+            if (symbolValue.symbol == null || literalValue.literal == null || literalValue.literal.type() != Value.Type.LIST) {
+                return null;
+            }
+            Symbol symbol = symbolValue.symbol;
+            if (!symbol.guardable() || symbol.tainted()) {
+                return null;
+            }
+            switch (symbol.domain().kind()) {
+                case BOOLEAN:
+                case CHOICE:
+                case FINITE_TEXT:
+                    Guard result = guards.falseGuard();
+                    for (String item : literalValue.literal.getList()) {
+                        result = guards.or(result, guards.eq(symbol.id(), item));
+                    }
+                    return result;
+                default:
+                    return null;
+            }
         }
 
         Guard residual(Expression expression) {
@@ -1995,8 +2067,9 @@ final class Flow {
             if (incoming.path().equals(guards.falseGuard())) {
                 return;
             }
-            State merged = merge(entries.get(blockId), incoming);
-            if (!merged.equals(entries.get(blockId))) {
+            State current = entries.get(blockId);
+            State merged = merge(current, incoming);
+            if (merged != current) {
                 entries.set(blockId, merged);
                 work.addLast(blockId);
             }
@@ -2009,31 +2082,43 @@ final class Flow {
             if (incoming.path().equals(guards.falseGuard())) {
                 return current;
             }
-            if (current.equals(incoming)) {
+            if (current == incoming || current.path() == incoming.path() && current.env() == incoming.env()) {
                 return current;
             }
             Guard path = mergeGuard(current.path(), incoming.path());
-            Map<Integer, Fact> env = new LinkedHashMap<>(current.env());
+            Map<Integer, Fact> env = null;
+            boolean changed = path != current.path();
             Set<Integer> keys = new HashSet<>(current.env().keySet());
             keys.addAll(incoming.env().keySet());
             for (int symbolId : keys) {
                 Fact left = current.env().get(symbolId);
                 Fact right = incoming.env().get(symbolId);
+                Fact merged;
                 if (left == null) {
-                    env.put(symbolId, right);
+                    merged = right;
                 } else if (right == null) {
-                    env.put(symbolId, left);
-                } else if (left.equals(right)) {
-                    env.put(symbolId, left);
+                    merged = left;
+                } else if (left == right || left.equals(right)) {
+                    merged = left;
                 } else {
-                    env.put(symbolId, Fact.merge(left, right, guards));
+                    merged = Fact.merge(left, right, guards);
+                }
+                if (merged != left) {
+                    changed = true;
+                    if (env == null) {
+                        env = new LinkedHashMap<>(current.env());
+                    }
+                    env.put(symbolId, merged);
                 }
             }
-            return new State(path, env);
+            if (!changed) {
+                return current;
+            }
+            return new State(path, env == null ? current.env() : env);
         }
 
         Guard mergeGuard(Guard left, Guard right) {
-            if (left.equals(right)) {
+            if (left == right || left.equals(right)) {
                 return left;
             }
             if (left.residual() == Expression.TRUE && right.residual() == Expression.TRUE) {
@@ -2048,6 +2133,10 @@ final class Flow {
         }
 
         State define(State state, int symbolId, Fact fact) {
+            Fact existing = state.env().get(symbolId);
+            if (Objects.equals(existing, fact)) {
+                return state;
+            }
             Map<Integer, Fact> env = new LinkedHashMap<>(state.env());
             env.put(symbolId, fact);
             return new State(state.path(), env);
