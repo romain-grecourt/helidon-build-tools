@@ -1,5 +1,199 @@
 # Progress
 
+- 2026-04-09: Fixed the remaining broader `engine-v2` regressions in
+  `Flow` / `Value`. `Value.typed(Value<?>, Type)` now preserves typed
+  conversions without null-unboxing, `Flow.Model.exactValue()` falls
+  back to the raw exact value when coercion is incompatible so
+  validation can surface the real type error, and
+  `Flow.Lowerer.definitionSeed()` now widens declared-input symbols when
+  a text definition is attached to the same public path. Focused reruns
+  are green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=ScriptCompilerTest#testPresetTypeMismatch+testOpenDomainComplement \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  and the broader slice
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  now passes with `195` tests and `BUILD SUCCESS`.
+- 2026-04-09: Reran the full Helidon regression wrapper against the
+  requested good baseline:
+  `.agents/skills/helidon-archetype-regression/scripts/run-regression.sh
+  all --helidon-dir /Users/rgrecour/workspace/helidon --baseline-ref
+  333e06f877c7bb948e23daa203e2062922bf6ac5`.
+  Wrapper run `20260409-200653-75357` passes `compile_gate`
+  (`2.23s < 5s`) and `diff_variations` (`outputs changed: no`,
+  baseline `8.47s`, current `3.38s`, threshold `15s`), but
+  `diff_projects` still fails before compare. The baseline-side project
+  generation log
+  `.agents/skills/helidon-archetype-regression/.state/20260409-200653-75357/logs/diff_projects-baseline-generate.log`
+  still dies in Helidon CLI generation with
+  `Unresolved variable: security.atz`, so there is no
+  `diff_projects-compare.log` for this run. `~/.m2` was restored to the
+  current workspace install afterward.
+- 2026-04-09: Verified that the remaining `diff_projects` failure is not
+  caused by the new `Flow` / `Value` patch alone by running the current
+  workspace install directly in the Helidon checkout:
+  `mvn -f /Users/rgrecour/workspace/helidon/archetypes/archetypes/pom.xml \
+  -Dversion.plugin.helidon-build-tools=4.0.0-SNAPSHOT clean install \
+  -Darchetype.test.generateOnly=true \
+  -Darchetype.test.parallelGeneration=true \
+  -Darchetype.test.maxVariations=-1`.
+  That direct current-side generation also fails in Helidon CLI project
+  creation with the same unresolved generated-script variables
+  (`security.atz`, and also `metrics.builtin` in some runs). The
+  remaining blocker is therefore the Helidon `generateOnly` path in the
+  current checkout, not the focused engine-v2 unit slice or
+  `projects.csv` parity.
+- 2026-04-09: Committed the Helidon variation fixes as local commit
+  `2d083695b` (`Archetype: fix packaged variation projection`).
+  `VariationEngine.normalize(...)` now reruns filters after
+  `execute(...)`, and `ScriptCompiler.projectSourceGuards(...)` now
+  constrains projected facts to the current branch before replaying
+  source guards. Focused regressions are green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=ScriptCompilerTest#testSiblingPresetsDoNotDisableLaterNestedEnumInput,VariationsTest#testVariationsFiltersCanReferenceNestedInputKeys,VariationsTest#testVariationsKeepNestedEnumWhenParentBooleanIsExternallyFixed,VariationsTest#testVariationsKeepNestedEnumAcrossSourceAndExecGraph \
+  -Dsurefire.failIfNoSpecifiedTests=false test`.
+- 2026-04-09: Reran the Helidon wrapper against the explicit good
+  baseline the user requested. Wrapper run `20260409-192148-71454`
+  used `--baseline-ref 333e06f877c7bb948e23daa203e2062922bf6ac5`
+  (local branch `archetype-substitute-thruthy-expressions`, same as tag
+  `scriptcompiler-redesign-spec-2026-04-03`) and passed
+  `diff_variations` with no `projects.csv` churn. Baseline wall-clock
+  was `7.81s`, current wall-clock was `2.85s`, the threshold is `15s`,
+  and `~/.m2` was restored to the current workspace install afterward.
+- 2026-04-09: The remaining blockers are now back in the broader
+  `engine-v2` test slice, not the Helidon variation count. Focused
+  rerun
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  still fails in two places:
+  `ScriptCompilerTest.testPresetTypeMismatch`
+  (invalid boolean exact-value coercion currently throws an NPE through
+  `Value.typed(...)` / `Flow.Model.exactValue()` instead of surfacing
+  `EXPR_EVAL_ERROR` plus `PRESET_TYPE_MISMATCH`) and
+  `ScriptCompilerTest.testOpenDomainComplement`
+  (the open-text fallback for `media.json-lib` is still over-simplified
+  to `${media.json-lib} != 'jsonp'` even though the fixture also has a
+  source variable on the same public path). The next pass is to fix
+  those two tests, then rerun the full Helidon workflow against the
+  same explicit baseline and continue to `diff_projects`.
+- 2026-04-09: Reran `diff_variations` against an explicit known-good
+  baseline with wrapper run `20260409-171723-48076` and
+  `--baseline-ref b47015655`
+  (`ScriptCompiler: normalize stub definition reachability`), the
+  latest commit on `archetype-substitute-thruthy-expressions` that the
+  local task state records as fully green against Helidon. The baseline
+  side succeeded in `9.69s` and generated `119` total projects. The
+  current side failed before CSV snapshot/compare because the Helidon
+  exact-count assertion tripped again: current workspace build-tools
+  generated `115` variations where the current Helidon POM expects
+  `100`. The visible per-plan delta in the log is `mp/observability`
+  dropping from `8` baseline variations to `4` current variations.
+  Wrapper outputs are therefore `outputs changed: unknown`,
+  `current variation within threshold: unknown`, and `~/.m2` was
+  restored to the current workspace install afterward.
+- 2026-04-09: Committed the structural control-path fix as local commit
+  `a55dc6dcf` (`Flow: preserve structured control paths`). Lowered
+  blocks now carry structured control-context ids, `analyzeControl()`
+  keeps the forward pass reachability-only, and exact lowered block
+  paths are materialized from that structural context by conjunction
+  only rather than by predecessor `or(...)` reconstruction. The focused
+  slice stayed green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=ExpressionTest,DomainTest,FlowTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`82` tests), `git diff --check` was clean before commit, and Helidon
+  wrapper run `20260409-170801-45716` passed `compile_gate` in `2.10s`
+  versus the `5s` threshold with `~/.m2` restored to the current
+  workspace install.
+- 2026-04-09: The intermediate reachability-only follow-up without
+  structured block contexts was still the wrong design. Wrapper run
+  `20260409-170042-43718` no longer burned time in
+  `Flow$Analyzer.enqueueControl()`, but a live
+  `jcmd 43846 Thread.print -l` showed the main thread right back in
+  `Domain$DecisionShape.subsetOf()` through
+  `Flow$Analyzer.materializeBlockGuard()` /
+  `materializeEdgeGuard()`. Exact path reconstruction from predecessor
+  unions was still reintroducing the same giant joins at the analysis
+  boundary.
+- 2026-04-09: Wrapper run `20260409-170821-45930`
+  `diff_variations` did not produce a usable compare. The run was
+  stopped on the baseline side because default baseline `HEAD` was still
+  the broken pre-fix commit `e2cd1a3a8`, so baseline generation stayed
+  in the old analyzer failure shape before any `projects.csv` compare.
+  The wrapper reported `outputs changed: unknown`,
+  `current variation within threshold: unknown`, and restored
+  `~/.m2` to the current workspace install afterward.
+- 2026-04-09: Checkpointed the second analyzer rewrite as local commit
+  `e2cd1a3a8` (`Flow: remove analyzer path interning`) after the focused
+  `ExpressionTest,DomainTest,FlowTest` slice reran green with `82`
+  tests. The branch is clean apart from local `.ai` state.
+- 2026-04-09: Committed the first analyzer rewrite as local commit
+  `26c0d09ea` (`Flow: remove exact guard algebra from analyzer`) before
+  continuing the Helidon follow-up.
+- 2026-04-09: Helidon wrapper run `20260409-163559-38737` on top of
+  `26c0d09ea` still failed `compile_gate` after a manual stop, but it
+  exposed the real flaw in that first rewrite. A live
+  `jcmd 38848 GC.class_histogram` showed the analyzer still exploding
+  the path interner itself: about `118M`
+  `Flow$Analyzer$AnalysisPath`, `97M` `HashMap$Node`, and `118M`
+  boxed `Long`, with the main thread still in `Flow$Analyzer.analyze()`
+  during `transfer(...)`. The old interned `and/or/implication` path
+  maps are not viable.
+- 2026-04-09: Rewrote `Flow.Analyzer` a second time to remove the
+  interned path DAG entirely. Control reachability is now a separate
+  block-level pass, fact/env propagation no longer carries path
+  formulas, and `definedUnder` / exact-case provenance are tracked as
+  block-id sets that only materialize `Guard`s on demand. Added focused
+  `FlowTest` assertions for exact-case materialization and same-value
+  merge coverage. The focused slice stays green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=ExpressionTest,DomainTest,FlowTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`82` tests), and `git diff --check` is clean.
+- 2026-04-09: Helidon wrapper run `20260409-164618-40401` on top of
+  the second rewrite still failed `compile_gate` after a manual stop,
+  but the catastrophic memory blow-up is gone. A live
+  `jcmd 40498 GC.class_histogram` dropped to about `210 MB` total with
+  no `AnalysisPath` churn at all. The dominant live stack from
+  `jcmd 40498 Thread.print -l` is now
+  `Domain$DecisionShape.subsetOf()` ->
+  `Domain$Guards.or()` ->
+  `Flow$Analyzer.enqueueControl()` ->
+  `Flow$Analyzer.propagateControl()` ->
+  `Flow$Analyzer.analyzeControl()`. The remaining blocker is exact
+  block-entry guard merging in control analysis, not fact/env analysis
+  or exact-case provenance anymore.
+- 2026-04-09: Committed the membership-bitset checkpoint as local commit
+  `97348f8b1` (`Domain: bitset membership guards`) before starting the
+  analyzer redesign follow-up.
+- 2026-04-09: Current dirty follow-up is a structural `Flow.Analyzer`
+  rewrite that removes exact `Domain.Guard` algebra from the branch and
+  block-merge worklist path. The analyzer now carries an internal
+  interned path DAG for state reachability/provenance and only
+  materializes exact `Guard`s when facts, uses, or final `Analysis`
+  output need them. `Fact` merging was also widened with an
+  `EXACT_CASE_MAX` cap plus singleton scalar fallback so
+  `BooleanSet` / `ChoiceSet` / `FiniteText` singleton values can still
+  propagate exactly without carrying unbounded exact-case lists. The
+  focused engine-v2 slice remains green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=ExpressionTest,DomainTest,FlowTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`81` tests) on top of the dirty analyzer cut.
+- 2026-04-09: Fresh Helidon wrapper runs on top of the dirty analyzer
+  rewrite confirm the dominant hotspot moved again:
+  `20260409-162119-35543` sampled after about `60.9s` with the top
+  frame in `Flow$Analyzer.or()` / `mergeExactCase()` /
+  `mergeFact()` rather than `Domain$DecisionShape.subsetOf()`;
+  follow-up run `20260409-162415-36586` after adding the exact-case cap
+  still samples the same area after about `47.4s`, but the old
+  `DecisionShape.subsetOf()` path is gone and the run uses materially
+  less CPU churn than the first dirty analyzer attempt. Both wrapper
+  runs were stopped manually after sampling, and no Helidon/Maven JVM
+  was left running afterward.
 - 2026-04-09: Finished the non-schema membership bitset sweep on top of
   `00447e4b5`. `Domain.Symbol` now indexes finite membership items the
   same way it already indexed finite scalar values, `MembershipShape`
@@ -718,3 +912,76 @@
   -Dtest=ExpressionTest,DomainTest,FlowTest
   -Dsurefire.failIfNoSpecifiedTests=false test`
   passed with `77` tests and `BUILD SUCCESS`.
+- 2026-04-09: Finished the investigation the user asked for on the
+  remaining Helidon `mp/observability` mismatch. The raw-source
+  `VariationEngine` path was already correct; the remaining 4-row
+  packaged-artifact collapse reproduced as a `ScriptCompiler` bug in
+  the new XML-backed
+  `ScriptCompilerTest.testSiblingPresetsDoNotDisableLaterNestedEnumInput`.
+  The fix constrains pre-node facts to the current projected branch
+  before `projectSourceGuards()` replays boolean/input control
+  expressions, so sibling preset exact cases no longer make later nested
+  inputs look unreachable. Added expected compiled XML
+  `compiler/expected/observability-sibling-presets.xml`, kept the
+  `VariationEngine` post-`exec` filter regression in place, and updated
+  the observability `VariationsTest` expectations to cover only the
+  preserved variation dimensions. Focused validation with
+  `mvn -pl archetype/engine-v2 -am
+  -Dtest=ScriptCompilerTest#testSiblingPresetsDoNotDisableLaterNestedEnumInput,VariationsTest#testVariationsFiltersCanReferenceNestedInputKeys,VariationsTest#testVariationsKeepNestedEnumWhenParentBooleanIsExternallyFixed,VariationsTest#testVariationsKeepNestedEnumAcrossSourceAndExecGraph
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  passed with `4` tests and `BUILD SUCCESS`.
+- 2026-04-09: A broader `engine-v2` slice still is not clean:
+  `mvn -pl archetype/engine-v2 -am
+  -Dtest=ExpressionTest,ScriptCompilerTest,VariationsTest
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  now reports two additional failures outside the observability fix
+  scope. `ScriptCompilerTest.testPresetTypeMismatch` still hits a
+  `Flow.Model.exactValue()` / `Value.typed(...)` null-unboxing path on
+  invalid boolean exact values, and
+  `ScriptCompilerTest.testOpenDomainComplement` still emits the
+  narrower `${media.json-lib} != 'jsonp'` condition instead of the
+  expected open-domain-aware form. Those failures were not addressed in
+  this pass.
+- 2026-04-09: Ran the Helidon regression wrapper via the
+  `helidon-archetype-regression` skill:
+  `.agents/skills/helidon-archetype-regression/scripts/run-regression.sh
+  diff_variations --helidon-dir /Users/rgrecour/workspace/helidon
+  --baseline-ref b47015655`.
+  Wrapper run `20260409-183624-66348` confirms the packaged
+  `mp/observability` regression is fixed and the current side now
+  satisfies Helidon's exact-count gate with `100` total rows in
+  `2.89s` (`< 15s`). The compare is still red against baseline
+  `b47015655`, but the remaining delta is now only `19` removed rows and
+  `0` added rows. Every removed row is
+  `flavor=mp app-type=database`; `18` of them carry
+  `media.json-lib=jsonb` and `1` carries `media.json-lib=jackson`.
+  Representative artifacts live under
+  `.agents/skills/helidon-archetype-regression/.state/20260409-183624-66348/`,
+  and `~/.m2` was restored to the current workspace install. Because
+  `diff_variations` still reports output churn, `diff_projects` remains
+  blocked.
+- 2026-04-09: Corrected the baseline choice. The user had explicitly
+  asked for the current tip of local branch
+  `archetype-substitute-thruthy-expressions`, which matches tag
+  `scriptcompiler-redesign-spec-2026-04-03` and resolves to
+  `333e06f877c7bb948e23daa203e2062922bf6ac5`
+  (`Clarify expression raw token naming`, 2026-04-02). The earlier
+  wrapper run against `b47015655` used the wrong historical commit and
+  should not be used for product conclusions.
+- 2026-04-09: Reran the Helidon regression wrapper against the correct
+  requested baseline:
+  `.agents/skills/helidon-archetype-regression/scripts/run-regression.sh
+  diff_variations --helidon-dir /Users/rgrecour/workspace/helidon
+  --baseline-ref 333e06f877c7bb948e23daa203e2062922bf6ac5`.
+  Wrapper run `20260409-192148-71454` passed cleanly:
+  `outputs changed: no`, baseline wall-clock `7.81s`, current
+  wall-clock `2.85s`, threshold `15s`, and `~/.m2` was restored to the
+  current workspace install. This confirms the packaged variation
+  output now matches the requested known-good baseline, so
+  `diff_projects` is unblocked again.
+- 2026-04-09: Committed the packaged variation fix and its regressions
+  as local commit `2d083695b`
+  (`Archetype: fix packaged variation projection`). The commit includes
+  the `VariationEngine` post-`exec` filter recheck, the projected-fact
+  fix in `ScriptCompiler`, and the new compiler/variation fixtures that
+  reproduce the earlier `mp/observability` packaged-artifact failure.

@@ -619,14 +619,27 @@ final class Flow {
                 if (overlap.equals(falseGuard())) {
                     continue;
                 }
+                Value<?> candidate = coerceExactValue(exactCase.value(), type);
                 if (exact == null) {
-                    exact = type == Value.Type.EMPTY ? exactCase.value() : Value.typed(exactCase.value(), type);
-                } else if (!Value.isEqual(exact, exactCase.value())) {
+                    exact = candidate;
+                } else if (!Value.isEqual(exact, candidate)) {
                     return null;
                 }
                 coverage = guards().or(coverage, overlap);
             }
             return exact != null && guards().implies(required, coverage) ? exact : null;
+        }
+
+        private Value<?> coerceExactValue(Value<?> value, Value.Type type) {
+            if (type == Value.Type.EMPTY) {
+                return value;
+            }
+            try {
+                Value<?> coerced = Value.typed(value, type);
+                return coerced.isPresent() ? coerced : value;
+            } catch (RuntimeException ex) {
+                return value;
+            }
         }
 
         private Value<?> singletonValue(Domain.Value value) {
@@ -1603,6 +1616,9 @@ final class Flow {
             String key = definitionId(scope, node);
             SymbolSeed declared = declaredInputSymbols.get(key);
             if (declared != null) {
+                if (node.kind() == Kind.PRESET_TEXT || node.kind() == Kind.VARIABLE_TEXT) {
+                    return declared.merge(scalarDefinitionSeed(key, node.value()));
+                }
                 return declared;
             }
             switch (node.kind()) {

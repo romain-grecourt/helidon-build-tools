@@ -321,11 +321,11 @@ public interface Value<T> {
     static Value<?> typed(Value<?> value, Type type) {
         switch (type) {
             case LIST:
-                return Value.of(value.getList());
+                return value.asList();
             case BOOLEAN:
-                return Value.of(value.asBoolean().orElse(null));
+                return value.asBoolean();
             case STRING:
-                return Value.of(value.asString().orElse(null));
+                return value.asString();
             default:
                 throw new IllegalArgumentException("Unsupported value type: " + type);
         }
