@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<archetype-script xmlns="https://helidon.io/archetype/2.0"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
+    <step name="App Type" optional="true">
+        <inputs>
+            <enum id="app-type" global="true" default="quickstart" optional="true">
+                <option value="quickstart"/>
+                <option value="custom"/>
+            </enum>
+        </inputs>
+    </step>
+    <step name="Features" optional="true" if="${app-type} != &apos;quickstart&apos;">
+        <inputs>
+            <boolean id="metrics" default="false" optional="true">
+                <inputs>
+                    <boolean id="builtin" default="true" optional="true"/>
+                </inputs>
+            </boolean>
+            <boolean id="health" default="false" optional="true">
+                <inputs>
+                    <boolean id="builtin" default="true" optional="true"/>
+                </inputs>
+            </boolean>
+            <boolean id="security" default="false" optional="true">
+                <inputs>
+                    <list id="atz" optional="true">
+                        <option value="abac"/>
+                    </list>
+                </inputs>
+            </boolean>
+            <boolean id="tracing" default="false" optional="true">
+                <inputs>
+                    <enum id="provider" default="opentelemetry" optional="true">
+                        <option value="opentelemetry"/>
+                        <option value="zipkin"/>
+                    </enum>
+                </inputs>
+            </boolean>
+        </inputs>
+    </step>
+    <variables>
+        <boolean path="~metrics.builtin" if="!${metrics}">false</boolean>
+        <boolean path="~health.builtin" if="!${health}">false</boolean>
+        <list path="~security.atz" if="!${security}"/>
+        <text path="~tracing.provider" if="!${tracing}"><![CDATA[]]></text>
+    </variables>
+    <output>
+        <transformation id="template-blobs-1">
+            <replace regex="\QF99FC1F5434802CE0413EE2416871CB4\E" replacement="README.md.mustache"/>
+        </transformation>
+        <templates engine="mustache" transformations="template-blobs-1">
+            <directory>blobs</directory>
+            <includes>
+                <include>F99FC1F5434802CE0413EE2416871CB4</include>
+                <include><![CDATA[]]></include>
+            </includes>
+        </templates>
+        <model>
+            <list key="metrics-dependencies"
+                  if="${app-type} != &apos;quickstart&apos; &amp;&amp; ${metrics} &amp;&amp; ${metrics.builtin}">
+                <value>metrics</value>
+            </list>
+            <list key="health-dependencies"
+                  if="${app-type} != &apos;quickstart&apos; &amp;&amp; ${health} &amp;&amp; ${health.builtin}">
+                <value>health</value>
+            </list>
+            <list key="security-dependencies"
+                  if="${app-type} != &apos;quickstart&apos; &amp;&amp; ${security} &amp;&amp; ${security.atz} contains &apos;abac&apos;">
+                <value>security</value>
+            </list>
+            <value key="tracing-kind"
+                   if="${app-type} != &apos;quickstart&apos; &amp;&amp; ${tracing} &amp;&amp; ${tracing.provider} != &apos;zipkin&apos;">otel</value>
+        </model>
+    </output>
+</archetype-script>

@@ -345,6 +345,13 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testRuntimeSafeParentStubs() {
+        Path outputDir = compile("compiler/runtime-safe-parent-stubs", "main.xml");
+        assertThat(normalizeXml(outputDir.resolve("main.xml")),
+                is(normalizeXml("compiler/expected/runtime-safe-parent-stubs.xml")));
+    }
+
+    @Test
     void testUnsupportedBindingCondition() {
         Path outputDir = compile("compiler/unsupported-binding-condition", "main.xml", IGNORE_ERRORS);
         assertThat(normalizeXml(outputDir.resolve("main.xml")),

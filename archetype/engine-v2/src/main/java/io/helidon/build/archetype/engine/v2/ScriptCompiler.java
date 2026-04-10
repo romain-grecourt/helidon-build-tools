@@ -2768,7 +2768,7 @@ public class ScriptCompiler {
             for (String ref : variables) {
                 String key = scope.key(ref);
                 Guard required = base;
-                Guard demand = demands.get(key);
+                Guard demand = runtimeConditionDemand(key, demands);
                 if (demand != null) {
                     required = and(required, demand);
                 }
@@ -2782,6 +2782,15 @@ public class ScriptCompiler {
                 stubs.add(new StubSpec(type, key, missing, base, scope, snapshots));
             }
             return stubs;
+        }
+
+        private Guard runtimeConditionDemand(String key, Map<String, Guard> demands) {
+            int dot = key.lastIndexOf('.');
+            if (dot >= 0 && indexer.refType(key.substring(0, dot)) == Type.BOOLEAN) {
+                // the runtime condition evaluator still resolves nested refs even when the boolean parent is false
+                return null;
+            }
+            return demands.get(key);
         }
 
         Expression definitionComplementStubExpression(String key,

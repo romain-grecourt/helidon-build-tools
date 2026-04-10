@@ -48,6 +48,10 @@
             </boolean>
         </inputs>
     </step>
+    <variables>
+        <text path="~db.server"
+              if="${app-type} == &apos;quickstart&apos; || ${app-type} == &apos;custom&apos; &amp;&amp; !${db}"><![CDATA[]]></text>
+    </variables>
     <step name="Selected Server"
           optional="true"
           if="${db} &amp;&amp; ${db.server} != &apos;mysql&apos;">

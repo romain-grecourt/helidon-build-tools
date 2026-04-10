@@ -88,7 +88,8 @@
         </inputs>
     </step>
     <variables>
-        <text path="~db.cp" if="!${db} || ${flavor} != &apos;mp&apos;"><![CDATA[]]></text>
+        <text path="~db.cp"
+              if="${flavor} != &apos;mp&apos; || ${app-type} == &apos;quickstart&apos; || ${app-type} == &apos;oci&apos; || ${app-type} == &apos;custom&apos; &amp;&amp; !${db}"><![CDATA[]]></text>
     </variables>
     <output>
         <transformation id="template-blobs-1">

@@ -28,6 +28,9 @@
             </boolean>
         </inputs>
     </step>
+    <variables>
+        <boolean path="~i1.i2" if="!${i1}">false</boolean>
+    </variables>
     <output>
         <transformation id="file-blobs-1">
             <replace regex="\Q826E8142E6BAABE8AF779F5F490CF5F5\E" replacement="file1.txt"/>
