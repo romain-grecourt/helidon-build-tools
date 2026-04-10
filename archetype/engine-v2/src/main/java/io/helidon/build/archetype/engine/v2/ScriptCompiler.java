@@ -315,7 +315,7 @@ public class ScriptCompiler {
             return falseGuard();
         }
         Scope scope = scope(node);
-        ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, facts(node), false, true);
+        ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, facts(node, currentGuard), false, true);
         ExpressionAnalysis analysis = analyzer.analyze(expr);
         Guard local = localGuard(expr, scope, currentGuard, analysis);
         Guard full = and(currentGuard, local);
@@ -856,6 +856,10 @@ public class ScriptCompiler {
         return factCache.computeIfAbsent(node, this::facts0);
     }
 
+    private Map<String, Fact> facts(Node node, Guard required) {
+        return constrainFacts(facts(node), required);
+    }
+
     private Map<String, Fact> facts0(Node node) {
         Flow.NodeFacts facts = flow.model().node(node);
         if (facts == null || facts.before().env().isEmpty()) {
@@ -864,6 +868,58 @@ public class ScriptCompiler {
         Map<String, Fact> byName = new LinkedHashMap<>();
         facts.before().env().forEach((symbolId, fact) -> byName.put(flow.model().symbols().symbol(symbolId).name(), fact));
         return Map.copyOf(byName);
+    }
+
+    private Map<String, Fact> constrainFacts(Map<String, Fact> facts, Guard required) {
+        if (facts.isEmpty() || required == null || required.equals(trueGuard())) {
+            return facts;
+        }
+        if (isFalse(required)) {
+            return Map.of();
+        }
+        Map<String, Fact> constrained = null;
+        for (Entry<String, Fact> entry : facts.entrySet()) {
+            Fact narrowed = constrainFact(entry.getValue(), required);
+            if (narrowed == entry.getValue()) {
+                continue;
+            }
+            if (constrained == null) {
+                constrained = new LinkedHashMap<>(facts);
+            }
+            if (narrowed == null) {
+                constrained.remove(entry.getKey());
+            } else {
+                constrained.put(entry.getKey(), narrowed);
+            }
+        }
+        return constrained == null ? facts : Map.copyOf(constrained);
+    }
+
+    private Fact constrainFact(Fact fact, Guard required) {
+        Guard definedUnder = and(fact.definedUnder(), required);
+        if (isFalse(definedUnder)) {
+            return null;
+        }
+        List<Fact.ExactCase> exactCases = fact.exactCases();
+        if (exactCases.isEmpty()) {
+            return definedUnder.equals(fact.definedUnder()) ? fact : new Fact(definedUnder, fact.value());
+        }
+        List<Fact.ExactCase> constrainedCases = new ArrayList<>(exactCases.size());
+        boolean changed = !definedUnder.equals(fact.definedUnder());
+        for (Fact.ExactCase exactCase : exactCases) {
+            Guard caseGuard = and(exactCase.guard(), required);
+            if (isFalse(caseGuard)) {
+                changed = true;
+                continue;
+            }
+            if (!caseGuard.equals(exactCase.guard())) {
+                changed = true;
+                constrainedCases.add(new Fact.ExactCase(exactCase.value(), caseGuard));
+            } else {
+                constrainedCases.add(exactCase);
+            }
+        }
+        return changed ? new Fact(definedUnder, fact.value(), constrainedCases) : fact;
     }
 
     private Fact fact(Map<String, Fact> facts, String key) {

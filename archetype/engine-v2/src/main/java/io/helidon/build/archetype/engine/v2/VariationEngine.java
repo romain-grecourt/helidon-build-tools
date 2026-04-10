@@ -398,6 +398,9 @@ public final class VariationEngine {
             }
 
             Map<String, String> values = Maps.mapValue(effective, value -> Value.toString(value));
+            if (!filter(sourceNode, values)) {
+                return null;
+            }
             Set<String> unbounded = effective.entrySet().stream()
                     .filter(entry -> textInputs.contains(entry.getKey()) && entry.getValue().kind() != ValueKind.EXTERNAL)
                     .map(Map.Entry::getKey)

@@ -345,6 +345,76 @@ class VariationsTest {
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
+    @Test
+    void testVariationsFiltersCanReferenceNestedInputKeys() {
+        Variations expected = Variations.of(
+                Variations.entry(Map.of("flag", "false", "media", "json", "media.json-lib", "jsonb")),
+                Variations.entry(Map.of("flag", "true", "media", "json", "media.json-lib", "jackson")));
+        Variations actual = variations("variations",
+                "derived-local-filter.xml",
+                List.of(Expression.create("${flag} != (${media.json-lib} == 'jackson')")),
+                Map.of(),
+                Map.of(),
+                Long.MAX_VALUE);
+        assertThat(actual, is(expected));
+    }
+
+    @Test
+    void testVariationsKeepNestedEnumWhenParentBooleanIsExternallyFixed() {
+        Variations expected = Variations.of(
+                Variations.entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
+                        "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "opentelemetry")),
+                Variations.entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
+                        "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "zipkin")),
+                Variations.entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
+                        "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "opentelemetry")),
+                Variations.entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
+                        "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "zipkin")),
+                Variations.entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
+                        "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "opentelemetry")),
+                Variations.entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
+                        "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "zipkin")),
+                Variations.entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
+                        "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "opentelemetry")),
+                Variations.entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
+                        "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "zipkin")));
+        Variations actual = variations("variations",
+                "nested-enum-under-fixed-boolean.xml",
+                List.of(),
+                Map.of("flavor", "mp", "metrics", "true", "tracing", "true"),
+                Map.of(),
+                Long.MAX_VALUE);
+        assertThat(actual, is(expected));
+    }
+
+    @Test
+    void testVariationsKeepNestedEnumAcrossSourceAndExecGraph() {
+        Variations expected = Variations.of(
+                Variations.entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
+                        "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "opentelemetry")),
+                Variations.entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
+                        "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "zipkin")),
+                Variations.entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
+                        "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "opentelemetry")),
+                Variations.entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
+                        "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "zipkin")),
+                Variations.entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
+                        "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "opentelemetry")),
+                Variations.entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
+                        "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "zipkin")),
+                Variations.entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
+                        "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "opentelemetry")),
+                Variations.entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
+                        "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "zipkin")));
+        Variations actual = variations("variations/observability-repro",
+                "main.xml",
+                List.of(),
+                Map.of("flavor", "mp", "metrics", "true", "tracing", "true"),
+                Map.of(),
+                Long.MAX_VALUE);
+        assertThat(actual, is(expected));
+    }
+
     static Variations variations(String path,
                                  String entrypoint,
                                  List<Expression> filters,

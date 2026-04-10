@@ -324,6 +324,13 @@ class ScriptCompilerTest {
     }
 
     @Test
+    void testSiblingPresetsDoNotDisableLaterNestedEnumInput() {
+        Path outputDir = compile("compiler/observability-sibling-presets", "main.xml");
+        assertThat(normalizeXml(outputDir.resolve("main.xml")),
+                is(normalizeXml("compiler/expected/observability-sibling-presets.xml")));
+    }
+
+    @Test
     void testMergedStubComplement() {
         Path outputDir = compile("compiler/merged-stub-complement", "main.xml", IGNORE_ERRORS);
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
