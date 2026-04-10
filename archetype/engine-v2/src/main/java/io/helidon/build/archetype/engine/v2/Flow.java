@@ -18,6 +18,7 @@ package io.helidon.build.archetype.engine.v2;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
@@ -96,12 +97,18 @@ final class Flow {
         private final Table symbols;
         private final List<Op> ops;
         private final Guards guards;
+        private final List<ControlPath> controlPaths;
 
         Ir(List<Block> blocks, Table symbols, List<Op> ops, Guards guards) {
+            this(blocks, symbols, ops, guards, List.of());
+        }
+
+        Ir(List<Block> blocks, Table symbols, List<Op> ops, Guards guards, List<ControlPath> controlPaths) {
             this.blocks = List.copyOf(blocks);
             this.symbols = requireNonNull(symbols, "symbols is null");
             this.ops = List.copyOf(ops);
             this.guards = requireNonNull(guards, "guards is null");
+            this.controlPaths = List.copyOf(requireNonNull(controlPaths, "controlPaths is null"));
         }
 
         List<Block> blocks() {
@@ -119,17 +126,27 @@ final class Flow {
         Guards guards() {
             return guards;
         }
+
+        List<ControlPath> controlPaths() {
+            return controlPaths;
+        }
     }
 
     static final class Block {
         private final int id;
         private final List<Integer> ops;
         private final Terminator terminator;
+        private final int controlPathId;
 
         Block(int id, List<Integer> ops, Terminator terminator) {
+            this(id, ops, terminator, -1);
+        }
+
+        Block(int id, List<Integer> ops, Terminator terminator, int controlPathId) {
             this.id = id;
             this.ops = List.copyOf(ops);
             this.terminator = requireNonNull(terminator, "terminator is null");
+            this.controlPathId = controlPathId;
         }
 
         int id() {
@@ -142,6 +159,10 @@ final class Flow {
 
         Terminator terminator() {
             return terminator;
+        }
+
+        int controlPathId() {
+            return controlPathId;
         }
     }
 
@@ -1305,6 +1326,7 @@ final class Flow {
         private final Table.Builder symbolBuilder = Table.builder();
         private final Map<String, SymbolSeed> symbolSeeds = new LinkedHashMap<>();
         private final Map<String, SymbolSeed> declaredInputSymbols = new LinkedHashMap<>();
+        private final List<ControlPath> controlPaths = new ArrayList<>();
         private final List<BlockBuilder> blocks = new ArrayList<>();
         private final List<Op> ops = new ArrayList<>();
         private Table symbols;
@@ -1313,6 +1335,7 @@ final class Flow {
 
         Lowerer(Scope scope) {
             this.scope = scope;
+            this.controlPaths.add(ControlPath.root());
         }
 
         Ir lower(Node root) {
@@ -1324,8 +1347,8 @@ final class Flow {
             symbols = symbolBuilder.build();
             guards = new Guards(symbols);
 
-            int entryBlock = newBlock();
-            int exitBlock = lowerChildren(root.children(), entryBlock, scope);
+            int entryBlock = newBlock(ControlPath.ROOT_ID);
+            int exitBlock = lowerChildren(root.children(), entryBlock, ControlPath.ROOT_ID, scope);
             terminateIfMissing(exitBlock, Terminator.ret(anchor(root, scope)));
 
             List<Block> loweredBlocks = new ArrayList<>(blocks.size());
@@ -1334,9 +1357,9 @@ final class Flow {
                 if (terminator == null) {
                     terminator = Terminator.unreachable(anchor(root, scope));
                 }
-                loweredBlocks.add(new Block(block.id, block.ops, terminator));
+                loweredBlocks.add(new Block(block.id, block.ops, terminator, block.controlPathId));
             }
-            return new Ir(loweredBlocks, symbols, ops, guards);
+            return new Ir(loweredBlocks, symbols, ops, guards, controlPaths);
         }
 
         void collectDeclaredInputs(Node node, Scope scope) {
@@ -1415,21 +1438,21 @@ final class Flow {
                     SymbolSeed::merge);
         }
 
-        int lowerChildren(List<Node> nodes, int blockId, Scope scope) {
+        int lowerChildren(List<Node> nodes, int blockId, int controlPathId, Scope scope) {
             int current = blockId;
             for (Node node : nodes) {
-                current = lower(node, current, scope);
+                current = lower(node, current, controlPathId, scope);
             }
             return current;
         }
 
-        int lower(Node node, int blockId, Scope scope) {
+        int lower(Node node, int blockId, int controlPathId, Scope scope) {
             switch (node.kind()) {
                 case INPUT_BOOLEAN:
                 case INPUT_ENUM:
                 case INPUT_LIST:
                 case INPUT_TEXT:
-                    return lowerInput(node, blockId, scope);
+                    return lowerInput(node, blockId, controlPathId, scope);
                 case PRESET_BOOLEAN:
                 case PRESET_ENUM:
                 case PRESET_LIST:
@@ -1438,26 +1461,26 @@ final class Flow {
                 case VARIABLE_ENUM:
                 case VARIABLE_LIST:
                 case VARIABLE_TEXT:
-                    return lowerDefinition(node, blockId, scope);
+                    return lowerDefinition(node, blockId, controlPathId, scope);
                 case CONDITION:
-                    return lowerCondition(node, blockId, scope);
+                    return lowerCondition(node, blockId, controlPathId, scope);
                 case STEP:
                     append(blockId, Op.emit(nextOpId(), blockId, anchor(node, scope), Op.EmitKind.STEP, nextRefId++));
-                    return lowerChildren(node.children(), blockId, scope);
+                    return lowerChildren(node.children(), blockId, controlPathId, scope);
                 case FILE:
                     append(blockId, Op.emit(nextOpId(), blockId, anchor(node, scope), Op.EmitKind.FILE, nextRefId++));
-                    return lowerChildren(node.children(), blockId, scope);
+                    return lowerChildren(node.children(), blockId, controlPathId, scope);
                 case MODEL:
                     append(blockId, Op.emit(nextOpId(), blockId, anchor(node, scope), Op.EmitKind.MODEL, nextRefId++));
-                    return lowerChildren(node.children(), blockId, scope);
+                    return lowerChildren(node.children(), blockId, controlPathId, scope);
                 case INPUT_OPTION:
-                    return lowerOption(node, blockId, scope);
+                    return lowerOption(node, blockId, controlPathId, scope);
                 default:
-                    return lowerChildren(node.children(), blockId, scope);
+                    return lowerChildren(node.children(), blockId, controlPathId, scope);
             }
         }
 
-        int lowerInput(Node node, int blockId, Scope scope) {
+        int lowerInput(Node node, int blockId, int controlPathId, Scope scope) {
             Scope inputScope = scope.getOrCreate(node);
             int symbolId = symbols.findId(inputScope.key());
             append(blockId, Op.declareInput(nextOpId(), blockId, anchor(node, inputScope), symbolId, symbolId));
@@ -1465,17 +1488,18 @@ final class Flow {
                 case INPUT_BOOLEAN:
                     return lowerGuardedChildren(node,
                             blockId,
+                            controlPathId,
                             guard(Expression.create("${" + inputScope.key() + "}"), inputScope),
                             node.children(),
                             inputScope);
                 case INPUT_ENUM:
                 case INPUT_LIST:
                 default:
-                    return lowerChildren(node.children(), blockId, inputScope);
+                    return lowerChildren(node.children(), blockId, controlPathId, inputScope);
             }
         }
 
-        int lowerOption(Node node, int blockId, Scope scope) {
+        int lowerOption(Node node, int blockId, int controlPathId, Scope scope) {
             Node input = node.ancestor(Kind::isInput).orElseThrow(() ->
                     new IllegalStateException("Option without input parent: " + node));
             Integer symbolId = symbols.findId(scope.key());
@@ -1483,10 +1507,15 @@ final class Flow {
                 throw new IllegalStateException("Missing option symbol for scope: " + scope.key());
             }
             append(blockId, Op.declareOption(nextOpId(), blockId, anchor(node, scope), symbolId, nextRefId++));
-            return lowerGuardedChildren(node, blockId, optionGuard(input, node, scope), node.children(), scope);
+            return lowerGuardedChildren(node,
+                    blockId,
+                    controlPathId,
+                    optionGuard(input, node, scope),
+                    node.children(),
+                    scope);
         }
 
-        int lowerDefinition(Node node, int blockId, Scope scope) {
+        int lowerDefinition(Node node, int blockId, int controlPathId, Scope scope) {
             Integer symbolId = symbols.findId(definitionId(scope, node));
             if (symbolId != null) {
                 append(blockId, Op.defineValue(nextOpId(),
@@ -1495,12 +1524,17 @@ final class Flow {
                         symbolId,
                         new Expression(List.of(Token.of(node.value())), true)));
             }
-            return lowerChildren(node.children(), blockId, scope);
+            return lowerChildren(node.children(), blockId, controlPathId, scope);
         }
 
-        int lowerCondition(Node node, int blockId, Scope scope) {
+        int lowerCondition(Node node, int blockId, int controlPathId, Scope scope) {
             recordUses(node.expression(), blockId, node, scope);
-            return lowerGuardedChildren(node, blockId, guard(node.expression(), scope), node.children(), scope);
+            return lowerGuardedChildren(node,
+                    blockId,
+                    controlPathId,
+                    guard(node.expression(), scope),
+                    node.children(),
+                    scope);
         }
 
         Guard optionGuard(Node input, Node option, Scope scope) {
@@ -1515,15 +1549,22 @@ final class Flow {
             }
         }
 
-        int lowerGuardedChildren(Node node, int blockId, Guard guard, List<Node> children, Scope scope) {
+        int lowerGuardedChildren(Node node,
+                                 int blockId,
+                                 int controlPathId,
+                                 Guard guard,
+                                 List<Node> children,
+                                 Scope scope) {
             if (children.isEmpty()) {
                 return blockId;
             }
-            int trueBlock = newBlock();
-            int falseBlock = newBlock();
-            int joinBlock = newBlock();
+            int truePathId = nextControlPath(controlPathId, guard);
+            int falsePathId = nextControlPath(controlPathId, guards.not(guard));
+            int trueBlock = newBlock(truePathId);
+            int falseBlock = newBlock(falsePathId);
+            int joinBlock = newBlock(controlPathId);
             terminate(blockId, Terminator.branch(anchor(node, scope), guard, trueBlock, falseBlock));
-            int trueExit = lowerChildren(children, trueBlock, scope);
+            int trueExit = lowerChildren(children, trueBlock, truePathId, scope);
             terminateIfMissing(trueExit, Terminator.jump(anchor(node, scope), joinBlock));
             terminateIfMissing(falseBlock, Terminator.jump(anchor(node, scope), joinBlock));
             return joinBlock;
@@ -1613,9 +1654,15 @@ final class Flow {
             return new SourceAnchor(node, scope.key());
         }
 
-        int newBlock() {
+        int newBlock(int controlPathId) {
             int id = blocks.size();
-            blocks.add(new BlockBuilder(id));
+            blocks.add(new BlockBuilder(id, controlPathId));
+            return id;
+        }
+
+        int nextControlPath(int parentPathId, Guard edgeGuard) {
+            int id = controlPaths.size();
+            controlPaths.add(new ControlPath(parentPathId, requireNonNull(edgeGuard, "edgeGuard is null")));
             return id;
         }
 
@@ -1711,13 +1758,36 @@ final class Flow {
         }
     }
 
+    private static final class ControlPath {
+        private static final int ROOT_ID = 0;
+        private static final ControlPath ROOT = new ControlPath(-1, null);
+
+        private final int parentId;
+        private final Guard edgeGuard;
+
+        private ControlPath(int parentId, Guard edgeGuard) {
+            this.parentId = parentId;
+            this.edgeGuard = edgeGuard;
+        }
+
+        private static ControlPath root() {
+            return ROOT;
+        }
+
+        private boolean isRoot() {
+            return parentId < 0;
+        }
+    }
+
     private static final class BlockBuilder {
         private final int id;
+        private final int controlPathId;
         private final List<Integer> ops = new ArrayList<>();
         private Terminator terminator;
 
-        BlockBuilder(int id) {
+        BlockBuilder(int id, int controlPathId) {
             this.id = id;
+            this.controlPathId = controlPathId;
         }
     }
 
@@ -2007,38 +2077,51 @@ final class Flow {
         }
 
         private ControlFlow analyzeControl() {
-            List<Guard> entries = new ArrayList<>(Collections.nCopies(ir.blocks().size(), falseGuard));
-            List<Guard> exits = new ArrayList<>(Collections.nCopies(ir.blocks().size(), falseGuard));
-            List<Guard> beforeByOp = new ArrayList<>(Collections.nCopies(ir.ops().size(), falseGuard));
-            List<Guard> afterByOp = new ArrayList<>(Collections.nCopies(ir.ops().size(), falseGuard));
-            entries.set(0, trueGuard);
+            int blockCount = ir.blocks().size();
+            boolean[] reachable = new boolean[blockCount];
+            BitSet[] incomingEdges = new BitSet[blockCount];
+            reachable[0] = true;
             Deque<Integer> work = new ArrayDeque<>();
             work.add(0);
             while (!work.isEmpty()) {
                 int blockId = work.removeFirst();
-                Guard entry = entries.get(blockId);
-                if (entry.equals(falseGuard)) {
+                propagateControl(blockId, ir.blocks().get(blockId).terminator(), reachable, incomingEdges, work);
+            }
+
+            // keep the forward control pass reachability-only; lowered blocks carry their structured path context
+            List<Guard> entries = hasStructuredControlPaths()
+                    ? materializeStructuredControlPaths(reachable)
+                    : materializeControlPaths(reachable, incomingEdges);
+            List<Guard> exits = new ArrayList<>(entries);
+            List<Guard> beforeByOp = new ArrayList<>(Collections.nCopies(ir.ops().size(), falseGuard));
+            List<Guard> afterByOp = new ArrayList<>(Collections.nCopies(ir.ops().size(), falseGuard));
+            for (int blockId = 0; blockId < blockCount; blockId++) {
+                if (!reachable[blockId]) {
                     continue;
                 }
+                Guard entry = entries.get(blockId);
                 Block block = ir.blocks().get(blockId);
+                exits.set(blockId, entry);
                 for (int opId : block.ops()) {
                     beforeByOp.set(opId, entry);
                     afterByOp.set(opId, entry);
                 }
-                exits.set(blockId, entry);
-                propagateControl(block.terminator(), entry, entries, work);
             }
             return new ControlFlow(entries, exits, beforeByOp, afterByOp);
         }
 
-        private void propagateControl(Terminator terminator, Guard current, List<Guard> entries, Deque<Integer> work) {
+        private void propagateControl(int blockId,
+                                      Terminator terminator,
+                                      boolean[] reachable,
+                                      BitSet[] incomingEdges,
+                                      Deque<Integer> work) {
             switch (terminator.kind()) {
                 case GOTO:
-                    enqueueControl(terminator.targetId(), current, entries, work);
+                    enqueueControl(terminator.targetId(), controlEdgeId(blockId, false), reachable, incomingEdges, work);
                     break;
                 case BRANCH:
-                    enqueueControl(terminator.trueId(), guards.and(current, terminator.guard()), entries, work);
-                    enqueueControl(terminator.falseId(), guards.and(current, negate(terminator.guard())), entries, work);
+                    enqueueControl(terminator.trueId(), controlEdgeId(blockId, false), reachable, incomingEdges, work);
+                    enqueueControl(terminator.falseId(), controlEdgeId(blockId, true), reachable, incomingEdges, work);
                     break;
                 case RETURN:
                 case UNREACHABLE:
@@ -2047,16 +2130,148 @@ final class Flow {
             }
         }
 
-        private void enqueueControl(int blockId, Guard incoming, List<Guard> entries, Deque<Integer> work) {
-            if (incoming.equals(falseGuard)) {
-                return;
+        private void enqueueControl(int blockId,
+                                    int edgeId,
+                                    boolean[] reachable,
+                                    BitSet[] incomingEdges,
+                                    Deque<Integer> work) {
+            BitSet incoming = incomingEdges[blockId];
+            if (incoming == null) {
+                incoming = new BitSet(controlEdgeCount());
+                incomingEdges[blockId] = incoming;
             }
-            Guard current = entries.get(blockId);
-            Guard merged = current.equals(falseGuard) ? incoming : guards.or(current, incoming);
-            if (!merged.equals(current)) {
-                entries.set(blockId, merged);
+            incoming.set(edgeId);
+            if (!reachable[blockId]) {
+                reachable[blockId] = true;
                 work.addLast(blockId);
             }
+        }
+
+        private List<Guard> materializeControlPaths(boolean[] reachable, BitSet[] incomingEdges) {
+            Guard[] blockGuards = new Guard[reachable.length];
+            Guard[] edgeGuards = new Guard[controlEdgeCount()];
+            boolean[] visiting = new boolean[reachable.length];
+            blockGuards[0] = trueGuard;
+            List<Guard> result = new ArrayList<>(reachable.length);
+            for (int blockId = 0; blockId < reachable.length; blockId++) {
+                result.add(materializeBlockGuard(blockId, reachable, incomingEdges, blockGuards, edgeGuards, visiting));
+            }
+            return result;
+        }
+
+        private boolean hasStructuredControlPaths() {
+            return !ir.controlPaths().isEmpty();
+        }
+
+        private List<Guard> materializeStructuredControlPaths(boolean[] reachable) {
+            Guard[] pathGuards = new Guard[ir.controlPaths().size()];
+            pathGuards[ControlPath.ROOT_ID] = trueGuard;
+            List<Guard> result = new ArrayList<>(reachable.length);
+            for (int blockId = 0; blockId < reachable.length; blockId++) {
+                if (!reachable[blockId]) {
+                    result.add(falseGuard);
+                    continue;
+                }
+                int controlPathId = ir.blocks().get(blockId).controlPathId();
+                if (controlPathId < 0) {
+                    throw new IllegalStateException("Missing structured control path for block " + blockId);
+                }
+                result.add(materializeStructuredPath(controlPathId, pathGuards));
+            }
+            return result;
+        }
+
+        private Guard materializeStructuredPath(int controlPathId, Guard[] pathGuards) {
+            Guard cached = pathGuards[controlPathId];
+            if (cached != null) {
+                return cached;
+            }
+            ControlPath controlPath = ir.controlPaths().get(controlPathId);
+            if (controlPath.isRoot()) {
+                pathGuards[controlPathId] = trueGuard;
+                return trueGuard;
+            }
+            Guard materialized = guards.and(materializeStructuredPath(controlPath.parentId, pathGuards),
+                    controlPath.edgeGuard);
+            pathGuards[controlPathId] = materialized;
+            return materialized;
+        }
+
+        private Guard materializeBlockGuard(int blockId,
+                                            boolean[] reachable,
+                                            BitSet[] incomingEdges,
+                                            Guard[] blockGuards,
+                                            Guard[] edgeGuards,
+                                            boolean[] visiting) {
+            if (!reachable[blockId]) {
+                return falseGuard;
+            }
+            Guard cached = blockGuards[blockId];
+            if (cached != null) {
+                return cached;
+            }
+            if (visiting[blockId]) {
+                throw new IllegalStateException("Control cycle detected at block " + blockId);
+            }
+            visiting[blockId] = true;
+            try {
+                BitSet incoming = incomingEdges[blockId];
+                Guard materialized = falseGuard;
+                for (int edgeId = incoming == null ? -1 : incoming.nextSetBit(0);
+                        edgeId >= 0;
+                        edgeId = incoming.nextSetBit(edgeId + 1)) {
+                    materialized = guards.or(materialized,
+                            materializeEdgeGuard(edgeId, reachable, incomingEdges, blockGuards, edgeGuards, visiting));
+                }
+                blockGuards[blockId] = materialized;
+                return materialized;
+            } finally {
+                visiting[blockId] = false;
+            }
+        }
+
+        private Guard materializeEdgeGuard(int edgeId,
+                                           boolean[] reachable,
+                                           BitSet[] incomingEdges,
+                                           Guard[] blockGuards,
+                                           Guard[] edgeGuards,
+                                           boolean[] visiting) {
+            Guard cached = edgeGuards[edgeId];
+            if (cached != null) {
+                return cached;
+            }
+            int blockId = edgeId >>> 1;
+            Guard sourcePath = materializeBlockGuard(blockId, reachable, incomingEdges, blockGuards, edgeGuards,
+                    visiting);
+            if (sourcePath.equals(falseGuard)) {
+                edgeGuards[edgeId] = falseGuard;
+                return falseGuard;
+            }
+            Terminator terminator = ir.blocks().get(blockId).terminator();
+            Guard materialized;
+            switch (terminator.kind()) {
+                case GOTO:
+                    materialized = sourcePath;
+                    break;
+                case BRANCH:
+                    Guard edgeGuard = (edgeId & 1) == 0 ? terminator.guard() : negate(terminator.guard());
+                    materialized = guards.and(sourcePath, edgeGuard);
+                    break;
+                case RETURN:
+                case UNREACHABLE:
+                default:
+                    throw new IllegalStateException("Invalid control edge " + edgeId + " for " + terminator.kind());
+            }
+            edgeGuards[edgeId] = materialized;
+            return materialized;
+        }
+
+        private int controlEdgeId(int blockId, boolean falseEdge) {
+            return (blockId << 1) | (falseEdge ? 1 : 0);
+        }
+
+        private int controlEdgeCount() {
+            return ir.blocks().size() << 1;
         }
 
         private FactFlow analyzeFacts(ControlFlow control) {
