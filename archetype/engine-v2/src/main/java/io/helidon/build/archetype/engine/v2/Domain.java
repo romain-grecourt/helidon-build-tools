@@ -338,12 +338,10 @@ final class Domain {
         }
 
         private static Map<String, Integer> membershipOrdinals(Spec domain) {
-            switch (domain.kind()) {
-                case MEMBERSHIP:
-                    return stringOrdinals(((Spec.Membership) domain).items());
-                default:
-                    return null;
+            if (domain.kind() == Spec.Kind.MEMBERSHIP) {
+                return stringOrdinals(((Spec.Membership) domain).items());
             }
+            return null;
         }
 
         private static Map<String, Integer> stringOrdinals(Set<String> values) {
