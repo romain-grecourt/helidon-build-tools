@@ -232,19 +232,6 @@ public final class Expression implements Comparable<Expression> {
         return variables.get();
     }
 
-    boolean variableCountAtMost(int maxVariables) {
-        if (maxVariables < 0) {
-            return false;
-        }
-        Set<String> names = new HashSet<>();
-        for (Token token : tokens) {
-            if (token.isVariable() && names.add(token.variable) && names.size() > maxVariables) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     /**
      * Map this expression.
      *
@@ -398,6 +385,21 @@ public final class Expression implements Comparable<Expression> {
             inlined.add(token);
         }
         return new Expression(inlined, false).fold();
+    }
+
+    boolean variableCountAtMost(int maxVariables) {
+        if (maxVariables < 0) {
+            return false;
+        }
+        Set<String> names = new HashSet<>();
+        for (Token token : tokens) {
+            if (token.isVariable()
+                && names.add(token.variable)
+                && names.size() > maxVariables) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

@@ -78,7 +78,7 @@ final class Domain {
                 if (values.isEmpty()) {
                     throw new IllegalArgumentException("Choice spec requires at least one value");
                 }
-                this.values = canonicalStrings(values);
+                this.values = new TreeSet<>(values);
             }
 
             @Override
@@ -113,7 +113,7 @@ final class Domain {
                 if (items.isEmpty()) {
                     throw new IllegalArgumentException("Membership spec requires at least one item");
                 }
-                this.items = canonicalStrings(items);
+                this.items = new TreeSet<>(items);
             }
 
             @Override
@@ -170,7 +170,7 @@ final class Domain {
                 if (values.isEmpty()) {
                     throw new IllegalArgumentException("Finite text spec requires at least one value");
                 }
-                this.values = canonicalStrings(values);
+                this.values = new TreeSet<>(values);
             }
 
             @Override
@@ -205,12 +205,11 @@ final class Domain {
         private final Spec domain;
         private final boolean guardable;
         private final boolean tainted;
-        private final Map<String, Integer> scalarOrdinals;
-        private final String[] scalarValuesByOrdinal;
-        private final long fullScalarMask;
-        private final Map<String, Integer> membershipOrdinals;
-        private final String[] membershipItemsByOrdinal;
-        private final long fullMembershipMask;
+        private final boolean scalar;
+        private final boolean member;
+        private final Map<String, Integer> ordinals;
+        private final String[] valuesByOrdinal;
+        private final long fullMask;
 
         Symbol(int id, String name, Spec domain, boolean guardable, boolean tainted) {
             this.id = id;
@@ -218,12 +217,28 @@ final class Domain {
             this.domain = requireNonNull(domain, "domain is null");
             this.guardable = guardable;
             this.tainted = tainted;
-            this.scalarOrdinals = scalarOrdinals(domain);
-            this.scalarValuesByOrdinal = stringsByOrdinal(scalarOrdinals);
-            this.fullScalarMask = fullMask(scalarValuesByOrdinal);
-            this.membershipOrdinals = membershipOrdinals(domain);
-            this.membershipItemsByOrdinal = stringsByOrdinal(membershipOrdinals);
-            this.fullMembershipMask = fullMask(membershipItemsByOrdinal);
+            boolean scalar = false;
+            boolean member = false;
+            Map<String, Integer> ordinals = null;
+            switch (domain.kind()) {
+                case BOOLEAN:
+                case CHOICE:
+                case FINITE_TEXT:
+                    scalar = true;
+                    ordinals = stringOrdinals(scalarValues(domain));
+                    break;
+                case MEMBERSHIP:
+                    member = true;
+                    ordinals = stringOrdinals(((Spec.Membership) domain).items());
+                    break;
+                default:
+                    // no-op
+            }
+            this.scalar = scalar;
+            this.member = member;
+            this.ordinals = ordinals;
+            this.valuesByOrdinal = stringsByOrdinal(ordinals);
+            this.fullMask = fullMask(valuesByOrdinal);
         }
 
         int id() {
@@ -246,19 +261,11 @@ final class Domain {
             return tainted;
         }
 
-        boolean maskableScalar() {
-            return scalarOrdinals != null;
-        }
-
-        boolean maskableMembership() {
-            return membershipOrdinals != null;
-        }
-
         long scalarMask(String value) {
-            if (scalarOrdinals == null) {
+            if (!scalar) {
                 throw new IllegalStateException("Scalar mask requested for non-maskable symbol: " + name);
             }
-            Integer ordinal = scalarOrdinals.get(value);
+            Integer ordinal = ordinals.get(value);
             if (ordinal == null) {
                 throw new IllegalArgumentException("Unknown scalar value for symbol " + name + ": " + value);
             }
@@ -266,7 +273,7 @@ final class Domain {
         }
 
         long scalarMask(Set<String> values) {
-            if (scalarOrdinals == null) {
+            if (!scalar) {
                 throw new IllegalStateException("Scalar mask requested for non-maskable symbol: " + name);
             }
             long mask = 0L;
@@ -276,18 +283,11 @@ final class Domain {
             return mask;
         }
 
-        long fullScalarMask() {
-            if (scalarOrdinals == null) {
-                throw new IllegalStateException("Full scalar mask requested for non-maskable symbol: " + name);
-            }
-            return fullScalarMask;
-        }
-
         long membershipMask(String value) {
-            if (membershipOrdinals == null) {
+            if (!member) {
                 throw new IllegalStateException("Membership mask requested for non-maskable symbol: " + name);
             }
-            Integer ordinal = membershipOrdinals.get(value);
+            Integer ordinal = ordinals.get(value);
             if (ordinal == null) {
                 throw new IllegalArgumentException("Unknown membership item for symbol " + name + ": " + value);
             }
@@ -295,7 +295,7 @@ final class Domain {
         }
 
         long membershipMask(Set<String> values) {
-            if (membershipOrdinals == null) {
+            if (!member) {
                 throw new IllegalStateException("Membership mask requested for non-maskable symbol: " + name);
             }
             long mask = 0L;
@@ -305,43 +305,18 @@ final class Domain {
             return mask;
         }
 
-        long fullMembershipMask() {
-            if (membershipOrdinals == null) {
-                throw new IllegalStateException("Full membership mask requested for non-maskable symbol: " + name);
-            }
-            return fullMembershipMask;
-        }
-
         String scalarValue(int ordinal) {
-            if (scalarValuesByOrdinal == null) {
+            if (!scalar) {
                 throw new IllegalStateException("Scalar value requested for non-maskable symbol: " + name);
             }
-            return scalarValuesByOrdinal[ordinal];
+            return valuesByOrdinal[ordinal];
         }
 
         String membershipItem(int ordinal) {
-            if (membershipItemsByOrdinal == null) {
+            if (!member) {
                 throw new IllegalStateException("Membership item requested for non-maskable symbol: " + name);
             }
-            return membershipItemsByOrdinal[ordinal];
-        }
-
-        private static Map<String, Integer> scalarOrdinals(Spec domain) {
-            switch (domain.kind()) {
-                case BOOLEAN:
-                case CHOICE:
-                case FINITE_TEXT:
-                    return stringOrdinals(scalarValues(domain));
-                default:
-                    return null;
-            }
-        }
-
-        private static Map<String, Integer> membershipOrdinals(Spec domain) {
-            if (domain.kind() == Spec.Kind.MEMBERSHIP) {
-                return stringOrdinals(((Spec.Membership) domain).items());
-            }
-            return null;
+            return valuesByOrdinal[ordinal];
         }
 
         private static Map<String, Integer> stringOrdinals(Set<String> values) {
@@ -812,7 +787,7 @@ final class Domain {
                 if (values.isEmpty()) {
                     throw new IllegalArgumentException("Choice set must not be empty");
                 }
-                this.values = canonicalStrings(values);
+                this.values = new TreeSet<>(values);
             }
 
             @Override
@@ -843,8 +818,8 @@ final class Domain {
                 if (!possible.containsAll(required)) {
                     throw new IllegalArgumentException("Required membership must be included in possible membership");
                 }
-                this.required = canonicalStrings(required);
-                this.possible = canonicalStrings(possible);
+                this.required = new TreeSet<>(required);
+                this.possible = new TreeSet<>(possible);
             }
 
             @Override
@@ -909,7 +884,7 @@ final class Domain {
                 if (values.isEmpty()) {
                     throw new IllegalArgumentException("Finite text values must not be empty");
                 }
-                this.values = canonicalStrings(values);
+                this.values = new TreeSet<>(values);
             }
 
             @Override
@@ -940,8 +915,8 @@ final class Domain {
                 if (!possible.containsAll(required)) {
                     throw new IllegalArgumentException("Required list members must be included in possible list members");
                 }
-                this.required = canonicalStrings(required);
-                this.possible = canonicalStrings(possible);
+                this.required = new TreeSet<>(required);
+                this.possible = new TreeSet<>(possible);
             }
 
             @Override
@@ -995,6 +970,14 @@ final class Domain {
             return residual;
         }
 
+        boolean isPure() {
+            return residual == Expression.TRUE;
+        }
+
+        boolean isFalse() {
+            return id == FALSE_ID || residual == Expression.FALSE;
+        }
+
         @Override
         public boolean equals(Object o) {
             if (this == o) {
@@ -1029,13 +1012,15 @@ final class Domain {
         }
 
         Guard and(Guard left, Guard right) {
-            if (isFalse(left) || isFalse(right)) {
+            if (left.isFalse() || right.isFalse()) {
                 return Guard.FALSE;
             }
             Decision decision = decision(left).and(decision(right), symbols);
-            Expression residual = left.residual().equals(right.residual())
-                    ? left.residual()
-                    : left.residual().and(right.residual());
+            Expression leftResidual = left.residual();
+            Expression rightResidual = right.residual();
+            Expression residual = leftResidual.equals(rightResidual)
+                    ? leftResidual
+                    : leftResidual.and(rightResidual);
             return guard(decision, residual);
         }
 
@@ -1043,10 +1028,10 @@ final class Domain {
             if (left.equals(right)) {
                 return left;
             }
-            if (isFalse(left)) {
+            if (left.isFalse()) {
                 return right;
             }
-            if (isFalse(right)) {
+            if (right.isFalse()) {
                 return left;
             }
             boolean cacheable = cacheable(left) && cacheable(right);
@@ -1060,20 +1045,20 @@ final class Domain {
             Decision leftDecision = decision(left);
             Decision rightDecision = decision(right);
             if (left.residual().equals(right.residual())) {
-                if (shapewiseSubsetOf(left.id(), right.id())) {
+                if (subsetOf(left.id(), right.id())) {
                     return right;
                 }
-                if (shapewiseSubsetOf(right.id(), left.id())) {
+                if (subsetOf(right.id(), left.id())) {
                     return left;
                 }
                 result = guard(leftDecision.orWithoutSubsetChecks(rightDecision, symbols), left.residual());
             } else if (leftDecision.equals(rightDecision)) {
                 result = guard(leftDecision, left.residual().or(right.residual()), false);
-            } else if (isPure(right) && shapewiseSubsetOf(left.id(), right.id())) {
+            } else if (right.isPure() && subsetOf(left.id(), right.id())) {
                 return right;
-            } else if (isPure(left) && shapewiseSubsetOf(right.id(), left.id())) {
+            } else if (left.isPure() && subsetOf(right.id(), left.id())) {
                 return left;
-            } else if (isPure(left) && isPure(right)) {
+            } else if (left.isPure() && right.isPure()) {
                 result = guard(leftDecision.orWithoutSubsetChecks(rightDecision, symbols), Expression.TRUE);
             } else {
                 result = guard(Decision.TRUE, rawExpression(left).or(rawExpression(right)), false);
@@ -1085,13 +1070,13 @@ final class Domain {
         }
 
         Guard not(Guard guard) {
-            if (isFalse(guard)) {
+            if (guard.isFalse()) {
                 return Guard.TRUE;
             }
             if (guard.equals(Guard.TRUE)) {
                 return Guard.FALSE;
             }
-            if (isPure(guard)) {
+            if (guard.isPure()) {
                 return guard(Decision.TRUE.subtract(decision(guard), symbols), Expression.TRUE);
             }
             return residualGuard(negate(rawExpression(guard)));
@@ -1102,30 +1087,30 @@ final class Domain {
         }
 
         boolean implies(Guard left, Guard right) {
-            if (shapewiseImplies(left, right)) {
+            if (implies0(left, right)) {
                 return true;
             }
             Decision leftDecision = decision(left);
             Decision rightDecision = decision(right);
-            if (isPure(left) && isPure(right)) {
+            if (left.isPure() && right.isPure()) {
                 return leftDecision.subtract(rightDecision, symbols).isFalse();
             }
             return equivalentExpressions(rawExpression(left), rawExpression(right));
         }
 
-        boolean shapewiseImplies(Guard left, Guard right) {
-            if (left.equals(right) || isFalse(left) || right.equals(Guard.TRUE)) {
+        private boolean implies0(Guard left, Guard right) {
+            if (left.equals(right) || left.isFalse() || right.equals(Guard.TRUE)) {
                 return true;
             }
-            return left.residual().equals(right.residual()) && shapewiseSubsetOf(left.id(), right.id())
-                    || isPure(right) && shapewiseSubsetOf(left.id(), right.id());
+            return left.residual().equals(right.residual()) && subsetOf(left.id(), right.id())
+                    || right.isPure() && subsetOf(left.id(), right.id());
         }
 
         boolean equivalent(Guard left, Guard right) {
             if (left.equals(right)) {
                 return true;
             }
-            if (isPure(left) && isPure(right)) {
+            if (left.isPure() && right.isPure()) {
                 return decision(left).equals(decision(right));
             }
             return equivalentExpressions(rawExpression(left), rawExpression(right));
@@ -1245,31 +1230,21 @@ final class Domain {
             return decisions.get(guard.id());
         }
 
-        private boolean shapewiseSubsetOf(int leftDecisionId, int rightDecisionId) {
-            if (leftDecisionId == rightDecisionId
-                    || leftDecisionId == Guard.FALSE_ID
-                    || rightDecisionId == Guard.TRUE_ID) {
+        private boolean subsetOf(int leftId, int rightId) {
+            if (leftId == rightId || leftId == Guard.FALSE_ID || rightId == Guard.TRUE_ID) {
                 return true;
             }
-            if (rightDecisionId == Guard.FALSE_ID) {
+            if (rightId == Guard.FALSE_ID) {
                 return false;
             }
-            long key = ((long) leftDecisionId << 32) | Integer.toUnsignedLong(rightDecisionId);
+            long key = ((long) leftId << 32) | Integer.toUnsignedLong(rightId);
             Boolean cached = subsetCache.get(key);
             if (cached != null) {
                 return cached;
             }
-            boolean result = decisions.get(leftDecisionId).shapewiseSubsetOf(decisions.get(rightDecisionId));
+            boolean result = decisions.get(leftId).subsetOf(decisions.get(rightId));
             subsetCache.put(key, result);
             return result;
-        }
-
-        private boolean isPure(Guard guard) {
-            return guard.residual() == Expression.TRUE;
-        }
-
-        private boolean isFalse(Guard guard) {
-            return guard.id() == Guard.FALSE_ID || guard.residual() == Expression.FALSE;
         }
 
         private Expression rawExpression(Guard guard) {
@@ -1319,10 +1294,6 @@ final class Domain {
             default:
                 throw new IllegalArgumentException("Spec is not scalar: " + spec.kind());
         }
-    }
-
-    private static Set<String> canonicalStrings(Set<String> values) {
-        return new TreeSet<>(values);
     }
 
     private static final class Decision {
@@ -1506,7 +1477,7 @@ final class Domain {
             return shapes.hashCode();
         }
 
-        boolean shapewiseSubsetOf(Decision other) {
+        boolean subsetOf(Decision other) {
             if (equals(other) || isFalse() || other == TRUE) {
                 return true;
             }
@@ -1750,8 +1721,8 @@ final class Domain {
                     rightScalar++;
                 }
                 Symbol symbol = symbols.symbol(symbolId);
-                if (symbol.maskableScalar()) {
-                    long fullMask = symbol.fullScalarMask();
+                if (symbol.scalar) {
+                    long fullMask = symbol.fullMask;
                     long leftMask = leftShape == null ? fullMask : leftShape.allowedMask;
                     long rightMask = rightShape == null ? fullMask : rightShape.allowedMask;
                     if (leftMask != rightMask) {
@@ -1858,10 +1829,10 @@ final class Domain {
                     leftScalar++;
                 }
                 Symbol symbol = symbols.symbol(symbolId);
-                if (symbol.maskableScalar()) {
+                if (symbol.scalar) {
                     long leftMask = leftScalar < scalarShapes.length && scalarIds[leftScalar] == symbolId
                             ? scalarShapes[leftScalar].allowedMask
-                            : symbol.fullScalarMask();
+                            : symbol.fullMask;
                     long rightMask = other.scalarShapes[rightScalar].allowedMask;
                     long outsideMask = leftMask & ~rightMask;
                     if (outsideMask != 0L) {
@@ -2112,20 +2083,20 @@ final class Domain {
             if (allowed.isEmpty()) {
                 throw new IllegalArgumentException("Scalar constraint must not be empty");
             }
-            if (symbol.maskableScalar()) {
+            if (symbol.scalar) {
                 this.allowed = null;
                 this.allowedMask = symbol.scalarMask(allowed);
             } else {
-                this.allowed = canonicalStrings(allowed);
+                this.allowed = new TreeSet<>(allowed);
                 this.allowedMask = 0L;
             }
         }
 
         ScalarShape(Symbol symbol, long allowedMask) {
-            if (!symbol.maskableScalar()) {
+            if (!symbol.scalar) {
                 throw new IllegalArgumentException("Masked scalar constraint requires a maskable symbol");
             }
-            if (allowedMask == 0L || (allowedMask & ~symbol.fullScalarMask()) != 0L) {
+            if (allowedMask == 0L || (allowedMask & ~symbol.fullMask) != 0L) {
                 throw new IllegalArgumentException("Scalar mask must be non-empty and within the symbol domain");
             }
             this.allowed = null;
@@ -2180,7 +2151,13 @@ final class Domain {
         }
 
         boolean isFull(Symbol symbol) {
-            return allowed == null ? allowedMask == symbol.fullScalarMask() : allowed.equals(scalarValues(symbol.domain()));
+            if (allowed != null) {
+                return allowed.equals(scalarValues(symbol.domain()));
+            }
+            if (!symbol.scalar) {
+                throw new IllegalStateException("Scalar shape maskability mismatch");
+            }
+            return allowedMask == symbol.fullMask;
         }
 
         Expression toExpression(String key, Symbol symbol) {
@@ -2196,7 +2173,10 @@ final class Domain {
                 return Expression.TRUE;
             }
             if (allowed == null) {
-                long excludedMask = symbol.fullScalarMask() & ~allowedMask;
+                if (!symbol.scalar) {
+                    throw new IllegalStateException("Scalar shape maskability mismatch");
+                }
+                long excludedMask = symbol.fullMask & ~allowedMask;
                 if (Long.bitCount(excludedMask) == 1) {
                     String excluded = symbol.scalarValue(Long.numberOfTrailingZeros(excludedMask));
                     return Expression.create("${" + key + "} != '" + excluded + "'");
@@ -2285,10 +2265,10 @@ final class Domain {
         }
 
         MembershipShape(Symbol symbol, long requiredMask, long forbiddenMask) {
-            if (!symbol.maskableMembership()) {
+            if (!symbol.member) {
                 throw new IllegalArgumentException("Masked membership constraint requires a maskable symbol");
             }
-            long fullMask = symbol.fullMembershipMask();
+            long fullMask = symbol.fullMask;
             if ((requiredMask & ~fullMask) != 0L || (forbiddenMask & ~fullMask) != 0L) {
                 throw new IllegalArgumentException("Membership mask must stay within the symbol domain");
             }
@@ -2302,11 +2282,11 @@ final class Domain {
         }
 
         static MembershipShape empty(Symbol symbol) {
-            return symbol.maskableMembership() ? new MembershipShape(symbol, 0L, 0L) : EMPTY;
+            return symbol.member ? new MembershipShape(symbol, 0L, 0L) : EMPTY;
         }
 
         static MembershipShape required(Symbol symbol, Set<String> items) {
-            return symbol.maskableMembership()
+            return symbol.member
                     ? new MembershipShape(symbol, symbol.membershipMask(items), 0L)
                     : new MembershipShape(items, Set.of());
         }
@@ -2383,7 +2363,7 @@ final class Domain {
         }
 
         MembershipShape withRequired(String item, Symbol symbol) {
-            if (symbol.maskableMembership()) {
+            if (symbol.member) {
                 if (!maskBased() && !isEmpty()) {
                     throw new IllegalStateException("Membership shape maskability mismatch");
                 }
@@ -2402,7 +2382,7 @@ final class Domain {
         }
 
         MembershipShape withForbidden(String item, Symbol symbol) {
-            if (symbol.maskableMembership()) {
+            if (symbol.member) {
                 if (!maskBased() && !isEmpty()) {
                     throw new IllegalStateException("Membership shape maskability mismatch");
                 }

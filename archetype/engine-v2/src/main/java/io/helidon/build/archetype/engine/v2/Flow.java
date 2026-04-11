@@ -31,6 +31,13 @@ import java.util.TreeSet;
 import io.helidon.build.archetype.engine.v2.Context.Scope;
 import io.helidon.build.archetype.engine.v2.Domain.Guard;
 import io.helidon.build.archetype.engine.v2.Domain.Guards;
+import io.helidon.build.archetype.engine.v2.Domain.LatticeValue;
+import io.helidon.build.archetype.engine.v2.Domain.LatticeValue.BooleanSet;
+import io.helidon.build.archetype.engine.v2.Domain.LatticeValue.ChoiceSet;
+import io.helidon.build.archetype.engine.v2.Domain.LatticeValue.FiniteText;
+import io.helidon.build.archetype.engine.v2.Domain.LatticeValue.ListSummary;
+import io.helidon.build.archetype.engine.v2.Domain.LatticeValue.MembershipSet;
+import io.helidon.build.archetype.engine.v2.Domain.LatticeValue.OpenText;
 import io.helidon.build.archetype.engine.v2.Domain.Spec;
 import io.helidon.build.archetype.engine.v2.Domain.Symbol;
 import io.helidon.build.archetype.engine.v2.Domain.Symbol.Fact;
@@ -38,8 +45,6 @@ import io.helidon.build.archetype.engine.v2.Domain.Symbol.Table;
 import io.helidon.build.archetype.engine.v2.Expression.Token;
 import io.helidon.build.archetype.engine.v2.Node.Kind;
 
-import static io.helidon.build.archetype.engine.v2.Domain.Guard.FALSE;
-import static io.helidon.build.archetype.engine.v2.Domain.Guard.TRUE;
 import static java.util.Objects.requireNonNull;
 
 final class Flow {
@@ -134,7 +139,7 @@ final class Flow {
     }
 
     boolean isFalse(Guard guard) {
-        return guard == null || guard.equals(FALSE);
+        return guard == null || guard.isFalse();
     }
 
     Guard and(Guard left, Guard right) {
@@ -462,11 +467,11 @@ final class Flow {
         }
 
         Guard renderGuard(Node node) {
-            return node == null ? TRUE : node(node).renderGuard;
+            return node == null ? Guard.TRUE : node(node).renderGuard;
         }
 
         Guard activeGuard(Node node) {
-            return node == null ? TRUE : node(node).activeGuard;
+            return node == null ? Guard.TRUE : node(node).activeGuard;
         }
 
         State before(Node node) {
@@ -546,10 +551,10 @@ final class Flow {
                 return null;
             }
             Value<?> exact = null;
-            Guard coverage = FALSE;
+            Guard coverage = Guard.FALSE;
             for (Fact.ExactCase exactCase : fact.exactCases()) {
                 Guard overlap = ir.guards().and(required, exactCase.guard());
-                if (overlap.equals(FALSE)) {
+                if (overlap.equals(Guard.FALSE)) {
                     continue;
                 }
                 Value<?> candidate = coerceExactValue(exactCase.value(), type);
@@ -575,21 +580,21 @@ final class Flow {
             }
         }
 
-        private Value<?> singletonValue(Domain.LatticeValue value) {
-            if (value instanceof Domain.LatticeValue.BooleanSet) {
-                Set<Boolean> values = ((Domain.LatticeValue.BooleanSet) value).values();
+        private Value<?> singletonValue(LatticeValue value) {
+            if (value instanceof BooleanSet) {
+                Set<Boolean> values = ((BooleanSet) value).values();
                 return values.size() == 1 ? Value.of(values.iterator().next()) : Value.empty();
             }
-            if (value instanceof Domain.LatticeValue.ChoiceSet) {
-                Set<String> values = ((Domain.LatticeValue.ChoiceSet) value).values();
+            if (value instanceof ChoiceSet) {
+                Set<String> values = ((ChoiceSet) value).values();
                 return values.size() == 1 ? Value.of(values.iterator().next()) : Value.empty();
             }
-            if (value instanceof Domain.LatticeValue.FiniteText) {
-                Set<String> values = ((Domain.LatticeValue.FiniteText) value).values();
+            if (value instanceof FiniteText) {
+                Set<String> values = ((FiniteText) value).values();
                 return values.size() == 1 ? Value.of(values.iterator().next()) : Value.empty();
             }
-            if (value instanceof Domain.LatticeValue.OpenText) {
-                String sample = ((Domain.LatticeValue.OpenText) value).sample();
+            if (value instanceof OpenText) {
+                String sample = ((OpenText) value).sample();
                 return sample == null ? Value.empty() : Value.of(sample);
             }
             return Value.empty();
@@ -727,22 +732,22 @@ final class Flow {
             }
             switch (builder.symbol.domain().kind()) {
                 case BOOLEAN:
-                    if (fact.value() instanceof Domain.LatticeValue.BooleanSet) {
-                        for (boolean value : ((Domain.LatticeValue.BooleanSet) fact.value()).values()) {
+                    if (fact.value() instanceof BooleanSet) {
+                        for (boolean value : ((BooleanSet) fact.value()).values()) {
                             builder.addAvailability(String.valueOf(value), fact.definedUnder(), guards);
                         }
                     }
                     break;
                 case CHOICE:
-                    if (fact.value() instanceof Domain.LatticeValue.ChoiceSet) {
-                        for (String value : ((Domain.LatticeValue.ChoiceSet) fact.value()).values()) {
+                    if (fact.value() instanceof ChoiceSet) {
+                        for (String value : ((ChoiceSet) fact.value()).values()) {
                             builder.addAvailability(value, fact.definedUnder(), guards);
                         }
                     }
                     break;
                 case FINITE_TEXT:
-                    if (fact.value() instanceof Domain.LatticeValue.FiniteText) {
-                        for (String value : ((Domain.LatticeValue.FiniteText) fact.value()).values()) {
+                    if (fact.value() instanceof FiniteText) {
+                        for (String value : ((FiniteText) fact.value()).values()) {
                             builder.addAvailability(value, fact.definedUnder(), guards);
                         }
                     }
@@ -952,14 +957,14 @@ final class Flow {
                 return translatedEquality(term.ref, Value.TRUE, state);
             }
             if (term.literal != null && term.literal.type() == Value.Type.BOOLEAN) {
-                return term.literal.getBoolean() ? TRUE : FALSE;
+                return term.literal.getBoolean() ? Guard.TRUE : Guard.FALSE;
             }
             return null;
         }
 
         private Guard equalityGuard(ProjectedTerm left, ProjectedTerm right, State state) {
             if (left.literal != null && right.literal != null) {
-                return Value.isEqual(left.literal, right.literal) ? TRUE : FALSE;
+                return Value.isEqual(left.literal, right.literal) ? Guard.TRUE : Guard.FALSE;
             }
             if (left.ref != null && right.literal != null) {
                 return translatedEquality(left.ref, right.literal, state);
@@ -983,22 +988,22 @@ final class Flow {
                     return null;
                 }
                 return new TreeSet<>(left.literal.getList()).containsAll(required)
-                        ? TRUE
-                        : FALSE;
+                        ? Guard.TRUE
+                        : Guard.FALSE;
             }
             return null;
         }
 
         private Guard translatedEquality(String key, Value<?> value, State state) {
             Fact fact = factFor(state, key);
-            Guard bound = fact == null ? FALSE : fact.match(value, guards);
+            Guard bound = fact == null ? Guard.FALSE : fact.match(value, guards);
             Guard raw = rawEquality(key, value);
             return combine(key, fact, bound, raw);
         }
 
         private Guard translatedScalarAny(String key, Set<String> values, State state) {
             Fact fact = factFor(state, key);
-            Guard bound = fact == null ? FALSE : fact.scalarAny(values, guards);
+            Guard bound = fact == null ? Guard.FALSE : fact.scalarAny(values, guards);
             Guard raw = rawScalarAny(key, values);
             return combine(key, fact, bound, raw);
         }
@@ -1009,7 +1014,7 @@ final class Flow {
                 return null;
             }
             Fact fact = factFor(state, key);
-            Guard bound = fact == null ? FALSE : fact.listContains(required, guards);
+            Guard bound = fact == null ? Guard.FALSE : fact.listContains(required, guards);
             Guard raw = rawListContains(symbolInfo(key), required);
             return combine(key, fact, bound, raw);
         }
@@ -1026,15 +1031,15 @@ final class Flow {
                 if (bound == null) {
                     return null;
                 }
-                if (bound.equals(FALSE)) {
+                if (bound.equals(Guard.FALSE)) {
                     Guard exact = fact.exactDefined(guards);
-                    if (defined == null || exact.equals(FALSE) || !guards.implies(exact, defined)) {
+                    if (defined == null || exact.equals(Guard.FALSE) || !guards.implies(exact, defined)) {
                         return null;
                     }
                 }
                 return bound;
             }
-            Guard available = defined == null ? TRUE : defined;
+            Guard available = defined == null ? Guard.TRUE : defined;
             Guard exact = fact.exactDefined(guards);
             Guard unresolved = guards.and(guards.minus(available, exact), raw);
             return guards.or(bound, unresolved);
@@ -1073,15 +1078,15 @@ final class Flow {
                     case BOOLEAN:
                         return Set.of("false", "true").contains(scalar)
                                 ? available(info, scalar, guards.eq(symbol.id(), scalar))
-                                : FALSE;
+                                : Guard.FALSE;
                     case CHOICE:
                         return ((Spec.Choice) symbol.domain()).values().contains(scalar)
                                 ? available(info, scalar, guards.eq(symbol.id(), scalar))
-                                : FALSE;
+                                : Guard.FALSE;
                     case FINITE_TEXT:
                         return ((Spec.FiniteText) symbol.domain()).values().contains(scalar)
                                 ? available(info, scalar, guards.eq(symbol.id(), scalar))
-                                : FALSE;
+                                : Guard.FALSE;
                     default:
                         break;
                 }
@@ -1111,20 +1116,20 @@ final class Flow {
                         allowed.clear();
                         break;
                 }
-                Guard raw = FALSE;
+                Guard raw = Guard.FALSE;
                 for (String value : allowed) {
                     raw = guards.or(raw, available(info, value, guards.eq(symbol.id(), value)));
                 }
                 return raw;
             }
-            Guard raw = FALSE;
+            Guard raw = Guard.FALSE;
             for (String value : allowed) {
                 Guard equality = fallbackScalarEquality(info, key, value);
                 if (equality != null) {
                     raw = guards.or(raw, equality);
                 }
             }
-            return raw.equals(FALSE) ? null : raw;
+            return raw.equals(Guard.FALSE) ? null : raw;
         }
 
         private Guard rawListContains(Flow.SymbolInfo info, Set<String> required) {
@@ -1137,13 +1142,13 @@ final class Flow {
             }
             Set<String> items = ((Spec.Membership) symbol.domain()).items();
             if (!items.containsAll(required)) {
-                return FALSE;
+                return Guard.FALSE;
             }
-            Guard available = TRUE;
+            Guard available = Guard.TRUE;
             for (String value : required) {
                 Guard availability = info.availabilityByValue.get(value);
                 if (availability == null) {
-                    return FALSE;
+                    return Guard.FALSE;
                 }
                 available = guards.and(available, availability);
             }
@@ -1152,7 +1157,7 @@ final class Flow {
 
         private Guard available(Flow.SymbolInfo info, String value, Guard direct) {
             Guard availability = info.availabilityByValue.get(value);
-            return availability == null ? FALSE : guards.and(availability, direct);
+            return availability == null ? Guard.FALSE : guards.and(availability, direct);
         }
 
         private Guard fallbackScalarEquality(Flow.SymbolInfo info, String key, String value) {
@@ -1246,7 +1251,7 @@ final class Flow {
 
         private SymbolInfo build() {
             return new SymbolInfo(symbol,
-                    definition == null ? FALSE : definition,
+                    definition == null ? Guard.FALSE : definition,
                     availabilityByValue);
         }
     }
@@ -1713,10 +1718,10 @@ final class Flow {
 
         Guard lower(Expression expression) {
             if (expression == Expression.TRUE) {
-                return TRUE;
+                return Guard.TRUE;
             }
             if (expression == Expression.FALSE) {
-                return FALSE;
+                return Guard.FALSE;
             }
             Deque<ConditionValue> stack = new ArrayDeque<>();
             for (Token token : expression.tokens()) {
@@ -1865,7 +1870,7 @@ final class Flow {
                 case BOOLEAN:
                 case CHOICE:
                 case FINITE_TEXT:
-                    Guard result = FALSE;
+                    Guard result = Guard.FALSE;
                     for (String item : literalValue.literal.getList()) {
                         result = guards.or(result, guards.eq(symbol.id(), item));
                     }
@@ -1936,7 +1941,7 @@ final class Flow {
                 return guards.eq(symbol.id(), "true");
             }
             if (literal != null && literal.type() == Value.Type.BOOLEAN) {
-                return literal.getBoolean() ? TRUE : FALSE;
+                return literal.getBoolean() ? Guard.TRUE : Guard.FALSE;
             }
             return null;
         }
@@ -1948,8 +1953,6 @@ final class Flow {
 
         private final Ir ir;
         private final Guards guards;
-        private final Guard falseGuard;
-        private final Guard trueGuard;
         private final List<PendingUse> usesById;
         private final Map<FactState, Fact> materializedFacts = new IdentityHashMap<>();
         private final Map<Map<Integer, FactState>, Map<Integer, Fact>> materializedEnvs = new IdentityHashMap<>();
@@ -1959,8 +1962,6 @@ final class Flow {
         Analyzer(Ir ir) {
             this.ir = ir;
             this.guards = ir.guards();
-            this.falseGuard = FALSE;
-            this.trueGuard = TRUE;
             this.usesById = new ArrayList<>();
             this.blockProvenances = new ExactProvenance[ir.blocks().size()];
             for (Op op : ir.ops()) {
@@ -1994,7 +1995,7 @@ final class Flow {
 
             // keep the forward control pass reachability-only; lowered blocks carry their structured path context
             List<Guard> entries = materializeStructuredControlPaths(reachable);
-            List<Guard> beforeByOp = new ArrayList<>(Collections.nCopies(ir.ops().size(), falseGuard));
+            List<Guard> beforeByOp = new ArrayList<>(Collections.nCopies(ir.ops().size(), Guard.FALSE));
             for (int blockId = 0; blockId < blockCount; blockId++) {
                 if (!reachable[blockId]) {
                     continue;
@@ -2033,11 +2034,11 @@ final class Flow {
 
         List<Guard> materializeStructuredControlPaths(boolean[] reachable) {
             Guard[] guards = new Guard[ir.controlPaths.size()];
-            guards[ControlPath.ROOT_ID] = trueGuard;
+            guards[ControlPath.ROOT_ID] = Guard.TRUE;
             List<Guard> result = new ArrayList<>(reachable.length);
             for (int id = 0; id < reachable.length; id++) {
                 if (!reachable[id]) {
-                    result.add(falseGuard);
+                    result.add(Guard.FALSE);
                     continue;
                 }
                 int ctrlId = ir.blocks().get(id).controlPathId;
@@ -2056,8 +2057,8 @@ final class Flow {
             }
             ControlPath controlPath = ir.controlPaths.get(controlPathId);
             if (controlPath.parentId < 0) {
-                pathGuards[controlPathId] = trueGuard;
-                return trueGuard;
+                pathGuards[controlPathId] = Guard.TRUE;
+                return Guard.TRUE;
             }
             Guard materialized = guards.and(materializeStructuredPath(controlPath.parentId, pathGuards),
                     controlPath.edgeGuard);
@@ -2074,7 +2075,7 @@ final class Flow {
             work.add(0);
             while (!work.isEmpty()) {
                 int blockId = work.removeFirst();
-                if (control.entryByBlock.get(blockId).equals(falseGuard)) {
+                if (control.entryByBlock.get(blockId).equals(Guard.FALSE)) {
                     continue;
                 }
                 Map<Integer, FactState> state = entries.get(blockId);
@@ -2100,7 +2101,7 @@ final class Flow {
                 case DECLARE_INPUT: {
                     FactState declared = new FactState(
                             provenance(op.blockId),
-                            Domain.LatticeValue.top(ir.symbols().symbol(op.symbolId()).domain()));
+                            LatticeValue.top(ir.symbols().symbol(op.symbolId()).domain()));
                     FactState existing = state.get(op.symbolId());
                     return define(state,
                             op.symbolId(),
@@ -2141,7 +2142,7 @@ final class Flow {
                                   ControlFlow control,
                                   List<Map<Integer, FactState>> entries,
                                   Deque<Integer> work) {
-            if (control.entryByBlock.get(blockId).equals(falseGuard)) {
+            if (control.entryByBlock.get(blockId).equals(Guard.FALSE)) {
                 return;
             }
             Map<Integer, FactState> current = entries.get(blockId);
@@ -2193,14 +2194,14 @@ final class Flow {
         }
 
         private FactState evaluateFact(Op op, Guard currentGuard, Symbol symbol, Map<Integer, FactState> state) {
-            Domain.LatticeValue value = evaluateValue(op.expression, symbol, state);
+            LatticeValue value = evaluateValue(op.expression, symbol, state);
             Value<?> exactValue = exactValue(op.expression, currentGuard, state);
             return exactValue == null
                     ? new FactState(provenance(op.blockId), value)
                     : FactState.exact(op.blockId, value, exactValue);
         }
 
-        private Domain.LatticeValue evaluateValue(Expression expression, Symbol symbol, Map<Integer, FactState> state) {
+        private LatticeValue evaluateValue(Expression expression, Symbol symbol, Map<Integer, FactState> state) {
             List<Token> tokens = expression.tokens();
             if (tokens.size() == 1) {
                 Token token = tokens.get(0);
@@ -2217,7 +2218,7 @@ final class Flow {
                     }
                 }
             }
-            return Domain.LatticeValue.top(symbol.domain());
+            return LatticeValue.top(symbol.domain());
         }
 
         private Value<?> exactValue(Expression expression, Guard currentGuard, Map<Integer, FactState> state) {
@@ -2265,20 +2266,20 @@ final class Flow {
             if (!implies(currentGuard, fact.definedUnder)) {
                 return null;
             }
-            if (fact.value instanceof Domain.LatticeValue.BooleanSet) {
-                Set<Boolean> values = ((Domain.LatticeValue.BooleanSet) fact.value).values();
+            if (fact.value instanceof BooleanSet) {
+                Set<Boolean> values = ((BooleanSet) fact.value).values();
                 if (values.size() == 1) {
                     return Value.of(values.iterator().next());
                 }
             }
-            if (fact.value instanceof Domain.LatticeValue.ChoiceSet) {
-                Set<String> values = ((Domain.LatticeValue.ChoiceSet) fact.value).values();
+            if (fact.value instanceof ChoiceSet) {
+                Set<String> values = ((ChoiceSet) fact.value).values();
                 if (values.size() == 1) {
                     return Value.of(values.iterator().next());
                 }
             }
-            if (fact.value instanceof Domain.LatticeValue.FiniteText) {
-                Set<String> values = ((Domain.LatticeValue.FiniteText) fact.value).values();
+            if (fact.value instanceof FiniteText) {
+                Set<String> values = ((FiniteText) fact.value).values();
                 if (values.size() == 1) {
                     return Value.of(values.iterator().next());
                 }
@@ -2288,7 +2289,7 @@ final class Flow {
 
         private FactState mergeFact(FactState left, FactState right) {
             ExactProvenance definedUnder = ExactProvenance.merge(left.definedUnder, right.definedUnder);
-            Domain.LatticeValue value = Domain.LatticeValue.join(left.value, right.value);
+            LatticeValue value = LatticeValue.join(left.value, right.value);
             if (left.exactCases.isEmpty()) {
                 return right.exactCases.isEmpty()
                         ? new FactState(definedUnder, value)
@@ -2386,7 +2387,7 @@ final class Flow {
         }
 
         private boolean overlaps(Guard left, ExactProvenance right) {
-            return !right.isEmpty() && !guards.and(left, materializeGuard(right)).equals(falseGuard);
+            return !right.isEmpty() && !guards.and(left, materializeGuard(right)).equals(Guard.FALSE);
         }
 
         private ExactProvenance provenance(int blockId) {
@@ -2405,7 +2406,7 @@ final class Flow {
                 return cached;
             }
             if (provenance.isEmpty()) {
-                return falseGuard;
+                return Guard.FALSE;
             }
             Guard materialized = blockPaths.get(provenance.blockIds[0]);
             for (int i = 1; i < provenance.blockIds.length; i++) {
@@ -2452,16 +2453,16 @@ final class Flow {
 
         private static final class FactState {
             private final ExactProvenance definedUnder;
-            private final Domain.LatticeValue value;
+            private final LatticeValue value;
             private final ExactProvenance exactCoverage;
             private final List<ExactCaseState> exactCases;
 
-            FactState(ExactProvenance definedUnder, Domain.LatticeValue value) {
+            FactState(ExactProvenance definedUnder, LatticeValue value) {
                 this(definedUnder, value, ExactProvenance.EMPTY, List.of());
             }
 
             FactState(ExactProvenance definedUnder,
-                      Domain.LatticeValue value,
+                      LatticeValue value,
                       ExactProvenance exactCoverage,
                       List<ExactCaseState> exactCases) {
                 this.definedUnder = definedUnder;
@@ -2470,18 +2471,13 @@ final class Flow {
                 this.exactCases = exactCases;
             }
 
-            static FactState exact(int blockId,
-                                   Domain.LatticeValue value,
-                                   Value<?> exactValue) {
+            static FactState exact(int blockId, LatticeValue value, Value<?> exactValue) {
                 ExactProvenance definedUnder = new ExactProvenance(blockId);
                 if (exactValue == null || !exactValue.isPresent()) {
                     return new FactState(definedUnder, value);
                 }
-                return new FactState(
-                        definedUnder,
-                        value,
-                        definedUnder,
-                        List.of(new ExactCaseState(exactValue, definedUnder)));
+                List<ExactCaseState> exactCases = List.of(new ExactCaseState(exactValue, definedUnder));
+                return new FactState(definedUnder, value, definedUnder, exactCases);
             }
 
             @Override
@@ -2612,27 +2608,27 @@ final class Flow {
             }
         }
 
-        static Domain.LatticeValue literalValue(Spec spec, Value<?> literal) {
+        static LatticeValue literalValue(Spec spec, Value<?> literal) {
             switch (literal.type()) {
                 case BOOLEAN:
-                    return new Domain.LatticeValue.BooleanSet(Set.of(literal.getBoolean()));
+                    return new BooleanSet(Set.of(literal.getBoolean()));
                 case STRING:
                     switch (spec.kind()) {
                         case CHOICE:
-                            return new Domain.LatticeValue.ChoiceSet(Set.of(literal.getString()));
+                            return new ChoiceSet(Set.of(literal.getString()));
                         case FINITE_TEXT:
-                            return new Domain.LatticeValue.FiniteText(Set.of(literal.getString()));
+                            return new FiniteText(Set.of(literal.getString()));
                         default:
-                            return new Domain.LatticeValue.OpenText(literal.getString());
+                            return new OpenText(literal.getString());
                     }
                 case LIST:
                     Set<String> values = new TreeSet<>(literal.getList());
                     if (spec.kind() == Spec.Kind.MEMBERSHIP) {
-                        return new Domain.LatticeValue.MembershipSet(values, values);
+                        return new MembershipSet(values, values);
                     }
-                    return new Domain.LatticeValue.ListSummary(values, values);
+                    return new ListSummary(values, values);
                 default:
-                    return Domain.LatticeValue.top(spec);
+                    return LatticeValue.top(spec);
             }
         }
     }

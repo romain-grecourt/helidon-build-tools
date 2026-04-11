@@ -1,5 +1,55 @@
 # Progress
 
+- 2026-04-10: Removed the remaining `Symbol.fullScalarMask()` /
+  `Symbol.fullMembershipMask()` wrappers. Call sites now check
+  `symbol.scalar` / `symbol.member` directly, fail early on the wrong
+  shape kind, and then read `symbol.fullMask` directly. The same pass
+  also simplified `Symbol` construction further: the domain booleans and
+  ordinals are now initialized once in the constructor, `member`
+  replaces the longer internal `membership` flag, and the redundant
+  `ordinals(...)` helper is gone. Focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,ExpressionTest,ScriptCompilerTest,VariationsTest,FlowTest#testIrLoweringBuildsInputsBranchesAndEmits+testModelRejectsDetachedNode+testAnalyzeMergesBranchValuesAndUseGuards+testAnalyzeMergesSameExactValueAcrossMultiplePaths+testIrLoweringCapturesDefinitionsAndConditionUses+testIrLoweringGuardsNestedBooleanAndOptionDefinitions+testIrLoweringPromotesFiniteLocalTextVariable+testIrLoweringHandlesLiteralListContainsFiniteScalarSymbol+testIrLoweringHandlesMembershipSymbolContainsLiteralList+testIrLoweringKeepsUnsupportedLiteralListContainsResidual \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`214` tests, `BUILD SUCCESS`, total time `5.373 s`).
+- 2026-04-10: Replaced the computed `Symbol` domain-kind helper with
+  constructor-initialized boolean flags. `Domain.Symbol` now stores
+  `scalarDomain` and `membershipDomain`, and the scalar/membership
+  maskability checks read those booleans directly instead of re-running
+  a `switch` on `domain.kind()`. Focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,ExpressionTest,ScriptCompilerTest,VariationsTest,FlowTest#testIrLoweringBuildsInputsBranchesAndEmits+testModelRejectsDetachedNode+testAnalyzeMergesBranchValuesAndUseGuards+testAnalyzeMergesSameExactValueAcrossMultiplePaths+testIrLoweringCapturesDefinitionsAndConditionUses+testIrLoweringGuardsNestedBooleanAndOptionDefinitions+testIrLoweringPromotesFiniteLocalTextVariable+testIrLoweringHandlesLiteralListContainsFiniteScalarSymbol+testIrLoweringHandlesMembershipSymbolContainsLiteralList+testIrLoweringKeepsUnsupportedLiteralListContainsResidual \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`214` tests, `BUILD SUCCESS`, total time `4.930 s`).
+- 2026-04-10: Simplified `Domain.Symbol` by collapsing the duplicated
+  scalar/membership ordinal storage onto one shared `ordinals` map, one
+  shared `valuesByOrdinal` array, and one shared `fullMask` field. The
+  scalar and membership wrapper methods remain for semantic clarity and
+  to preserve the existing call sites and exception messages. Focused
+  validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,ExpressionTest,ScriptCompilerTest,VariationsTest,FlowTest#testIrLoweringBuildsInputsBranchesAndEmits+testModelRejectsDetachedNode+testAnalyzeMergesBranchValuesAndUseGuards+testAnalyzeMergesSameExactValueAcrossMultiplePaths+testIrLoweringCapturesDefinitionsAndConditionUses+testIrLoweringGuardsNestedBooleanAndOptionDefinitions+testIrLoweringPromotesFiniteLocalTextVariable+testIrLoweringHandlesLiteralListContainsFiniteScalarSymbol+testIrLoweringHandlesMembershipSymbolContainsLiteralList+testIrLoweringKeepsUnsupportedLiteralListContainsResidual \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`214` tests, `BUILD SUCCESS`, total time `4.748 s`).
+- 2026-04-10: Inlined the trivial `Domain.canonicalStrings(...)`
+  helper at each remaining call site and removed the helper itself.
+  `Domain` now constructs the normalized `TreeSet` directly in the
+  small number of spec/lattice/shape constructors that need it.
+  Focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,ExpressionTest,ScriptCompilerTest,VariationsTest,FlowTest#testIrLoweringBuildsInputsBranchesAndEmits+testModelRejectsDetachedNode+testAnalyzeMergesBranchValuesAndUseGuards+testAnalyzeMergesSameExactValueAcrossMultiplePaths+testIrLoweringCapturesDefinitionsAndConditionUses+testIrLoweringGuardsNestedBooleanAndOptionDefinitions+testIrLoweringPromotesFiniteLocalTextVariable+testIrLoweringHandlesLiteralListContainsFiniteScalarSymbol+testIrLoweringHandlesMembershipSymbolContainsLiteralList+testIrLoweringKeepsUnsupportedLiteralListContainsResidual \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`214` tests, `BUILD SUCCESS`, total time `4.915 s`).
+- 2026-04-10: Moved the local `Guards.isPure(...)` /
+  `Guards.isFalse(...)` helpers onto `Domain.Guard` itself as
+  `guard.isPure()` / `guard.isFalse()`, then switched `Guards` and
+  `Flow.isFalse(...)` to use the instance API directly. This is a
+  mechanical API cleanup only; guard normalization and algebra stay
+  unchanged. Focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,ExpressionTest,ScriptCompilerTest,VariationsTest,FlowTest#testIrLoweringBuildsInputsBranchesAndEmits+testModelRejectsDetachedNode+testAnalyzeMergesBranchValuesAndUseGuards+testAnalyzeMergesSameExactValueAcrossMultiplePaths+testIrLoweringCapturesDefinitionsAndConditionUses+testIrLoweringGuardsNestedBooleanAndOptionDefinitions+testIrLoweringPromotesFiniteLocalTextVariable+testIrLoweringHandlesLiteralListContainsFiniteScalarSymbol+testIrLoweringHandlesMembershipSymbolContainsLiteralList+testIrLoweringKeepsUnsupportedLiteralListContainsResidual \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`214` tests, `BUILD SUCCESS`, total time `5.366 s`).
 - 2026-04-10: Removed the now-obsolete exact-SHA baseline compatibility
   retry from
   `.agents/skills/helidon-archetype-regression/scripts/run-regression.sh`
