@@ -1024,7 +1024,7 @@ public class ScriptCompiler {
 
     private Expression reachabilityExpression(Guard reach, Scope scope, Map<String, Fact> facts) {
         Guard normalized = normalizeGuard(reach, scope, facts);
-        return flow.expression(normalized, scope).reduce();
+        return flow.expression(normalized, scope);
     }
 
     private Expression residualExpression(Guard reach, Guard base, Scope scope) {
@@ -1065,7 +1065,7 @@ public class ScriptCompiler {
     }
 
     private Guard simplifyProjectedConditionGuard(Guard guard, Scope scope) {
-        Expression expr = normalize(flow.expression(guard, scope), scope).reduce();
+        Expression expr = normalize(flow.expression(guard, scope), scope);
         Expression simplified = simplifyProjectedConditionExpression(expr);
         return simplified.equals(expr) ? guard : flow.residualGuard(simplified);
     }
@@ -2309,7 +2309,7 @@ public class ScriptCompiler {
             for (String id : ids) {
                 Map<List<FileOp>, Guard> idOps = fileOps.getOrDefault(id, Map.of());
                 ops.add(Lists.map(idOps.entrySet(),
-                        e -> new FileOps(e.getKey(), e.getValue(), flow.expression(e.getValue()).reduce().literal())));
+                        e -> new FileOps(e.getKey(), e.getValue(), flow.expression(e.getValue()).literal())));
             }
             return ops;
         }
@@ -2323,7 +2323,7 @@ public class ScriptCompiler {
             for (int i = 1; i < list.size(); i++) {
                 reach = flow.and(reach, list.get(i).reach);
             }
-            return new FileOps(ops, reach, flow.expression(reach).reduce().literal());
+            return new FileOps(ops, reach, flow.expression(reach).literal());
         }
 
         List<Node> renderModels() {
@@ -3208,7 +3208,7 @@ public class ScriptCompiler {
         FileObject(String checksum, List<FileOp> ops, Expression condition) {
             this.checksum = checksum;
             this.ops = List.copyOf(ops);
-            this.condition = condition.reduce();
+            this.condition = condition;
         }
 
         Expression condition() {

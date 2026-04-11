@@ -1,5 +1,17 @@
 # Progress
 
+- 2026-04-11: Removed the plain zero-arg `reduce()` calls that were only
+  re-reducing expressions already normalized by producer boundaries in
+  `ScriptCompiler`. `reachabilityExpression(...)` now returns
+  `flow.expression(...)` directly, projected-condition simplification no
+  longer reduces after `normalize(...)`, file-op literal rendering drops
+  the extra `.reduce()`, and `FileObject` now trusts its incoming
+  condition instead of normalizing again in the constructor. Focused
+  validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,ExpressionTest,ScriptCompilerTest,VariationsTest,FlowTest#testIrLoweringBuildsInputsBranchesAndEmits+testModelRejectsDetachedNode+testAnalyzeMergesBranchValuesAndUseGuards+testAnalyzeMergesSameExactValueAcrossMultiplePaths+testIrLoweringCapturesDefinitionsAndConditionUses+testIrLoweringGuardsNestedBooleanAndOptionDefinitions+testIrLoweringPromotesFiniteLocalTextVariable+testIrLoweringHandlesLiteralListContainsFiniteScalarSymbol+testIrLoweringHandlesMembershipSymbolContainsLiteralList+testIrLoweringKeepsUnsupportedLiteralListContainsResidual \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`214` tests, `BUILD SUCCESS`, total time `5.993 s`).
 - 2026-04-10: Removed the remaining `Symbol.fullScalarMask()` /
   `Symbol.fullMembershipMask()` wrappers. Call sites now check
   `symbol.scalar` / `symbol.member` directly, fail early on the wrong

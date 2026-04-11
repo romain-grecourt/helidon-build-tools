@@ -607,6 +607,7 @@ final class Domain {
     }
 
     interface LatticeValue {
+
         Kind kind();
 
         enum Kind {
@@ -618,14 +619,6 @@ final class Domain {
             OPEN_TEXT,
             FINITE_TEXT,
             LIST_SUMMARY
-        }
-
-        static LatticeValue bottom() {
-            return Bottom.INSTANCE;
-        }
-
-        static LatticeValue top() {
-            return Top.INSTANCE;
         }
 
         static LatticeValue top(Spec spec) {
@@ -641,7 +634,7 @@ final class Domain {
                 case FINITE_TEXT:
                     return new FiniteText(((Spec.FiniteText) spec).values());
                 default:
-                    return top();
+                    return Top.INSTANCE;
             }
         }
 
@@ -658,7 +651,7 @@ final class Domain {
                 return left;
             }
             if (left.kind() == Kind.TOP || right.kind() == Kind.TOP) {
-                return top();
+                return Top.INSTANCE;
             }
             if (left instanceof BooleanSet && right instanceof BooleanSet) {
                 Set<Boolean> values = new TreeSet<>(((BooleanSet) left).values());
@@ -703,11 +696,10 @@ final class Domain {
             if (left.kind() == Kind.OPEN_TEXT || right.kind() == Kind.OPEN_TEXT) {
                 return new OpenText(null);
             }
-            return top();
+            return Top.INSTANCE;
         }
 
         final class Bottom implements LatticeValue {
-            private static final Bottom INSTANCE = new Bottom();
 
             private Bottom() {
             }
