@@ -106,7 +106,7 @@ public final class VariationEngine {
         init();
         List<Variations.Entry> variations = new ArrayList<>();
         sourceNode.visit(new VisitorImpl(sourceNode,
-                flow.model(),
+                flow,
                 ctx.cwd(),
                 variations,
                 filters,
@@ -128,7 +128,7 @@ public final class VariationEngine {
 
     private static final class VisitorImpl implements Node.Visitor {
         private final Node sourceNode;
-        private final Flow.Model flowModel;
+        private final Flow flow;
         private final Path cwd;
 
         private final List<Table> inputs = new ArrayList<>();
@@ -146,7 +146,7 @@ public final class VariationEngine {
         private final long maxIntermediateVariations;
 
         VisitorImpl(Node sourceNode,
-                    Flow.Model flowModel,
+                    Flow flow,
                     Path cwd,
                     Collection<Variations.Entry> variations,
                     List<Expression> filters,
@@ -154,7 +154,7 @@ public final class VariationEngine {
                     Map<String, String> externalDefaults,
                     long maxIntermediateVariations) {
             this.sourceNode = sourceNode;
-            this.flowModel = flowModel;
+            this.flow = flow;
             this.cwd = cwd;
             this.variations = variations;
             this.filters = filters;
@@ -438,7 +438,7 @@ public final class VariationEngine {
                 return false;
             }
             try {
-                Scope scope = flowModel.scope(node);
+                Scope scope = flow.scope(node);
                 return expr.eval(variable -> {
                     String value = variation.get(scope.key(variable));
                     if (value != null) {
@@ -461,9 +461,9 @@ public final class VariationEngine {
                 case INPUT_BOOLEAN:
                 case INPUT_ENUM:
                 case INPUT_LIST:
-                    return flowModel.activationCondition(node.parent());
+                    return flow.activationCondition(node.parent());
                 default:
-                    return flowModel.activationCondition(node);
+                    return flow.activationCondition(node);
             }
         }
 
@@ -471,7 +471,7 @@ public final class VariationEngine {
             if (expr == Expression.TRUE || expr == Expression.FALSE || resolvedExternalValues.isEmpty()) {
                 return expr;
             }
-            Scope scope = flowModel.scope(node);
+            Scope scope = flow.scope(node);
             return expr.inline(variable -> {
                 String key = scope.key(variable);
                 String value = resolvedExternalValues.get(key);
@@ -545,7 +545,7 @@ public final class VariationEngine {
             if (value != null) {
                 return Value.typed(Value.dynamic(value), node.kind().valueType());
             }
-            return flowModel.declaredValue(node, key);
+            return flow.declaredValue(node, key);
         }
 
         Value<String> externalDefaultValue(String key) {
@@ -577,7 +577,7 @@ public final class VariationEngine {
         Map<String, Value.Type> inputTypes() {
             Map<String, Value.Type> types = new LinkedHashMap<>();
             for (Node input : sourceNode.traverse(Kind::isInput)) {
-                types.putIfAbsent(flowModel.key(input), input.kind().valueType());
+                types.putIfAbsent(flow.key(input), input.kind().valueType());
             }
             return Collections.unmodifiableMap(types);
         }
@@ -692,7 +692,7 @@ public final class VariationEngine {
         }
 
         Set<String> dependencies(Table table, Set<String> inputIds) {
-            Scope scope = flowModel.scope(table.node);
+            Scope scope = flow.scope(table.node);
             Set<String> dependencies = new LinkedHashSet<>(dependencies(table.expr, scope, table.id, inputIds));
             for (Row row : table.rows) {
                 dependencies.addAll(dependencies(row.expr, scope, table.id, inputIds));
@@ -715,8 +715,8 @@ public final class VariationEngine {
         }
 
         Table table(Node node) {
-            Expression expr = flowModel.activationCondition(node.parent());
-            return new Table(node, flowModel.key(node), prune(node, expr));
+            Expression expr = flow.activationCondition(node.parent());
+            return new Table(node, flow.key(node), prune(node, expr));
         }
 
         static List<Node> optionNodes(Node node) {
@@ -783,7 +783,7 @@ public final class VariationEngine {
 
         Row(BitSet bits, Expression expr) {
             this.bits = bits;
-            this.expr = expr.foldConstants();
+            this.expr = expr.fold();
         }
 
         @Override
@@ -816,9 +816,9 @@ public final class VariationEngine {
         }
 
         void addRow(BitSet bits, Expression expr) {
-            expr = expr.foldConstants();
-            if (expr != Expression.FALSE) {
-                rows.add(new Row(bits, expr));
+            Expression folded = expr.fold();
+            if (folded != Expression.FALSE) {
+                rows.add(new Row(bits, folded));
             }
         }
 

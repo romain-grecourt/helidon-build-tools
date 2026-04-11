@@ -139,6 +139,24 @@ public final class Expression implements Comparable<Expression> {
     }
 
     /**
+     * Combine this expression and the given expressions with the logical
+     * 'and' operator.
+     *
+     * @param expressions expressions, or {@code null}
+     * @return Expression
+     */
+    public Expression and(List<Expression> expressions) {
+        if (expressions == null) {
+            return this;
+        }
+        Expression result = this;
+        for (Expression expression : expressions) {
+            result = result.and(expression);
+        }
+        return result;
+    }
+
+    /**
      * Combine this expression and the given expression with the logical 'or' operator.
      *
      * @param expr expression
@@ -156,6 +174,44 @@ public final class Expression implements Comparable<Expression> {
         } else {
             return new Expression(Lists.concatView(tokens, expr.tokens, Token.OR), false);
         }
+    }
+
+    /**
+     * Combine this expression and the given expressions with the logical
+     * 'or' operator.
+     *
+     * @param expressions expressions, or {@code null}
+     * @return Expression
+     */
+    public Expression or(List<Expression> expressions) {
+        if (expressions == null) {
+            return this;
+        }
+        Expression result = this;
+        for (Expression expression : expressions) {
+            result = result.or(expression);
+        }
+        return result;
+    }
+
+    /**
+     * Get the top-level conjunction terms in this expression.
+     *
+     * @return conjunction terms, or a singleton list containing this
+     *         expression when the root is not a conjunction
+     */
+    public List<Expression> conjunction() {
+        return splitTopLevel(Operator.AND);
+    }
+
+    /**
+     * Get the top-level disjunction terms in this expression.
+     *
+     * @return disjunction terms, or a singleton list containing this
+     *         expression when the root is not a disjunction
+     */
+    public List<Expression> disjunction() {
+        return splitTopLevel(Operator.OR);
     }
 
     /**
@@ -268,21 +324,58 @@ public final class Expression implements Comparable<Expression> {
         }
     }
 
-    Expression foldConstants() {
+    /**
+     * Fold constant subexpressions and collapse fully constant results.
+     *
+     * @return folded expression
+     */
+    Expression fold() {
         if (this == TRUE || this == FALSE) {
             return this;
         }
         if (tokens.size() > FOLD_CONSTANTS_MAX_TOKENS) {
-            return hasVariables() ? this : constantExpression();
+            if (hasVariables()) {
+                return this;
+            }
+            try {
+                return eval() ? TRUE : FALSE;
+            } catch (RuntimeException e) {
+                return this;
+            }
         }
-        Expression folded = foldSmallConstants();
-        if (folded == this || folded.hasVariables()) {
+        Deque<FoldPart> stack = new ArrayDeque<>();
+        boolean changed = false;
+        for (Token token : tokens) {
+            FoldPart next;
+            if (token.operator == null) {
+                next = new FoldPart(token.operand, List.of(token), false);
+            } else {
+                FoldPart op1 = stack.pop();
+                if (token.operator.valence == 1) {
+                    next = op1.foldUnary(token.operator);
+                } else {
+                    FoldPart op2 = stack.pop();
+                    next = op2.foldBinary(token.operator, op1);
+                }
+            }
+            changed |= next.changed;
+            stack.push(next);
+        }
+        FoldPart part = stack.pop();
+        if (!changed && part.tokens.equals(tokens)) {
+            return this;
+        }
+        if (part.constant != null && part.constant.type() == Value.Type.BOOLEAN) {
+            return part.constant.getBoolean() ? TRUE : FALSE;
+        }
+        Expression folded = new Expression(part.tokens, false);
+        if (folded.hasVariables()) {
             return folded;
         }
         try {
             return folded.eval() ? TRUE : FALSE;
         } catch (RuntimeException e) {
-            return folded;
+            return this;
         }
     }
 
@@ -304,7 +397,7 @@ public final class Expression implements Comparable<Expression> {
             }
             inlined.add(token);
         }
-        return new Expression(inlined, false).foldConstants();
+        return new Expression(inlined, false).fold();
     }
 
     /**
@@ -518,86 +611,6 @@ public final class Expression implements Comparable<Expression> {
         return false;
     }
 
-    private Expression constantExpression() {
-        try {
-            return eval() ? TRUE : FALSE;
-        } catch (RuntimeException e) {
-            return this;
-        }
-    }
-
-    private Expression foldSmallConstants() {
-        Deque<FoldPart> stack = new ArrayDeque<>();
-        boolean changed = false;
-        for (Token token : tokens) {
-            FoldPart next;
-            if (token.operator == null) {
-                next = FoldPart.of(token);
-            } else {
-                FoldPart op1 = stack.pop();
-                next = token.operator.valence == 1
-                        ? foldUnary(token.operator, op1)
-                        : foldBinary(token.operator, stack.pop(), op1);
-            }
-            changed |= next.changed();
-            stack.push(next);
-        }
-        FoldPart result = stack.pop();
-        return !changed && result.tokens().equals(tokens) ? this : result.expression();
-    }
-
-    private FoldPart foldUnary(Operator operator, FoldPart op1) {
-        if (op1.constant() != null) {
-            try {
-                return FoldPart.constant(apply(operator, op1.constant()));
-            } catch (RuntimeException e) {
-                // keep the original expression shape when constant folding
-                // cannot evaluate a typed operation safely
-                return FoldPart.expression(Lists.appendView(op1.tokens(), Token.of(operator)), op1.changed());
-            }
-        }
-        return FoldPart.expression(Lists.appendView(op1.tokens(), Token.of(operator)), op1.changed());
-    }
-
-    private FoldPart foldBinary(Operator operator, FoldPart left, FoldPart right) {
-        if (left.constant() != null && right.constant() != null) {
-            try {
-                return FoldPart.constant(apply(operator, left.constant(), right.constant()));
-            } catch (RuntimeException e) {
-                // keep the original expression shape when constant folding
-                // cannot evaluate a typed operation safely
-                return FoldPart.expression(Lists.concatView(left.tokens(), right.tokens(), Token.of(operator)),
-                        left.changed() || right.changed());
-            }
-        }
-        if (operator == Operator.AND || operator == Operator.OR) {
-            FoldPart simplified = simplifyLogical(operator, left, right);
-            if (simplified != null) {
-                return simplified;
-            }
-        }
-        return FoldPart.expression(Lists.concatView(left.tokens(), right.tokens(), Token.of(operator)),
-                left.changed() || right.changed());
-    }
-
-    private FoldPart simplifyLogical(Operator operator, FoldPart left, FoldPart right) {
-        if (left.constant() != null) {
-            return simplifyLogical(operator, left.constant(), right);
-        }
-        if (right.constant() != null) {
-            return simplifyLogical(operator, right.constant(), left);
-        }
-        return null;
-    }
-
-    private FoldPart simplifyLogical(Operator operator, Value<?> constant, FoldPart other) {
-        boolean value = constant.asBoolean().orElse(false);
-        if (operator == Operator.AND) {
-            return value ? other.withChanged() : FoldPart.constant(Value.FALSE);
-        }
-        return value ? FoldPart.constant(Value.TRUE) : other.withChanged();
-    }
-
     private static Value<?> apply(Operator operator, Value<?> op1) {
         switch (operator) {
             case NOT:
@@ -645,53 +658,6 @@ public final class Expression implements Comparable<Expression> {
                 return Value.of(op1.isPresent() && op2.asString().orElse("").contains(op1.getString()));
             default:
                 throw new IllegalStateException("Unsupported binary operator: " + operator);
-        }
-    }
-
-    private static final class FoldPart {
-        private final Value<?> constant;
-        private final List<Token> tokens;
-        private final boolean changed;
-
-        private FoldPart(Value<?> constant, List<Token> tokens, boolean changed) {
-            this.constant = constant;
-            this.tokens = tokens;
-            this.changed = changed;
-        }
-
-        static FoldPart of(Token token) {
-            return new FoldPart(token.operand, List.of(token), false);
-        }
-
-        static FoldPart constant(Value<?> value) {
-            return new FoldPart(value, List.of(Token.of(value)), true);
-        }
-
-        static FoldPart expression(List<Token> tokens, boolean changed) {
-            return new FoldPart(null, tokens, changed);
-        }
-
-        Value<?> constant() {
-            return constant;
-        }
-
-        List<Token> tokens() {
-            return tokens;
-        }
-
-        boolean changed() {
-            return changed;
-        }
-
-        FoldPart withChanged() {
-            return !changed ? new FoldPart(constant, tokens, true) : this;
-        }
-
-        Expression expression() {
-            if (constant != null && constant.type() == Value.Type.BOOLEAN) {
-                return constant.getBoolean() ? TRUE : FALSE;
-            }
-            return new Expression(tokens, false);
         }
     }
 
@@ -787,23 +753,23 @@ public final class Expression implements Comparable<Expression> {
                 List<Token> op1 = stack.pop();
                 Token t1 = op1.get(0);
                 String s1 = t1.variable != null ? t1.variable : t1.signature();
-                    String varName;
-                    switch (token.operator) {
-                        case NOT:
-                            stack.push(Lists.appendView(op1, token));
-                            break;
-                        case SIZEOF:
-                        case AS_INT:
+                String varName;
+                switch (token.operator) {
+                    case NOT:
+                        stack.push(Lists.appendView(op1, token));
+                        break;
+                    case SIZEOF:
+                    case AS_INT:
                     case AS_LIST:
-                        case AS_STRING:
-                            // t1 is always a variable (enforced in parse)
-                            varName = token.operator.symbol() + ' ' + s1;
-                            SyntheticVar syntheticVar = vars.vars.get(s1);
-                            tempVars.putIfAbsent(varName, Lists.appendView(
-                                    syntheticVar != null ? syntheticVar.tokens : op1,
-                                    token));
-                            stack.push(List.of(Token.of(varName)));
-                            break;
+                    case AS_STRING:
+                        // t1 is always a variable (enforced in parse)
+                        varName = token.operator.symbol() + ' ' + s1;
+                        SyntheticVar syntheticVar = vars.vars.get(s1);
+                        tempVars.putIfAbsent(varName, Lists.appendView(
+                                syntheticVar != null ? syntheticVar.tokens : op1,
+                                token));
+                        stack.push(List.of(Token.of(varName)));
+                        break;
                     case CONTAINS:
                     case EQUAL:
                     case NOT_EQUAL:
@@ -839,11 +805,11 @@ public final class Expression implements Comparable<Expression> {
                             stack.push(Lists.concatView(op2, op1, token));
                         }
                         break;
-                        default:
-                            stack.push(Lists.concatView(stack.pop(), op1, token));
-                    }
-                } else {
-                    stack.push(List.of(token));
+                    default:
+                        stack.push(Lists.concatView(stack.pop(), op1, token));
+                }
+            } else {
+                stack.push(List.of(token));
             }
         }
 
@@ -982,6 +948,60 @@ public final class Expression implements Comparable<Expression> {
         }
         tokens.add(token);
         return valence;
+    }
+
+    private List<Expression> splitTopLevel(Operator operator) {
+        if (tokens.get(tokens.size() - 1).operator != operator) {
+            return List.of(this);
+        }
+        Deque<SplitFrame> stack = new ArrayDeque<>();
+        for (int i = 0; i < tokens.size(); i++) {
+            Token token = tokens.get(i);
+            if (token.operator == null) {
+                stack.push(new SplitFrame(i, i + 1, null));
+                continue;
+            }
+            if (stack.size() < token.operator.valence) {
+                throw new IllegalStateException("Invalid postfix expression");
+            }
+            SplitFrame[] operands = new SplitFrame[token.operator.valence];
+            for (int j = operands.length - 1; j >= 0; j--) {
+                operands[j] = stack.pop();
+            }
+            if (token.operator == operator) {
+                List<Expression> expressions = new ArrayList<>();
+                for (SplitFrame operand : operands) {
+                    if (operand.terms != null) {
+                        expressions.addAll(operand.terms);
+                    } else {
+                        expressions.add(new Expression(tokens.subList(operand.start, operand.endIndex), false));
+                    }
+                }
+                stack.push(new SplitFrame(operands[0].start, i + 1, expressions));
+            } else {
+                stack.push(new SplitFrame(operands[0].start, i + 1, null));
+            }
+        }
+        if (stack.size() != 1) {
+            throw new IllegalStateException("Invalid postfix expression");
+        }
+        SplitFrame expression = stack.pop();
+        return expression.terms == null ? List.of(this) : List.copyOf(expression.terms);
+    }
+
+    private static List<Token> expressionTokens(List<Token> tokens, int endIndex) {
+        for (int i = endIndex - 1, depth = 1; i >= 0; i--) {
+            Token token = tokens.get(i);
+            if (token.operator != null) {
+                depth += token.operator.valence - 1;
+            } else {
+                depth--;
+            }
+            if (depth == 0) {
+                return tokens.subList(i, endIndex);
+            }
+        }
+        throw new IllegalStateException("Invalid postfix expression");
     }
 
     /**
@@ -1744,8 +1764,8 @@ public final class Expression implements Comparable<Expression> {
                 this.valueExpr = List.of();
                 return;
             }
-            List<Token> right = expression(tokens, tokens.size() - 1);
-            List<Token> left = expression(tokens, tokens.size() - 1 - right.size());
+            List<Token> right = expressionTokens(tokens, tokens.size() - 1);
+            List<Token> left = expressionTokens(tokens, tokens.size() - 1 - right.size());
             boolean leftVar = left.stream().anyMatch(Token::isVariable);
             boolean rightVar = right.stream().anyMatch(Token::isVariable);
             if (leftVar != rightVar) {
@@ -1755,21 +1775,6 @@ public final class Expression implements Comparable<Expression> {
                 this.variableExpr = List.of();
                 this.valueExpr = List.of();
             }
-        }
-
-        static List<Token> expression(List<Token> tokens, int endIndex) {
-            for (int i = endIndex - 1, depth = 1; i >= 0; i--) {
-                Token token = tokens.get(i);
-                if (token.operator != null) {
-                    depth += token.operator.valence - 1;
-                } else {
-                    depth--;
-                }
-                if (depth == 0) {
-                    return tokens.subList(i, endIndex);
-                }
-            }
-            throw new IllegalStateException("Invalid postfix expression");
         }
     }
 
@@ -2010,6 +2015,88 @@ public final class Expression implements Comparable<Expression> {
                 return child.children;
             }
             return List.of(child);
+        }
+    }
+
+    private static final class FoldPart {
+        private final Value<?> constant;
+        private final List<Token> tokens;
+        private final boolean changed;
+
+        FoldPart(Value<?> constant, List<Token> tokens, boolean changed) {
+            this.constant = constant;
+            this.tokens = tokens;
+            this.changed = changed;
+        }
+
+        FoldPart foldUnary(Operator operator) {
+            if (constant != null) {
+                try {
+                    Value<?> value = apply(operator, constant);
+                    return new FoldPart(value, List.of(Token.of(value)), true);
+                } catch (RuntimeException e) {
+                    // keep the original expression shape when constant folding
+                    // cannot evaluate a typed operation safely
+                    return new FoldPart(null, Lists.appendView(tokens, Token.of(operator)), changed);
+                }
+            }
+            return new FoldPart(null, Lists.appendView(tokens, Token.of(operator)), changed);
+        }
+
+        FoldPart foldBinary(Operator operator, FoldPart right) {
+            if (constant != null && right.constant != null) {
+                try {
+                    Value<?> value = apply(operator, constant, right.constant);
+                    return new FoldPart(value, List.of(Token.of(value)), true);
+                } catch (RuntimeException e) {
+                    // keep the original expression shape when constant folding
+                    // cannot evaluate a typed operation safely
+                    List<Token> foldedTokens = Lists.concatView(tokens, right.tokens, Token.of(operator));
+                    return new FoldPart(null, foldedTokens, changed || right.changed);
+                }
+            }
+            if (operator == Operator.AND || operator == Operator.OR) {
+                FoldPart simplified = simplify(operator, right);
+                if (simplified != null) {
+                    return simplified;
+                }
+            }
+            List<Token> foldedTokens = Lists.concatView(tokens, right.tokens, Token.of(operator));
+            return new FoldPart(null, foldedTokens, changed || right.changed);
+        }
+
+        FoldPart withChanged() {
+            return !changed ? new FoldPart(constant, tokens, true) : this;
+        }
+
+        FoldPart simplify(Operator operator, FoldPart other) {
+            if (constant != null) {
+                return simplify(operator, constant, other);
+            }
+            if (other.constant != null) {
+                return simplify(operator, other.constant, this);
+            }
+            return null;
+        }
+
+        static FoldPart simplify(Operator operator, Value<?> constant, FoldPart other) {
+            boolean value = constant.asBoolean().orElse(false);
+            if (operator == Operator.AND) {
+                return value ? other.withChanged() : new FoldPart(Value.FALSE, List.of(Token.FALSE), true);
+            }
+            return value ? new FoldPart(Value.TRUE, List.of(Token.TRUE), true) : other.withChanged();
+        }
+    }
+
+    private static final class SplitFrame {
+        private final int start;
+        private final int endIndex;
+        private final List<Expression> terms;
+
+        SplitFrame(int start, int endIndex, List<Expression> terms) {
+            this.start = start;
+            this.endIndex = endIndex;
+            this.terms = terms;
         }
     }
 }

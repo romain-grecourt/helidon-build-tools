@@ -46,7 +46,6 @@ import java.util.regex.Pattern;
 
 import io.helidon.build.archetype.engine.v2.Context.Scope;
 import io.helidon.build.archetype.engine.v2.Domain.Guard;
-import io.helidon.build.archetype.engine.v2.Domain.Guards;
 import io.helidon.build.archetype.engine.v2.Domain.Symbol.Fact;
 import io.helidon.build.archetype.engine.v2.Expression.Token;
 import io.helidon.build.archetype.engine.v2.Node.Kind;
@@ -58,6 +57,8 @@ import io.helidon.build.common.Maps;
 import io.helidon.build.common.PropertyEvaluator;
 import io.helidon.build.common.SourcePath;
 
+import static io.helidon.build.archetype.engine.v2.Domain.Guard.FALSE;
+import static io.helidon.build.archetype.engine.v2.Domain.Guard.TRUE;
 import static io.helidon.build.common.Checksum.md5;
 import static io.helidon.build.common.FileUtils.ensureDirectory;
 import static io.helidon.build.common.FileUtils.readAllBytes;
@@ -294,15 +295,13 @@ public class ScriptCompiler {
     }
 
     private void projectSourceGuards() {
-        projectSourceNode(sourceNode, trueGuard());
-    }
-
-    private void projectSourceNode(Node node, Guard currentGuard) {
-        renderGuardsByNode.put(node, currentGuard);
-        Guard activeGuard = localActiveGuard(node, currentGuard);
-        activeGuardsByNode.put(node, activeGuard);
-        for (Node child : node.children()) {
-            projectSourceNode(child, activeGuard);
+        for (Node node : sourceNode.traverse()) {
+            Guard renderGuard = node == sourceNode
+                    ? Guard.TRUE
+                    : requireNonNull(activeGuardsByNode.get(node.parent()),
+                            "Missing parent active guard for source node: " + node.kind() + "#" + node.id());
+            renderGuardsByNode.put(node, renderGuard);
+            activeGuardsByNode.put(node, localActiveGuard(node, renderGuard));
         }
     }
 
@@ -311,14 +310,14 @@ public class ScriptCompiler {
         if (expr == Expression.TRUE) {
             return currentGuard;
         }
-        if (isFalse(currentGuard) || expr == Expression.FALSE) {
-            return falseGuard();
+        if (flow.isFalse(currentGuard) || expr == Expression.FALSE) {
+            return FALSE;
         }
         Scope scope = scope(node);
         ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, facts(node, currentGuard), false, true);
         ExpressionAnalysis analysis = analyzer.analyze(expr);
         Guard local = localGuard(expr, scope, currentGuard, analysis);
-        Guard full = and(currentGuard, local);
+        Guard full = flow.and(currentGuard, local);
         return node.kind() == Kind.CONDITION ? simplifyProjectedConditionGuard(full, scope) : full;
     }
 
@@ -326,21 +325,22 @@ public class ScriptCompiler {
         if (analysis.reach != null) {
             return analysis.reach;
         }
-        Expression truth = guardExpression(currentGuard);
+        Expression truth = flow.expression(currentGuard);
         if (analysis.supportedTerms != null && analysis.supportedTerms.hasSupportedTerms) {
             Guard supported = analysis.supportedTerms.supported;
-            Guard supportedTruth = and(currentGuard, supported);
-            Expression unsupported = normalize(analysis.supportedTerms.unsupported, scope).reduce(guardExpression(supportedTruth));
+            Guard supportedTruth = flow.and(currentGuard, supported);
+            Expression unsupported = normalize(analysis.supportedTerms.unsupported,
+                    scope).reduce(flow.expression(supportedTruth));
             if (unsupported == Expression.FALSE) {
-                return falseGuard();
+                return FALSE;
             }
             if (unsupported == Expression.TRUE) {
                 return supported;
             }
-            return and(supported, residualGuard(unsupported));
+            return flow.and(supported, flow.residualGuard(unsupported));
         }
         Expression normalized = normalize(expr, scope).reduce(truth);
-        return residualGuard(normalized);
+        return flow.residualGuard(normalized);
     }
 
     private Scope rootScope() {
@@ -364,7 +364,7 @@ public class ScriptCompiler {
             Map<Node, Set<String>> conditionRefs = new IdentityHashMap<>();
             mirrors.put(sourceNode, image.node);
             mirrors.put(image.node, sourceNode);
-            reachableBlocks.put(image.node, trueGuard());
+            reachableBlocks.put(image.node, TRUE);
             sourceNode.visit(new InputVisitor(image, mirrors, reachableBlocks, conditionRefs));
             if (!options.contains(Options.NO_OUTPUT)) {
                 sourceNode.visit(new OutputVisitor(image, conditionRefs));
@@ -389,8 +389,8 @@ public class ScriptCompiler {
             if (inactiveInput(node)) {
                 continue;
             }
-            String key = flow.model().key(node);
-            Value<?> value = flow.model().declaredValue(node, key);
+            String key = flow.key(node);
+            Value<?> value = flow.declaredValue(node, key);
             if (value.type() == Type.EMPTY || value.type() == Type.BOOLEAN) {
                 continue;
             }
@@ -409,7 +409,7 @@ public class ScriptCompiler {
     private void validatePresets() {
         Map<String, List<Node>> inputs = new HashMap<>();
         for (Node node : sourceNode.traverse(Kind::isInput)) {
-            inputs.computeIfAbsent(flow.model().key(node), k -> new ArrayList<>()).add(node);
+            inputs.computeIfAbsent(flow.key(node), k -> new ArrayList<>()).add(node);
         }
         for (Node node : sourceNode.traverse(Kind::isPreset)) {
             String path = node.attribute("path").getString();
@@ -443,7 +443,7 @@ public class ScriptCompiler {
             if (inactiveInput(node)) {
                 continue;
             }
-            String scopeId = flow.model().key(node);
+            String scopeId = flow.key(node);
             Kind expected = kinds.computeIfAbsent(scopeId, k -> node.kind());
             if (expected != node.kind()) {
                 errors.add(String.format("%s %s: '%s'",
@@ -462,7 +462,7 @@ public class ScriptCompiler {
             Expression expr = node.expression();
             Scope scope = scope(node);
             Map<String, Fact> facts = facts(node);
-            Guard blockReach = activeGuard(node.parent());
+            Guard blockReach = flow.activeGuard(node.parent());
             ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, facts, true, false);
             ExpressionAnalysis analysis = analyzer.analyze(expr);
             boolean compatible = analysis.incompatibleOps.isEmpty();
@@ -496,12 +496,12 @@ public class ScriptCompiler {
                 Guard requiredReach = blockReach;
                 Guard variableDemand = variableDemands.get(ref);
                 if (variableDemand != null) {
-                    requiredReach = requiredReach == null ? variableDemand : and(requiredReach, variableDemand);
+                    requiredReach = requiredReach == null ? variableDemand : flow.and(requiredReach, variableDemand);
                 }
                 Fact refFact = fact(facts, ref);
                 Guard refReach = refFact == null ? null : refFact.definedUnder();
                 if (requiredReach != null && refReach != null) {
-                    variableResolved = contains(refReach, requiredReach);
+                    variableResolved = flow.contains(refReach, requiredReach);
                     if (!variableResolved) {
                         variableResolved = coversUnderFacts(refReach, requiredReach, scope, facts);
                     }
@@ -510,9 +510,9 @@ public class ScriptCompiler {
                 if (!variableResolved && requiredReach != null && refReach != null) {
                     // replay constant bindings against the recorded definition reachability first
                     analyzer = new ExpressionAnalyzer(scope, facts, false, false);
-                    bindingReach = analyzer.analyze(guardExpression(refReach)).reach;
+                    bindingReach = analyzer.analyze(flow.expression(refReach)).reach;
                     if (bindingReach != null) {
-                        variableResolved = contains(bindingReach, requiredReach);
+                        variableResolved = flow.contains(bindingReach, requiredReach);
                         if (!variableResolved) {
                             variableResolved = coversUnderFacts(bindingReach, requiredReach, scope, facts);
                         }
@@ -566,7 +566,7 @@ public class ScriptCompiler {
                 continue;
             }
             Guard reach = definitionGuard(definition);
-            if (isFalse(reach)) {
+            if (flow.isFalse(reach)) {
                 continue;
             }
             return true;
@@ -769,75 +769,7 @@ public class ScriptCompiler {
     }
 
     Scope scope(Node node) {
-        return flow.model().scope(node);
-    }
-
-    private Guards guards() {
-        return flow.model().guards();
-    }
-
-    private Guard trueGuard() {
-        return flow.model().trueGuard();
-    }
-
-    private Guard falseGuard() {
-        return flow.model().falseGuard();
-    }
-
-    private Guard renderGuard(Node node) {
-        return node == null ? trueGuard() : flow.model().renderGuard(node);
-    }
-
-    private Guard activeGuard(Node node) {
-        return node == null ? trueGuard() : flow.model().activeGuard(node);
-    }
-
-    private Expression guardExpression(Guard guard) {
-        return guardExpression(guard, rootScope());
-    }
-
-    private Expression guardExpression(Guard guard, Scope scope) {
-        return flow.model().expression(guard, scope);
-    }
-
-    private Guard residualGuard(Expression expr) {
-        return guards().residualGuard(expr);
-    }
-
-    private boolean isFalse(Guard guard) {
-        return guard == null || guard.equals(falseGuard());
-    }
-
-    private Guard and(Guard left, Guard right) {
-        if (left == null || right == null) {
-            return null;
-        }
-        return guards().and(left, right);
-    }
-
-    private Guard or(Guard left, Guard right) {
-        if (left == null) {
-            return right;
-        }
-        if (right == null) {
-            return left;
-        }
-        return guards().or(left, right);
-    }
-
-    private Guard minus(Guard left, Guard right) {
-        if (left == null) {
-            return null;
-        }
-        return right == null ? left : guards().minus(left, right);
-    }
-
-    private boolean contains(Guard left, Guard right) {
-        return left != null && right != null && guards().implies(right, left);
-    }
-
-    private boolean equivalent(Guard left, Guard right) {
-        return left != null && right != null && guards().equivalent(left, right);
+        return flow.scope(node);
     }
 
     private Expression controlExpression(Node node) {
@@ -846,7 +778,7 @@ public class ScriptCompiler {
                 return node.expression();
             case INPUT_BOOLEAN:
             case INPUT_OPTION:
-                return expressionContribution(node, n -> flow.model().key(n));
+                return expressionContribution(node, flow::key);
             default:
                 return Expression.TRUE;
         }
@@ -861,20 +793,20 @@ public class ScriptCompiler {
     }
 
     private Map<String, Fact> facts0(Node node) {
-        Flow.NodeFacts facts = flow.model().node(node);
-        if (facts == null || facts.before().env().isEmpty()) {
+        Flow.State before = flow.before(node);
+        if (before.env().isEmpty()) {
             return Map.of();
         }
         Map<String, Fact> byName = new LinkedHashMap<>();
-        facts.before().env().forEach((symbolId, fact) -> byName.put(flow.model().symbols().symbol(symbolId).name(), fact));
+        before.env().forEach((symbolId, fact) -> byName.put(flow.symbol(symbolId).name(), fact));
         return Map.copyOf(byName);
     }
 
     private Map<String, Fact> constrainFacts(Map<String, Fact> facts, Guard required) {
-        if (facts.isEmpty() || required == null || required.equals(trueGuard())) {
+        if (facts.isEmpty() || required == null || required.equals(TRUE)) {
             return facts;
         }
-        if (isFalse(required)) {
+        if (flow.isFalse(required)) {
             return Map.of();
         }
         Map<String, Fact> constrained = null;
@@ -896,8 +828,8 @@ public class ScriptCompiler {
     }
 
     private Fact constrainFact(Fact fact, Guard required) {
-        Guard definedUnder = and(fact.definedUnder(), required);
-        if (isFalse(definedUnder)) {
+        Guard definedUnder = flow.and(fact.definedUnder(), required);
+        if (flow.isFalse(definedUnder)) {
             return null;
         }
         List<Fact.ExactCase> exactCases = fact.exactCases();
@@ -907,8 +839,8 @@ public class ScriptCompiler {
         List<Fact.ExactCase> constrainedCases = new ArrayList<>(exactCases.size());
         boolean changed = !definedUnder.equals(fact.definedUnder());
         for (Fact.ExactCase exactCase : exactCases) {
-            Guard caseGuard = and(exactCase.guard(), required);
-            if (isFalse(caseGuard)) {
+            Guard caseGuard = flow.and(exactCase.guard(), required);
+            if (flow.isFalse(caseGuard)) {
                 changed = true;
                 continue;
             }
@@ -931,11 +863,11 @@ public class ScriptCompiler {
     }
 
     private Flow.SymbolInfo symbolInfo(String key) {
-        Flow.SymbolInfo info = flow.model().symbol(key);
+        Flow.SymbolInfo info = flow.symbol(key);
         if (info != null || key.startsWith("~")) {
             return info;
         }
-        return flow.model().symbol("~" + key);
+        return flow.symbol("~" + key);
     }
 
     private boolean attached(Node node) {
@@ -954,15 +886,15 @@ public class ScriptCompiler {
     }
 
     private boolean unreachable(Node node) {
-        return isFalse(feasibleActiveGuard(node));
+        return flow.isFalse(feasibleActiveGuard(node));
     }
 
     private boolean inactiveInput(Node node) {
-        return isFalse(feasibleRenderGuard(node));
+        return flow.isFalse(feasibleRenderGuard(node));
     }
 
     private boolean inactiveOption(Node node) {
-        return isFalse(feasibleRenderGuard(node));
+        return flow.isFalse(feasibleRenderGuard(node));
     }
 
     private boolean skipCompiledNode(Node node) {
@@ -982,20 +914,17 @@ public class ScriptCompiler {
         if (node.kind() != Kind.INPUT_BOOLEAN) {
             return false;
         }
-        Value<?> exact = flow.model().declaredValue(node, flow.model().key(node));
+        Value<?> exact = flow.declaredValue(node);
         if (exact.type() != Type.BOOLEAN || exact.getBoolean()) {
             return false;
         }
-        Value<?> scriptDefault = node.attribute("default");
-        if (scriptDefault.isPresent()) {
-            Value<Boolean> booleanDefault = scriptDefault.asBoolean();
-            if (!booleanDefault.isPresent() || booleanDefault.getBoolean()) {
-                return false;
-            }
+        Value<?> defaultValue = node.attribute("default");
+        if (defaultValue.isPresent() && defaultValue.asBoolean().orElse(true)) {
+            return false;
         }
-        for (Node descendant : node.traverse()) {
-            if (descendant != node && (descendant.kind().isInput() || descendant.kind() == Kind.INPUT_OPTION)) {
-                if (!skipCompiledNode(descendant)) {
+        for (Node n : node.traverse()) {
+            if (n != node && (n.kind().isInput() || n.kind() == Kind.INPUT_OPTION)) {
+                if (!skipCompiledNode(n)) {
                     return false;
                 }
             }
@@ -1013,25 +942,25 @@ public class ScriptCompiler {
     }
 
     private Guard normalizeGuard(Guard guard, Scope scope, Map<String, Fact> facts) {
-        if (isFalse(guard) || facts.isEmpty()) {
+        if (flow.isFalse(guard) || facts.isEmpty()) {
             return guard;
         }
-        Expression expr = guardExpression(guard, scope);
+        Expression expr = flow.expression(guard, scope);
         ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, facts, false, true);
         ExpressionAnalysis analysis = analyzer.analyze(expr);
-        return localGuard(expr, scope, trueGuard(), analysis);
+        return localGuard(expr, scope, TRUE, analysis);
     }
 
     private Guard feasibleGuard(Node node, Guard guard) {
-        return node == null ? trueGuard() : normalizeGuard(guard, scope(node), facts(node));
+        return node == null ? TRUE : normalizeGuard(guard, scope(node), facts(node));
     }
 
     private Guard feasibleRenderGuard(Node node) {
-        return feasibleGuard(node, renderGuard(node));
+        return feasibleGuard(node, flow.renderGuard(node));
     }
 
     private Guard feasibleActiveGuard(Node node) {
-        return feasibleGuard(node, activeGuard(node));
+        return feasibleGuard(node, flow.activeGuard(node));
     }
 
     private boolean coversUnderFacts(Guard available, Guard required, Scope scope, Map<String, Fact> facts) {
@@ -1039,8 +968,8 @@ public class ScriptCompiler {
             return false;
         }
         Guard normalizedRequired = normalizeGuard(required, scope, facts);
-        Guard normalizedCovered = normalizeGuard(and(required, available), scope, facts);
-        return equivalent(normalizedCovered, normalizedRequired);
+        Guard normalizedCovered = normalizeGuard(flow.and(required, available), scope, facts);
+        return flow.equivalent(normalizedCovered, normalizedRequired);
     }
 
     private Guard definitionGuard(Node node) {
@@ -1049,7 +978,7 @@ public class ScriptCompiler {
             case INPUT_ENUM:
             case INPUT_LIST:
             case INPUT_TEXT:
-                return renderGuard(node);
+                return flow.renderGuard(node);
             case PRESET_BOOLEAN:
             case PRESET_ENUM:
             case PRESET_LIST:
@@ -1058,7 +987,7 @@ public class ScriptCompiler {
             case VARIABLE_ENUM:
             case VARIABLE_LIST:
             case VARIABLE_TEXT:
-                return activeGuard(node);
+                return flow.activeGuard(node);
             default:
                 return null;
         }
@@ -1095,7 +1024,7 @@ public class ScriptCompiler {
 
     private Expression reachabilityExpression(Guard reach, Scope scope, Map<String, Fact> facts) {
         Guard normalized = normalizeGuard(reach, scope, facts);
-        return guardExpression(normalized, scope).reduce();
+        return flow.expression(normalized, scope).reduce();
     }
 
     private Expression residualExpression(Guard reach, Guard base, Scope scope) {
@@ -1105,7 +1034,7 @@ public class ScriptCompiler {
     private Expression residualExpression(Guard reach, Guard base, Scope scope, Map<String, Fact> facts) {
         Guard normalizedReach = normalizeGuard(reach, scope, facts);
         Guard normalizedBase = normalizeGuard(base, scope, facts);
-        return guardExpression(normalizedReach, scope).reduce(guardExpression(normalizedBase, scope));
+        return flow.expression(normalizedReach, scope).reduce(flow.expression(normalizedBase, scope));
     }
 
     private void rememberConditionRefs(Node node, Expression expr, Map<Node, Set<String>> conditionRefs) {
@@ -1131,14 +1060,14 @@ public class ScriptCompiler {
         Guard projected = activeGuardsByNode.get(node);
         Guard guard = projected != null && node.ancestor(Kind.OUTPUT::equals).isPresent()
                 ? projected
-                : activeGuard(node);
+                : flow.activeGuard(node);
         return reachabilityExpression(guard, scope, facts(node));
     }
 
     private Guard simplifyProjectedConditionGuard(Guard guard, Scope scope) {
-        Expression expr = normalize(guardExpression(guard, scope), scope).reduce();
+        Expression expr = normalize(flow.expression(guard, scope), scope).reduce();
         Expression simplified = simplifyProjectedConditionExpression(expr);
-        return simplified.equals(expr) ? guard : residualGuard(simplified);
+        return simplified.equals(expr) ? guard : flow.residualGuard(simplified);
     }
 
     private Expression simplifyProjectedConditionExpression(Expression expr) {
@@ -1150,7 +1079,7 @@ public class ScriptCompiler {
         boolean changed;
         do {
             changed = false;
-            List<Expression> terms = new ArrayList<>(conjunctionTerms(minimized));
+            List<Expression> terms = new ArrayList<>(minimized.conjunction());
             if (terms.size() < 2) {
                 break;
             }
@@ -1160,9 +1089,9 @@ public class ScriptCompiler {
                 if (!removableProjectedConditionTerm(term, remaining)) {
                     continue;
                 }
-                Expression candidate = andTerms(remaining).reduce();
+                Expression candidate = Expression.TRUE.and(remaining).reduce();
                 Guard candidateReach = projectedReach(candidate);
-                if (equivalent(candidateReach, target)) {
+                if (flow.equivalent(candidateReach, target)) {
                     minimized = candidate;
                     changed = true;
                     break;
@@ -1182,7 +1111,7 @@ public class ScriptCompiler {
                 continue;
             }
             Guard otherReach = projectedReach(other);
-            if (otherReach != null && contains(termReach, otherReach)) {
+            if (otherReach != null && flow.contains(termReach, otherReach)) {
                 return true;
             }
         }
@@ -1230,15 +1159,15 @@ public class ScriptCompiler {
         boolean changed;
         do {
             changed = false;
-            List<Expression> terms = new ArrayList<>(disjunctionTerms(minimized));
+            List<Expression> terms = new ArrayList<>(minimized.disjunction());
             if (terms.size() < 2) {
                 break;
             }
             for (int i = 0; i < terms.size(); i++) {
                 List<Expression> remaining = Lists.withoutIndex(terms, i);
-                Expression candidate = orTerms(remaining).reduce();
+                Expression candidate = Expression.FALSE.or(remaining).reduce();
                 Guard candidateReach = localReach(candidate, scope);
-                if (equivalent(candidateReach, target)) {
+                if (flow.equivalent(candidateReach, target)) {
                     minimized = candidate;
                     changed = true;
                     break;
@@ -1246,112 +1175,6 @@ public class ScriptCompiler {
             }
         } while (changed);
         return minimized;
-    }
-
-    private List<Expression> conjunctionTerms(Expression expr) {
-        List<String> literals = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        String literal = expr.literal();
-        int depth = 0;
-        boolean quoted = false;
-        for (int i = 0; i < literal.length(); i++) {
-            char ch = literal.charAt(i);
-            if (ch == '\'') {
-                quoted = !quoted;
-                current.append(ch);
-                continue;
-            }
-            if (!quoted) {
-                if (ch == '(') {
-                    depth++;
-                } else if (ch == ')') {
-                    if (depth == 0) {
-                        return List.of(expr);
-                    }
-                    depth--;
-                } else if (depth == 0 && ch == '&' && i + 1 < literal.length() && literal.charAt(i + 1) == '&') {
-                    String term = current.toString().trim();
-                    if (term.isEmpty()) {
-                        return List.of(expr);
-                    }
-                    literals.add(term);
-                    current.setLength(0);
-                    i++;
-                    continue;
-                }
-            }
-            current.append(ch);
-        }
-        if (quoted || depth != 0) {
-            return List.of(expr);
-        }
-        String term = current.toString().trim();
-        if (term.isEmpty()) {
-            return List.of(expr);
-        }
-        literals.add(term);
-        return Lists.map(literals, Expression::create);
-    }
-
-    private List<Expression> disjunctionTerms(Expression expr) {
-        List<String> literals = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        String literal = expr.literal();
-        int depth = 0;
-        boolean quoted = false;
-        for (int i = 0; i < literal.length(); i++) {
-            char ch = literal.charAt(i);
-            if (ch == '\'') {
-                quoted = !quoted;
-                current.append(ch);
-                continue;
-            }
-            if (!quoted) {
-                if (ch == '(') {
-                    depth++;
-                } else if (ch == ')') {
-                    if (depth == 0) {
-                        return List.of(expr);
-                    }
-                    depth--;
-                } else if (depth == 0 && ch == '|' && i + 1 < literal.length() && literal.charAt(i + 1) == '|') {
-                    String term = current.toString().trim();
-                    if (term.isEmpty()) {
-                        return List.of(expr);
-                    }
-                    literals.add(term);
-                    current.setLength(0);
-                    i++;
-                    continue;
-                }
-            }
-            current.append(ch);
-        }
-        if (quoted || depth != 0) {
-            return List.of(expr);
-        }
-        String term = current.toString().trim();
-        if (term.isEmpty()) {
-            return List.of(expr);
-        }
-        literals.add(term);
-        return Lists.map(literals, Expression::create);
-    }
-
-    private Expression orTerms(List<Expression> terms) {
-        Expression expr = Expression.FALSE;
-        for (Expression term : terms) {
-            expr = expr == Expression.FALSE ? term : expr.or(term);
-        }
-        return expr;
-    }
-
-    private Expression andTerms(List<Expression> terms) {
-        Expression expr = Expression.TRUE;
-        for (Expression term : terms) {
-            expr = expr == Expression.TRUE ? term : expr.and(term);
-        }
-        return expr;
     }
 
     private Value<?> constantValue(Node node) {
@@ -1369,6 +1192,33 @@ public class ScriptCompiler {
         }
     }
 
+    private Expression expressionContribution(Node node, Function<Node, String> key) {
+        switch (node.kind()) {
+            case CONDITION:
+                return node.expression();
+            case INPUT_BOOLEAN:
+                return Expression.create(String.format("${%s}", key.apply(node)));
+            case INPUT_OPTION:
+                Node input = node.ancestor(Kind::isInput).orElseThrow();
+                switch (input.kind()) {
+                    case INPUT_ENUM:
+                        return Expression.create(String.format(
+                                "${%s} == '%s'",
+                                key.apply(input),
+                                node.value().getString()));
+                    case INPUT_LIST:
+                        return Expression.create(String.format(
+                                "${%s} contains '%s'",
+                                key.apply(input),
+                                node.value().getString()));
+                    default:
+                        return Expression.TRUE;
+                }
+            default:
+                return Expression.TRUE;
+        }
+    }
+
     private final class ExpressionAnalyzer {
         private final Scope scope;
         private final Map<String, Fact> facts;
@@ -1380,11 +1230,7 @@ public class ScriptCompiler {
             this(scope, facts, validate, capture, false);
         }
 
-        ExpressionAnalyzer(Scope scope,
-                           Map<String, Fact> facts,
-                           boolean validate,
-                           boolean capture,
-                           boolean projected) {
+        ExpressionAnalyzer(Scope scope, Map<String, Fact> facts, boolean validate, boolean capture, boolean projected) {
             this.scope = scope;
             this.facts = facts;
             this.validate = validate;
@@ -1459,7 +1305,7 @@ public class ScriptCompiler {
                 }
                 Map<String, Guard> demands = new HashMap<>();
                 AnalysisBoolean result = booleanTerm(stack.pop());
-                result.collect(trueGuard(), demands);
+                result.collect(TRUE, demands);
                 return new ExpressionAnalysis(result.translated,
                         demands,
                         variables,
@@ -1482,14 +1328,14 @@ public class ScriptCompiler {
             if (!capture || expr == null) {
                 return null;
             }
-            Guard supported = trueGuard();
+            Guard supported = TRUE;
             Expression unsupported = Expression.TRUE;
             boolean hasSupportedTerms = false;
-            for (Expression term : conjunctionTerms(expr)) {
+            for (Expression term : expr.conjunction()) {
                 ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, facts, false, false);
                 ExpressionAnalysis analysis = analyzer.analyze(term);
                 if (analysis.reach != null) {
-                    supported = and(supported, analysis.reach);
+                    supported = flow.and(supported, analysis.reach);
                     hasSupportedTerms = true;
                 } else {
                     unsupported = unsupported.and(normalize(term, scope));
@@ -1539,7 +1385,7 @@ public class ScriptCompiler {
             if (term instanceof AnalysisValue) {
                 Value<?> value = ((AnalysisValue) term).value;
                 if (value.type() == Type.BOOLEAN) {
-                    Guard truthy = value.getBoolean() ? trueGuard() : falseGuard();
+                    Guard truthy = value.getBoolean() ? TRUE : FALSE;
                     return new AnalysisBoolean(truthy, truthy, (demand, output) -> {
                     });
                 }
@@ -1575,7 +1421,7 @@ public class ScriptCompiler {
             if (left instanceof AnalysisValue && right instanceof AnalysisValue) {
                 Value<?> leftValue = ((AnalysisValue) left).value;
                 Value<?> rightValue = ((AnalysisValue) right).value;
-                return Value.isEqual(leftValue, rightValue) ? trueGuard() : falseGuard();
+                return Value.isEqual(leftValue, rightValue) ? TRUE : FALSE;
             }
             if (left instanceof AnalysisRef && right instanceof AnalysisValue) {
                 return translatedEquality(((AnalysisRef) left).key, ((AnalysisValue) right).value);
@@ -1590,7 +1436,7 @@ public class ScriptCompiler {
             if (left instanceof AnalysisValue && right instanceof AnalysisValue) {
                 Value<?> leftValue = ((AnalysisValue) left).value;
                 Value<?> rightValue = ((AnalysisValue) right).value;
-                return Value.isEqual(leftValue, rightValue) ? trueGuard() : falseGuard();
+                return Value.isEqual(leftValue, rightValue) ? TRUE : FALSE;
             }
             if (left instanceof AnalysisRef && right instanceof AnalysisValue) {
                 return demandEquality(((AnalysisRef) left).key, ((AnalysisValue) right).value);
@@ -1627,7 +1473,7 @@ public class ScriptCompiler {
                     Set<String> required = containsValues(rightValue);
                     if (required != null) {
                         Set<String> values = new HashSet<>(leftValue.getList());
-                        return values.containsAll(required) ? trueGuard() : falseGuard();
+                        return values.containsAll(required) ? TRUE : FALSE;
                     }
                 }
             }
@@ -1651,7 +1497,7 @@ public class ScriptCompiler {
                     Set<String> required = containsValues(rightValue);
                     if (required != null) {
                         Set<String> values = new HashSet<>(leftValue.getList());
-                        return values.containsAll(required) ? trueGuard() : falseGuard();
+                        return values.containsAll(required) ? TRUE : FALSE;
                     }
                 }
             }
@@ -1660,7 +1506,7 @@ public class ScriptCompiler {
 
         Guard translatedEquality(String key, Value<?> value) {
             Fact fact = factFor(key);
-            Guard bound = fact == null ? falseGuard() : fact.match(value, guards());
+            Guard bound = fact == null ? FALSE : fact.match(value, flow.guards());
             Guard raw = rawEquality(key, value);
             return combine(key, bound, raw);
         }
@@ -1671,12 +1517,12 @@ public class ScriptCompiler {
             if (raw == null) {
                 return null;
             }
-            return defined == null ? raw : and(defined, raw);
+            return defined == null ? raw : flow.and(defined, raw);
         }
 
         Guard translatedScalarAny(String key, Set<String> values) {
             Fact fact = factFor(key);
-            Guard bound = fact == null ? falseGuard() : fact.scalarAny(values, guards());
+            Guard bound = fact == null ? FALSE : fact.scalarAny(values, flow.guards());
             Guard raw = rawScalarAny(key, values);
             return combine(key, bound, raw);
         }
@@ -1687,7 +1533,7 @@ public class ScriptCompiler {
             if (raw == null) {
                 return null;
             }
-            return defined == null ? raw : and(defined, raw);
+            return defined == null ? raw : flow.and(defined, raw);
         }
 
         Guard translatedListContains(String key, Value<?> value) {
@@ -1696,7 +1542,7 @@ public class ScriptCompiler {
                 return null;
             }
             Fact fact = factFor(key);
-            Guard bound = fact == null ? falseGuard() : fact.listContains(required, guards());
+            Guard bound = fact == null ? FALSE : fact.listContains(required, flow.guards());
             Guard raw = rawListContains(key, required);
             return combine(key, bound, raw);
         }
@@ -1711,7 +1557,7 @@ public class ScriptCompiler {
             if (raw == null) {
                 return null;
             }
-            return defined == null ? raw : and(defined, raw);
+            return defined == null ? raw : flow.and(defined, raw);
         }
 
         Guard combine(String key, Guard bound, Guard raw) {
@@ -1721,24 +1567,24 @@ public class ScriptCompiler {
                 if (raw == null) {
                     return bound;
                 }
-                return defined == null ? raw : and(defined, raw);
+                return defined == null ? raw : flow.and(defined, raw);
             }
             if (raw == null) {
                 if (bound == null) {
                     return null;
                 }
-                if (isFalse(bound)) {
-                    Guard exact = fact.exactDefined(guards());
-                    if (defined == null || isFalse(exact) || !ScriptCompiler.this.contains(exact, defined)) {
+                if (flow.isFalse(bound)) {
+                    Guard exact = fact.exactDefined(flow.guards());
+                    if (defined == null || flow.isFalse(exact) || !flow.contains(exact, defined)) {
                         return null;
                     }
                 }
                 return bound;
             }
-            Guard available = defined == null ? trueGuard() : defined;
-            Guard exact = fact.exactDefined(guards());
-            Guard unresolved = and(minus(available, exact), raw);
-            return or(bound, unresolved);
+            Guard available = defined == null ? TRUE : defined;
+            Guard exact = fact.exactDefined(flow.guards());
+            Guard unresolved = flow.and(flow.minus(available, exact), raw);
+            return flow.or(bound, unresolved);
         }
 
         Fact factFor(String key) {
@@ -1768,16 +1614,16 @@ public class ScriptCompiler {
                 switch (symbol.domain().kind()) {
                     case BOOLEAN:
                         return Set.of("false", "true").contains(scalarValue)
-                                ? available(info, scalarValue, guards().eq(symbol.id(), scalarValue))
-                                : falseGuard();
+                                ? available(info, scalarValue, flow.guards().eq(symbol.id(), scalarValue))
+                                : FALSE;
                     case CHOICE:
                         return ((Domain.Spec.Choice) symbol.domain()).values().contains(scalarValue)
-                                ? available(info, scalarValue, guards().eq(symbol.id(), scalarValue))
-                                : falseGuard();
+                                ? available(info, scalarValue, flow.guards().eq(symbol.id(), scalarValue))
+                                : FALSE;
                     case FINITE_TEXT:
                         return ((Domain.Spec.FiniteText) symbol.domain()).values().contains(scalarValue)
-                                ? available(info, scalarValue, guards().eq(symbol.id(), scalarValue))
-                                : falseGuard();
+                                ? available(info, scalarValue, flow.guards().eq(symbol.id(), scalarValue))
+                                : FALSE;
                     default:
                         break;
                 }
@@ -1807,20 +1653,20 @@ public class ScriptCompiler {
                         allowed.clear();
                         break;
                 }
-                Guard raw = falseGuard();
+                Guard raw = FALSE;
                 for (String value : allowed) {
-                    raw = or(raw, available(info, value, guards().eq(symbol.id(), value)));
+                    raw = flow.or(raw, available(info, value, flow.guards().eq(symbol.id(), value)));
                 }
                 return raw;
             }
-            Guard raw = falseGuard();
+            Guard raw = FALSE;
             for (String value : allowed) {
                 Guard equality = fallbackScalarEquality(info, key, value);
                 if (equality != null) {
-                    raw = or(raw, equality);
+                    raw = flow.or(raw, equality);
                 }
             }
-            return isFalse(raw) ? null : raw;
+            return flow.isFalse(raw) ? null : raw;
         }
 
         Guard rawListContains(String key, Set<String> required) {
@@ -1834,11 +1680,11 @@ public class ScriptCompiler {
             }
             Set<String> items = ((Domain.Spec.Membership) symbol.domain()).items();
             if (!items.containsAll(required)) {
-                return falseGuard();
+                return FALSE;
             }
-            Guard raw = trueGuard();
+            Guard raw = TRUE;
             for (String value : required) {
-                raw = and(raw, available(info, value, guards().contains(symbol.id(), value)));
+                raw = flow.and(raw, available(info, value, flow.guards().contains(symbol.id(), value)));
             }
             return raw;
         }
@@ -1848,19 +1694,19 @@ public class ScriptCompiler {
                 return direct;
             }
             Guard availability = info.availability(value);
-            return availability == null ? falseGuard() : and(availability, direct);
+            return availability == null ? FALSE : flow.and(availability, direct);
         }
 
         Guard fallbackScalarEquality(Flow.SymbolInfo info, String key, String value) {
             if (projected) {
-                return residualGuard(Expression.create(String.format("${%s} == '%s'", key, value)));
+                return flow.residualGuard(Expression.create(String.format("${%s} == '%s'", key, value)));
             }
             Guard availability = info.availability(value);
             if (availability == null) {
                 return null;
             }
             Expression expr = Expression.create(String.format("${%s} == '%s'", key, value));
-            return and(availability, residualGuard(expr));
+            return flow.and(availability, flow.residualGuard(expr));
         }
 
         Set<String> containsValues(Value<?> value) {
@@ -1876,14 +1722,14 @@ public class ScriptCompiler {
         }
 
         void addDemand(String key, Guard demand, Map<String, Guard> output) {
-            if (isFalse(demand)) {
+            if (flow.isFalse(demand)) {
                 return;
             }
-            output.compute(key, (k, current) -> current == null ? demand : or(current, demand));
+            output.compute(key, (k, current) -> current == null ? demand : flow.or(current, demand));
         }
 
         Guard negate(Guard reach) {
-            return reach == null ? null : guards().not(reach);
+            return reach == null ? null : flow.guards().not(reach);
         }
 
         private abstract class AnalysisTerm {
@@ -1950,13 +1796,13 @@ public class ScriptCompiler {
             AnalysisBoolean and(AnalysisBoolean left) {
                 Guard translated = left.translated == null || this.translated == null
                         ? null
-                        : ScriptCompiler.this.and(left.translated, this.translated);
+                        : flow.and(left.translated, this.translated);
                 Guard demand = left.demand == null || this.demand == null
                         ? null
-                        : ScriptCompiler.this.and(left.demand, this.demand);
+                        : flow.and(left.demand, this.demand);
                 return new AnalysisBoolean(translated, demand, (d, o) -> {
                     left.collect(d, o);
-                    Guard right = left.demand == null ? d : ScriptCompiler.this.and(d, left.demand);
+                    Guard right = left.demand == null ? d : flow.and(d, left.demand);
                     collect(right, o);
                 });
             }
@@ -1964,14 +1810,14 @@ public class ScriptCompiler {
             AnalysisBoolean or(AnalysisBoolean left) {
                 Guard translated = left.translated == null || this.translated == null
                         ? null
-                        : ScriptCompiler.this.or(left.translated, this.translated);
+                        : flow.or(left.translated, this.translated);
                 Guard demand = left.demand == null || this.demand == null
                         ? null
-                        : ScriptCompiler.this.or(left.demand, this.demand);
+                        : flow.or(left.demand, this.demand);
                 return new AnalysisBoolean(translated, demand, (d, o) -> {
                     left.collect(d, o);
                     Guard right = left.demand == null ? d
-                            : ScriptCompiler.this.and(d, ScriptCompiler.this.minus(trueGuard(), left.demand));
+                            : flow.and(d, flow.minus(TRUE, left.demand));
                     collect(right, o);
                 });
             }
@@ -2010,30 +1856,19 @@ public class ScriptCompiler {
         }
     }
 
-    private Expression expressionContribution(Node node, Function<Node, String> key) {
-        switch (node.kind()) {
-            case CONDITION:
-                return node.expression();
-            case INPUT_BOOLEAN:
-                return Expression.create(String.format("${%s}", key.apply(node)));
-            case INPUT_OPTION:
-                Node input = node.ancestor(Kind::isInput).orElseThrow();
-                switch (input.kind()) {
-                    case INPUT_ENUM:
-                        return Expression.create(String.format(
-                                "${%s} == '%s'",
-                                key.apply(input),
-                                node.value().getString()));
-                    case INPUT_LIST:
-                        return Expression.create(String.format(
-                                "${%s} contains '%s'",
-                                key.apply(input),
-                                node.value().getString()));
-                    default:
-                        return Expression.TRUE;
-                }
-            default:
-                return Expression.TRUE;
+    private static final class ResolvedGuard {
+        private final Guard supported;
+        private final Expression unsupported;
+        private final boolean hasSupportedTerms;
+
+        ResolvedGuard(Guard supported, Expression unsupported, boolean hasSupportedTerms) {
+            this.supported = supported;
+            this.unsupported = unsupported;
+            this.hasSupportedTerms = hasSupportedTerms;
+        }
+
+        static ResolvedGuard fullySupported(Guard reach) {
+            return new ResolvedGuard(reach, Expression.TRUE, true);
         }
     }
 
@@ -2055,7 +1890,7 @@ public class ScriptCompiler {
             this.reachableBlocks = reachableBlocks;
             this.conditionRefs = conditionRefs;
             this.stack.push(image.node);
-            this.reachableNodes.put(image.node, trueGuard());
+            this.reachableNodes.put(image.node, TRUE);
         }
 
         @Override
@@ -2071,7 +1906,7 @@ public class ScriptCompiler {
                     // use ~ to be parented at the root context node
                     // to maintain scope.key == scope.internalKey
                     Node preset = process(node, (b, n) -> Nodes.ensureLast(b, Kind.PRESETS).append(n));
-                    preset.attribute("path", "~" + flow.model().key(node));
+                    preset.attribute("path", "~" + flow.key(node));
                     stack.push(preset);
                     break;
                 case VARIABLE_BOOLEAN:
@@ -2084,7 +1919,7 @@ public class ScriptCompiler {
                         // use ~ to be parented at the root context node
                         // to maintain scope.key == scope.internalKey
                         Node variable = process(node, (b, n) -> Nodes.ensureLast(b, Kind.VARIABLES).append(n));
-                        variable.attribute("path", "~" + flow.model().key(node));
+                        variable.attribute("path", "~" + flow.key(node));
                         stack.push(variable);
                     }
                     break;
@@ -2160,7 +1995,7 @@ public class ScriptCompiler {
                     Map<String, Set<Node>> refs = new LinkedHashMap<>();
                     for (Node step : steps) {
                         for (Node input : step.traverse(Kind::isInput)) {
-                            refs.computeIfAbsent(flow.model().key(mirror(input)), k -> new LinkedHashSet<>()).add(step);
+                            refs.computeIfAbsent(flow.key(mirror(input)), k -> new LinkedHashSet<>()).add(step);
                         }
                     }
 
@@ -2198,21 +2033,21 @@ public class ScriptCompiler {
         Node process(Node node, BiConsumer<Node, Node> appender) {
             Node parentCopy = stack.getFirst();
             Guard parentReach = parentCopy == image.node
-                    ? trueGuard()
+                    ? TRUE
                     : requireNonNull(reachableNodes.get(parentCopy), "parent reachability not found");
-            Guard nodeRenderReach = renderGuard(node);
+            Guard nodeRenderReach = flow.renderGuard(node);
             Guard projectedRenderReach = renderGuardsByNode.get(node);
             boolean useProjectedStep = node.kind() == Kind.STEP && hoistedSteps.contains(node) && projectedRenderReach != null;
             boolean useProjectedCondition = node.parent() != null && node.parent().kind() == Kind.CONDITION
-                    && projectedRenderReach != null;
+                                            && projectedRenderReach != null;
             boolean useProjected = useProjectedStep || useProjectedCondition;
             Map<String, Fact> emissionFacts = useProjected ? Map.of() : facts(node);
             if (useProjected) {
                 nodeRenderReach = projectedRenderReach;
             }
-            if (nodeRenderReach.equals(trueGuard())
-                    && projectedRenderReach != null
-                    && !projectedRenderReach.equals(trueGuard())) {
+            if (nodeRenderReach.equals(TRUE)
+                && projectedRenderReach != null
+                && !projectedRenderReach.equals(TRUE)) {
                 nodeRenderReach = projectedRenderReach;
             }
             Expression expr = residualExpression(nodeRenderReach, parentReach, rootScope(), emissionFacts);
@@ -2222,14 +2057,14 @@ public class ScriptCompiler {
             Node wrappedCopy = copy.wrap(expr);
             appender.accept(parentCopy, wrappedCopy);
             rememberConditionRefs(wrappedCopy, expr, conditionRefs);
-            Guard nodeActiveReach = activeGuard(node);
+            Guard nodeActiveReach = flow.activeGuard(node);
             Guard projectedActiveReach = activeGuardsByNode.get(node);
             if (useProjected && projectedActiveReach != null) {
                 nodeActiveReach = projectedActiveReach;
             }
-            if (nodeActiveReach.equals(trueGuard())
-                    && projectedActiveReach != null
-                    && !projectedActiveReach.equals(trueGuard())) {
+            if (nodeActiveReach.equals(TRUE)
+                && projectedActiveReach != null
+                && !projectedActiveReach.equals(TRUE)) {
                 nodeActiveReach = projectedActiveReach;
             }
             reachableNodes.put(copy, nodeActiveReach);
@@ -2277,11 +2112,11 @@ public class ScriptCompiler {
                                 n.attribute("regex").getString(),
                                 n.attribute("replacement").getString()));
                     }
-                    Guard nodeReach = activeGuard(node);
+                    Guard nodeReach = flow.activeGuard(node);
                     fileOps.computeIfAbsent(node.attribute("id").getString(), k -> new HashMap<>())
                             .compute(ops, (k, v) -> {
-                                Guard reach = v != null ? v : falseGuard();
-                                return or(reach, nodeReach);
+                                Guard reach = v != null ? v : FALSE;
+                                return flow.or(reach, nodeReach);
                             });
                     break;
                 case FILE:
@@ -2356,14 +2191,14 @@ public class ScriptCompiler {
 
             Scope scope = scope(node);
             Map<String, Fact> facts = facts(node);
-            Guard nodeReach = activeGuard(node);
+            Guard nodeReach = flow.activeGuard(node);
             for (Node n : node.traverse()) {
                 switch (n.kind()) {
                     case INCLUDE:
                     case EXCLUDE:
                         Map<String, Guard> map = n.kind() == Kind.INCLUDE ? includes : excludes;
-                        Guard filterReach = activeGuard(n);
-                        map.compute(n.value().getString(), (k, v) -> v == null ? filterReach : or(v, filterReach));
+                        Guard filterReach = flow.activeGuard(n);
+                        map.compute(n.value().getString(), (k, v) -> v == null ? filterReach : flow.or(v, filterReach));
                         break;
                     default:
                 }
@@ -2372,17 +2207,17 @@ public class ScriptCompiler {
             Path directory = inliner.workDir(node).resolve(node.attribute("directory").getString());
             for (SourcePath file : SourcePath.scan(directory)) {
 
-                Guard includeReach = includes.isEmpty() ? trueGuard() : falseGuard();
+                Guard includeReach = includes.isEmpty() ? TRUE : FALSE;
                 for (Guard v : Maps.filterKey(includes, file::matches).values()) {
-                    includeReach = or(includeReach, v);
+                    includeReach = flow.or(includeReach, v);
                 }
-                Guard excludeReach = falseGuard();
+                Guard excludeReach = FALSE;
                 for (Guard v : Maps.filterKey(excludes, file::matches).values()) {
-                    excludeReach = or(excludeReach, v);
+                    excludeReach = flow.or(excludeReach, v);
                 }
 
-                Guard blobReach = minus(and(nodeReach, includeReach), excludeReach);
-                if (!isFalse(blobReach)) {
+                Guard blobReach = flow.minus(flow.and(nodeReach, includeReach), excludeReach);
+                if (!flow.isFalse(blobReach)) {
                     String source = file.asString(false);
                     Path path = directory.resolve(source);
 
@@ -2397,7 +2232,7 @@ public class ScriptCompiler {
                         // create a unique file object for each transformation variation
                         for (FileOps e : resolvedOps) {
                             List<FileOp> fileOps = e.resolve(checksum, source);
-                            Guard fileReach = and(blobReach, e.reach);
+                            Guard fileReach = flow.and(blobReach, e.reach);
                             fileObjects.add(new FileObject(checksum, fileOps, reachabilityExpression(fileReach, scope, facts)));
                         }
                     }
@@ -2474,7 +2309,7 @@ public class ScriptCompiler {
             for (String id : ids) {
                 Map<List<FileOp>, Guard> idOps = fileOps.getOrDefault(id, Map.of());
                 ops.add(Lists.map(idOps.entrySet(),
-                        e -> new FileOps(e.getKey(), e.getValue(), guardExpression(e.getValue()).reduce().literal())));
+                        e -> new FileOps(e.getKey(), e.getValue(), flow.expression(e.getValue()).reduce().literal())));
             }
             return ops;
         }
@@ -2486,9 +2321,9 @@ public class ScriptCompiler {
                 ops.addAll(e.ops);
             }
             for (int i = 1; i < list.size(); i++) {
-                reach = and(reach, list.get(i).reach);
+                reach = flow.and(reach, list.get(i).reach);
             }
-            return new FileOps(ops, reach, guardExpression(reach).reduce().literal());
+            return new FileOps(ops, reach, flow.expression(reach).reduce().literal());
         }
 
         List<Node> renderModels() {
@@ -2589,7 +2424,7 @@ public class ScriptCompiler {
                 case INPUT_ENUM:
                 case INPUT_TEXT:
                 case INPUT_LIST:
-                    rememberFact(mirror(node), renderGuard(mirror(node)), null);
+                    rememberFact(mirror(node), flow.renderGuard(mirror(node)), null);
                     break;
                 case CONDITION:
                     factRefs.put(node, Map.copyOf(currentFacts));
@@ -2600,19 +2435,19 @@ public class ScriptCompiler {
         }
 
         private void rememberFact(Node node, Guard definition, Value<?> exactValue) {
-            if (isFalse(definition)) {
+            if (flow.isFalse(definition)) {
                 return;
             }
-            String key = flow.model().key(node);
+            String key = flow.key(node);
             Flow.SymbolInfo info = symbolInfo(key);
             if (info == null) {
                 return;
             }
-            Domain.Value value = Domain.Value.top(info.symbol().domain());
+            Domain.LatticeValue value = Domain.LatticeValue.top(info.symbol().domain());
             Fact next = exactValue == null
                     ? new Fact(definition, value)
                     : Fact.exact(definition, value, exactValue);
-            currentFacts.merge(key, next, (left, right) -> Fact.merge(left, right, guards()));
+            currentFacts.merge(key, next, (left, right) -> Fact.merge(left, right, flow.guards()));
         }
 
         private <T> Map<String, T> withoutControlKey(Map<String, T> values, String key) {
@@ -2770,12 +2605,12 @@ public class ScriptCompiler {
                 Guard required = base;
                 Guard demand = runtimeConditionDemand(key, demands);
                 if (demand != null) {
-                    required = and(required, demand);
+                    required = flow.and(required, demand);
                 }
                 Fact snapshot = fact(snapshots, key);
-                Guard defined = snapshot == null ? falseGuard() : snapshot.definedUnder();
-                Guard missing = normalizeGuard(minus(required, defined), scope, snapshots);
-                if (isFalse(missing)) {
+                Guard defined = snapshot == null ? FALSE : snapshot.definedUnder();
+                Guard missing = normalizeGuard(flow.minus(required, defined), scope, snapshots);
+                if (flow.isFalse(missing)) {
                     continue;
                 }
                 Type type = indexer.refType(key);
@@ -2799,16 +2634,16 @@ public class ScriptCompiler {
                                                       Scope scope,
                                                       Map<String, Fact> facts) {
             Fact definitionFact = fact(facts, key);
-            Guard definition = definitionFact == null ? falseGuard() : definitionFact.definedUnder();
-            if (!equivalent(minus(base, definition), missing)) {
+            Guard definition = definitionFact == null ? FALSE : definitionFact.definedUnder();
+            if (!flow.equivalent(flow.minus(base, definition), missing)) {
                 return null;
             }
-            Expression definitionExpr = guardExpression(definition, scope);
+            Expression definitionExpr = flow.expression(definition, scope);
             Guard translated = new ExpressionAnalyzer(scope, facts, false, false).analyze(definitionExpr).reach;
             if (translated == null) {
                 return Expression.TRUE;
             }
-            return Expression.create("!(" + definitionExpr.literal() + ")").reduce(guardExpression(base));
+            return Expression.create("!(" + definitionExpr.literal() + ")").reduce(flow.expression(base));
         }
 
         Expression nestedDefinitionComplementStubExpression(String key,
@@ -2843,7 +2678,7 @@ public class ScriptCompiler {
             }
             Flow.SymbolInfo info = symbolInfo(key);
             Guard definition = info == null ? null : info.definition();
-            if (isFalse(definition)) {
+            if (flow.isFalse(definition)) {
                 return null;
             }
             Expression direct = simpleNestedDefinitionComplementStubExpression(parentKey,
@@ -2859,36 +2694,36 @@ public class ScriptCompiler {
             Map<String, Fact> parentFacts = withoutControlKey(facts, parentKey);
             ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, parentFacts, false, false);
             Guard parentReach = analyzer.analyze(parentExpr).reach;
-            if (!contains(parentReach, definition)) {
+            if (!flow.contains(parentReach, definition)) {
                 return null;
             }
             Expression tail = residualExpression(definition, parentReach, scope);
             Expression definitionExpr = parentExpr.and(tail).reduce();
             Guard candidateDefinition = analyzer.analyze(definitionExpr).reach;
-            if (!equivalent(candidateDefinition, definition)) {
+            if (!flow.equivalent(candidateDefinition, definition)) {
                 return null;
             }
             Expression parentComplement = Expression.create(String.format("!${%s}", scope.key(parentKey)));
             Guard parentComplementReach = analyzer.analyze(parentComplement).reach;
-            Guard tailReach = tail == Expression.TRUE ? trueGuard() : analyzer.analyze(tail).reach;
+            Guard tailReach = tail == Expression.TRUE ? TRUE : analyzer.analyze(tail).reach;
             Expression tailComplement = tail == Expression.TRUE
                     ? Expression.FALSE
                     : tailReach == null
-                            ? Expression.create("!(" + tail.literal() + ")").reduce()
-                            : reachabilityExpression(minus(trueGuard(), tailReach), scope);
-            Expression expr = parentComplement.or(tailComplement).reduce(guardExpression(base));
+                      ? Expression.create("!(" + tail.literal() + ")").reduce()
+                            : reachabilityExpression(flow.minus(TRUE, tailReach), scope);
+            Expression expr = parentComplement.or(tailComplement).reduce(flow.expression(base));
             Guard candidateMissing = analyzer.analyze(expr).reach;
             if (candidateMissing == null) {
                 return null;
             }
-            Expression normalized = reachabilityExpression(candidateMissing, scope).reduce(guardExpression(base));
+            Expression normalized = reachabilityExpression(candidateMissing, scope).reduce(flow.expression(base));
             normalized = eliminateParentCoveredTerms(normalized, parentExpr, parentComplement, scope, facts,
-                    guardExpression(base));
+                    flow.expression(base));
             Expression simplified = normalized;
             if (parentComplementReach != null) {
-                Guard residualMissing = minus(candidateMissing, parentComplementReach);
+                Guard residualMissing = flow.minus(candidateMissing, parentComplementReach);
                 Guard constrainedResidual = residualMissing;
-                if (!isFalse(residualMissing)) {
+                if (!flow.isFalse(residualMissing)) {
                     Guard constrained = new ExpressionAnalyzer(scope, facts, false, false)
                             .analyze(reachabilityExpression(residualMissing, scope))
                             .reach;
@@ -2896,19 +2731,19 @@ public class ScriptCompiler {
                         constrainedResidual = constrained;
                     }
                 }
-                Guard parentResidual = and(parentReach, constrainedResidual);
-                simplified = isFalse(parentResidual)
-                        ? parentComplement.reduce(guardExpression(base))
-                        : parentComplement.or(reachabilityExpression(parentResidual, scope)).reduce(guardExpression(base));
+                Guard parentResidual = flow.and(parentReach, constrainedResidual);
+                simplified = flow.isFalse(parentResidual)
+                        ? parentComplement.reduce(flow.expression(base))
+                        : parentComplement.or(reachabilityExpression(parentResidual, scope)).reduce(flow.expression(base));
                 simplified = eliminateParentCoveredTerms(simplified,
                         parentExpr,
                         parentComplement,
                         scope,
                         facts,
-                        guardExpression(base));
+                        flow.expression(base));
             }
             if (!allowCovering) {
-                if (!equivalent(candidateMissing, missing)) {
+                if (!flow.equivalent(candidateMissing, missing)) {
                     return null;
                 }
                 normalized = minimizeDisjunction(normalized,
@@ -2917,18 +2752,18 @@ public class ScriptCompiler {
                         true,
                         scope,
                         parentFacts,
-                        guardExpression(base));
+                        flow.expression(base));
                 simplified = minimizeDisjunction(simplified,
                         missing,
                         missing,
                         true,
                         scope,
                         parentFacts,
-                        guardExpression(base));
+                        flow.expression(base));
                 return simplified.tokens().size() < normalized.tokens().size() ? simplified : normalized;
             }
-            Guard complement = minus(trueGuard(), definition);
-            if (!contains(candidateMissing, missing) || !contains(complement, candidateMissing)) {
+            Guard complement = flow.minus(TRUE, definition);
+            if (!flow.contains(candidateMissing, missing) || !flow.contains(complement, candidateMissing)) {
                 return null;
             }
             normalized = minimizeDisjunction(normalized,
@@ -2937,14 +2772,14 @@ public class ScriptCompiler {
                     false,
                     scope,
                     parentFacts,
-                    guardExpression(base));
+                    flow.expression(base));
             simplified = minimizeDisjunction(simplified,
                     missing,
                     complement,
                     false,
                     scope,
                     parentFacts,
-                    guardExpression(base));
+                    flow.expression(base));
             return simplified.tokens().size() < normalized.tokens().size() ? simplified : normalized;
         }
 
@@ -2957,7 +2792,7 @@ public class ScriptCompiler {
             Expression parentExpr = Expression.create(String.format("${%s}", scope.key(parentKey)));
             ExpressionAnalyzer analyzer = new ExpressionAnalyzer(scope, Map.of(), false, false);
             Guard parentReach = analyzer.analyze(parentExpr).reach;
-            if (!contains(parentReach, definition)) {
+            if (!flow.contains(parentReach, definition)) {
                 return null;
             }
 
@@ -2971,16 +2806,16 @@ public class ScriptCompiler {
                 return null;
             }
 
-            Guard limited = base == null ? candidate : and(base, candidate);
-            Guard complement = minus(trueGuard(), definition);
+            Guard limited = base == null ? candidate : flow.and(base, candidate);
+            Guard complement = flow.minus(TRUE, definition);
             if (allowCovering) {
-                if (!contains(limited, missing) || !contains(complement, limited)) {
+                if (!flow.contains(limited, missing) || !flow.contains(complement, limited)) {
                     return null;
                 }
-            } else if (!equivalent(limited, missing)) {
+            } else if (!flow.equivalent(limited, missing)) {
                 return null;
             }
-            return reachabilityExpression(limited, scope).reduce(guardExpression(base));
+            return reachabilityExpression(limited, scope).reduce(flow.expression(base));
         }
 
         Expression nestedBooleanStubExpression(String key,
@@ -3007,8 +2842,8 @@ public class ScriptCompiler {
             if (candidate == null) {
                 return null;
             }
-            Guard relative = base == null ? candidate : and(base, candidate);
-            return equivalent(relative, missing) ? expr : null;
+            Guard relative = base == null ? candidate : flow.and(base, candidate);
+            return flow.equivalent(relative, missing) ? expr : null;
         }
 
         private Expression minimizeDisjunction(Expression expr,
@@ -3022,11 +2857,11 @@ public class ScriptCompiler {
             boolean changed;
             do {
                 changed = false;
-                List<Expression> disjunctions = new ArrayList<>(disjunctionTerms(minimized));
+                List<Expression> disjunctions = new ArrayList<>(minimized.disjunction());
                 if (disjunctions.size() > 1) {
                     for (int i = 0; i < disjunctions.size(); i++) {
                         List<Expression> remaining = Lists.withoutIndex(disjunctions, i);
-                        Expression candidate = orTerms(remaining).reduce(base);
+                        Expression candidate = Expression.FALSE.or(remaining).reduce(base);
                         Guard candidateReach = new ExpressionAnalyzer(scope, facts, false, false)
                                 .analyze(candidate)
                                 .reach;
@@ -3042,15 +2877,15 @@ public class ScriptCompiler {
                 }
 
                 for (int i = 0; i < disjunctions.size(); i++) {
-                    List<Expression> conjunctions = new ArrayList<>(conjunctionTerms(disjunctions.get(i)));
+                    List<Expression> conjunctions = new ArrayList<>(disjunctions.get(i).conjunction());
                     if (conjunctions.size() < 2) {
                         continue;
                     }
                     for (int j = 0; j < conjunctions.size(); j++) {
                         List<Expression> reducedConjunctions = Lists.withoutIndex(conjunctions, j);
                         List<Expression> reducedDisjunctions = new ArrayList<>(disjunctions);
-                        reducedDisjunctions.set(i, andTerms(reducedConjunctions));
-                        Expression candidate = orTerms(reducedDisjunctions).reduce(base);
+                        reducedDisjunctions.set(i, Expression.TRUE.and(reducedConjunctions));
+                        Expression candidate = Expression.FALSE.or(reducedDisjunctions).reduce(base);
                         Guard candidateReach = new ExpressionAnalyzer(scope, facts, false, false)
                                 .analyze(candidate)
                                 .reach;
@@ -3074,7 +2909,7 @@ public class ScriptCompiler {
                                                        Scope scope,
                                                        Map<String, Fact> facts,
                                                        Expression base) {
-            List<Expression> terms = new ArrayList<>(disjunctionTerms(expr));
+            List<Expression> terms = new ArrayList<>(expr.disjunction());
             if (terms.size() < 2) {
                 return expr;
             }
@@ -3089,9 +2924,9 @@ public class ScriptCompiler {
                     Guard overlap = new ExpressionAnalyzer(scope, facts, false, false)
                             .analyze(term.and(parentExpr).reduce(base))
                             .reach;
-                    if (isFalse(overlap)) {
+                    if (flow.isFalse(overlap)) {
                         terms = Lists.withoutIndex(terms, i);
-                        expr = orTerms(terms).reduce(base);
+                        expr = Expression.FALSE.or(terms).reduce(base);
                         changed = true;
                         break;
                     }
@@ -3108,25 +2943,9 @@ public class ScriptCompiler {
                 return false;
             }
             if (exact) {
-                return equivalent(candidate, required);
+                return flow.equivalent(candidate, required);
             }
-            return contains(candidate, required) && contains(limit, candidate);
-        }
-
-        private Expression orTerms(List<Expression> terms) {
-            Expression expr = Expression.FALSE;
-            for (Expression term : terms) {
-                expr = expr == Expression.FALSE ? term : expr.or(term);
-            }
-            return expr;
-        }
-
-        private Expression andTerms(List<Expression> terms) {
-            Expression expr = Expression.TRUE;
-            for (Expression term : terms) {
-                expr = expr == Expression.TRUE ? term : expr.and(term);
-            }
-            return expr;
+            return flow.contains(candidate, required) && flow.contains(limit, candidate);
         }
 
         private final class StubSpec {
@@ -3185,8 +3004,8 @@ public class ScriptCompiler {
             private boolean merge(StubSpec other,
                                   Map<String, Set<List<Token>>> existingInContainer,
                                   Map<String, Set<List<Token>>> existingInBlock) {
-                Guard merged = or(stub.missing, other.missing);
-                if (equivalent(merged, stub.missing)) {
+                Guard merged = flow.or(stub.missing, other.missing);
+                if (flow.equivalent(merged, stub.missing)) {
                     return true;
                 }
 
@@ -3303,7 +3122,7 @@ public class ScriptCompiler {
 
             Expression condition = Expression.FALSE;
             for (Node parent : parents) {
-                condition = condition.or(flow.model().activationCondition(parent));
+                condition = condition.or(flow.activationCondition(parent));
             }
             return simplifyMergedConditionExpression(condition, scope);
         }
@@ -3312,11 +3131,11 @@ public class ScriptCompiler {
             Scope scope = scope(mirror(group.get(0)));
             Guard merged = null;
             for (Node parent : mergedActivationAnchors(group)) {
-                Guard reach = localProjectedReach(flow.model().activationCondition(parent), scope);
+                Guard reach = localProjectedReach(flow.activationCondition(parent), scope);
                 if (reach == null) {
                     return null;
                 }
-                merged = merged == null ? reach : or(merged, reach);
+                merged = merged == null ? reach : flow.or(merged, reach);
             }
             return merged;
         }
@@ -3378,22 +3197,6 @@ public class ScriptCompiler {
                 return mirror;
             }
             throw new IllegalStateException("Mirror not found: " + node);
-        }
-    }
-
-    private static final class ResolvedGuard {
-        private final Guard supported;
-        private final Expression unsupported;
-        private final boolean hasSupportedTerms;
-
-        ResolvedGuard(Guard supported, Expression unsupported, boolean hasSupportedTerms) {
-            this.supported = supported;
-            this.unsupported = unsupported;
-            this.hasSupportedTerms = hasSupportedTerms;
-        }
-
-        static ResolvedGuard fullySupported(Guard reach) {
-            return new ResolvedGuard(reach, Expression.TRUE, true);
         }
     }
 

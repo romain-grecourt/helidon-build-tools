@@ -353,7 +353,7 @@ final class Domain {
             for (String value : new TreeSet<>(values)) {
                 ordinals.put(value, ordinal++);
             }
-            return Map.copyOf(ordinals);
+            return ordinals;
         }
 
         private static String[] stringsByOrdinal(Map<String, Integer> ordinals) {
@@ -397,24 +397,24 @@ final class Domain {
 
         static final class Fact {
             private final Guard definedUnder;
-            private final Value value;
+            private final LatticeValue value;
             private final List<ExactCase> exactCases;
 
-            Fact(Guard definedUnder, Value value) {
+            Fact(Guard definedUnder, LatticeValue value) {
                 this(definedUnder, value, List.of());
             }
 
-            Fact(Guard definedUnder, Value value, List<ExactCase> exactCases) {
+            Fact(Guard definedUnder, LatticeValue value, List<ExactCase> exactCases) {
                 this.definedUnder = requireNonNull(definedUnder, "definedUnder is null");
                 this.value = requireNonNull(value, "value is null");
-                this.exactCases = List.copyOf(requireNonNull(exactCases, "exactCases is null"));
+                this.exactCases = requireNonNull(exactCases, "exactCases is null");
             }
 
             Guard definedUnder() {
                 return definedUnder;
             }
 
-            Value value() {
+            LatticeValue value() {
                 return value;
             }
 
@@ -423,17 +423,17 @@ final class Domain {
             }
 
             Guard exactDefined(Guards guards) {
-                Guard result = guards.falseGuard();
+                Guard result = Guard.FALSE;
                 for (ExactCase exactCase : exactCases) {
                     result = guards.or(result, exactCase.guard);
                 }
                 return result;
             }
 
-            Guard match(io.helidon.build.archetype.engine.v2.Value<?> candidate, Guards guards) {
-                Guard result = guards.falseGuard();
+            Guard match(Value<?> candidate, Guards guards) {
+                Guard result = Guard.FALSE;
                 for (ExactCase exactCase : exactCases) {
-                    if (io.helidon.build.archetype.engine.v2.Value.isEqual(exactCase.value, candidate)) {
+                    if (Value.isEqual(exactCase.value, candidate)) {
                         result = guards.or(result, exactCase.guard);
                     }
                 }
@@ -441,7 +441,7 @@ final class Domain {
             }
 
             Guard scalarAny(Set<String> values, Guards guards) {
-                Guard result = guards.falseGuard();
+                Guard result = Guard.FALSE;
                 for (ExactCase exactCase : exactCases) {
                     String scalar = exactCase.scalarLiteral();
                     if (scalar != null && values.contains(scalar)) {
@@ -452,7 +452,7 @@ final class Domain {
             }
 
             Guard listContains(Set<String> required, Guards guards) {
-                Guard result = guards.falseGuard();
+                Guard result = Guard.FALSE;
                 for (ExactCase exactCase : exactCases) {
                     if (exactCase.containsAll(required)) {
                         result = guards.or(result, exactCase.guard);
@@ -462,8 +462,8 @@ final class Domain {
             }
 
             static Fact exact(Guard definedUnder,
-                              Value value,
-                              io.helidon.build.archetype.engine.v2.Value<?> exactValue) {
+                              LatticeValue value,
+                              Value<?> exactValue) {
                 if (exactValue == null || !exactValue.isPresent()) {
                     return new Fact(definedUnder, value);
                 }
@@ -472,7 +472,7 @@ final class Domain {
 
             static Fact merge(Fact left, Fact right, Guards guards) {
                 Guard definedUnder = guards.or(left.definedUnder, right.definedUnder);
-                Value value = Value.join(left.value, right.value);
+                LatticeValue value = LatticeValue.join(left.value, right.value);
                 if (left.exactCases.isEmpty()) {
                     return right.exactCases.isEmpty()
                             ? new Fact(definedUnder, value)
@@ -494,7 +494,7 @@ final class Domain {
             private static void mergeExactCase(List<ExactCase> merged, ExactCase next, Guards guards) {
                 for (int i = 0; i < merged.size(); i++) {
                     ExactCase current = merged.get(i);
-                    if (io.helidon.build.archetype.engine.v2.Value.isEqual(current.value, next.value)) {
+                    if (Value.isEqual(current.value, next.value)) {
                         merged.set(i, new ExactCase(current.value, guards.or(current.guard, next.guard)));
                         return;
                     }
@@ -524,19 +524,19 @@ final class Domain {
             }
 
             static final class ExactCase {
-                private final io.helidon.build.archetype.engine.v2.Value<?> value;
+                private final Value<?> value;
                 private final Guard guard;
                 private final Set<String> listItems;
 
-                ExactCase(io.helidon.build.archetype.engine.v2.Value<?> value, Guard guard) {
+                ExactCase(Value<?> value, Guard guard) {
                     this.value = requireNonNull(value, "value is null");
                     this.guard = requireNonNull(guard, "guard is null");
-                    this.listItems = value.type() == io.helidon.build.archetype.engine.v2.Value.Type.LIST
-                            ? Set.copyOf(new TreeSet<>(value.getList()))
+                    this.listItems = value.type() == Value.Type.LIST
+                            ? new TreeSet<>(value.getList())
                             : null;
                 }
 
-                io.helidon.build.archetype.engine.v2.Value<?> value() {
+                Value<?> value() {
                     return value;
                 }
 
@@ -549,7 +549,7 @@ final class Domain {
                 }
 
                 String scalarLiteral() {
-                    return io.helidon.build.archetype.engine.v2.Value.scalarLiteral(value);
+                    return Value.scalarLiteral(value);
                 }
 
                 @Override
@@ -561,13 +561,13 @@ final class Domain {
                         return false;
                     }
                     ExactCase other = (ExactCase) o;
-                    return io.helidon.build.archetype.engine.v2.Value.isEqual(value, other.value)
+                    return Value.isEqual(value, other.value)
                            && (guard == other.guard || guard.equals(other.guard));
                 }
 
                 @Override
                 public int hashCode() {
-                    return 31 * io.helidon.build.archetype.engine.v2.Value.hash(value) + guard.hashCode();
+                    return 31 * Value.hash(value) + guard.hashCode();
                 }
             }
         }
@@ -577,8 +577,8 @@ final class Domain {
             private final Map<String, Integer> idsByName;
 
             private Table(List<Symbol> symbols, Map<String, Integer> idsByName) {
-                this.symbols = List.copyOf(symbols);
-                this.idsByName = Map.copyOf(idsByName);
+                this.symbols = symbols;
+                this.idsByName = idsByName;
             }
 
             static Builder builder() {
@@ -587,14 +587,6 @@ final class Domain {
 
             Symbol symbol(int symbolId) {
                 return symbols.get(symbolId);
-            }
-
-            Symbol symbol(String name) {
-                Integer id = idsByName.get(name);
-                if (id == null) {
-                    throw new IllegalArgumentException("Unknown symbol: " + name);
-                }
-                return symbols.get(id);
             }
 
             Integer findId(String name) {
@@ -639,7 +631,7 @@ final class Domain {
         }
     }
 
-    interface Value {
+    interface LatticeValue {
         Kind kind();
 
         enum Kind {
@@ -653,15 +645,15 @@ final class Domain {
             LIST_SUMMARY
         }
 
-        static Value bottom() {
+        static LatticeValue bottom() {
             return Bottom.INSTANCE;
         }
 
-        static Value top() {
+        static LatticeValue top() {
             return Top.INSTANCE;
         }
 
-        static Value top(Spec spec) {
+        static LatticeValue top(Spec spec) {
             switch (spec.kind()) {
                 case BOOLEAN:
                     return new BooleanSet(Set.of(false, true));
@@ -678,35 +670,7 @@ final class Domain {
             }
         }
 
-        static Value booleanSet(boolean... values) {
-            Set<java.lang.Boolean> actual = new TreeSet<>();
-            for (boolean value : values) {
-                actual.add(value);
-            }
-            return new BooleanSet(actual);
-        }
-
-        static Value choiceSet(Set<String> values) {
-            return new ChoiceSet(values);
-        }
-
-        static Value membershipSet(Set<String> required, Set<String> possible) {
-            return new MembershipSet(required, possible);
-        }
-
-        static Value openText(String sample) {
-            return new OpenText(sample);
-        }
-
-        static Value finiteText(Set<String> values) {
-            return new FiniteText(values);
-        }
-
-        static Value listSummary(Set<String> required, Set<String> possible) {
-            return new ListSummary(required, possible);
-        }
-
-        static Value join(Value left, Value right) {
+        static LatticeValue join(LatticeValue left, LatticeValue right) {
             requireNonNull(left, "left is null");
             requireNonNull(right, "right is null");
             if (left.equals(right)) {
@@ -722,7 +686,7 @@ final class Domain {
                 return top();
             }
             if (left instanceof BooleanSet && right instanceof BooleanSet) {
-                Set<java.lang.Boolean> values = new TreeSet<>(((BooleanSet) left).values());
+                Set<Boolean> values = new TreeSet<>(((BooleanSet) left).values());
                 values.addAll(((BooleanSet) right).values());
                 return new BooleanSet(values);
             }
@@ -767,7 +731,7 @@ final class Domain {
             return top();
         }
 
-        final class Bottom implements Value {
+        final class Bottom implements LatticeValue {
             private static final Bottom INSTANCE = new Bottom();
 
             private Bottom() {
@@ -789,7 +753,7 @@ final class Domain {
             }
         }
 
-        final class Top implements Value {
+        final class Top implements LatticeValue {
             private static final Top INSTANCE = new Top();
 
             private Top() {
@@ -811,14 +775,14 @@ final class Domain {
             }
         }
 
-        final class BooleanSet implements Value {
-            private final Set<java.lang.Boolean> values;
+        final class BooleanSet implements LatticeValue {
+            private final Set<Boolean> values;
 
-            BooleanSet(Set<java.lang.Boolean> values) {
+            BooleanSet(Set<Boolean> values) {
                 if (values.isEmpty()) {
                     throw new IllegalArgumentException("Boolean set must not be empty");
                 }
-                this.values = Set.copyOf(new TreeSet<>(values));
+                this.values = new TreeSet<>(values);
             }
 
             @Override
@@ -826,7 +790,7 @@ final class Domain {
                 return Kind.BOOLEAN_SET;
             }
 
-            Set<java.lang.Boolean> values() {
+            Set<Boolean> values() {
                 return values;
             }
 
@@ -841,7 +805,7 @@ final class Domain {
             }
         }
 
-        final class ChoiceSet implements Value {
+        final class ChoiceSet implements LatticeValue {
             private final Set<String> values;
 
             ChoiceSet(Set<String> values) {
@@ -871,7 +835,7 @@ final class Domain {
             }
         }
 
-        final class MembershipSet implements Value {
+        final class MembershipSet implements LatticeValue {
             private final Set<String> required;
             private final Set<String> possible;
 
@@ -911,7 +875,7 @@ final class Domain {
             }
         }
 
-        final class OpenText implements Value {
+        final class OpenText implements LatticeValue {
             private final String sample;
 
             OpenText(String sample) {
@@ -938,7 +902,7 @@ final class Domain {
             }
         }
 
-        final class FiniteText implements Value {
+        final class FiniteText implements LatticeValue {
             private final Set<String> values;
 
             FiniteText(Set<String> values) {
@@ -968,7 +932,7 @@ final class Domain {
             }
         }
 
-        final class ListSummary implements Value {
+        final class ListSummary implements LatticeValue {
             private final Set<String> required;
             private final Set<String> possible;
 
@@ -1010,6 +974,11 @@ final class Domain {
     }
 
     static final class Guard {
+        static final int FALSE_ID = 0;
+        static final int TRUE_ID = 1;
+        static final Guard FALSE = new Guard(FALSE_ID, Expression.TRUE);
+        static final Guard TRUE = new Guard(TRUE_ID, Expression.TRUE);
+
         private final int id;
         private final Expression residual;
 
@@ -1045,39 +1014,23 @@ final class Domain {
     }
 
     static final class Guards {
-        private static final int FALSE_ID = 0;
-        private static final int TRUE_ID = 1;
         private static final int COMPACT_MAX_VARIABLES = 4;
         private static final int COMPACT_MAX_TOKENS = 16;
-        private static final int EXACT_IMPLIES_MAX_SHAPES = 8;
-
         private final Symbol.Table symbols;
         private final List<Decision> decisions = new ArrayList<>();
         private final Map<Decision, Integer> ids = new HashMap<>();
         private final Map<Guard, Map<Guard, Guard>> orCache = new HashMap<>();
         private final Map<Long, Boolean> subsetCache = new HashMap<>();
-        private final Guard falseGuard;
-        private final Guard trueGuard;
 
         Guards(Symbol.Table symbols) {
             this.symbols = requireNonNull(symbols, "symbols is null");
             register(Decision.FALSE);
             register(Decision.TRUE);
-            this.falseGuard = new Guard(FALSE_ID, Expression.TRUE);
-            this.trueGuard = new Guard(TRUE_ID, Expression.TRUE);
-        }
-
-        Guard trueGuard() {
-            return trueGuard;
-        }
-
-        Guard falseGuard() {
-            return falseGuard;
         }
 
         Guard and(Guard left, Guard right) {
             if (isFalse(left) || isFalse(right)) {
-                return falseGuard();
+                return Guard.FALSE;
             }
             Decision decision = decision(left).and(decision(right), symbols);
             Expression residual = left.residual().equals(right.residual())
@@ -1123,7 +1076,7 @@ final class Domain {
             } else if (isPure(left) && isPure(right)) {
                 result = guard(leftDecision.orWithoutSubsetChecks(rightDecision, symbols), Expression.TRUE);
             } else {
-                result = residualGuard(rawExpression(left).or(rawExpression(right)), false);
+                result = guard(Decision.TRUE, rawExpression(left).or(rawExpression(right)), false);
             }
             if (cacheable && cacheable(result)) {
                 rememberOr(left, right, result);
@@ -1133,10 +1086,10 @@ final class Domain {
 
         Guard not(Guard guard) {
             if (isFalse(guard)) {
-                return trueGuard();
+                return Guard.TRUE;
             }
-            if (guard.equals(trueGuard())) {
-                return falseGuard();
+            if (guard.equals(Guard.TRUE)) {
+                return Guard.FALSE;
             }
             if (isPure(guard)) {
                 return guard(Decision.TRUE.subtract(decision(guard), symbols), Expression.TRUE);
@@ -1161,16 +1114,11 @@ final class Domain {
         }
 
         boolean shapewiseImplies(Guard left, Guard right) {
-            if (left.equals(right) || isFalse(left) || right.equals(trueGuard())) {
+            if (left.equals(right) || isFalse(left) || right.equals(Guard.TRUE)) {
                 return true;
             }
             return left.residual().equals(right.residual()) && shapewiseSubsetOf(left.id(), right.id())
                     || isPure(right) && shapewiseSubsetOf(left.id(), right.id());
-        }
-
-        boolean exactImplicationCheap(Guard left, Guard right) {
-            return decision(left).shapeCountAtMost(EXACT_IMPLIES_MAX_SHAPES)
-                    && decision(right).shapeCountAtMost(EXACT_IMPLIES_MAX_SHAPES);
         }
 
         boolean equivalent(Guard left, Guard right) {
@@ -1189,9 +1137,9 @@ final class Domain {
             allowed.add(requireNonNull(value, "value is null"));
             allowed.retainAll(scalarValues(symbol.domain()));
             if (allowed.isEmpty()) {
-                return falseGuard();
+                return Guard.FALSE;
             }
-            DecisionShape shape = DecisionShape.scalar(symbolId, new ScalarShape(symbol, allowed));
+            DecisionShape shape = new DecisionShape(symbolId, new ScalarShape(symbol, allowed));
             return guard(Decision.of(List.of(shape), symbols), Expression.TRUE);
         }
 
@@ -1202,35 +1150,16 @@ final class Domain {
         Guard containsAll(int symbolId, Set<String> values) {
             Symbol symbol = symbols.symbol(symbolId);
             if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Spec.Kind.MEMBERSHIP) {
-                return falseGuard();
+                return Guard.FALSE;
             }
             Spec.Membership spec = (Spec.Membership) symbol.domain();
             Set<String> required = requireNonNull(values, "values is null");
             if (!spec.items().containsAll(required)) {
-                return falseGuard();
+                return Guard.FALSE;
             }
             MembershipShape membership = MembershipShape.required(symbol, required);
-            DecisionShape shape = DecisionShape.membership(symbolId, membership);
+            DecisionShape shape = new DecisionShape(symbolId, membership);
             return guard(Decision.of(List.of(shape), symbols), Expression.TRUE);
-        }
-
-        Guard defined(int symbolId) {
-            Symbol symbol = symbols.symbol(symbolId);
-            if (!symbol.guardable() || symbol.tainted()) {
-                return falseGuard();
-            }
-            switch (symbol.domain().kind()) {
-                case BOOLEAN:
-                case CHOICE:
-                case FINITE_TEXT:
-                    return guard(Decision.of(List.of(DecisionShape.scalar(
-                            symbolId,
-                            new ScalarShape(symbol, scalarValues(symbol.domain())))), symbols), Expression.TRUE);
-                case MEMBERSHIP:
-                    return trueGuard();
-                default:
-                    return falseGuard();
-            }
         }
 
         Expression toExpression(Guard guard, Scope scope) {
@@ -1269,12 +1198,12 @@ final class Domain {
         }
 
         private Guard guard(Decision decision, Expression residual, boolean foldConstants) {
-            Expression normalizedResidual = foldConstants ? residual.foldConstants() : residual;
+            Expression normalizedResidual = foldConstants ? residual.fold() : residual;
             if (decision.isFalse() || normalizedResidual == Expression.FALSE) {
-                return falseGuard();
+                return Guard.FALSE;
             }
             if (decision.equals(Decision.TRUE) && normalizedResidual == Expression.TRUE) {
-                return trueGuard();
+                return Guard.TRUE;
             }
             int id = register(decision);
             return new Guard(id, normalizedResidual);
@@ -1282,10 +1211,6 @@ final class Domain {
 
         Guard residualGuard(Expression expression) {
             return guard(Decision.TRUE, expression);
-        }
-
-        Guard residualGuard(Expression expression, boolean foldConstants) {
-            return guard(Decision.TRUE, expression, foldConstants);
         }
 
         private Guard cachedOr(Guard left, Guard right) {
@@ -1321,10 +1246,12 @@ final class Domain {
         }
 
         private boolean shapewiseSubsetOf(int leftDecisionId, int rightDecisionId) {
-            if (leftDecisionId == rightDecisionId || leftDecisionId == FALSE_ID || rightDecisionId == TRUE_ID) {
+            if (leftDecisionId == rightDecisionId
+                    || leftDecisionId == Guard.FALSE_ID
+                    || rightDecisionId == Guard.TRUE_ID) {
                 return true;
             }
-            if (rightDecisionId == FALSE_ID) {
+            if (rightDecisionId == Guard.FALSE_ID) {
                 return false;
             }
             long key = ((long) leftDecisionId << 32) | Integer.toUnsignedLong(rightDecisionId);
@@ -1332,7 +1259,7 @@ final class Domain {
             if (cached != null) {
                 return cached;
             }
-            boolean result = decisions.get(leftDecisionId).shapewiseSubsetOf(decisions.get(rightDecisionId), symbols);
+            boolean result = decisions.get(leftDecisionId).shapewiseSubsetOf(decisions.get(rightDecisionId));
             subsetCache.put(key, result);
             return result;
         }
@@ -1342,7 +1269,7 @@ final class Domain {
         }
 
         private boolean isFalse(Guard guard) {
-            return guard.id() == FALSE_ID || guard.residual() == Expression.FALSE;
+            return guard.id() == Guard.FALSE_ID || guard.residual() == Expression.FALSE;
         }
 
         private Expression rawExpression(Guard guard) {
@@ -1373,17 +1300,6 @@ final class Domain {
             return left.equals(right) || left.reduce().equals(right.reduce());
         }
 
-        private static Expression compact(Expression expression) {
-            if (expression == Expression.TRUE || expression == Expression.FALSE) {
-                return expression;
-            }
-            if (expression.tokens().size() > COMPACT_MAX_TOKENS
-                    || !expression.variableCountAtMost(COMPACT_MAX_VARIABLES)) {
-                return expression.foldConstants();
-            }
-            return expression.reduce();
-        }
-
         private static boolean cacheable(Guard guard) {
             return guard.residual() == Expression.TRUE
                     || guard.residual() == Expression.FALSE
@@ -1406,7 +1322,7 @@ final class Domain {
     }
 
     private static Set<String> canonicalStrings(Set<String> values) {
-        return Set.copyOf(new TreeSet<>(values));
+        return new TreeSet<>(values);
     }
 
     private static final class Decision {
@@ -1416,8 +1332,8 @@ final class Domain {
 
         private final List<DecisionShape> shapes;
 
-        private Decision(List<DecisionShape> shapes) {
-            this.shapes = List.copyOf(shapes);
+        Decision(List<DecisionShape> shapes) {
+            this.shapes = shapes;
         }
 
         static Decision of(List<DecisionShape> shapes, Symbol.Table symbols) {
@@ -1440,12 +1356,12 @@ final class Domain {
                     for (int j = i + 1; j < normalized.size(); j++) {
                         DecisionShape left = normalized.get(i);
                         DecisionShape right = normalized.get(j);
-                        if (left.subsetOf(right, symbols)) {
+                        if (left.subsetOf(right)) {
                             normalized.remove(i);
                             changed = true;
                             break;
                         }
-                        if (right.subsetOf(left, symbols)) {
+                        if (right.subsetOf(left)) {
                             normalized.remove(j);
                             changed = true;
                             break;
@@ -1480,10 +1396,10 @@ final class Domain {
             if (equals(other)) {
                 return this;
             }
-            if (equals(TRUE)) {
+            if (this == TRUE) {
                 return other;
             }
-            if (other.equals(TRUE)) {
+            if (other == TRUE) {
                 return this;
             }
             List<DecisionShape> result = new ArrayList<>();
@@ -1498,25 +1414,6 @@ final class Domain {
             return of(result, symbols);
         }
 
-        Decision or(Decision other, Symbol.Table symbols) {
-            if (isFalse()) {
-                return other;
-            }
-            if (other.isFalse()) {
-                return this;
-            }
-            if (equals(other)) {
-                return this;
-            }
-            if (shapewiseSubsetOf(other, symbols)) {
-                return other;
-            }
-            if (other.shapewiseSubsetOf(this, symbols)) {
-                return this;
-            }
-            return orWithoutSubsetChecks(other, symbols);
-        }
-
         Decision orWithoutSubsetChecks(Decision other, Symbol.Table symbols) {
             List<DecisionShape> result = new ArrayList<>(shapes);
             boolean changed = false;
@@ -1527,11 +1424,11 @@ final class Domain {
                     restart = false;
                     for (int i = 0; i < result.size(); i++) {
                         DecisionShape existing = result.get(i);
-                        if (candidate.subsetOf(existing, symbols)) {
+                        if (candidate.subsetOf(existing)) {
                             candidate = null;
                             break;
                         }
-                        if (existing.subsetOf(candidate, symbols)) {
+                        if (existing.subsetOf(candidate)) {
                             result.remove(i);
                             changed = true;
                             restart = true;
@@ -1571,7 +1468,7 @@ final class Domain {
             if (isFalse() || other.isFalse()) {
                 return this;
             }
-            if (other.equals(TRUE)) {
+            if (other == TRUE) {
                 return FALSE;
             }
             List<DecisionShape> remaining = new ArrayList<>(shapes);
@@ -1606,11 +1503,11 @@ final class Domain {
 
         @Override
         public int hashCode() {
-            return Objects.hash(shapes);
+            return shapes.hashCode();
         }
 
-        boolean shapewiseSubsetOf(Decision other, Symbol.Table symbols) {
-            if (equals(other) || isFalse() || other.equals(TRUE)) {
+        boolean shapewiseSubsetOf(Decision other) {
+            if (equals(other) || isFalse() || other == TRUE) {
                 return true;
             }
             if (other.isFalse()) {
@@ -1619,7 +1516,7 @@ final class Domain {
             for (DecisionShape left : shapes) {
                 boolean covered = false;
                 for (DecisionShape right : other.shapes) {
-                    if (left.subsetOf(right, symbols)) {
+                    if (left.subsetOf(right)) {
                         covered = true;
                         break;
                     }
@@ -1630,10 +1527,6 @@ final class Domain {
             }
             return true;
         }
-
-        boolean shapeCountAtMost(int maxShapes) {
-            return shapes.size() <= maxShapes;
-        }
     }
 
     private static final class DecisionShape {
@@ -1641,43 +1534,30 @@ final class Domain {
         private static final ScalarShape[] NO_SCALARS = new ScalarShape[0];
         private static final MembershipShape[] NO_MEMBERSHIPS = new MembershipShape[0];
 
-        private final int[] scalarSymbolIds;
+        private final int[] scalarIds;
         private final ScalarShape[] scalarShapes;
-        private final int[] membershipSymbolIds;
+        private final int[] membershipIds;
         private final MembershipShape[] membershipShapes;
-        private final int membershipsHash;
         private final int hashCode;
 
-        private DecisionShape() {
+        DecisionShape() {
             this(NO_SYMBOL_IDS, NO_SCALARS, NO_SYMBOL_IDS, NO_MEMBERSHIPS);
         }
 
-        private DecisionShape(int symbolId, ScalarShape scalarShape) {
+        DecisionShape(int symbolId, ScalarShape scalarShape) {
             this(new int[] {symbolId}, new ScalarShape[] {scalarShape}, NO_SYMBOL_IDS, NO_MEMBERSHIPS);
         }
 
-        private DecisionShape(int[] scalarSymbolIds,
-                              ScalarShape[] scalarShapes,
-                              int[] membershipSymbolIds,
-                              MembershipShape[] membershipShapes) {
-            this.scalarSymbolIds = scalarSymbolIds;
+        DecisionShape(int symbolId, MembershipShape membershipShape) {
+            this(NO_SYMBOL_IDS, NO_SCALARS, new int[] {symbolId}, new MembershipShape[] {membershipShape});
+        }
+
+        DecisionShape(int[] scalarIds, ScalarShape[] scalarShapes, int[] membershipIds, MembershipShape[] membershipShapes) {
+            this.scalarIds = scalarIds;
             this.scalarShapes = scalarShapes;
-            this.membershipSymbolIds = membershipSymbolIds;
+            this.membershipIds = membershipIds;
             this.membershipShapes = membershipShapes;
-            this.membershipsHash = entriesHash(membershipSymbolIds, membershipShapes);
-            this.hashCode = 31 * entriesHash(scalarSymbolIds, scalarShapes) + membershipsHash;
-        }
-
-        static DecisionShape scalar(int symbolId, ScalarShape scalarShape) {
-            return new DecisionShape(symbolId, scalarShape);
-        }
-
-        static DecisionShape membership(int symbolId, MembershipShape membershipShape) {
-            return new DecisionShape(
-                    NO_SYMBOL_IDS,
-                    NO_SCALARS,
-                    new int[] {symbolId},
-                    new MembershipShape[] {membershipShape});
+            this.hashCode = 31 * entriesHash(scalarIds, scalarShapes) + entriesHash(membershipIds, membershipShapes);
         }
 
         boolean isTrue() {
@@ -1689,7 +1569,7 @@ final class Domain {
             int nextMembershipCount = membershipShapes.length;
             boolean changed = false;
             for (int i = 0; i < scalarShapes.length; i++) {
-                if (scalarShapes[i].isFull(symbols.symbol(scalarSymbolIds[i]))) {
+                if (scalarShapes[i].isFull(symbols.symbol(scalarIds[i]))) {
                     changed = true;
                     nextScalarCount--;
                 }
@@ -1710,8 +1590,8 @@ final class Domain {
             ScalarShape[] nextScalars = nextScalarCount == 0 ? NO_SCALARS : new ScalarShape[nextScalarCount];
             int scalarIndex = 0;
             for (int i = 0; i < scalarShapes.length; i++) {
-                if (!scalarShapes[i].isFull(symbols.symbol(scalarSymbolIds[i]))) {
-                    nextScalarIds[scalarIndex] = scalarSymbolIds[i];
+                if (!scalarShapes[i].isFull(symbols.symbol(scalarIds[i]))) {
+                    nextScalarIds[scalarIndex] = scalarIds[i];
                     nextScalars[scalarIndex] = scalarShapes[i];
                     scalarIndex++;
                 }
@@ -1723,7 +1603,7 @@ final class Domain {
             int membershipIndex = 0;
             for (int i = 0; i < membershipShapes.length; i++) {
                 if (!membershipShapes[i].isEmpty()) {
-                    nextMembershipIds[membershipIndex] = membershipSymbolIds[i];
+                    nextMembershipIds[membershipIndex] = membershipIds[i];
                     nextMemberships[membershipIndex] = membershipShapes[i];
                     membershipIndex++;
                 }
@@ -1747,15 +1627,15 @@ final class Domain {
             while (leftScalar < scalarShapes.length || rightScalar < other.scalarShapes.length) {
                 if (rightScalar == other.scalarShapes.length
                         || leftScalar < scalarShapes.length
-                        && scalarSymbolIds[leftScalar] < other.scalarSymbolIds[rightScalar]) {
-                    nextScalars.add(scalarSymbolIds[leftScalar], scalarShapes[leftScalar]);
+                           && scalarIds[leftScalar] < other.scalarIds[rightScalar]) {
+                    nextScalars.add(scalarIds[leftScalar], scalarShapes[leftScalar]);
                     leftScalar++;
                 } else if (leftScalar == scalarShapes.length
-                        || other.scalarSymbolIds[rightScalar] < scalarSymbolIds[leftScalar]) {
-                    nextScalars.add(other.scalarSymbolIds[rightScalar], other.scalarShapes[rightScalar]);
+                        || other.scalarIds[rightScalar] < scalarIds[leftScalar]) {
+                    nextScalars.add(other.scalarIds[rightScalar], other.scalarShapes[rightScalar]);
                     rightScalar++;
                 } else {
-                    int symbolId = scalarSymbolIds[leftScalar];
+                    int symbolId = scalarIds[leftScalar];
                     ScalarShape intersection = scalarShapes[leftScalar].intersect(other.scalarShapes[rightScalar],
                             symbols.symbol(symbolId));
                     if (intersection == null) {
@@ -1772,15 +1652,15 @@ final class Domain {
             while (leftMembership < membershipShapes.length || rightMembership < other.membershipShapes.length) {
                 if (rightMembership == other.membershipShapes.length
                         || leftMembership < membershipShapes.length
-                        && membershipSymbolIds[leftMembership] < other.membershipSymbolIds[rightMembership]) {
-                    nextMemberships.add(membershipSymbolIds[leftMembership], membershipShapes[leftMembership]);
+                           && membershipIds[leftMembership] < other.membershipIds[rightMembership]) {
+                    nextMemberships.add(membershipIds[leftMembership], membershipShapes[leftMembership]);
                     leftMembership++;
                 } else if (leftMembership == membershipShapes.length
-                        || other.membershipSymbolIds[rightMembership] < membershipSymbolIds[leftMembership]) {
-                    nextMemberships.add(other.membershipSymbolIds[rightMembership], other.membershipShapes[rightMembership]);
+                        || other.membershipIds[rightMembership] < membershipIds[leftMembership]) {
+                    nextMemberships.add(other.membershipIds[rightMembership], other.membershipShapes[rightMembership]);
                     rightMembership++;
                 } else {
-                    int symbolId = membershipSymbolIds[leftMembership];
+                    int symbolId = membershipIds[leftMembership];
                     MembershipShape intersection = membershipShapes[leftMembership]
                             .intersect(other.membershipShapes[rightMembership], symbols.symbol(symbolId));
                     if (intersection == null) {
@@ -1791,11 +1671,14 @@ final class Domain {
                     rightMembership++;
                 }
             }
-            return new DecisionShape(nextScalars.symbolIds(), nextScalars.shapes(),
-                    nextMemberships.symbolIds(), nextMemberships.shapes());
+            return new DecisionShape(
+                    trim(nextScalars.symbolIds, nextScalars.size),
+                    trim(nextScalars.shapes, nextScalars.size, NO_SCALARS),
+                    trim(nextMemberships.symbolIds, nextMemberships.size),
+                    trim(nextMemberships.shapes, nextMemberships.size, NO_MEMBERSHIPS));
         }
 
-        boolean subsetOf(DecisionShape other, Symbol.Table symbols) {
+        boolean subsetOf(DecisionShape other) {
             if (this == other) {
                 return true;
             }
@@ -1804,23 +1687,23 @@ final class Domain {
             }
             int leftScalar = 0;
             for (int rightScalar = 0; rightScalar < other.scalarShapes.length; rightScalar++) {
-                int symbolId = other.scalarSymbolIds[rightScalar];
-                while (leftScalar < scalarShapes.length && scalarSymbolIds[leftScalar] < symbolId) {
+                int symbolId = other.scalarIds[rightScalar];
+                while (leftScalar < scalarShapes.length && scalarIds[leftScalar] < symbolId) {
                     leftScalar++;
                 }
                 if (leftScalar == scalarShapes.length
-                        || scalarSymbolIds[leftScalar] != symbolId
-                        || !scalarShapes[leftScalar].subsetOf(other.scalarShapes[rightScalar])) {
+                    || scalarIds[leftScalar] != symbolId
+                    || !scalarShapes[leftScalar].subsetOf(other.scalarShapes[rightScalar])) {
                     return false;
                 }
             }
             int leftMembership = 0;
             for (int rightMembership = 0; rightMembership < other.membershipShapes.length; rightMembership++) {
-                int symbolId = other.membershipSymbolIds[rightMembership];
-                while (leftMembership < membershipShapes.length && membershipSymbolIds[leftMembership] < symbolId) {
+                int symbolId = other.membershipIds[rightMembership];
+                while (leftMembership < membershipShapes.length && membershipIds[leftMembership] < symbolId) {
                     leftMembership++;
                 }
-                if (leftMembership == membershipShapes.length || membershipSymbolIds[leftMembership] != symbolId) {
+                if (leftMembership == membershipShapes.length || membershipIds[leftMembership] != symbolId) {
                     return false;
                 }
                 if (!membershipShapes[leftMembership].subsetOf(other.membershipShapes[rightMembership])) {
@@ -1831,7 +1714,8 @@ final class Domain {
         }
 
         DecisionShape tryMerge(DecisionShape other, Symbol.Table symbols) {
-            if (!membershipsEqual(other)) {
+            if (!Arrays.equals(membershipIds, other.membershipIds)
+                    || !Arrays.equals(membershipShapes, other.membershipShapes)) {
                 return null;
             }
             if (Math.abs(scalarShapes.length - other.scalarShapes.length) > 1) {
@@ -1847,19 +1731,19 @@ final class Domain {
                 ScalarShape rightShape;
                 if (rightScalar == other.scalarShapes.length
                         || leftScalar < scalarShapes.length
-                        && scalarSymbolIds[leftScalar] < other.scalarSymbolIds[rightScalar]) {
-                    symbolId = scalarSymbolIds[leftScalar];
+                           && scalarIds[leftScalar] < other.scalarIds[rightScalar]) {
+                    symbolId = scalarIds[leftScalar];
                     leftShape = scalarShapes[leftScalar];
                     rightShape = null;
                     leftScalar++;
                 } else if (leftScalar == scalarShapes.length
-                        || other.scalarSymbolIds[rightScalar] < scalarSymbolIds[leftScalar]) {
-                    symbolId = other.scalarSymbolIds[rightScalar];
+                        || other.scalarIds[rightScalar] < scalarIds[leftScalar]) {
+                    symbolId = other.scalarIds[rightScalar];
                     leftShape = null;
                     rightShape = other.scalarShapes[rightScalar];
                     rightScalar++;
                 } else {
-                    symbolId = scalarSymbolIds[leftScalar];
+                    symbolId = scalarIds[leftScalar];
                     leftShape = scalarShapes[leftScalar];
                     rightShape = other.scalarShapes[rightScalar];
                     leftScalar++;
@@ -1902,9 +1786,9 @@ final class Domain {
                 }
             }
             return diffSymbolId == null ? null : new DecisionShape(
-                    nextScalars.symbolIds(),
-                    nextScalars.shapes(),
-                    membershipSymbolIds,
+                    trim(nextScalars.symbolIds, nextScalars.size),
+                    trim(nextScalars.shapes, nextScalars.size, NO_SCALARS),
+                    membershipIds,
                     membershipShapes);
         }
 
@@ -1913,7 +1797,7 @@ final class Domain {
             if (intersection == null) {
                 return List.of(this);
             }
-            if (subsetOf(other, symbols)) {
+            if (subsetOf(other)) {
                 return List.of();
             }
             DecisionPartition partition = splitAgainst(other, symbols);
@@ -1934,12 +1818,12 @@ final class Domain {
         Expression toExpression(IntFunction<String> keyResolver, Symbol.Table symbols) {
             Expression expression = Expression.TRUE;
             for (int i = 0; i < scalarShapes.length; i++) {
-                Symbol symbol = symbols.symbol(scalarSymbolIds[i]);
-                expression = expression.and(scalarShapes[i].toExpression(keyResolver.apply(scalarSymbolIds[i]), symbol));
+                Symbol symbol = symbols.symbol(scalarIds[i]);
+                expression = expression.and(scalarShapes[i].toExpression(keyResolver.apply(scalarIds[i]), symbol));
             }
             for (int i = 0; i < membershipShapes.length; i++) {
-                Symbol symbol = symbols.symbol(membershipSymbolIds[i]);
-                expression = expression.and(membershipShapes[i].toExpression(keyResolver.apply(membershipSymbolIds[i]), symbol));
+                Symbol symbol = symbols.symbol(membershipIds[i]);
+                expression = expression.and(membershipShapes[i].toExpression(keyResolver.apply(membershipIds[i]), symbol));
             }
             return expression;
         }
@@ -1951,31 +1835,31 @@ final class Domain {
                 if (i > 0) {
                     builder.append(',');
                 }
-                builder.append(scalarSymbolIds[i]).append(':');
-                scalarShapes[i].appendLiteral(builder, symbols.symbol(scalarSymbolIds[i]));
+                builder.append(scalarIds[i]).append(':');
+                scalarShapes[i].appendLiteral(builder, symbols.symbol(scalarIds[i]));
             }
             builder.append("}|{");
             for (int i = 0; i < membershipShapes.length; i++) {
                 if (i > 0) {
                     builder.append(',');
                 }
-                builder.append(membershipSymbolIds[i]).append(':');
-                membershipShapes[i].appendLiteral(builder, symbols.symbol(membershipSymbolIds[i]));
+                builder.append(membershipIds[i]).append(':');
+                membershipShapes[i].appendLiteral(builder, symbols.symbol(membershipIds[i]));
             }
             builder.append('}');
             return builder.toString();
         }
 
-        private DecisionPartition splitAgainst(DecisionShape other, Symbol.Table symbols) {
+        DecisionPartition splitAgainst(DecisionShape other, Symbol.Table symbols) {
             int leftScalar = 0;
             for (int rightScalar = 0; rightScalar < other.scalarShapes.length; rightScalar++) {
-                int symbolId = other.scalarSymbolIds[rightScalar];
-                while (leftScalar < scalarShapes.length && scalarSymbolIds[leftScalar] < symbolId) {
+                int symbolId = other.scalarIds[rightScalar];
+                while (leftScalar < scalarShapes.length && scalarIds[leftScalar] < symbolId) {
                     leftScalar++;
                 }
                 Symbol symbol = symbols.symbol(symbolId);
                 if (symbol.maskableScalar()) {
-                    long leftMask = leftScalar < scalarShapes.length && scalarSymbolIds[leftScalar] == symbolId
+                    long leftMask = leftScalar < scalarShapes.length && scalarIds[leftScalar] == symbolId
                             ? scalarShapes[leftScalar].allowedMask
                             : symbol.fullScalarMask();
                     long rightMask = other.scalarShapes[rightScalar].allowedMask;
@@ -1988,7 +1872,7 @@ final class Domain {
                     }
                     continue;
                 }
-                Set<String> leftAllowed = leftScalar < scalarShapes.length && scalarSymbolIds[leftScalar] == symbolId
+                Set<String> leftAllowed = leftScalar < scalarShapes.length && scalarIds[leftScalar] == symbolId
                         ? scalarShapes[leftScalar].allowed
                         : scalarValues(symbol.domain());
                 Set<String> rightAllowed = other.scalarShapes[rightScalar].allowed;
@@ -2004,12 +1888,12 @@ final class Domain {
             }
             int leftMembership = 0;
             for (int rightMembership = 0; rightMembership < other.membershipShapes.length; rightMembership++) {
-                int symbolId = other.membershipSymbolIds[rightMembership];
-                while (leftMembership < membershipShapes.length && membershipSymbolIds[leftMembership] < symbolId) {
+                int symbolId = other.membershipIds[rightMembership];
+                while (leftMembership < membershipShapes.length && membershipIds[leftMembership] < symbolId) {
                     leftMembership++;
                 }
                 Symbol symbol = symbols.symbol(symbolId);
-                MembershipShape left = leftMembership < membershipShapes.length && membershipSymbolIds[leftMembership] == symbolId
+                MembershipShape left = leftMembership < membershipShapes.length && membershipIds[leftMembership] == symbolId
                         ? membershipShapes[leftMembership]
                         : MembershipShape.EMPTY;
                 MembershipShape right = other.membershipShapes[rightMembership];
@@ -2055,38 +1939,38 @@ final class Domain {
             return null;
         }
 
-        private DecisionShape withScalar(int symbolId, ScalarShape nextShape, Symbol symbol) {
+        DecisionShape withScalar(int symbolId, ScalarShape nextShape, Symbol symbol) {
             if (nextShape.isFull(symbol)) {
-                int index = Arrays.binarySearch(scalarSymbolIds, symbolId);
+                int index = Arrays.binarySearch(scalarIds, symbolId);
                 if (index < 0) {
                     return this;
                 }
                 if (scalarShapes.length == 1) {
-                    return new DecisionShape(NO_SYMBOL_IDS, NO_SCALARS, membershipSymbolIds, membershipShapes);
+                    return new DecisionShape(NO_SYMBOL_IDS, NO_SCALARS, membershipIds, membershipShapes);
                 }
                 return new DecisionShape(
-                        removeIndex(scalarSymbolIds, index),
+                        removeIndex(scalarIds, index),
                         removeIndex(scalarShapes, index),
-                        membershipSymbolIds,
+                        membershipIds,
                         membershipShapes);
             }
-            int index = Arrays.binarySearch(scalarSymbolIds, symbolId);
+            int index = Arrays.binarySearch(scalarIds, symbolId);
             if (index >= 0) {
                 if (scalarShapes[index].equals(nextShape)) {
                     return this;
                 }
                 ScalarShape[] nextScalars = Arrays.copyOf(scalarShapes, scalarShapes.length);
                 nextScalars[index] = nextShape;
-                return new DecisionShape(scalarSymbolIds, nextScalars, membershipSymbolIds, membershipShapes);
+                return new DecisionShape(scalarIds, nextScalars, membershipIds, membershipShapes);
             }
             int insertion = -index - 1;
-            int[] nextScalarIds = insert(scalarSymbolIds, insertion, symbolId);
+            int[] nextScalarIds = insert(scalarIds, insertion, symbolId);
             ScalarShape[] nextScalars = insert(scalarShapes, insertion, nextShape);
-            return new DecisionShape(nextScalarIds, nextScalars, membershipSymbolIds, membershipShapes);
+            return new DecisionShape(nextScalarIds, nextScalars, membershipIds, membershipShapes);
         }
 
-        private DecisionShape withMembershipRequired(int symbolId, String item, Symbol symbol) {
-            int index = Arrays.binarySearch(membershipSymbolIds, symbolId);
+        DecisionShape withMembershipRequired(int symbolId, String item, Symbol symbol) {
+            int index = Arrays.binarySearch(membershipIds, symbolId);
             MembershipShape current = index < 0 ? MembershipShape.empty(symbol) : membershipShapes[index];
             MembershipShape nextShape = current.withRequired(item, symbol);
             if (nextShape.equals(current)) {
@@ -2095,8 +1979,8 @@ final class Domain {
             return withMembership(index, symbolId, nextShape);
         }
 
-        private DecisionShape withMembershipForbidden(int symbolId, String item, Symbol symbol) {
-            int index = Arrays.binarySearch(membershipSymbolIds, symbolId);
+        DecisionShape withMembershipForbidden(int symbolId, String item, Symbol symbol) {
+            int index = Arrays.binarySearch(membershipIds, symbolId);
             MembershipShape current = index < 0 ? MembershipShape.empty(symbol) : membershipShapes[index];
             MembershipShape nextShape = current.withForbidden(item, symbol);
             if (nextShape.equals(current)) {
@@ -2105,30 +1989,21 @@ final class Domain {
             return withMembership(index, symbolId, nextShape);
         }
 
-        private DecisionShape withMembership(int index, int symbolId, MembershipShape nextShape) {
+        DecisionShape withMembership(int index, int symbolId, MembershipShape nextShape) {
             if (index >= 0) {
                 MembershipShape[] nextMemberships = Arrays.copyOf(membershipShapes, membershipShapes.length);
                 nextMemberships[index] = nextShape;
-                return new DecisionShape(scalarSymbolIds, scalarShapes, membershipSymbolIds, nextMemberships);
+                return new DecisionShape(scalarIds, scalarShapes, membershipIds, nextMemberships);
             }
             int insertion = -index - 1;
             return new DecisionShape(
-                    scalarSymbolIds,
+                    scalarIds,
                     scalarShapes,
-                    insert(membershipSymbolIds, insertion, symbolId),
+                    insert(membershipIds, insertion, symbolId),
                     insert(membershipShapes, insertion, nextShape));
         }
 
-        private boolean membershipsEqual(DecisionShape other) {
-            return membershipsHash == other.membershipsHash
-                    && entriesEqual(membershipSymbolIds, membershipShapes, other.membershipSymbolIds, other.membershipShapes);
-        }
-
-        private static boolean entriesEqual(int[] leftIds, Object[] leftValues, int[] rightIds, Object[] rightValues) {
-            return Arrays.equals(leftIds, rightIds) && Arrays.equals(leftValues, rightValues);
-        }
-
-        private static int entriesHash(int[] symbolIds, Object[] values) {
+        static int entriesHash(int[] symbolIds, Object[] values) {
             int result = 1;
             for (int i = 0; i < symbolIds.length; i++) {
                 result = 31 * result + Integer.hashCode(symbolIds[i]);
@@ -2137,20 +2012,20 @@ final class Domain {
             return result;
         }
 
-        private static int[] removeIndex(int[] values, int index) {
+        static int[] removeIndex(int[] values, int index) {
             int[] next = new int[values.length - 1];
             System.arraycopy(values, 0, next, 0, index);
             System.arraycopy(values, index + 1, next, index, values.length - index - 1);
             return next;
         }
 
-        private static <T> T[] removeIndex(T[] values, int index) {
+        static <T> T[] removeIndex(T[] values, int index) {
             T[] next = Arrays.copyOf(values, values.length - 1);
             System.arraycopy(values, index + 1, next, index, values.length - index - 1);
             return next;
         }
 
-        private static int[] insert(int[] values, int insertion, int value) {
+        static int[] insert(int[] values, int insertion, int value) {
             int[] next = new int[values.length + 1];
             System.arraycopy(values, 0, next, 0, insertion);
             next[insertion] = value;
@@ -2158,11 +2033,19 @@ final class Domain {
             return next;
         }
 
-        private static <T> T[] insert(T[] values, int insertion, T value) {
+        static <T> T[] insert(T[] values, int insertion, T value) {
             T[] next = Arrays.copyOf(values, values.length + 1);
             System.arraycopy(next, insertion, next, insertion + 1, values.length - insertion);
             next[insertion] = value;
             return next;
+        }
+
+        static int[] trim(int[] values, int size) {
+            return size == 0 ? DecisionShape.NO_SYMBOL_IDS : size == values.length ? values : Arrays.copyOf(values, size);
+        }
+
+        static <T> T[] trim(T[] values, int size, T[] empty) {
+            return size == 0 ? empty : size == values.length ? values : Arrays.copyOf(values, size);
         }
 
         @Override
@@ -2175,8 +2058,10 @@ final class Domain {
             }
             DecisionShape other = (DecisionShape) o;
             return hashCode == other.hashCode
-                    && entriesEqual(scalarSymbolIds, scalarShapes, other.scalarSymbolIds, other.scalarShapes)
-                    && entriesEqual(membershipSymbolIds, membershipShapes, other.membershipSymbolIds, other.membershipShapes);
+                    && Arrays.equals(scalarIds, other.scalarIds)
+                    && Arrays.equals(scalarShapes, other.scalarShapes)
+                    && Arrays.equals(membershipIds, other.membershipIds)
+                    && Arrays.equals(membershipShapes, other.membershipShapes);
         }
 
         @Override
@@ -2189,7 +2074,7 @@ final class Domain {
             private final ScalarShape[] shapes;
             private int size;
 
-            private ScalarBuilder(int capacity) {
+            ScalarBuilder(int capacity) {
                 this.symbolIds = capacity == 0 ? NO_SYMBOL_IDS : new int[capacity];
                 this.shapes = capacity == 0 ? NO_SCALARS : new ScalarShape[capacity];
             }
@@ -2199,14 +2084,6 @@ final class Domain {
                 shapes[size] = shape;
                 size++;
             }
-
-            int[] symbolIds() {
-                return size == 0 ? NO_SYMBOL_IDS : size == symbolIds.length ? symbolIds : Arrays.copyOf(symbolIds, size);
-            }
-
-            ScalarShape[] shapes() {
-                return size == 0 ? NO_SCALARS : size == shapes.length ? shapes : Arrays.copyOf(shapes, size);
-            }
         }
 
         private static final class MembershipBuilder {
@@ -2214,7 +2091,7 @@ final class Domain {
             private final MembershipShape[] shapes;
             private int size;
 
-            private MembershipBuilder(int capacity) {
+            MembershipBuilder(int capacity) {
                 this.symbolIds = capacity == 0 ? NO_SYMBOL_IDS : new int[capacity];
                 this.shapes = capacity == 0 ? NO_MEMBERSHIPS : new MembershipShape[capacity];
             }
@@ -2224,38 +2101,27 @@ final class Domain {
                 shapes[size] = shape;
                 size++;
             }
-
-            int[] symbolIds() {
-                return size == 0 ? NO_SYMBOL_IDS : size == symbolIds.length ? symbolIds : Arrays.copyOf(symbolIds, size);
-            }
-
-            MembershipShape[] shapes() {
-                return size == 0 ? NO_MEMBERSHIPS : size == shapes.length ? shapes : Arrays.copyOf(shapes, size);
-            }
         }
     }
 
     private static final class ScalarShape {
         private final Set<String> allowed;
         private final long allowedMask;
-        private final int allowedSize;
 
-        private ScalarShape(Symbol symbol, Set<String> allowed) {
+        ScalarShape(Symbol symbol, Set<String> allowed) {
             if (allowed.isEmpty()) {
                 throw new IllegalArgumentException("Scalar constraint must not be empty");
             }
             if (symbol.maskableScalar()) {
                 this.allowed = null;
                 this.allowedMask = symbol.scalarMask(allowed);
-                this.allowedSize = Long.bitCount(this.allowedMask);
             } else {
                 this.allowed = canonicalStrings(allowed);
                 this.allowedMask = 0L;
-                this.allowedSize = this.allowed.size();
             }
         }
 
-        private ScalarShape(Symbol symbol, long allowedMask) {
+        ScalarShape(Symbol symbol, long allowedMask) {
             if (!symbol.maskableScalar()) {
                 throw new IllegalArgumentException("Masked scalar constraint requires a maskable symbol");
             }
@@ -2264,7 +2130,6 @@ final class Domain {
             }
             this.allowed = null;
             this.allowedMask = allowedMask;
-            this.allowedSize = Long.bitCount(allowedMask);
         }
 
         ScalarShape intersect(ScalarShape other, Symbol symbol) {
@@ -2308,7 +2173,7 @@ final class Domain {
             if (allowed == null || other.allowed == null) {
                 throw new IllegalStateException("Scalar shape maskability mismatch");
             }
-            if (allowedSize > other.allowedSize) {
+            if (allowed.size() > other.allowed.size()) {
                 return false;
             }
             return allowed.equals(other.allowed) || other.allowed.containsAll(allowed);
@@ -2359,7 +2224,7 @@ final class Domain {
         }
 
         private boolean isSingleton(Symbol symbol, String value) {
-            return allowed == null ? allowedMask == symbol.scalarMask(value) : allowedSize == 1 && allowed.contains(value);
+            return allowed == null ? allowedMask == symbol.scalarMask(value) : allowed.size() == 1 && allowed.contains(value);
         }
 
         void appendLiteral(StringBuilder builder, Symbol symbol) {
@@ -2395,7 +2260,7 @@ final class Domain {
 
         @Override
         public int hashCode() {
-            return allowed == null ? Long.hashCode(allowedMask) : Objects.hash(allowed);
+            return allowed == null ? Long.hashCode(allowedMask) : allowed.hashCode();
         }
     }
 
@@ -2406,24 +2271,20 @@ final class Domain {
         private final Set<String> forbidden;
         private final long requiredMask;
         private final long forbiddenMask;
-        private final int requiredSize;
-        private final int forbiddenSize;
 
-        private MembershipShape(Set<String> required, Set<String> forbidden) {
+        MembershipShape(Set<String> required, Set<String> forbidden) {
             Set<String> nextRequired = new TreeSet<>(required);
             Set<String> nextForbidden = new TreeSet<>(forbidden);
             if (Lists.intersects(nextRequired, nextForbidden)) {
                 throw new IllegalArgumentException("Membership required and forbidden items must be disjoint");
             }
-            this.required = Set.copyOf(nextRequired);
-            this.forbidden = Set.copyOf(nextForbidden);
+            this.required = nextRequired;
+            this.forbidden = nextForbidden;
             this.requiredMask = 0L;
             this.forbiddenMask = 0L;
-            this.requiredSize = this.required.size();
-            this.forbiddenSize = this.forbidden.size();
         }
 
-        private MembershipShape(Symbol symbol, long requiredMask, long forbiddenMask) {
+        MembershipShape(Symbol symbol, long requiredMask, long forbiddenMask) {
             if (!symbol.maskableMembership()) {
                 throw new IllegalArgumentException("Masked membership constraint requires a maskable symbol");
             }
@@ -2438,18 +2299,10 @@ final class Domain {
             this.forbidden = null;
             this.requiredMask = requiredMask;
             this.forbiddenMask = forbiddenMask;
-            this.requiredSize = Long.bitCount(requiredMask);
-            this.forbiddenSize = Long.bitCount(forbiddenMask);
         }
 
         static MembershipShape empty(Symbol symbol) {
             return symbol.maskableMembership() ? new MembershipShape(symbol, 0L, 0L) : EMPTY;
-        }
-
-        static MembershipShape required(Symbol symbol, String item) {
-            return symbol.maskableMembership()
-                    ? new MembershipShape(symbol, symbol.membershipMask(item), 0L)
-                    : new MembershipShape(Set.of(item), Set.of());
         }
 
         static MembershipShape required(Symbol symbol, Set<String> items) {
@@ -2463,7 +2316,7 @@ final class Domain {
         }
 
         boolean isEmpty() {
-            return requiredSize == 0 && forbiddenSize == 0;
+            return maskBased() ? requiredMask == 0L && forbiddenMask == 0L : required.isEmpty() && forbidden.isEmpty();
         }
 
         MembershipShape intersect(MembershipShape other, Symbol symbol) {
@@ -2522,7 +2375,7 @@ final class Domain {
             if (maskBased() || other.maskBased()) {
                 throw new IllegalStateException("Membership shape maskability mismatch");
             }
-            if (requiredSize < other.requiredSize || forbiddenSize < other.forbiddenSize) {
+            if (required.size() < other.required.size() || forbidden.size() < other.forbidden.size()) {
                 return false;
             }
             return (required.equals(other.required) || required.containsAll(other.required))
@@ -2650,7 +2503,7 @@ final class Domain {
             }
             return maskBased()
                     ? 31 * Long.hashCode(requiredMask) + Long.hashCode(forbiddenMask)
-                    : Objects.hash(required, forbidden);
+                    : 31 * required.hashCode() + forbidden.hashCode();
         }
     }
 
@@ -2658,7 +2511,7 @@ final class Domain {
         private final DecisionShape outside;
         private final DecisionShape overlap;
 
-        private DecisionPartition(DecisionShape outside, DecisionShape overlap) {
+        DecisionPartition(DecisionShape outside, DecisionShape overlap) {
             this.outside = outside;
             this.overlap = overlap;
         }

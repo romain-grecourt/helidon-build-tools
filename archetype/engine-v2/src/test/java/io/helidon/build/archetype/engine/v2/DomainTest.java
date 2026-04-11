@@ -19,15 +19,16 @@ import java.util.ArrayList;
 import java.util.Set;
 import java.util.function.Function;
 
-import io.helidon.build.archetype.engine.v2.Domain.Value.BooleanSet;
-import io.helidon.build.archetype.engine.v2.Domain.Value.ChoiceSet;
-import io.helidon.build.archetype.engine.v2.Domain.Value.ListSummary;
-import io.helidon.build.archetype.engine.v2.Domain.Value.OpenText;
+import io.helidon.build.archetype.engine.v2.Domain.LatticeValue.BooleanSet;
+import io.helidon.build.archetype.engine.v2.Domain.LatticeValue.ChoiceSet;
+import io.helidon.build.archetype.engine.v2.Domain.LatticeValue.ListSummary;
+import io.helidon.build.archetype.engine.v2.Domain.LatticeValue.OpenText;
 
 import org.hamcrest.FeatureMatcher;
 import org.hamcrest.Matcher;
 import org.junit.jupiter.api.Test;
 
+import static io.helidon.build.archetype.engine.v2.Domain.Guard.TRUE;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.instanceOf;
@@ -38,10 +39,10 @@ class DomainTest {
 
     @Test
     void testTopValuesFollowSpecs() {
-        Domain.Value booleanTop = Domain.Value.top(new Domain.Spec.Boolean());
-        Domain.Value choiceTop = Domain.Value.top(new Domain.Spec.Choice(Set.of("mp", "se")));
-        Domain.Value membershipTop = Domain.Value.top(new Domain.Spec.Membership(Set.of("rest", "grpc")));
-        Domain.Value openTextTop = Domain.Value.top(new Domain.Spec.OpenText());
+        Domain.LatticeValue booleanTop = Domain.LatticeValue.top(new Domain.Spec.Boolean());
+        Domain.LatticeValue choiceTop = Domain.LatticeValue.top(new Domain.Spec.Choice(Set.of("mp", "se")));
+        Domain.LatticeValue membershipTop = Domain.LatticeValue.top(new Domain.Spec.Membership(Set.of("rest", "grpc")));
+        Domain.LatticeValue openTextTop = Domain.LatticeValue.top(new Domain.Spec.OpenText());
 
         assertThat(booleanTop, isSubtype(BooleanSet.class,
                 hasProperty("values", BooleanSet::values, is(Set.of(false, true)))));
@@ -79,7 +80,7 @@ class DomainTest {
         assertThat(guards.toExpression(nonMpGuard, scope).literal(), is("${flavor} != 'mp'"));
         assertThat(guards.toExpression(notRestGuard, scope).literal(), is("!(${features} contains 'rest')"));
         assertThat(guards.implies(enabledMp, enabledGuard), is(true));
-        assertThat(guards.equivalent(guards.or(mpGuard, nonMpGuard), guards.trueGuard()), is(true));
+        assertThat(guards.equivalent(guards.or(mpGuard, nonMpGuard), TRUE), is(true));
     }
 
     @Test

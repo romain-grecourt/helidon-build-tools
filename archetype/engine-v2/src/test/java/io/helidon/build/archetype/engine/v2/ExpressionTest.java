@@ -707,6 +707,36 @@ class ExpressionTest {
     }
 
     @Test
+    void testConjunctionAndDisjunctionTerms() {
+        Expression conjunction = expr("${a} && ${b} == 'x&&y' && (${c} || ${d})");
+        Expression disjunction = expr("(${a} && ${b}) || ${c} || ${d} == 'x||y'");
+        Expression nested = expr("!(${a} && ${b})");
+
+        assertThat(conjunction.conjunction(), is(List.of(
+                expr("${a}"),
+                expr("${b} == 'x&&y'"),
+                expr("${c} || ${d}"))));
+        assertThat(disjunction.disjunction(), is(List.of(
+                expr("${a} && ${b}"),
+                expr("${c}"),
+                expr("${d} == 'x||y'"))));
+        assertThat(nested.conjunction(), is(List.of(nested)));
+        assertThat(nested.disjunction(), is(List.of(nested)));
+    }
+
+    @Test
+    void testAndOrWithExpressionLists() {
+        assertThat(Expression.TRUE.and((List<Expression>) null), is(Expression.TRUE));
+        assertThat(Expression.FALSE.or((List<Expression>) null), is(Expression.FALSE));
+        assertThat(Expression.TRUE.and(List.<Expression>of()), is(Expression.TRUE));
+        assertThat(Expression.FALSE.or(List.<Expression>of()), is(Expression.FALSE));
+        assertThat(Expression.TRUE.and(List.of(expr("${a}"), expr("${b} || ${c}"))),
+                is(expr("${a} && (${b} || ${c})")));
+        assertThat(Expression.FALSE.or(List.of(expr("${a} && ${b}"), expr("${c}"))),
+                is(expr("(${a} && ${b}) || ${c}")));
+    }
+
+    @Test
     void testProgrammaticDeepOrChain() {
         Expression actual = Expression.FALSE;
         for (int i = 0; i < 256; i++) {
@@ -752,10 +782,10 @@ class ExpressionTest {
     }
 
     @Test
-    void testFoldConstantsKeepsUnsupportedContainsExpression() {
+    void testFoldKeepsUnsupportedContainsExpression() {
         Expression actual = expr("['json'] contains true");
 
-        assertThat(actual.foldConstants(), is(actual));
+        assertThat(actual.fold(), is(actual));
     }
 
     @Test
