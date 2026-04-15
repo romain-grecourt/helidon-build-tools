@@ -131,7 +131,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         for (Variations variation : variations) {
             requireNonNull(variation);
             for (Entry entry : variation) {
-                merged.merge(entry.identity(), entry, (left, right) -> left.merge(right));
+                merged.merge(entry.identity(), entry, Entry::merge);
             }
         }
         return new Variations(merged.values());

@@ -62,19 +62,15 @@ final class Domain {
         private final Kind kind;
         private final SubKind subKind;
         private final Map<String, Integer> ordinals;
-        private final String[] valuesByOrdinal;
-        private final long fullMask;
+        private final String[] values;
+        private final long mask;
 
-        private Spec(Kind kind,
-                     SubKind subKind,
-                     Map<String, Integer> ordinals,
-                     String[] valuesByOrdinal,
-                     long fullMask) {
+        private Spec(Kind kind, SubKind subKind, Map<String, Integer> ordinals, String[] values, long mask) {
             this.kind = requireNonNull(kind, "kind is null");
             this.subKind = requireNonNull(subKind, "subKind is null");
             this.ordinals = ordinals;
-            this.valuesByOrdinal = valuesByOrdinal;
-            this.fullMask = fullMask;
+            this.values = values;
+            this.mask = mask;
         }
 
         static Spec booleanSpec() {
@@ -95,16 +91,12 @@ final class Domain {
                 throw new IllegalArgumentException("Invalid finite scalar subKind: " + subKind);
             }
             Map<String, Integer> ordinals = stringOrdinals(values, "Finite scalar");
-            return new Spec(Kind.FINITE_SCALAR, subKind, ordinals, stringsByOrdinal(ordinals), fullMask(ordinals.size()));
+            return new Spec(Kind.FINITE_SCALAR, subKind, ordinals, values(ordinals), mask(ordinals.size()));
         }
 
         static Spec finiteMembership(Set<String> items) {
             Map<String, Integer> ordinals = stringOrdinals(items, "Finite membership");
-            return new Spec(Kind.FINITE_MEMBERSHIP,
-                    SubKind.MEMBERSHIP,
-                    ordinals,
-                    stringsByOrdinal(ordinals),
-                    fullMask(ordinals.size()));
+            return new Spec(Kind.FINITE_MEMBERSHIP, SubKind.MEMBERSHIP, ordinals, values(ordinals), mask(ordinals.size()));
         }
 
         Kind kind() {
@@ -131,8 +123,8 @@ final class Domain {
             return ordinals == null ? Set.of() : ordinals.keySet();
         }
 
-        long fullMask() {
-            return fullMask;
+        long mask() {
+            return mask;
         }
 
         long mask(String value) {
@@ -156,10 +148,10 @@ final class Domain {
         }
 
         String value(int ordinal) {
-            if (valuesByOrdinal == null) {
+            if (values == null) {
                 throw new IllegalStateException("Ordinal requested for non-finite spec: " + subKind);
             }
-            return valuesByOrdinal[ordinal];
+            return values[ordinal];
         }
 
         private static Map<String, Integer> stringOrdinals(Set<String> values, String label) {
@@ -178,13 +170,13 @@ final class Domain {
             return Map.copyOf(ordinals);
         }
 
-        private static String[] stringsByOrdinal(Map<String, Integer> ordinals) {
+        private static String[] values(Map<String, Integer> ordinals) {
             String[] values = new String[ordinals.size()];
             ordinals.forEach((value, ordinal) -> values[ordinal] = value);
             return values;
         }
 
-        private static long fullMask(int size) {
+        private static long mask(int size) {
             return size == Long.SIZE ? -1L : (1L << size) - 1L;
         }
 
@@ -195,14 +187,14 @@ final class Domain {
             }
             Spec other = (Spec) o;
             return kind == other.kind
-                    && subKind == other.subKind
-                    && fullMask == other.fullMask
-                    && Objects.equals(ordinals, other.ordinals);
+                   && subKind == other.subKind
+                   && mask == other.mask
+                   && Objects.equals(ordinals, other.ordinals);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(kind, subKind, ordinals, fullMask);
+            return Objects.hash(kind, subKind, ordinals, mask);
         }
 
         @Override
@@ -220,7 +212,6 @@ final class Domain {
         private final boolean scalar;
         private final boolean member;
         private final Map<String, Integer> ordinals;
-        private final String[] valuesByOrdinal;
         private final long fullMask;
 
         Symbol(int id, String name, Spec domain, boolean guardable, boolean tainted) {
@@ -232,8 +223,7 @@ final class Domain {
             this.scalar = domain.kind() == Spec.Kind.FINITE_SCALAR;
             this.member = domain.kind() == Spec.Kind.FINITE_MEMBERSHIP;
             this.ordinals = scalar || member ? domain.ordinals : null;
-            this.valuesByOrdinal = scalar || member ? domain.valuesByOrdinal : null;
-            this.fullMask = scalar || member ? domain.fullMask : 0L;
+            this.fullMask = scalar || member ? domain.mask : 0L;
         }
 
         int id() {
@@ -261,17 +251,6 @@ final class Domain {
                 throw new IllegalStateException("Scalar mask requested for non-maskable symbol: " + name);
             }
             return domain.mask(value);
-        }
-
-        long scalarMask(Set<String> values) {
-            if (!scalar) {
-                throw new IllegalStateException("Scalar mask requested for non-maskable symbol: " + name);
-            }
-            long mask = 0L;
-            for (String value : values) {
-                mask |= scalarMask(value);
-            }
-            return mask;
         }
 
         long membershipMask(String value) {
@@ -602,10 +581,6 @@ final class Domain {
                 return idsByName.get(name);
             }
 
-            int size() {
-                return symbols.size();
-            }
-
             List<Symbol> symbols() {
                 return symbols;
             }
@@ -641,7 +616,6 @@ final class Domain {
     }
 
     static final class LatticeValue {
-        static final LatticeValue BOTTOM = new LatticeValue(Kind.BOTTOM, null, 0L, 0L, 0L);
         static final LatticeValue TOP = new LatticeValue(Kind.TOP, null, 0L, 0L, 0L);
 
         enum Kind {
@@ -671,9 +645,9 @@ final class Domain {
                 case OPEN_TEXT:
                     return openText(null);
                 case FINITE_SCALAR:
-                    return finiteScalar(spec.fullMask());
+                    return finiteScalar(spec.mask());
                 case FINITE_MEMBERSHIP:
-                    return membership(0L, spec.fullMask());
+                    return membership(0L, spec.mask());
                 default:
                     return TOP;
             }
@@ -743,14 +717,6 @@ final class Domain {
             return scalarMask;
         }
 
-        long requiredMask() {
-            return requiredMask;
-        }
-
-        long possibleMask() {
-            return possibleMask;
-        }
-
         Set<String> scalarValues(Spec spec) {
             if (kind != Kind.FINITE_SCALAR || !spec.scalar()) {
                 throw new IllegalArgumentException("Scalar values requested for non-finite scalar");
@@ -763,13 +729,6 @@ final class Domain {
                 return null;
             }
             return spec.value(Long.numberOfTrailingZeros(scalarMask));
-        }
-
-        Set<String> requiredValues(Spec spec) {
-            if (kind != Kind.MEMBERSHIP || !spec.membership()) {
-                throw new IllegalArgumentException("Required values requested for non-membership");
-            }
-            return values(spec, requiredMask);
         }
 
         Set<String> possibleValues(Spec spec) {
@@ -906,10 +865,6 @@ final class Domain {
             return new Residual(Kind.OPAQUE, -1, 0L, null, folded, List.of());
         }
 
-        static Residual defined(int symbolId) {
-            return new Residual(Kind.DEFINED, symbolId, 0L, null, null, List.of());
-        }
-
         static Residual scalarEq(int symbolId, String value) {
             return new Residual(Kind.SCALAR_EQ, symbolId, 0L, requireNonNull(value, "value is null"), null, List.of());
         }
@@ -951,7 +906,7 @@ final class Domain {
         }
 
         private static Residual combine(Kind kind, Residual identity, Residual absorbing, List<Residual> children) {
-            LinkedHashSet<Residual> normalized = new LinkedHashSet<>();
+            Set<Residual> normalized = new LinkedHashSet<>();
             for (Residual child : children) {
                 if (child == null || child == identity) {
                     continue;
@@ -1001,8 +956,6 @@ final class Domain {
             switch (kind) {
                 case TRUE:
                     return Expression.TRUE;
-                case FALSE:
-                    return Expression.FALSE;
                 case OPAQUE:
                     return expression;
                 case DEFINED:
@@ -1061,6 +1014,7 @@ final class Domain {
                     return Expression.TRUE.and(Lists.map(children, child -> child.toExpression(keyResolver, symbols)));
                 case OR:
                     return Expression.FALSE.or(Lists.map(children, child -> child.toExpression(keyResolver, symbols)));
+                case FALSE:
                 default:
                     return Expression.FALSE;
             }
@@ -1242,10 +1196,6 @@ final class Domain {
             MembershipShape membership = MembershipShape.required(symbol, required);
             DecisionShape shape = new DecisionShape(symbolId, membership);
             return guard(Decision.of(List.of(shape), symbols), Residual.TRUE);
-        }
-
-        Guard defined(int symbolId) {
-            return guard(Decision.TRUE, Residual.defined(symbolId));
         }
 
         Expression toExpression(Guard guard, Scope scope) {
@@ -1563,13 +1513,6 @@ final class Domain {
                 return new ResidualValue(Residual.opaque(expression), null, literal, expression);
             }
         }
-    }
-
-    private static Set<String> scalarValues(Spec spec) {
-        if (spec.kind() != Spec.Kind.FINITE_SCALAR) {
-            throw new IllegalArgumentException("Spec is not scalar: " + spec.kind());
-        }
-        return spec.values();
     }
 
     private static long exactScalarMask(Spec spec, Value<?> value) {

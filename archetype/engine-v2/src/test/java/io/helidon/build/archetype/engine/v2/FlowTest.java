@@ -15,51 +15,44 @@
  */
 package io.helidon.build.archetype.engine.v2;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import org.hamcrest.FeatureMatcher;
-import org.hamcrest.Matcher;
 import org.junit.jupiter.api.Test;
 
 import static io.helidon.build.archetype.engine.v2.Domain.Guard.FALSE;
 import static io.helidon.build.archetype.engine.v2.Domain.Guard.TRUE;
 import static io.helidon.build.common.test.utils.TestFiles.testResourcePath;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.allOf;
-import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.containsInAnyOrder;
-import static org.hamcrest.Matchers.instanceOf;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class FlowTest {
 
     @Test
-    void testIrLoweringBuildsInputsBranchesAndEmits() {
+    void testFlowTracksInputDomainsAndNodeGuards() {
         Context.Scope scope = new Context().scope();
         Node script = load("flow/ir-lowering.xml");
 
         Flow flow = new Flow(scope);
         flow.process(script);
-        Flow.Ir ir = flow.ir();
 
-        assertThat(ir.symbols().size(), is(3));
-        assertThat(ir.symbols().symbols().stream().map(Domain.Symbol::name).collect(Collectors.toList()),
-                containsInAnyOrder("enabled", "flavor", "features"));
-        assertThat(ir.ops().stream().filter(op -> op.kind() == Flow.Op.Kind.DECLARE_INPUT).count(), is(3L));
-        assertThat(ir.ops().stream().filter(op -> op.kind() == Flow.Op.Kind.DECLARE_OPTION).count(), is(3L));
-        assertThat(ir.ops().stream().filter(op -> op.kind() == Flow.Op.Kind.EMIT).count(), is(2L));
-        assertThat(ir.blocks().stream()
-                        .map(Flow.Block::terminator)
-                        .filter(t -> t.kind() == Flow.Terminator.Kind.BRANCH)
-                        .map(t -> ir.guards().toExpression(t.guard(), scope).literal())
-                        .collect(Collectors.toList()),
-                containsInAnyOrder("${enabled}", "${features} contains 'rest'"));
+        Domain.Symbol enabled = symbol(flow, "enabled");
+        Domain.Symbol flavor = symbol(flow, "flavor");
+        Domain.Symbol features = symbol(flow, "features");
+        Node setup = findStep(script, "setup");
+        Node pom = findFile(script, "pom.xml");
+
+        assertThat(enabled.domain().booleanLike(), is(true));
+        assertThat(flavor.domain().kind(), is(Domain.Spec.Kind.FINITE_SCALAR));
+        assertThat(flavor.domain().values(), is(Set.of("mp", "se")));
+        assertThat(features.domain().kind(), is(Domain.Spec.Kind.FINITE_MEMBERSHIP));
+        assertThat(features.domain().values(), is(Set.of("rest")));
+        assertThat(flow.guards().equivalent(flow.activeGuard(setup), flow.guards().eq(enabled.id(), "true")), is(true));
+        assertThat(flow.guards().equivalent(flow.activeGuard(pom), flow.guards().contains(features.id(), "rest")), is(true));
     }
 
     @Test
@@ -76,177 +69,94 @@ class FlowTest {
 
     @Test
     void testAnalyzeMergesBranchValuesAndUseGuards() {
-        Domain.Symbol.Table.Builder builder = Domain.Symbol.Table.builder();
-        int enabled = builder.define("enabled", Domain.Spec.booleanSpec(), true, false);
-        int flavor = builder.define("flavor", Domain.Spec.choice(Set.of("mp", "se")), true, false);
-        Domain.Symbol.Table symbols = builder.build();
-        Domain.Guards guards = new Domain.Guards(symbols);
-        Flow.SourceAnchor anchor = new Flow.SourceAnchor(Nodes.script());
+        Context.Scope scope = new Context().scope();
+        Node script = load("flow/branch-value-merge.xml");
 
-        Flow.Op declareEnabled = Flow.Op.declareInput(0, 0, anchor, enabled);
-        Flow.Op defineMp = Flow.Op.defineValue(1, 1, anchor, flavor, Expression.create("'mp'"));
-        Flow.Op defineSe = Flow.Op.defineValue(2, 2, anchor, flavor, Expression.create("'se'"));
-        Flow.Op useFlavor = Flow.Op.recordUse(3, 3, anchor, flavor);
+        Flow flow = new Flow(scope);
+        flow.process(script);
 
-        Flow.Block entry = new Flow.Block(List.of(0),
-                Flow.Terminator.branch(anchor, guards.eq(enabled, "true"), 1, 2),
-                Flow.ControlPath.ROOT_ID);
-        Flow.Block mp = new Flow.Block(List.of(1), Flow.Terminator.jump(anchor, 3), 1);
-        Flow.Block se = new Flow.Block(List.of(2), Flow.Terminator.jump(anchor, 3), 2);
-        Flow.Block exit = new Flow.Block(List.of(3), Flow.Terminator.ret(anchor), Flow.ControlPath.ROOT_ID);
-        List<Flow.ControlPath> controlPaths = List.of(
-                Flow.ControlPath.ROOT,
-                new Flow.ControlPath(Flow.ControlPath.ROOT_ID, guards.eq(enabled, "true")),
-                new Flow.ControlPath(Flow.ControlPath.ROOT_ID, guards.eq(enabled, "false")));
+        Domain.Symbol enabled = symbol(flow, "enabled");
+        Domain.Symbol flavor = symbol(flow, "flavor");
+        Flow.State before = flow.before(findStep(script, "Observe"));
+        Domain.Symbol.Fact fact = before.env().get(flavor.id());
+        Map<String, Domain.Guard> exactByValue = exactGuards(fact);
 
-        Flow.Ir ir = new Flow.Ir(
-                List.of(entry, mp, se, exit),
-                symbols,
-                List.of(declareEnabled, defineMp, defineSe, useFlavor),
-                guards,
-                controlPaths);
-        Flow flow = new Flow(new Context().scope());
-        flow.process(ir, anchor.node());
-        Flow.Analysis analysis = flow.analysis();
-
-        Flow.State beforeUse = analysis.beforeByOp().get(3);
-        Domain.Symbol.Fact fact = beforeUse.env().get(flavor);
-        Map<String, Domain.Guard> exactByValue = fact.exactCases().stream()
-                .collect(Collectors.toMap(Domain.Symbol.Fact.ExactCase::scalarLiteral, Domain.Symbol.Fact.ExactCase::guard));
-
-        assertThat(guards.equivalent(beforeUse.path(), TRUE), is(true));
-        assertThat(guards.equivalent(fact.definedUnder(), TRUE), is(true));
+        assertThat(flow.guards().equivalent(before.path(), TRUE), is(true));
+        assertThat(flow.guards().equivalent(fact.definedUnder(), TRUE), is(true));
         assertThat(fact.value().kind(), is(Domain.LatticeValue.Kind.FINITE_SCALAR));
-        assertThat(fact.value().scalarValues(symbols.symbol(flavor).domain()), is(Set.of("mp", "se")));
+        assertThat(fact.value().scalarValues(flavor.domain()), is(Set.of("mp", "se")));
         assertThat(exactByValue.keySet(), containsInAnyOrder("mp", "se"));
-        assertThat(guards.equivalent(exactByValue.get("mp"), guards.eq(enabled, "true")), is(true));
-        assertThat(guards.equivalent(exactByValue.get("se"), guards.eq(enabled, "false")), is(true));
-        assertThat(analysis.usesById().size(), is(1));
-        assertThat(analysis.usesById().get(0).symbolId(), is(flavor));
-        assertThat(guards.equivalent(analysis.usesById().get(0).guard(), TRUE), is(true));
+        assertThat(flow.guards().equivalent(exactByValue.get("mp"), flow.guards().eq(enabled.id(), "true")), is(true));
+        assertThat(flow.guards().equivalent(exactByValue.get("se"), flow.guards().eq(enabled.id(), "false")), is(true));
     }
 
     @Test
     void testAnalyzeMergesSameExactValueAcrossMultiplePaths() {
-        Domain.Symbol.Table.Builder builder = Domain.Symbol.Table.builder();
-        int primary = builder.define("primary", Domain.Spec.booleanSpec(), true, false);
-        int secondary = builder.define("secondary", Domain.Spec.booleanSpec(), true, false);
-        int flavor = builder.define("flavor", Domain.Spec.choice(Set.of("mp", "se")), true, false);
-        Domain.Symbol.Table symbols = builder.build();
-        Domain.Guards guards = new Domain.Guards(symbols);
-        Flow.SourceAnchor anchor = new Flow.SourceAnchor(Nodes.script());
+        Context.Scope scope = new Context().scope();
+        Node script = load("flow/same-exact-value-merge.xml");
 
-        Flow.Op declarePrimary = Flow.Op.declareInput(0, 0, anchor, primary);
-        Flow.Op declareSecondary = Flow.Op.declareInput(1, 0, anchor, secondary);
-        Flow.Op definePrimaryMp = Flow.Op.defineValue(2, 1, anchor, flavor, Expression.create("'mp'"));
-        Flow.Op defineSecondaryMp = Flow.Op.defineValue(3, 3, anchor, flavor, Expression.create("'mp'"));
-        Flow.Op defineSe = Flow.Op.defineValue(4, 4, anchor, flavor, Expression.create("'se'"));
-        Flow.Op useFlavor = Flow.Op.recordUse(5, 5, anchor, flavor);
+        Flow flow = new Flow(scope);
+        flow.process(script);
 
-        Domain.Guard primaryTrue = guards.eq(primary, "true");
-        Domain.Guard primaryFalse = guards.eq(primary, "false");
-        Domain.Guard secondaryTrue = guards.eq(secondary, "true");
-        Domain.Guard secondaryFalse = guards.eq(secondary, "false");
+        Domain.Symbol primary = symbol(flow, "primary");
+        Domain.Symbol secondary = symbol(flow, "secondary");
+        Domain.Symbol flavor = symbol(flow, "flavor");
+        Flow.State before = flow.before(findStep(script, "Observe"));
+        Domain.Symbol.Fact fact = before.env().get(flavor.id());
+        Map<String, Domain.Guard> exactByValue = exactGuards(fact);
 
-        Flow.Block entry = new Flow.Block(List.of(0, 1),
-                Flow.Terminator.branch(anchor, primaryTrue, 1, 2),
-                Flow.ControlPath.ROOT_ID);
-        Flow.Block primaryMp = new Flow.Block(List.of(2), Flow.Terminator.jump(anchor, 5), 1);
-        Flow.Block secondaryBranch = new Flow.Block(List.of(),
-                Flow.Terminator.branch(anchor, secondaryTrue, 3, 4),
-                2);
-        Flow.Block secondaryMp = new Flow.Block(List.of(3), Flow.Terminator.jump(anchor, 5), 3);
-        Flow.Block se = new Flow.Block(List.of(4), Flow.Terminator.jump(anchor, 5), 4);
-        Flow.Block exit = new Flow.Block(List.of(5), Flow.Terminator.ret(anchor), Flow.ControlPath.ROOT_ID);
-        List<Flow.ControlPath> controlPaths = List.of(
-                Flow.ControlPath.ROOT,
-                new Flow.ControlPath(Flow.ControlPath.ROOT_ID, primaryTrue),
-                new Flow.ControlPath(Flow.ControlPath.ROOT_ID, primaryFalse),
-                new Flow.ControlPath(2, secondaryTrue),
-                new Flow.ControlPath(2, secondaryFalse));
-
-        Flow.Ir ir = new Flow.Ir(
-                List.of(entry, primaryMp, secondaryBranch, secondaryMp, se, exit),
-                symbols,
-                List.of(declarePrimary, declareSecondary, definePrimaryMp, defineSecondaryMp, defineSe, useFlavor),
-                guards,
-                controlPaths);
-        Flow flow = new Flow(new Context().scope());
-        flow.process(ir, anchor.node());
-        Flow.Analysis analysis = flow.analysis();
-
-        Flow.State beforeUse = analysis.beforeByOp().get(5);
-        Domain.Symbol.Fact fact = beforeUse.env().get(flavor);
-        Map<String, Domain.Guard> exactByValue = fact.exactCases().stream()
-                .collect(Collectors.toMap(Domain.Symbol.Fact.ExactCase::scalarLiteral, Domain.Symbol.Fact.ExactCase::guard));
-
-        assertThat(guards.equivalent(beforeUse.path(), TRUE), is(true));
-        assertThat(fact.value().scalarValues(symbols.symbol(flavor).domain()), is(Set.of("mp", "se")));
+        assertThat(flow.guards().equivalent(before.path(), TRUE), is(true));
+        assertThat(fact.value().scalarValues(flavor.domain()), is(Set.of("mp", "se")));
         assertThat(exactByValue.keySet(), containsInAnyOrder("mp", "se"));
-        assertThat(guards.equivalent(exactByValue.get("mp"), guards.or(primaryTrue, guards.and(primaryFalse,
-                secondaryTrue))), is(true));
-        assertThat(guards.equivalent(exactByValue.get("se"), guards.and(primaryFalse, secondaryFalse)), is(true));
+        assertThat(flow.guards().equivalent(exactByValue.get("mp"),
+                flow.guards().or(
+                        flow.guards().eq(primary.id(), "true"),
+                        flow.guards().and(
+                                flow.guards().eq(primary.id(), "false"),
+                                flow.guards().eq(secondary.id(), "true")))),
+                is(true));
+        assertThat(flow.guards().equivalent(exactByValue.get("se"),
+                flow.guards().and(
+                        flow.guards().eq(primary.id(), "false"),
+                        flow.guards().eq(secondary.id(), "false"))),
+                is(true));
     }
 
     @Test
     void testAnalyzeMergesEquivalentBooleanExactValuesAcrossLiteralTypes() {
-        Domain.Symbol.Table.Builder builder = Domain.Symbol.Table.builder();
-        int enabled = builder.define("enabled", Domain.Spec.booleanSpec(), true, false);
-        int flag = builder.define("flag", Domain.Spec.booleanSpec(), true, false);
-        Domain.Symbol.Table symbols = builder.build();
-        Domain.Guards guards = new Domain.Guards(symbols);
-        Flow.SourceAnchor anchor = new Flow.SourceAnchor(Nodes.script());
+        Context.Scope scope = new Context().scope();
+        Node script = load("flow/boolean-exact-value-merge.xml");
 
-        Flow.Op declareEnabled = Flow.Op.declareInput(0, 0, anchor, enabled);
-        Flow.Op defineBoolean = Flow.Op.defineValue(1, 1, anchor, flag, Expression.create("true"));
-        Flow.Op defineString = Flow.Op.defineValue(2, 2, anchor, flag, Expression.create("'true'"));
-        Flow.Op useFlag = Flow.Op.recordUse(3, 3, anchor, flag);
+        Flow flow = new Flow(scope);
+        flow.process(script);
 
-        Domain.Guard enabledTrue = guards.eq(enabled, "true");
-        Flow.Block entry = new Flow.Block(List.of(0),
-                Flow.Terminator.branch(anchor, enabledTrue, 1, 2),
-                Flow.ControlPath.ROOT_ID);
-        Flow.Block trueBranch = new Flow.Block(List.of(1), Flow.Terminator.jump(anchor, 3), 1);
-        Flow.Block falseBranch = new Flow.Block(List.of(2), Flow.Terminator.jump(anchor, 3), 2);
-        Flow.Block exit = new Flow.Block(List.of(3), Flow.Terminator.ret(anchor), Flow.ControlPath.ROOT_ID);
-        List<Flow.ControlPath> controlPaths = List.of(
-                Flow.ControlPath.ROOT,
-                new Flow.ControlPath(Flow.ControlPath.ROOT_ID, enabledTrue),
-                new Flow.ControlPath(Flow.ControlPath.ROOT_ID, guards.eq(enabled, "false")));
-
-        Flow.Ir ir = new Flow.Ir(
-                List.of(entry, trueBranch, falseBranch, exit),
-                symbols,
-                List.of(declareEnabled, defineBoolean, defineString, useFlag),
-                guards,
-                controlPaths);
-        Flow flow = new Flow(new Context().scope());
-        flow.process(ir, anchor.node());
-        Flow.Analysis analysis = flow.analysis();
-
-        Domain.Symbol.Fact fact = analysis.beforeByOp().get(3).env().get(flag);
+        Domain.Symbol flag = symbol(flow, "flag");
+        Domain.Symbol.Fact fact = flow.before(findStep(script, "Observe")).env().get(flag.id());
 
         assertThat(fact.exactCases().size(), is(1));
         assertThat(fact.exactCases().get(0).scalarLiteral(), is("true"));
-        assertThat(guards.equivalent(fact.exactCases().get(0).guard(), TRUE), is(true));
+        assertThat(flow.guards().equivalent(fact.exactCases().get(0).guard(), TRUE), is(true));
     }
 
     @Test
-    void testIrLoweringCapturesDefinitionsAndConditionUses() {
+    void testIrLoweringCapturesDefinitionsAndVisibleFactsForConditions() {
         Context.Scope scope = new Context().scope();
         Node script = load("flow/definitions-and-uses.xml");
 
         Flow flow = new Flow(scope);
         flow.process(script);
-        Flow.Ir ir = flow.ir();
-        Flow.Analysis analysis = flow.analysis();
 
-        assertThat(ir.ops().stream().filter(op -> op.kind() == Flow.Op.Kind.DEFINE_VALUE).count(), is(1L));
-        assertThat(ir.ops().stream().filter(op -> op.kind() == Flow.Op.Kind.RECORD_USE).count(), is(2L));
-        assertThat(analysis.usesById().stream()
-                        .map(use -> ir.symbols().symbol(use.symbolId()).name())
-                        .collect(Collectors.toSet()),
-                containsInAnyOrder("enabled", "flag"));
+        Node condition = findCondition(script, "${enabled} && ${flag}");
+        Flow.State before = flow.before(condition);
+        Domain.Symbol flag = symbol(flow, "flag");
+        Domain.Symbol.Fact fact = before.env().get(flag.id());
+        Set<String> names = before.env().keySet().stream().map(flow::symbol).map(Domain.Symbol::name).collect(Collectors.toSet());
+
+        assertThat(names, is(Set.of("enabled", "flag")));
+        assertThat(flow.declaredValue(condition, "flag").getBoolean(), is(true));
+        assertThat(flow.guards().equivalent(fact.definedUnder(), TRUE), is(true));
+        assertThat(fact.exactCases().size(), is(1));
+        assertThat(fact.exactCases().get(0).scalarLiteral(), is("true"));
     }
 
     @Test
@@ -256,24 +166,35 @@ class FlowTest {
 
         Flow flow = new Flow(scope);
         flow.process(script);
-        Flow.Ir ir = flow.ir();
-        Flow.Analysis analysis = flow.analysis();
-        Map<String, Domain.Guard> pathsBySymbol = ir.ops().stream()
-                .filter(op -> op.kind() == Flow.Op.Kind.DEFINE_VALUE)
-                .collect(Collectors.toMap(
-                        op -> ir.symbols().symbol(op.symbolId()).name(),
-                        op -> analysis.beforeByOp().get(op.id()).path()));
-        int enabled = ir.symbols().findId("enabled");
-        int flavor = ir.symbols().findId("flavor");
 
-        assertThat(ir.blocks().stream()
-                        .map(Flow.Block::terminator)
-                        .filter(t -> t.kind() == Flow.Terminator.Kind.BRANCH)
-                        .count(),
-                is(3L));
-        assertThat(ir.guards().equivalent(pathsBySymbol.get("enabled-flag"), ir.guards().eq(enabled, "true")), is(true));
-        assertThat(ir.guards().equivalent(pathsBySymbol.get("mp-flag"), ir.guards().eq(flavor, "mp")), is(true));
-        assertThat(ir.guards().equivalent(pathsBySymbol.get("se-flag"), ir.guards().eq(flavor, "se")), is(true));
+        Domain.Symbol enabled = symbol(flow, "enabled");
+        Domain.Symbol flavor = symbol(flow, "flavor");
+        Node enabledFlag = findNodeByPath(script, Node.Kind.VARIABLE_BOOLEAN, "enabled-flag");
+        Node mpFlag = findNodeByPath(script, Node.Kind.VARIABLE_BOOLEAN, "mp-flag");
+        Node seFlag = findNodeByPath(script, Node.Kind.VARIABLE_BOOLEAN, "se-flag");
+
+        assertThat(flow.guards().equivalent(flow.activeGuard(enabledFlag), flow.guards().eq(enabled.id(), "true")), is(true));
+        assertThat(flow.guards().equivalent(flow.activeGuard(mpFlag), flow.guards().eq(flavor.id(), "mp")), is(true));
+        assertThat(flow.guards().equivalent(flow.activeGuard(seFlag), flow.guards().eq(flavor.id(), "se")), is(true));
+    }
+
+    @Test
+    void testActiveGuardUsesDirectGuardsForInputAndOptionNodes() {
+        Context.Scope scope = new Context().scope();
+        Node script = load("flow/nested-definitions.xml");
+
+        Flow flow = new Flow(scope);
+        flow.process(script);
+
+        Domain.Symbol enabled = symbol(flow, "enabled");
+        Domain.Symbol flavor = symbol(flow, "flavor");
+        Node enabledInput = findInput(script, Node.Kind.INPUT_BOOLEAN, "enabled");
+        Node mpOption = findOption(script, "mp");
+        Node seOption = findOption(script, "se");
+
+        assertThat(flow.guards().equivalent(flow.activeGuard(enabledInput), flow.guards().eq(enabled.id(), "true")), is(true));
+        assertThat(flow.guards().equivalent(flow.activeGuard(mpOption), flow.guards().eq(flavor.id(), "mp")), is(true));
+        assertThat(flow.guards().equivalent(flow.activeGuard(seOption), flow.guards().eq(flavor.id(), "se")), is(true));
     }
 
     @Test
@@ -283,8 +204,7 @@ class FlowTest {
 
         Flow flow = new Flow(scope);
         flow.process(script);
-        Flow.Model model = flow.model();
-        Domain.Symbol symbol = model.symbol("media.json-lib").symbol();
+        Domain.Symbol symbol = symbol(flow, "media.json-lib");
         Node impossible = findCondition(script, "${media} contains 'json' && ${media.json-lib} == 'jsonp'");
 
         assertThat(symbol.domain().kind(), is(Domain.Spec.Kind.FINITE_SCALAR));
@@ -292,7 +212,7 @@ class FlowTest {
         assertThat(symbol.domain().values(), is(Set.of("jackson", "jsonb")));
         assertThat(symbol.guardable(), is(true));
         assertThat(symbol.tainted(), is(false));
-        assertThat(flow.guards().equivalent(model.activeGuard(impossible), FALSE), is(true));
+        assertThat(flow.guards().equivalent(flow.activeGuard(impossible), FALSE), is(true));
     }
 
     @Test
@@ -302,8 +222,7 @@ class FlowTest {
 
         Flow flow = new Flow(scope);
         flow.process(script);
-        Flow.Model model = flow.model();
-        Domain.Symbol symbol = model.symbol("json-lib").symbol();
+        Domain.Symbol symbol = symbol(flow, "json-lib");
         Node impossible = findCondition(script, "${json-lib} == 'jsonp'");
 
         assertThat(symbol.domain().kind(), is(Domain.Spec.Kind.FINITE_SCALAR));
@@ -311,7 +230,7 @@ class FlowTest {
         assertThat(symbol.domain().values(), is(Set.of("jackson", "jsonb")));
         assertThat(symbol.guardable(), is(true));
         assertThat(symbol.tainted(), is(false));
-        assertThat(flow.guards().equivalent(model.activeGuard(impossible), FALSE), is(true));
+        assertThat(flow.guards().equivalent(flow.activeGuard(impossible), FALSE), is(true));
     }
 
     @Test
@@ -321,12 +240,11 @@ class FlowTest {
 
         Flow flow = new Flow(scope);
         flow.process(script);
-        Flow.Model model = flow.model();
         Node allowed = findCondition(script, "['jsonb','jackson'] contains ${json-lib}");
         Node impossible = findCondition(script, "['jsonp'] contains ${json-lib}");
 
-        assertThat(flow.guards().equivalent(model.activeGuard(allowed), TRUE), is(true));
-        assertThat(flow.guards().equivalent(model.activeGuard(impossible), FALSE), is(true));
+        assertThat(flow.guards().equivalent(flow.activeGuard(allowed), TRUE), is(true));
+        assertThat(flow.guards().equivalent(flow.activeGuard(impossible), FALSE), is(true));
     }
 
     @Test
@@ -336,14 +254,13 @@ class FlowTest {
 
         Flow flow = new Flow(scope);
         flow.process(script);
-        Flow.Model model = flow.model();
-        int features = model.findSymbolId("features");
+        int features = symbol(flow, "features").id();
         Node required = findCondition(script, "${features} contains ['grpc','rest']");
         Node impossible = findCondition(script, "${features} contains ['rest','websocket']");
         Domain.Guard expected = flow.guards().containsAll(features, Set.of("grpc", "rest"));
 
-        assertThat(flow.guards().equivalent(model.activeGuard(required), expected), is(true));
-        assertThat(flow.guards().equivalent(model.activeGuard(impossible), FALSE), is(true));
+        assertThat(flow.guards().equivalent(flow.activeGuard(required), expected), is(true));
+        assertThat(flow.guards().equivalent(flow.activeGuard(impossible), FALSE), is(true));
     }
 
     @Test
@@ -353,11 +270,10 @@ class FlowTest {
 
         Flow flow = new Flow(scope);
         flow.process(script);
-        Flow.Model model = flow.model();
         Node condition = findCondition(script, "['json'] contains true");
 
-        assertThat(model.activeGuard(condition).equals(TRUE), is(false));
-        assertThat(model.activeGuard(condition).equals(FALSE), is(false));
+        assertThat(flow.activeGuard(condition).equals(TRUE), is(false));
+        assertThat(flow.activeGuard(condition).equals(FALSE), is(false));
     }
 
     static Node load(String path) {
@@ -373,24 +289,61 @@ class FlowTest {
         throw new IllegalArgumentException("Missing condition: " + expression);
     }
 
-    @SafeVarargs
-    @SuppressWarnings({"unchecked", "SameParameterValue"})
-    static <T, U extends T> Matcher<T> isSubtype(Class<U> type, Matcher<U>... matchers) {
-        var list = new ArrayList<Matcher<? super T>>();
-        list.add(instanceOf(type));
-        for (Matcher<U> matcher : matchers) {
-            list.add((Matcher<T>) matcher);
+    static Node findStep(Node script, String name) {
+        for (Node node : script.traverse(Node.Kind.STEP::equals)) {
+            if (name.equals(node.attribute("name").getString())) {
+                return node;
+            }
         }
-        return allOf(list);
+        throw new IllegalArgumentException("Missing step: " + name);
     }
 
-    @SuppressWarnings("SameParameterValue")
-    static <T, U> Matcher<T> hasProperty(String name, Function<T, U> extractor, Matcher<U> subMatcher) {
-        return new FeatureMatcher<>(subMatcher, "has property " + name, name) {
-            @Override
-            protected U featureValueOf(T target) {
-                return extractor.apply(target);
+    static Node findFile(Node script, String target) {
+        for (Node node : script.traverse(Node.Kind.FILE::equals)) {
+            if (target.equals(node.attribute("target").getString())) {
+                return node;
             }
-        };
+        }
+        throw new IllegalArgumentException("Missing file: " + target);
+    }
+
+    static Node findInput(Node script, Node.Kind kind, String id) {
+        for (Node node : script.traverse(kind::equals)) {
+            if (id.equals(node.attribute("id").getString())) {
+                return node;
+            }
+        }
+        throw new IllegalArgumentException("Missing " + kind + " id: " + id);
+    }
+
+    static Node findOption(Node script, String value) {
+        for (Node node : script.traverse(Node.Kind.INPUT_OPTION::equals)) {
+            if (value.equals(node.value().getString())) {
+                return node;
+            }
+        }
+        throw new IllegalArgumentException("Missing option: " + value);
+    }
+
+    static Node findNodeByPath(Node script, Node.Kind kind, String path) {
+        for (Node node : script.traverse(kind::equals)) {
+            if (path.equals(node.attribute("path").getString())) {
+                return node;
+            }
+        }
+        throw new IllegalArgumentException("Missing " + kind + " path: " + path);
+    }
+
+    static Domain.Symbol symbol(Flow flow, String name) {
+        Flow.SymbolInfo info = flow.symbol(name);
+        if (info == null) {
+            throw new IllegalArgumentException("Missing symbol: " + name);
+        }
+        return info.symbol();
+    }
+
+    static Map<String, Domain.Guard> exactGuards(Domain.Symbol.Fact fact) {
+        return fact.exactCases().stream()
+                .collect(Collectors.toMap(Domain.Symbol.Fact.ExactCase::scalarLiteral, Domain.Symbol.Fact.ExactCase::guard));
     }
 }
