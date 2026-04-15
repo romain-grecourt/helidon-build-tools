@@ -63,32 +63,35 @@ final class Flow {
     }
 
     String key(Node node) {
-        return node == null ? model.scope.key() : model.node(node).key;
+        if (node == null) {
+            return model.scope.key();
+        }
+        return model.facts(node).key;
     }
 
     Scope scope(Node node) {
         if (node == null) {
             return model.scope;
         }
-        String key = model.node(node).key;
+        String key = model.facts(node).key;
         return key.isEmpty() ? model.scope : model.scope.get("~" + key);
     }
 
     Guard renderGuard(Node node) {
-        return node == null ? Guard.TRUE : model.node(node).renderGuard;
+        return node == null ? Guard.TRUE : model.facts(node).renderGuard;
     }
 
     Guard activeGuard(Node node) {
-        return node == null ? Guard.TRUE : model.node(node).activeGuard;
+        return node == null ? Guard.TRUE : model.facts(node).activeGuard;
     }
 
     State before(Node node) {
-        return node == null ? model.analysis.entryByBlock.get(0) : model.node(node).before;
+        return node == null ? model.analysis.entry.get(0) : model.facts(node).before;
     }
 
     SymbolInfo symbol(String name) {
-        Integer symbolId = ir.symbols.findId(name);
-        return symbolId == null ? null : model.symbols.get(symbolId);
+        int symbolId = ir.symbols.findId(name);
+        return symbolId < 0 ? null : model.symbols.get(symbolId);
     }
 
     Symbol symbol(int symbolId) {
@@ -181,11 +184,35 @@ final class Flow {
         if (before.env.isEmpty()) {
             return null;
         }
-        Integer symbolId = ir.symbols.findId(key);
-        if (symbolId == null && !key.startsWith("~")) {
+        int symbolId = ir.symbols.findId(key);
+        if (symbolId < 0 && !key.startsWith("~")) {
             symbolId = ir.symbols.findId("~" + key);
         }
-        return symbolId == null ? null : before.env.get(symbolId);
+        return symbolId < 0 ? null : before.env.get(symbolId);
+    }
+
+    private Value<?> exactValue(Fact fact, Guard required, Value.Type type) {
+        if (!fact.exactCases().isEmpty()) {
+            Value<?> exact = null;
+            Guard coverage = Guard.FALSE;
+            for (Fact.ExactCase exactCase : fact.exactCases()) {
+                Guard overlap = ir.guards.and(required, exactCase.guard());
+                if (overlap.equals(Guard.FALSE)) {
+                    continue;
+                }
+                Value<?> candidate = coerceExactValue(exactCase.value(), type);
+                if (exact == null) {
+                    exact = candidate;
+                } else if (!Value.isEqual(exact, candidate)) {
+                    return null;
+                }
+                coverage = ir.guards.or(coverage, overlap);
+            }
+            if (exact != null && ir.guards.implies(required, coverage)) {
+                return exact;
+            }
+        }
+        return null;
     }
 
     private static Value.Type valueType(SymbolInfo info) {
@@ -201,26 +228,16 @@ final class Flow {
         }
     }
 
-    private Value<?> exactValue(Fact fact, Guard required, Value.Type type) {
-        if (fact.exactCases().isEmpty()) {
-            return null;
+    private static Scope childScope(Scope scope, Node node) {
+        switch (node.kind()) {
+            case INPUT_BOOLEAN:
+            case INPUT_ENUM:
+            case INPUT_LIST:
+            case INPUT_TEXT:
+                return scope.getOrCreate(node);
+            default:
+                return scope;
         }
-        Value<?> exact = null;
-        Guard coverage = Guard.FALSE;
-        for (Fact.ExactCase exactCase : fact.exactCases()) {
-            Guard overlap = ir.guards.and(required, exactCase.guard());
-            if (overlap.equals(Guard.FALSE)) {
-                continue;
-            }
-            Value<?> candidate = coerceExactValue(exactCase.value(), type);
-            if (exact == null) {
-                exact = candidate;
-            } else if (!Value.isEqual(exact, candidate)) {
-                return null;
-            }
-            coverage = ir.guards.or(coverage, overlap);
-        }
-        return exact != null && ir.guards.implies(required, coverage) ? exact : null;
     }
 
     private static Value<?> coerceExactValue(Value<?> value, Value.Type type) {
@@ -250,8 +267,8 @@ final class Flow {
     }
 
     private static int requireSymbolId(Table symbols, String key) {
-        Integer symbolId = symbols.findId(key);
-        if (symbolId == null) {
+        int symbolId = symbols.findId(key);
+        if (symbolId < 0) {
             throw new IllegalStateException("Missing symbol: " + key);
         }
         return symbolId;
@@ -287,12 +304,12 @@ final class Flow {
     static final class SymbolInfo {
         private final Symbol symbol;
         private final Guard definition;
-        private final Map<String, Guard> availabilityByValue;
+        private final Map<String, Guard> availability;
 
-        SymbolInfo(Symbol symbol, Guard definition, Map<String, Guard> availabilityByValue) {
+        SymbolInfo(Symbol symbol, Guard definition, Map<String, Guard> availability) {
             this.symbol = symbol;
             this.definition = definition;
-            this.availabilityByValue = availabilityByValue;
+            this.availability = availability;
         }
 
         Symbol symbol() {
@@ -304,7 +321,7 @@ final class Flow {
         }
 
         Guard availability(String value) {
-            return availabilityByValue.get(value);
+            return availability.get(value);
         }
     }
 
@@ -440,14 +457,14 @@ final class Flow {
     }
 
     private static final class Analysis {
-        private final List<State> entryByBlock;
-        private final List<State> beforeByOp;
-        private final List<State> afterByOp;
+        private final List<State> entry;
+        private final List<State> before;
+        private final List<State> after;
 
-        Analysis(List<State> entryByBlock, List<State> beforeByOp, List<State> afterByOp) {
-            this.entryByBlock = entryByBlock;
-            this.beforeByOp = beforeByOp;
-            this.afterByOp = afterByOp;
+        Analysis(List<State> entry, List<State> before, List<State> after) {
+            this.entry = entry;
+            this.before = before;
+            this.after = after;
         }
     }
 
@@ -464,11 +481,12 @@ final class Flow {
             this.symbols = symbols;
         }
 
-        NodeFacts node(Node node) {
-            requireNonNull(node, "node is null");
-            NodeFacts facts = nodes.get(node);
-            if (facts != null) {
-                return facts;
+        NodeFacts facts(Node node) {
+            if (node != null) {
+                NodeFacts facts = nodes.get(node);
+                if (facts != null) {
+                    return facts;
+                }
             }
             throw new IllegalArgumentException("Node is not part of this flow model: " + node.kind() + "#" + node.id());
         }
@@ -513,7 +531,7 @@ final class Flow {
             indexAnchors();
             scanSymbols();
             Map<Node, NodeFacts> nodes = new IdentityHashMap<>();
-            projectNode(root, scope, analysis.entryByBlock.get(0), nodes);
+            projectNode(root, scope, analysis.entry.get(0), nodes);
             List<SymbolInfo> builtSymbols = new ArrayList<>(symbols.size());
             for (SymbolInfoBuilder builder : symbols) {
                 builtSymbols.add(builder.build());
@@ -541,7 +559,7 @@ final class Flow {
 
         void scanSymbols() {
             for (Op op : ir.ops) {
-                State before = analysis.beforeByOp.get(op.id);
+                State before = analysis.before.get(op.id);
                 switch (op.kind) {
                     case DECLARE_INPUT: {
                         SymbolInfoBuilder builder = symbols.get(op.symbolId);
@@ -559,7 +577,7 @@ final class Flow {
                     }
                     case DEFINE_VALUE: {
                         SymbolInfoBuilder builder = symbols.get(op.symbolId);
-                        Fact fact = analysis.afterByOp.get(op.id).env.get(op.symbolId);
+                        Fact fact = analysis.after.get(op.id).env.get(op.symbolId);
                         if (fact != null) {
                             builder.addDefinition(fact.definedUnder(), guards);
                             recordAvailability(builder, fact);
@@ -580,7 +598,7 @@ final class Flow {
                 return;
             }
             if (builder.symbol.domain().kind() != Spec.Kind.FINITE_SCALAR
-                    || fact.value().kind() != LatticeValue.Kind.FINITE_SCALAR) {
+                || fact.value().kind() != LatticeValue.Kind.FINITE_SCALAR) {
                 return;
             }
             if (fact.value().scalarMask() == builder.symbol.domain().mask()) {
@@ -618,11 +636,11 @@ final class Flow {
             Scope childScope = childScope(scope, node);
             Scope nodeScope = node.kind().isInput() ? childScope : scope;
             List<Integer> opIds = ops.getOrDefault(node, List.of());
-            State before = opIds.isEmpty() ? current : constrainPath(analysis.beforeByOp.get(opIds.get(0)), current.path);
-            State afterOps = opIds.isEmpty() ? before : constrainPath(analysis.afterByOp.get(opIds.get(opIds.size() - 1)),
+            State before = opIds.isEmpty() ? current : constrainPath(analysis.before.get(opIds.get(0)), current.path);
+            State afterOps = opIds.isEmpty() ? before : constrainPath(analysis.after.get(opIds.get(opIds.size() - 1)),
                     current.path);
             BranchInfo branch = branches.get(node);
-            State branchEntry = branch == null ? null : constrainPath(analysis.entryByBlock.get(branch.trueId), current.path);
+            State branchEntry = branch == null ? null : constrainPath(analysis.entry.get(branch.trueId), current.path);
             Guard activeGuard = branch != null
                     ? activeGuard(node, nodeScope, branchEntry)
                     : activeGuard(node, nodeScope, afterOps);
@@ -634,7 +652,7 @@ final class Flow {
                 for (Node child : node.children()) {
                     cursor = projectNode(child, descendantScope, cursor, nodes);
                 }
-                return constrainPath(analysis.entryByBlock.get(branch.joinId), current.path);
+                return constrainPath(analysis.entry.get(branch.joinId), current.path);
             }
 
             State cursor = afterOps;
@@ -876,8 +894,8 @@ final class Flow {
         }
 
         Fact factFor(State state, String key) {
-            Integer symbolId = ir.symbols.findId(key);
-            return symbolId == null ? null : state.env.get(symbolId);
+            int symbolId = ir.symbols.findId(key);
+            return symbolId < 0 ? null : state.env.get(symbolId);
         }
 
         Guard definitionFor(String key, Fact fact) {
@@ -888,72 +906,74 @@ final class Flow {
             return info == null ? null : info.definition;
         }
 
-        Flow.SymbolInfo symbolInfo(String key) {
-            Integer symbolId = ir.symbols.findId(key);
-            return symbolId == null ? null : symbols.get(symbolId).build();
+        SymbolInfo symbolInfo(String key) {
+            int symbolId = ir.symbols.findId(key);
+            return symbolId < 0 ? null : symbols.get(symbolId).build();
+        }
+
+        SymbolInfo scalarSymbolInfo(String key) {
+            SymbolInfo info = symbolInfo(key);
+            if (info == null) {
+                return null;
+            }
+            Symbol symbol = info.symbol;
+            if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Spec.Kind.FINITE_SCALAR) {
+                return null;
+            }
+            return info;
         }
 
         Guard directEquality(String key, Value<?> value) {
             String scalar = Value.scalarLiteral(value);
-            if (scalar == null) {
-                return null;
+            if (scalar != null) {
+                SymbolInfo info = scalarSymbolInfo(key);
+                if (info != null) {
+                    return info.symbol.domain().values().contains(scalar)
+                            ? available(info, scalar, guards.eq(info.symbol.id(), scalar))
+                            : Guard.FALSE;
+                }
             }
-            Flow.SymbolInfo info = symbolInfo(key);
-            if (info == null) {
-                return null;
-            }
-            Symbol symbol = info.symbol;
-            if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Spec.Kind.FINITE_SCALAR) {
-                return null;
-            }
-            return symbol.domain().values().contains(scalar)
-                    ? available(info, scalar, guards.eq(symbol.id(), scalar))
-                    : Guard.FALSE;
+            return null;
         }
 
         Guard directScalarAny(String key, Set<String> values) {
-            Flow.SymbolInfo info = symbolInfo(key);
-            if (info == null) {
-                return null;
+            SymbolInfo info = scalarSymbolInfo(key);
+            if (info != null) {
+                Set<String> allowed = new TreeSet<>(values);
+                allowed.retainAll(info.symbol.domain().values());
+                Guard direct = Guard.FALSE;
+                for (String value : allowed) {
+                    direct = guards.or(direct, available(info, value, guards.eq(info.symbol.id(), value)));
+                }
+                return direct;
             }
-            Symbol symbol = info.symbol;
-            if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Spec.Kind.FINITE_SCALAR) {
-                return null;
-            }
-            Set<String> allowed = new TreeSet<>(values);
-            allowed.retainAll(symbol.domain().values());
-            Guard direct = Guard.FALSE;
-            for (String value : allowed) {
-                direct = guards.or(direct, available(info, value, guards.eq(symbol.id(), value)));
-            }
-            return direct;
+            return null;
         }
 
         Guard directListContains(Flow.SymbolInfo info, Set<String> required) {
-            if (info == null) {
-                return null;
-            }
-            Symbol symbol = info.symbol;
-            if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Spec.Kind.FINITE_MEMBERSHIP) {
-                return null;
-            }
-            Set<String> items = symbol.domain().values();
-            if (!items.containsAll(required)) {
-                return Guard.FALSE;
-            }
-            Guard available = Guard.TRUE;
-            for (String value : required) {
-                Guard availability = info.availabilityByValue.get(value);
-                if (availability == null) {
-                    return Guard.FALSE;
+            if (info != null) {
+                Symbol symbol = info.symbol;
+                if (symbol.guardable() && !symbol.tainted() && symbol.domain().kind() == Spec.Kind.FINITE_MEMBERSHIP) {
+                    Set<String> items = symbol.domain().values();
+                    if (!items.containsAll(required)) {
+                        return Guard.FALSE;
+                    }
+                    Guard available = Guard.TRUE;
+                    for (String value : required) {
+                        Guard availability = info.availability.get(value);
+                        if (availability == null) {
+                            return Guard.FALSE;
+                        }
+                        available = guards.and(available, availability);
+                    }
+                    return guards.and(available, guards.containsAll(symbol.id(), required));
                 }
-                available = guards.and(available, availability);
             }
-            return guards.and(available, guards.containsAll(symbol.id(), required));
+            return null;
         }
 
         Guard available(Flow.SymbolInfo info, String value, Guard direct) {
-            Guard availability = info.availabilityByValue.get(value);
+            Guard availability = info.availability.get(value);
             return availability == null ? Guard.FALSE : guards.and(availability, direct);
         }
 
@@ -966,18 +986,6 @@ final class Flow {
                     return new TreeSet<>(value.getList());
                 default:
                     return null;
-            }
-        }
-
-        Scope childScope(Scope scope, Node node) {
-            switch (node.kind()) {
-                case INPUT_BOOLEAN:
-                case INPUT_ENUM:
-                case INPUT_LIST:
-                case INPUT_TEXT:
-                    return scope.getOrCreate(node);
-                default:
-                    return scope;
             }
         }
     }
@@ -1065,8 +1073,8 @@ final class Flow {
             symbols = symbolBuilder.build();
             guards = new Guards(symbols);
 
-            int entryBlock = newBlock(ControlPath.ROOT_ID);
-            int exitBlock = lowerChildren(root.children(), entryBlock, ControlPath.ROOT_ID, scope);
+            int entryBlock = newBlock(0);
+            int exitBlock = lowerChildren(root.children(), entryBlock, 0, scope);
             terminateIfMissing(exitBlock, Terminator.ret(root));
 
             List<Block> loweredBlocks = new ArrayList<>(blocks.size());
@@ -1161,18 +1169,6 @@ final class Flow {
             }
         }
 
-        Scope childScope(Scope scope, Node node) {
-            switch (node.kind()) {
-                case INPUT_BOOLEAN:
-                case INPUT_ENUM:
-                case INPUT_LIST:
-                case INPUT_TEXT:
-                    return scope.getOrCreate(node);
-                default:
-                    return scope;
-            }
-        }
-
         void rememberDeclaredInput(String name, Spec spec, boolean guardable, boolean tainted) {
             declaredInputSymbols.merge(
                     name,
@@ -1220,7 +1216,7 @@ final class Flow {
 
         int lowerInput(Node node, int blockId, int controlPathId, Scope scope) {
             Scope inputScope = scope.getOrCreate(node);
-            int symbolId = symbols.findId(inputScope.key());
+            int symbolId = requireSymbolId(symbols, inputScope.key());
             append(blockId, Op.declareInput(nextOpId(), blockId, node, symbolId));
             switch (node.kind()) {
                 case INPUT_BOOLEAN:
@@ -1240,8 +1236,8 @@ final class Flow {
         int lowerOption(Node node, int blockId, int controlPathId, Scope scope) {
             Node input = node.ancestor(Kind::isInput).orElseThrow(() ->
                     new IllegalStateException("Option without input parent: " + node));
-            Integer symbolId = symbols.findId(scope.key());
-            if (symbolId == null) {
+            int symbolId = symbols.findId(scope.key());
+            if (symbolId < 0) {
                 throw new IllegalStateException("Missing option symbol for scope: " + scope.key());
             }
             append(blockId, Op.declareOption(nextOpId(), blockId, node, symbolId));
@@ -1254,8 +1250,8 @@ final class Flow {
         }
 
         int lowerDefinition(Node node, int blockId, int controlPathId, Scope scope) {
-            Integer symbolId = symbols.findId(definitionId(scope, node));
-            if (symbolId != null) {
+            int symbolId = symbols.findId(definitionId(scope, node));
+            if (symbolId >= 0) {
                 append(blockId, Op.defineValue(nextOpId(),
                         blockId,
                         node,
@@ -1468,7 +1464,6 @@ final class Flow {
     }
 
     private static final class ControlPath {
-        static final int ROOT_ID = 0;
         static final ControlPath ROOT = new ControlPath(-1, null);
 
         private final int parentId;
@@ -1656,8 +1651,8 @@ final class Flow {
         }
 
         Symbol findSymbol(String name) {
-            Integer id = symbols.findId(name);
-            return id == null ? null : symbols.symbol(id);
+            int id = symbols.findId(name);
+            return id < 0 ? null : symbols.symbol(id);
         }
     }
 
@@ -1777,7 +1772,7 @@ final class Flow {
 
         List<Guard> materializeStructuredControlPaths(boolean[] reachable) {
             Guard[] guards = new Guard[ir.controlPaths.size()];
-            guards[ControlPath.ROOT_ID] = Guard.TRUE;
+            guards[0] = Guard.TRUE;
             List<Guard> result = new ArrayList<>(reachable.length);
             for (int id = 0; id < reachable.length; id++) {
                 if (!reachable[id]) {
@@ -1860,10 +1855,10 @@ final class Flow {
         }
 
         void propagateFacts(Terminator terminator,
-                                    Map<Integer, FactState> current,
-                                    ControlFlow control,
-                                    List<Map<Integer, FactState>> entries,
-                                    Deque<Integer> work) {
+                            Map<Integer, FactState> current,
+                            ControlFlow control,
+                            List<Map<Integer, FactState>> entries,
+                            Deque<Integer> work) {
             switch (terminator.kind) {
                 case GOTO:
                     enqueueFacts(terminator.targetId, current, control, entries, work);
@@ -1880,10 +1875,10 @@ final class Flow {
         }
 
         void enqueueFacts(int blockId,
-                                  Map<Integer, FactState> incoming,
-                                  ControlFlow control,
-                                  List<Map<Integer, FactState>> entries,
-                                  Deque<Integer> work) {
+                          Map<Integer, FactState> incoming,
+                          ControlFlow control,
+                          List<Map<Integer, FactState>> entries,
+                          Deque<Integer> work) {
             if (control.entryByBlock.get(blockId).equals(Guard.FALSE)) {
                 return;
             }
@@ -1951,8 +1946,8 @@ final class Flow {
                     return literalValue(symbol.domain(), token.operand());
                 }
                 if (token.isVariable()) {
-                    Integer symbolId = ir.symbols.findId(token.variable());
-                    if (symbolId != null) {
+                    int symbolId = ir.symbols.findId(token.variable());
+                    if (symbolId >= 0) {
                         FactState fact = state.get(symbolId);
                         if (fact != null) {
                             return fact.value;
@@ -1973,8 +1968,8 @@ final class Flow {
                 return token.operand();
             }
             if (token.isVariable()) {
-                Integer symbolId = ir.symbols.findId(token.variable());
-                if (symbolId == null) {
+                int symbolId = ir.symbols.findId(token.variable());
+                if (symbolId < 0) {
                     return null;
                 }
                 Symbol symbol = ir.symbols.symbol(symbolId);
@@ -2209,9 +2204,9 @@ final class Flow {
                 }
                 FactState other = (FactState) o;
                 return definedUnder.equals(other.definedUnder)
-                        && value.equals(other.value)
-                        && exactCoverage.equals(other.exactCoverage)
-                        && exactCases.equals(other.exactCases);
+                       && value.equals(other.value)
+                       && exactCoverage.equals(other.exactCoverage)
+                       && exactCases.equals(other.exactCases);
             }
         }
 
@@ -2234,7 +2229,7 @@ final class Flow {
                 }
                 ExactCaseState other = (ExactCaseState) o;
                 return provenance.equals(other.provenance)
-                        && Value.isEqual(value, other.value);
+                       && Value.isEqual(value, other.value);
             }
         }
 

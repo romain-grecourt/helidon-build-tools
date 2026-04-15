@@ -577,8 +577,8 @@ final class Domain {
                 return symbols.get(symbolId);
             }
 
-            Integer findId(String name) {
-                return idsByName.get(name);
+            int findId(String name) {
+                return idsByName.getOrDefault(name, -1);
             }
 
             List<Symbol> symbols() {
@@ -1252,7 +1252,7 @@ final class Domain {
             for (Token token : normalized.tokens()) {
                 if (token.isVariable()) {
                     String variable = token.variable();
-                    Integer symbolId = symbols.findId(variable);
+                    int symbolId = symbols.findId(variable);
                     stack.push(ResidualValue.variable(variable, symbolId));
                     continue;
                 }
@@ -1311,7 +1311,7 @@ final class Domain {
         }
 
         private Residual compareResidual(ResidualValue symbolValue, ResidualValue literalValue) {
-            if (symbolValue.symbolId == null || literalValue.literal == null) {
+            if (symbolValue.symbolId < 0 || literalValue.literal == null) {
                 return null;
             }
             Symbol symbol = symbols.symbol(symbolValue.symbolId);
@@ -1338,7 +1338,7 @@ final class Domain {
         }
 
         private Residual containsResidual(ResidualValue symbolValue, ResidualValue literalValue) {
-            if (symbolValue.symbolId == null || literalValue.literal == null) {
+            if (symbolValue.symbolId < 0 || literalValue.literal == null) {
                 return null;
             }
             Symbol symbol = symbols.symbol(symbolValue.symbolId);
@@ -1361,7 +1361,7 @@ final class Domain {
         }
 
         private Residual scalarInResidual(ResidualValue symbolValue, ResidualValue literalValue) {
-            if (symbolValue.symbolId == null || literalValue.literal == null || literalValue.literal.type() != Value.Type.LIST) {
+            if (symbolValue.symbolId < 0 || literalValue.literal == null || literalValue.literal.type() != Value.Type.LIST) {
                 return null;
             }
             Symbol symbol = symbols.symbol(symbolValue.symbolId);
@@ -1483,11 +1483,11 @@ final class Domain {
 
         private static final class ResidualValue {
             private final Residual residual;
-            private final Integer symbolId;
+            private final int symbolId;
             private final Value<?> literal;
             private final Expression expression;
 
-            private ResidualValue(Residual residual, Integer symbolId, Value<?> literal, Expression expression) {
+            private ResidualValue(Residual residual, int symbolId, Value<?> literal, Expression expression) {
                 this.residual = requireNonNull(residual, "residual is null");
                 this.symbolId = symbolId;
                 this.literal = literal;
@@ -1495,17 +1495,17 @@ final class Domain {
             }
 
             static ResidualValue of(Residual residual, Expression expression) {
-                return new ResidualValue(residual, null, null, expression);
+                return new ResidualValue(residual, -1, null, expression);
             }
 
-            static ResidualValue variable(String name, Integer symbolId) {
+            static ResidualValue variable(String name, int symbolId) {
                 Expression expression = Expression.create("${" + name + "}");
                 return new ResidualValue(Residual.opaque(expression), symbolId, null, expression);
             }
 
             static ResidualValue literal(Value<?> literal) {
                 Expression expression = new Expression(List.of(Token.of(literal)), true);
-                return new ResidualValue(Residual.opaque(expression), null, literal, expression);
+                return new ResidualValue(Residual.opaque(expression), -1, literal, expression);
             }
         }
     }
@@ -2483,24 +2483,22 @@ final class Domain {
         }
 
         Expression toExpression(String key, Symbol symbol) {
-            Expression expression = Expression.TRUE;
-            long remainingRequired = requiredMask;
-            while (remainingRequired != 0L) {
-                int ordinal = Long.numberOfTrailingZeros(remainingRequired);
-                expression = expression.and(Expression.create("${" + key + "} contains '" + symbol.membershipItem(ordinal) + "'"));
-                remainingRequired &= remainingRequired - 1L;
+            Expression expr = Expression.TRUE;
+            long remaining = requiredMask;
+            while (remaining != 0L) {
+                int ordinal = Long.numberOfTrailingZeros(remaining);
+                String str = symbol.membershipItem(ordinal);
+                expr = expr.and(Expression.create("${" + key + "} contains '" + str + "'"));
+                remaining &= remaining - 1L;
             }
-            long remainingForbidden = forbiddenMask;
-            while (remainingForbidden != 0L) {
-                int ordinal = Long.numberOfTrailingZeros(remainingForbidden);
-                expression = expression.and(Expression.create("!(${"
-                        + key
-                        + "} contains '"
-                        + symbol.membershipItem(ordinal)
-                        + "')"));
-                remainingForbidden &= remainingForbidden - 1L;
+            remaining = forbiddenMask;
+            while (remaining != 0L) {
+                int ordinal = Long.numberOfTrailingZeros(remaining);
+                String str = symbol.membershipItem(ordinal);
+                expr = expr.and(Expression.create("!(${" + key + "} contains '" + str + "')"));
+                remaining &= remaining - 1L;
             }
-            return expression;
+            return expr;
         }
 
         void appendLiteral(StringBuilder builder, Symbol symbol) {
@@ -2517,7 +2515,8 @@ final class Domain {
                 if (!first) {
                     builder.append(", ");
                 }
-                builder.append(symbol.membershipItem(Long.numberOfTrailingZeros(remaining)));
+                int ordinal = Long.numberOfTrailingZeros(remaining);
+                builder.append(symbol.membershipItem(ordinal));
                 remaining &= remaining - 1L;
                 first = false;
             }
