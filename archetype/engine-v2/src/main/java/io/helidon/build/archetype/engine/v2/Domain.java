@@ -840,12 +840,7 @@ final class Domain {
         private final Expression expression;
         private final List<Residual> children;
 
-        private Residual(Kind kind,
-                         int symbolId,
-                         long mask,
-                         String value,
-                         Expression expression,
-                         List<Residual> children) {
+        Residual(Kind kind, int symbolId, long mask, String value, Expression expression, List<Residual> children) {
             this.kind = requireNonNull(kind, "kind is null");
             this.symbolId = symbolId;
             this.mask = mask;
