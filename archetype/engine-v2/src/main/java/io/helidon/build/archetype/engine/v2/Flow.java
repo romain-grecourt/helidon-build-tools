@@ -488,7 +488,7 @@ final class Flow {
                     return facts;
                 }
             }
-            throw new IllegalArgumentException("Node is not part of this flow model: " + node.kind() + "#" + node.id());
+            throw new IllegalArgumentException("Unknown facts: " + node);
         }
     }
 
