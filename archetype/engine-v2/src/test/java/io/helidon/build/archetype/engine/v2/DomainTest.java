@@ -16,13 +16,9 @@
 package io.helidon.build.archetype.engine.v2;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
-
-import io.helidon.build.archetype.engine.v2.Domain.LatticeValue.BooleanSet;
-import io.helidon.build.archetype.engine.v2.Domain.LatticeValue.ChoiceSet;
-import io.helidon.build.archetype.engine.v2.Domain.LatticeValue.ListSummary;
-import io.helidon.build.archetype.engine.v2.Domain.LatticeValue.OpenText;
 
 import org.hamcrest.FeatureMatcher;
 import org.hamcrest.Matcher;
@@ -39,30 +35,33 @@ class DomainTest {
 
     @Test
     void testTopValuesFollowSpecs() {
-        Domain.LatticeValue booleanTop = Domain.LatticeValue.top(new Domain.Spec.Boolean());
-        Domain.LatticeValue choiceTop = Domain.LatticeValue.top(new Domain.Spec.Choice(Set.of("mp", "se")));
-        Domain.LatticeValue membershipTop = Domain.LatticeValue.top(new Domain.Spec.Membership(Set.of("rest", "grpc")));
-        Domain.LatticeValue openTextTop = Domain.LatticeValue.top(new Domain.Spec.OpenText());
+        Domain.Spec booleanSpec = Domain.Spec.booleanSpec();
+        Domain.Spec choiceSpec = Domain.Spec.choice(Set.of("mp", "se"));
+        Domain.Spec membershipSpec = Domain.Spec.finiteMembership(Set.of("rest", "grpc"));
+        Domain.LatticeValue booleanTop = Domain.LatticeValue.top(booleanSpec);
+        Domain.LatticeValue choiceTop = Domain.LatticeValue.top(choiceSpec);
+        Domain.LatticeValue membershipTop = Domain.LatticeValue.top(membershipSpec);
+        Domain.LatticeValue openTextTop = Domain.LatticeValue.top(Domain.Spec.OPEN_TEXT);
 
-        assertThat(booleanTop, isSubtype(BooleanSet.class,
-                hasProperty("values", BooleanSet::values, is(Set.of(false, true)))));
+        assertThat(booleanTop.kind(), is(Domain.LatticeValue.Kind.FINITE_SCALAR));
+        assertThat(booleanTop.scalarValues(booleanSpec), is(Set.of("false", "true")));
 
-        assertThat(choiceTop, isSubtype(ChoiceSet.class,
-                hasProperty("values", ChoiceSet::values, is(Set.of("mp", "se")))));
+        assertThat(choiceTop.kind(), is(Domain.LatticeValue.Kind.FINITE_SCALAR));
+        assertThat(choiceTop.scalarValues(choiceSpec), is(Set.of("mp", "se")));
 
-        assertThat(membershipTop, isSubtype(ListSummary.class,
-                hasProperty("possible", ListSummary::possible, is(Set.of("grpc", "rest")))));
+        assertThat(membershipTop.kind(), is(Domain.LatticeValue.Kind.MEMBERSHIP));
+        assertThat(membershipTop.possibleValues(membershipSpec), is(Set.of("grpc", "rest")));
 
-        assertThat(openTextTop, isSubtype(OpenText.class,
-                hasProperty("sample", OpenText::sample, is(nullValue()))));
+        assertThat(openTextTop.kind(), is(Domain.LatticeValue.Kind.OPEN_TEXT));
+        assertThat(openTextTop.sample(), is(nullValue()));
     }
 
     @Test
     void testGuardAlgebraRendersFiniteConditions() {
         Domain.Symbol.Table.Builder builder = Domain.Symbol.Table.builder();
-        int enabled = builder.define("enabled", new Domain.Spec.Boolean(), true, false);
-        int flavor = builder.define("flavor", new Domain.Spec.Choice(Set.of("mp", "se")), true, false);
-        int features = builder.define("features", new Domain.Spec.Membership(Set.of("rest", "grpc")), true, false);
+        int enabled = builder.define("enabled", Domain.Spec.booleanSpec(), true, false);
+        int flavor = builder.define("flavor", Domain.Spec.choice(Set.of("mp", "se")), true, false);
+        int features = builder.define("features", Domain.Spec.finiteMembership(Set.of("rest", "grpc")), true, false);
         Domain.Symbol.Table symbols = builder.build();
         Domain.Guards guards = new Domain.Guards(symbols);
         Context.Scope scope = new Context().scope();
@@ -86,8 +85,8 @@ class DomainTest {
     @Test
     void testGuardImplicationKeepsBroaderPureDecision() {
         Domain.Symbol.Table.Builder builder = Domain.Symbol.Table.builder();
-        int enabled = builder.define("enabled", new Domain.Spec.Boolean(), true, false);
-        int flavor = builder.define("flavor", new Domain.Spec.Choice(Set.of("mp", "se")), true, false);
+        int enabled = builder.define("enabled", Domain.Spec.booleanSpec(), true, false);
+        int flavor = builder.define("flavor", Domain.Spec.choice(Set.of("mp", "se")), true, false);
         Domain.Symbol.Table symbols = builder.build();
         Domain.Guards guards = new Domain.Guards(symbols);
 
@@ -105,8 +104,8 @@ class DomainTest {
     @Test
     void testGuardOrMergesPureDecisionBranches() {
         Domain.Symbol.Table.Builder builder = Domain.Symbol.Table.builder();
-        int enabled = builder.define("enabled", new Domain.Spec.Boolean(), true, false);
-        int flavor = builder.define("flavor", new Domain.Spec.Choice(Set.of("mp", "se")), true, false);
+        int enabled = builder.define("enabled", Domain.Spec.booleanSpec(), true, false);
+        int flavor = builder.define("flavor", Domain.Spec.choice(Set.of("mp", "se")), true, false);
         Domain.Symbol.Table symbols = builder.build();
         Domain.Guards guards = new Domain.Guards(symbols);
 
@@ -122,7 +121,7 @@ class DomainTest {
     @Test
     void testGuardAndNarrowsMergedScalarChoice() {
         Domain.Symbol.Table.Builder builder = Domain.Symbol.Table.builder();
-        int flavor = builder.define("flavor", new Domain.Spec.Choice(Set.of("mp", "nima", "se")), true, false);
+        int flavor = builder.define("flavor", Domain.Spec.choice(Set.of("mp", "nima", "se")), true, false);
         Domain.Symbol.Table symbols = builder.build();
         Domain.Guards guards = new Domain.Guards(symbols);
         Context.Scope scope = new Context().scope();
@@ -138,7 +137,7 @@ class DomainTest {
     @Test
     void testGuardContainsAllKeepsBroaderMembershipRequirement() {
         Domain.Symbol.Table.Builder builder = Domain.Symbol.Table.builder();
-        int features = builder.define("features", new Domain.Spec.Membership(Set.of("grpc", "metrics", "rest")), true, false);
+        int features = builder.define("features", Domain.Spec.finiteMembership(Set.of("grpc", "metrics", "rest")), true, false);
         Domain.Symbol.Table symbols = builder.build();
         Domain.Guards guards = new Domain.Guards(symbols);
 
@@ -150,6 +149,52 @@ class DomainTest {
         assertThat(guards.equivalent(restAndGrpc, bulk), is(true));
         assertThat(guards.implies(bulk, restGuard), is(true));
         assertThat(guards.or(bulk, restGuard), is(restGuard));
+    }
+
+    @Test
+    void testFactExactCasesUseFiniteMasksInsteadOfRawLiteralShape() {
+        Domain.Symbol.Table.Builder builder = Domain.Symbol.Table.builder();
+        int enabled = builder.define("enabled", Domain.Spec.booleanSpec(), true, false);
+        int features = builder.define("features", Domain.Spec.finiteMembership(Set.of("grpc", "rest")), true, false);
+        Domain.Symbol.Table symbols = builder.build();
+        Domain.Guards guards = new Domain.Guards(symbols);
+        Domain.Symbol enabledSymbol = symbols.symbol(enabled);
+        Domain.Symbol featuresSymbol = symbols.symbol(features);
+
+        Domain.Symbol.Fact booleanTrue = Domain.Symbol.Fact.exact(
+                TRUE,
+                enabledSymbol.domain(),
+                Domain.LatticeValue.finiteScalar(enabledSymbol.scalarMask("true")),
+                Value.of(true));
+        Domain.Symbol.Fact stringTrue = Domain.Symbol.Fact.exact(
+                TRUE,
+                enabledSymbol.domain(),
+                Domain.LatticeValue.finiteScalar(enabledSymbol.scalarMask("true")),
+                Value.of("true"));
+        Domain.Symbol.Fact mergedBoolean = Domain.Symbol.Fact.merge(booleanTrue, stringTrue, guards);
+
+        assertThat(mergedBoolean.exactCases().size(), is(1));
+        assertThat(mergedBoolean.match(enabledSymbol, Value.of("true"), guards), is(TRUE));
+        assertThat(mergedBoolean.scalarAny(enabledSymbol, Set.of("true"), guards), is(TRUE));
+
+        Domain.Symbol.Fact grpcRest = Domain.Symbol.Fact.exact(
+                TRUE,
+                featuresSymbol.domain(),
+                Domain.LatticeValue.membership(
+                        featuresSymbol.membershipMask(Set.of("grpc", "rest")),
+                        featuresSymbol.membershipMask(Set.of("grpc", "rest"))),
+                Value.of(List.of("grpc", "rest")));
+        Domain.Symbol.Fact restGrpc = Domain.Symbol.Fact.exact(
+                TRUE,
+                featuresSymbol.domain(),
+                Domain.LatticeValue.membership(
+                        featuresSymbol.membershipMask(Set.of("grpc", "rest")),
+                        featuresSymbol.membershipMask(Set.of("grpc", "rest"))),
+                Value.of(List.of("rest", "grpc")));
+        Domain.Symbol.Fact mergedMembership = Domain.Symbol.Fact.merge(grpcRest, restGrpc, guards);
+
+        assertThat(mergedMembership.exactCases().size(), is(1));
+        assertThat(mergedMembership.listContains(featuresSymbol, Set.of("grpc", "rest"), guards), is(TRUE));
     }
 
     @SafeVarargs

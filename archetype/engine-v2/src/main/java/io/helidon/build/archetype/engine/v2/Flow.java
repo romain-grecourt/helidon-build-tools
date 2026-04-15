@@ -32,12 +32,6 @@ import io.helidon.build.archetype.engine.v2.Context.Scope;
 import io.helidon.build.archetype.engine.v2.Domain.Guard;
 import io.helidon.build.archetype.engine.v2.Domain.Guards;
 import io.helidon.build.archetype.engine.v2.Domain.LatticeValue;
-import io.helidon.build.archetype.engine.v2.Domain.LatticeValue.BooleanSet;
-import io.helidon.build.archetype.engine.v2.Domain.LatticeValue.ChoiceSet;
-import io.helidon.build.archetype.engine.v2.Domain.LatticeValue.FiniteText;
-import io.helidon.build.archetype.engine.v2.Domain.LatticeValue.ListSummary;
-import io.helidon.build.archetype.engine.v2.Domain.LatticeValue.MembershipSet;
-import io.helidon.build.archetype.engine.v2.Domain.LatticeValue.OpenText;
 import io.helidon.build.archetype.engine.v2.Domain.Spec;
 import io.helidon.build.archetype.engine.v2.Domain.Symbol;
 import io.helidon.build.archetype.engine.v2.Domain.Symbol.Fact;
@@ -259,12 +253,7 @@ final class Flow {
         private final int symbolId;
         private final Expression expression;
 
-        private Op(int id,
-                   int blockId,
-                   SourceAnchor source,
-                   Kind kind,
-                   int symbolId,
-                   Expression expression) {
+        private Op(int id, int blockId, SourceAnchor source, Kind kind, int symbolId, Expression expression) {
             this.id = id;
             this.blockId = blockId;
             this.source = requireNonNull(source, "source is null");
@@ -508,8 +497,13 @@ final class Flow {
             if (fact == null || !ir.guards().implies(required, fact.definedUnder())) {
                 return Value.empty();
             }
-            Value<?> exact = exactValue(fact, required, valueType(key));
-            return exact != null ? exact : singletonValue(fact.value());
+            SymbolInfo info = symbol(key);
+            if (info == null && !key.startsWith("~")) {
+                info = symbol("~" + key);
+            }
+            Value.Type type = info == null ? Value.Type.EMPTY : valueType(info);
+            Value<?> exact = exactValue(fact, required, type);
+            return exact != null ? exact : info == null ? Value.empty() : singletonValue(fact.value(), info.symbol.domain(), type);
         }
 
         private Fact fact(Node node, String key) {
@@ -524,22 +518,13 @@ final class Flow {
             return symbolId == null ? null : before.env.get(symbolId);
         }
 
-        private Value.Type valueType(String key) {
-            SymbolInfo info = symbol(key);
-            if (info == null && !key.startsWith("~")) {
-                info = symbol("~" + key);
-            }
-            if (info == null) {
-                return Value.Type.EMPTY;
-            }
+        private Value.Type valueType(SymbolInfo info) {
             switch (info.symbol.domain().kind()) {
-                case BOOLEAN:
-                    return Value.Type.BOOLEAN;
-                case MEMBERSHIP:
+                case FINITE_SCALAR:
+                    return info.symbol.domain().booleanLike() ? Value.Type.BOOLEAN : Value.Type.STRING;
+                case FINITE_MEMBERSHIP:
                     return Value.Type.LIST;
-                case CHOICE:
                 case OPEN_TEXT:
-                case FINITE_TEXT:
                     return Value.Type.STRING;
                 default:
                     return Value.Type.EMPTY;
@@ -580,22 +565,16 @@ final class Flow {
             }
         }
 
-        private Value<?> singletonValue(LatticeValue value) {
-            if (value instanceof BooleanSet) {
-                Set<Boolean> values = ((BooleanSet) value).values();
-                return values.size() == 1 ? Value.of(values.iterator().next()) : Value.empty();
+        private Value<?> singletonValue(LatticeValue value, Spec spec, Value.Type type) {
+            if (value.kind() == LatticeValue.Kind.FINITE_SCALAR) {
+                String scalar = value.singletonScalar(spec);
+                if (scalar == null) {
+                    return Value.empty();
+                }
+                return type == Value.Type.BOOLEAN ? Value.of(Boolean.parseBoolean(scalar)) : Value.of(scalar);
             }
-            if (value instanceof ChoiceSet) {
-                Set<String> values = ((ChoiceSet) value).values();
-                return values.size() == 1 ? Value.of(values.iterator().next()) : Value.empty();
-            }
-            if (value instanceof FiniteText) {
-                Set<String> values = ((FiniteText) value).values();
-                return values.size() == 1 ? Value.of(values.iterator().next()) : Value.empty();
-            }
-            if (value instanceof OpenText) {
-                String sample = ((OpenText) value).sample();
-                return sample == null ? Value.empty() : Value.of(sample);
+            if (value.kind() == LatticeValue.Kind.OPEN_TEXT) {
+                return value.sample() == null ? Value.empty() : Value.of(value.sample());
             }
             return Value.empty();
         }
@@ -697,7 +676,7 @@ final class Flow {
                     case DECLARE_INPUT: {
                         SymbolInfoBuilder builder = symbolInfos.get(op.symbolId());
                         builder.addDefinition(before.path, guards);
-                        if (builder.symbol.domain().kind() == Spec.Kind.BOOLEAN) {
+                        if (builder.symbol.domain().booleanLike()) {
                             builder.addAvailability("true", before.path, guards);
                             builder.addAvailability("false", before.path, guards);
                         }
@@ -730,48 +709,34 @@ final class Flow {
                 }
                 return;
             }
-            switch (builder.symbol.domain().kind()) {
-                case BOOLEAN:
-                    if (fact.value() instanceof BooleanSet) {
-                        for (boolean value : ((BooleanSet) fact.value()).values()) {
-                            builder.addAvailability(String.valueOf(value), fact.definedUnder(), guards);
-                        }
-                    }
-                    break;
-                case CHOICE:
-                    if (fact.value() instanceof ChoiceSet) {
-                        for (String value : ((ChoiceSet) fact.value()).values()) {
-                            builder.addAvailability(value, fact.definedUnder(), guards);
-                        }
-                    }
-                    break;
-                case FINITE_TEXT:
-                    if (fact.value() instanceof FiniteText) {
-                        for (String value : ((FiniteText) fact.value()).values()) {
-                            builder.addAvailability(value, fact.definedUnder(), guards);
-                        }
-                    }
-                    break;
-                default:
-                    break;
+            if (builder.symbol.domain().kind() != Spec.Kind.FINITE_SCALAR
+                    || fact.value().kind() != LatticeValue.Kind.FINITE_SCALAR) {
+                return;
+            }
+            if (fact.value().scalarMask() == builder.symbol.domain().fullMask()) {
+                return;
+            }
+            for (String value : fact.value().scalarValues(builder.symbol.domain())) {
+                builder.addAvailability(value, fact.definedUnder(), guards);
             }
         }
 
         private void recordExactAvailability(SymbolInfoBuilder builder, Fact.ExactCase exactCase) {
             switch (builder.symbol.domain().kind()) {
-                case BOOLEAN:
-                case CHOICE:
-                case FINITE_TEXT:
-                    String scalar = exactCase.scalarLiteral();
-                    if (scalar != null) {
-                        builder.addAvailability(scalar, exactCase.guard(), guards);
+                case FINITE_SCALAR:
+                    long scalarMask = exactCase.scalarMask();
+                    while (scalarMask != 0L) {
+                        int ordinal = Long.numberOfTrailingZeros(scalarMask);
+                        builder.addAvailability(builder.symbol.scalarValue(ordinal), exactCase.guard(), guards);
+                        scalarMask &= scalarMask - 1L;
                     }
                     break;
-                case MEMBERSHIP:
-                    if (exactCase.value().type() == Value.Type.LIST) {
-                        for (String value : exactCase.value().getList()) {
-                            builder.addAvailability(value, exactCase.guard(), guards);
-                        }
+                case FINITE_MEMBERSHIP:
+                    long listMask = exactCase.listMask();
+                    while (listMask != 0L) {
+                        int ordinal = Long.numberOfTrailingZeros(listMask);
+                        builder.addAvailability(builder.symbol.membershipItem(ordinal), exactCase.guard(), guards);
+                        listMask &= listMask - 1L;
                     }
                     break;
                 default:
@@ -951,7 +916,7 @@ final class Flow {
             }
             if (term.ref != null) {
                 Flow.SymbolInfo info = symbolInfo(term.ref);
-                if (info == null || info.symbol.domain().kind() != Spec.Kind.BOOLEAN) {
+                if (info == null || !info.symbol.domain().booleanLike()) {
                     return null;
                 }
                 return translatedEquality(term.ref, Value.TRUE, state);
@@ -996,14 +961,16 @@ final class Flow {
 
         private Guard translatedEquality(String key, Value<?> value, State state) {
             Fact fact = factFor(state, key);
-            Guard bound = fact == null ? Guard.FALSE : fact.match(value, guards);
+            Flow.SymbolInfo info = symbolInfo(key);
+            Guard bound = fact == null || info == null ? Guard.FALSE : fact.match(info.symbol, value, guards);
             Guard raw = rawEquality(key, value);
             return combine(key, fact, bound, raw);
         }
 
         private Guard translatedScalarAny(String key, Set<String> values, State state) {
             Fact fact = factFor(state, key);
-            Guard bound = fact == null ? Guard.FALSE : fact.scalarAny(values, guards);
+            Flow.SymbolInfo info = symbolInfo(key);
+            Guard bound = fact == null || info == null ? Guard.FALSE : fact.scalarAny(info.symbol, values, guards);
             Guard raw = rawScalarAny(key, values);
             return combine(key, fact, bound, raw);
         }
@@ -1014,12 +981,15 @@ final class Flow {
                 return null;
             }
             Fact fact = factFor(state, key);
-            Guard bound = fact == null ? Guard.FALSE : fact.listContains(required, guards);
+            Flow.SymbolInfo info = symbolInfo(key);
+            Guard bound = fact == null || info == null ? Guard.FALSE : fact.listContains(info.symbol, required, guards);
             Guard raw = rawListContains(symbolInfo(key), required);
             return combine(key, fact, bound, raw);
         }
 
         private Guard combine(String key, Fact fact, Guard bound, Guard raw) {
+            Flow.SymbolInfo info = symbolInfo(key);
+            Symbol symbol = info == null ? null : info.symbol;
             Guard defined = definitionFor(key, fact);
             if (fact == null) {
                 if (raw == null) {
@@ -1032,7 +1002,7 @@ final class Flow {
                     return null;
                 }
                 if (bound.equals(Guard.FALSE)) {
-                    Guard exact = fact.exactDefined(guards);
+                    Guard exact = symbol == null ? fact.exactDefined(guards) : fact.supportedExactDefined(symbol, guards);
                     if (defined == null || exact.equals(Guard.FALSE) || !guards.implies(exact, defined)) {
                         return null;
                     }
@@ -1040,7 +1010,7 @@ final class Flow {
                 return bound;
             }
             Guard available = defined == null ? Guard.TRUE : defined;
-            Guard exact = fact.exactDefined(guards);
+            Guard exact = symbol == null ? fact.exactDefined(guards) : fact.supportedExactDefined(symbol, guards);
             Guard unresolved = guards.and(guards.minus(available, exact), raw);
             return guards.or(bound, unresolved);
         }
@@ -1074,21 +1044,10 @@ final class Flow {
             }
             Symbol symbol = info.symbol;
             if (symbol.guardable() && !symbol.tainted()) {
-                switch (symbol.domain().kind()) {
-                    case BOOLEAN:
-                        return Set.of("false", "true").contains(scalar)
-                                ? available(info, scalar, guards.eq(symbol.id(), scalar))
-                                : Guard.FALSE;
-                    case CHOICE:
-                        return ((Spec.Choice) symbol.domain()).values().contains(scalar)
-                                ? available(info, scalar, guards.eq(symbol.id(), scalar))
-                                : Guard.FALSE;
-                    case FINITE_TEXT:
-                        return ((Spec.FiniteText) symbol.domain()).values().contains(scalar)
-                                ? available(info, scalar, guards.eq(symbol.id(), scalar))
-                                : Guard.FALSE;
-                    default:
-                        break;
+                if (symbol.domain().kind() == Spec.Kind.FINITE_SCALAR) {
+                    return symbol.domain().values().contains(scalar)
+                            ? available(info, scalar, guards.eq(symbol.id(), scalar))
+                            : Guard.FALSE;
                 }
             }
             return fallbackScalarEquality(info, key, scalar);
@@ -1102,19 +1061,10 @@ final class Flow {
             Symbol symbol = info.symbol;
             Set<String> allowed = new TreeSet<>(values);
             if (symbol.guardable() && !symbol.tainted()) {
-                switch (symbol.domain().kind()) {
-                    case BOOLEAN:
-                        allowed.retainAll(Set.of("false", "true"));
-                        break;
-                    case CHOICE:
-                        allowed.retainAll(((Spec.Choice) symbol.domain()).values());
-                        break;
-                    case FINITE_TEXT:
-                        allowed.retainAll(((Spec.FiniteText) symbol.domain()).values());
-                        break;
-                    default:
-                        allowed.clear();
-                        break;
+                if (symbol.domain().kind() == Spec.Kind.FINITE_SCALAR) {
+                    allowed.retainAll(symbol.domain().values());
+                } else {
+                    allowed.clear();
                 }
                 Guard raw = Guard.FALSE;
                 for (String value : allowed) {
@@ -1137,10 +1087,10 @@ final class Flow {
                 return null;
             }
             Symbol symbol = info.symbol;
-            if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Spec.Kind.MEMBERSHIP) {
+            if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Spec.Kind.FINITE_MEMBERSHIP) {
                 return null;
             }
-            Set<String> items = ((Spec.Membership) symbol.domain()).items();
+            Set<String> items = symbol.domain().values();
             if (!items.containsAll(required)) {
                 return Guard.FALSE;
             }
@@ -1301,7 +1251,7 @@ final class Flow {
             switch (node.kind()) {
                 case INPUT_BOOLEAN:
                     childScope = scope.getOrCreate(node);
-                    rememberDeclaredInput(childScope.key(), new Spec.Boolean(), true, false);
+                    rememberDeclaredInput(childScope.key(), Spec.booleanSpec(), true, false);
                     break;
                 case INPUT_ENUM:
                 case INPUT_LIST:
@@ -1310,7 +1260,7 @@ final class Flow {
                     break;
                 case INPUT_TEXT:
                     childScope = scope.getOrCreate(node);
-                    rememberDeclaredInput(childScope.key(), new Spec.OpenText(), false, true);
+                    rememberDeclaredInput(childScope.key(), Spec.OPEN_TEXT, false, true);
                     break;
                 default:
                     break;
@@ -1325,7 +1275,7 @@ final class Flow {
             switch (node.kind()) {
                 case INPUT_BOOLEAN:
                     childScope = scope.getOrCreate(node);
-                    rememberSymbol(childScope.key(), new Spec.Boolean(), true, false);
+                    rememberSymbol(childScope.key(), Spec.booleanSpec(), true, false);
                     break;
                 case INPUT_ENUM:
                 case INPUT_LIST:
@@ -1334,11 +1284,11 @@ final class Flow {
                     break;
                 case INPUT_TEXT:
                     childScope = scope.getOrCreate(node);
-                    rememberSymbol(childScope.key(), new Spec.OpenText(), false, true);
+                    rememberSymbol(childScope.key(), Spec.OPEN_TEXT, false, true);
                     break;
                 case PRESET_BOOLEAN:
                 case VARIABLE_BOOLEAN:
-                    rememberSymbol(definitionId(scope, node), new Spec.Boolean(), true, false);
+                    rememberSymbol(definitionId(scope, node), Spec.booleanSpec(), true, false);
                     break;
                 case PRESET_ENUM:
                 case VARIABLE_ENUM:
@@ -1353,7 +1303,7 @@ final class Flow {
                     if (declared != null) {
                         rememberSymbol(key, declared.spec, declared.guardable, declared.tainted);
                     } else {
-                        rememberSymbol(key, new Spec.OpenText(), false, false);
+                        rememberSymbol(key, Spec.OPEN_TEXT, false, false);
                     }
                     break;
                 }
@@ -1533,9 +1483,6 @@ final class Flow {
             String key = definitionId(scope, node);
             SymbolSeed declared = declaredInputSymbols.get(key);
             if (declared != null) {
-                if (node.kind() == Kind.PRESET_TEXT || node.kind() == Kind.VARIABLE_TEXT) {
-                    return declared.merge(scalarDefinitionSeed(key, node.value()));
-                }
                 return declared;
             }
             switch (node.kind()) {
@@ -1549,15 +1496,15 @@ final class Flow {
                 default:
                     break;
             }
-            return new SymbolSeed(key, new Spec.OpenText(), false, false);
+            return new SymbolSeed(key, Spec.OPEN_TEXT, false, false);
         }
 
         SymbolSeed scalarDefinitionSeed(String key, Value<?> value) {
             String literal = literalScalar(value);
             if (literal == null) {
-                return new SymbolSeed(key, new Spec.OpenText(), false, true);
+                return new SymbolSeed(key, Spec.OPEN_TEXT, false, true);
             }
-            return new SymbolSeed(key, new Spec.FiniteText(Set.of(literal)), true, false);
+            return new SymbolSeed(key, Spec.finiteText(Set.of(literal)), true, false);
         }
 
         String literalScalar(Value<?> value) {
@@ -1620,11 +1567,11 @@ final class Flow {
         static Spec inputSpec(Node node) {
             Set<String> values = optionValues(node);
             if (values.isEmpty()) {
-                return new Spec.OpenText();
+                return Spec.OPEN_TEXT;
             }
             return node.kind() == Kind.INPUT_ENUM
-                    ? new Spec.Choice(values)
-                    : new Spec.Membership(values);
+                    ? Spec.choice(values)
+                    : Spec.finiteMembership(values);
         }
 
         static String definitionId(Scope scope, Node node) {
@@ -1649,32 +1596,35 @@ final class Flow {
             if (!name.equals(other.name)) {
                 throw new IllegalArgumentException("Cannot merge different symbols");
             }
+            if (spec.kind() == Spec.Kind.OPEN_TEXT || other.spec.kind() == Spec.Kind.OPEN_TEXT) {
+                return new SymbolSeed(name, Spec.OPEN_TEXT, false, tainted || other.tainted);
+            }
             if (spec.kind() != other.spec.kind()) {
-                return new SymbolSeed(name, new Spec.OpenText(), false, tainted || other.tainted);
+                return new SymbolSeed(name, Spec.OPEN_TEXT, false, tainted || other.tainted);
             }
             switch (spec.kind()) {
-                case CHOICE:
-                    Set<String> choiceValues = new TreeSet<>(((Spec.Choice) spec).values());
-                    choiceValues.addAll(((Spec.Choice) other.spec).values());
+                case FINITE_SCALAR:
+                    if (spec.subKind() == Spec.SubKind.BOOLEAN && other.spec.subKind() == Spec.SubKind.BOOLEAN) {
+                        return new SymbolSeed(name, Spec.booleanSpec(), guardable && other.guardable, tainted || other.tainted);
+                    }
+                    if (spec.subKind() == Spec.SubKind.BOOLEAN || other.spec.subKind() == Spec.SubKind.BOOLEAN) {
+                        return new SymbolSeed(name, Spec.OPEN_TEXT, false, tainted || other.tainted);
+                    }
+                    Set<String> choiceValues = new TreeSet<>(spec.values());
+                    choiceValues.addAll(other.spec.values());
                     return new SymbolSeed(name,
-                            new Spec.Choice(choiceValues),
+                            spec.subKind() == Spec.SubKind.CHOICE || other.spec.subKind() == Spec.SubKind.CHOICE
+                                    ? Spec.choice(choiceValues)
+                                    : Spec.finiteText(choiceValues),
                             guardable && other.guardable,
                             tainted || other.tainted);
-                case MEMBERSHIP:
-                    Set<String> items = new TreeSet<>(((Spec.Membership) spec).items());
-                    items.addAll(((Spec.Membership) other.spec).items());
+                case FINITE_MEMBERSHIP:
+                    Set<String> items = new TreeSet<>(spec.values());
+                    items.addAll(other.spec.values());
                     return new SymbolSeed(name,
-                            new Spec.Membership(items),
+                            Spec.finiteMembership(items),
                             guardable && other.guardable,
                             tainted || other.tainted);
-                case FINITE_TEXT:
-                    Set<String> values = new TreeSet<>(((Spec.FiniteText) spec).values());
-                    values.addAll(((Spec.FiniteText) other.spec).values());
-                    return new SymbolSeed(name,
-                            new Spec.FiniteText(values),
-                            guardable && other.guardable,
-                            tainted || other.tainted);
-                case BOOLEAN:
                 case OPEN_TEXT:
                 default:
                     return new SymbolSeed(name, spec, guardable && other.guardable, tainted || other.tainted);
@@ -1810,26 +1760,19 @@ final class Flow {
             if (!symbol.guardable() || symbol.tainted()) {
                 return null;
             }
-            switch (symbol.domain().kind()) {
-                case BOOLEAN:
-                    if (literalValue.literal.type() == Value.Type.BOOLEAN) {
-                        return guards.eq(symbol.id(), String.valueOf(literalValue.literal.getBoolean()));
-                    }
-                    if (literalValue.literal.type() == Value.Type.STRING) {
-                        String literal = literalValue.literal.getString();
-                        if ("true".equals(literal) || "false".equals(literal)) {
-                            return guards.eq(symbol.id(), literal);
-                        }
-                    }
-                    return null;
-                case CHOICE:
-                case FINITE_TEXT:
-                    return literalValue.literal.type() == Value.Type.STRING
-                            ? guards.eq(symbol.id(), literalValue.literal.getString())
-                            : null;
-                default:
-                    return null;
+            if (symbol.domain().kind() != Spec.Kind.FINITE_SCALAR) {
+                return null;
             }
+            if (literalValue.literal.type() == Value.Type.BOOLEAN) {
+                return symbol.domain().booleanLike()
+                        ? guards.eq(symbol.id(), String.valueOf(literalValue.literal.getBoolean()))
+                        : null;
+            }
+            if (literalValue.literal.type() == Value.Type.STRING) {
+                String literal = literalValue.literal.getString();
+                return symbol.domain().values().contains(literal) ? guards.eq(symbol.id(), literal) : null;
+            }
+            return null;
         }
 
         ConditionValue contains(ConditionValue right, ConditionValue left) {
@@ -1846,7 +1789,7 @@ final class Flow {
                 return null;
             }
             Symbol symbol = symbolValue.symbol;
-            if (symbol.domain().kind() != Spec.Kind.MEMBERSHIP || !symbol.guardable() || symbol.tainted()) {
+            if (symbol.domain().kind() != Spec.Kind.FINITE_MEMBERSHIP || !symbol.guardable() || symbol.tainted()) {
                 return null;
             }
             if (literalValue.literal.type() == Value.Type.STRING) {
@@ -1866,18 +1809,14 @@ final class Flow {
             if (!symbol.guardable() || symbol.tainted()) {
                 return null;
             }
-            switch (symbol.domain().kind()) {
-                case BOOLEAN:
-                case CHOICE:
-                case FINITE_TEXT:
-                    Guard result = Guard.FALSE;
-                    for (String item : literalValue.literal.getList()) {
-                        result = guards.or(result, guards.eq(symbol.id(), item));
-                    }
-                    return result;
-                default:
-                    return null;
+            if (symbol.domain().kind() != Spec.Kind.FINITE_SCALAR) {
+                return null;
             }
+            Guard result = Guard.FALSE;
+            for (String item : literalValue.literal.getList()) {
+                result = guards.or(result, guards.eq(symbol.id(), item));
+            }
+            return result;
         }
 
         Guard residual(Expression expression) {
@@ -1937,7 +1876,7 @@ final class Flow {
             if (guard != null) {
                 return guard;
             }
-            if (symbol != null && symbol.guardable() && !symbol.tainted() && symbol.domain().kind() == Spec.Kind.BOOLEAN) {
+            if (symbol != null && symbol.guardable() && !symbol.tainted() && symbol.domain().booleanLike()) {
                 return guards.eq(symbol.id(), "true");
             }
             if (literal != null && literal.type() == Value.Type.BOOLEAN) {
@@ -1954,7 +1893,7 @@ final class Flow {
         private final Ir ir;
         private final Guards guards;
         private final List<PendingUse> usesById;
-        private final Map<FactState, Fact> materializedFacts = new IdentityHashMap<>();
+        private final Map<Integer, Map<FactState, Fact>> materializedFacts = new LinkedHashMap<>();
         private final Map<Map<Integer, FactState>, Map<Integer, Fact>> materializedEnvs = new IdentityHashMap<>();
         private final ExactProvenance[] blockProvenances;
         private List<Guard> blockPaths;
@@ -2105,7 +2044,7 @@ final class Flow {
                     FactState existing = state.get(op.symbolId());
                     return define(state,
                             op.symbolId(),
-                            existing == null ? declared : mergeFact(existing, declared));
+                            existing == null ? declared : mergeFact(op.symbolId(), existing, declared));
                 }
                 case DEFINE_VALUE:
                     Symbol symbol = ir.symbols().symbol(op.symbolId());
@@ -2171,7 +2110,7 @@ final class Flow {
                 } else if (left == right || left.equals(right)) {
                     merged = left;
                 } else {
-                    merged = mergeFact(left, right);
+                    merged = mergeFact(symbolId, left, right);
                 }
                 if (merged != left) {
                     if (next == null) {
@@ -2235,11 +2174,12 @@ final class Flow {
                 if (symbolId == null) {
                     return null;
                 }
+                Symbol symbol = ir.symbols().symbol(symbolId);
                 FactState fact = state.get(symbolId);
                 if (fact == null) {
                     return null;
                 }
-                Value<?> exactFromValue = exactFromValue(fact, currentGuard);
+                Value<?> exactFromValue = exactFromValue(symbol.domain(), fact, currentGuard);
                 if (exactFromValue != null) {
                     return exactFromValue;
                 }
@@ -2262,32 +2202,24 @@ final class Flow {
             return null;
         }
 
-        private Value<?> exactFromValue(FactState fact, Guard currentGuard) {
+        private Value<?> exactFromValue(Spec spec, FactState fact, Guard currentGuard) {
             if (!implies(currentGuard, fact.definedUnder)) {
                 return null;
             }
-            if (fact.value instanceof BooleanSet) {
-                Set<Boolean> values = ((BooleanSet) fact.value).values();
-                if (values.size() == 1) {
-                    return Value.of(values.iterator().next());
+            if (fact.value.kind() == LatticeValue.Kind.FINITE_SCALAR) {
+                String scalar = fact.value.singletonScalar(spec);
+                if (scalar == null) {
+                    return null;
                 }
+                return spec.booleanLike() ? Value.of(Boolean.parseBoolean(scalar)) : Value.of(scalar);
             }
-            if (fact.value instanceof ChoiceSet) {
-                Set<String> values = ((ChoiceSet) fact.value).values();
-                if (values.size() == 1) {
-                    return Value.of(values.iterator().next());
-                }
-            }
-            if (fact.value instanceof FiniteText) {
-                Set<String> values = ((FiniteText) fact.value).values();
-                if (values.size() == 1) {
-                    return Value.of(values.iterator().next());
-                }
+            if (fact.value.kind() == LatticeValue.Kind.OPEN_TEXT && fact.value.sample() != null) {
+                return Value.of(fact.value.sample());
             }
             return null;
         }
 
-        private FactState mergeFact(FactState left, FactState right) {
+        private FactState mergeFact(int symbolId, FactState left, FactState right) {
             ExactProvenance definedUnder = ExactProvenance.merge(left.definedUnder, right.definedUnder);
             LatticeValue value = LatticeValue.join(left.value, right.value);
             if (left.exactCases.isEmpty()) {
@@ -2302,24 +2234,25 @@ final class Flow {
             if (coverage == null) {
                 return new FactState(definedUnder, value);
             }
+            Symbol symbol = ir.symbols().symbol(symbolId);
             List<ExactCaseState> merged = new ArrayList<>();
             for (ExactCaseState exactCase : left.exactCases) {
-                if (!mergeExactCase(merged, exactCase)) {
+                if (!mergeExactCase(symbol, merged, exactCase)) {
                     return new FactState(definedUnder, value);
                 }
             }
             for (ExactCaseState exactCase : right.exactCases) {
-                if (!mergeExactCase(merged, exactCase)) {
+                if (!mergeExactCase(symbol, merged, exactCase)) {
                     return new FactState(definedUnder, value);
                 }
             }
             return new FactState(definedUnder, value, coverage, merged);
         }
 
-        private boolean mergeExactCase(List<ExactCaseState> merged, ExactCaseState next) {
+        private boolean mergeExactCase(Symbol symbol, List<ExactCaseState> merged, ExactCaseState next) {
             for (int i = 0; i < merged.size(); i++) {
                 ExactCaseState current = merged.get(i);
-                if (Value.isEqual(current.value, next.value)) {
+                if (Domain.sameExactValue(symbol.domain(), current.value, next.value)) {
                     ExactProvenance provenance = ExactProvenance.merge(current.provenance, next.provenance,
                             EXACT_PROVENANCE_MAX);
                     if (provenance == null) {
@@ -2354,7 +2287,7 @@ final class Flow {
             }
             Map<Integer, Fact> materialized = new LinkedHashMap<>();
             for (Map.Entry<Integer, FactState> entry : env.entrySet()) {
-                materialized.put(entry.getKey(), materializeFact(entry.getValue()));
+                materialized.put(entry.getKey(), materializeFact(entry.getKey(), entry.getValue()));
             }
             materializedEnvs.put(env, materialized);
             return materialized;
@@ -2368,17 +2301,19 @@ final class Flow {
             return result;
         }
 
-        private Fact materializeFact(FactState fact) {
-            Fact cached = materializedFacts.get(fact);
+        private Fact materializeFact(int symbolId, FactState fact) {
+            Map<FactState, Fact> cacheBySymbol = materializedFacts.computeIfAbsent(symbolId, unused -> new IdentityHashMap<>());
+            Fact cached = cacheBySymbol.get(fact);
             if (cached != null) {
                 return cached;
             }
+            Symbol symbol = ir.symbols().symbol(symbolId);
             List<Fact.ExactCase> exactCases = new ArrayList<>(fact.exactCases.size());
             for (ExactCaseState exactCase : fact.exactCases) {
-                exactCases.add(new Fact.ExactCase(exactCase.value, materializeGuard(exactCase.provenance)));
+                exactCases.add(new Fact.ExactCase(exactCase.value, materializeGuard(exactCase.provenance), symbol.domain()));
             }
             Fact materialized = new Fact(materializeGuard(fact.definedUnder), fact.value, exactCases);
-            materializedFacts.put(fact, materialized);
+            cacheBySymbol.put(fact, materialized);
             return materialized;
         }
 
@@ -2610,23 +2545,24 @@ final class Flow {
 
         static LatticeValue literalValue(Spec spec, Value<?> literal) {
             switch (literal.type()) {
-                case BOOLEAN:
-                    return new BooleanSet(Set.of(literal.getBoolean()));
+                case BOOLEAN: {
+                    String scalar = String.valueOf(literal.getBoolean());
+                    if (spec.kind() == Spec.Kind.FINITE_SCALAR && spec.values().contains(scalar)) {
+                        return LatticeValue.finiteScalar(spec.mask(scalar));
+                    }
+                    return spec.kind() == Spec.Kind.OPEN_TEXT ? LatticeValue.openText(scalar) : LatticeValue.top(spec);
+                }
                 case STRING:
-                    switch (spec.kind()) {
-                        case CHOICE:
-                            return new ChoiceSet(Set.of(literal.getString()));
-                        case FINITE_TEXT:
-                            return new FiniteText(Set.of(literal.getString()));
-                        default:
-                            return new OpenText(literal.getString());
+                    if (spec.kind() == Spec.Kind.FINITE_SCALAR && spec.values().contains(literal.getString())) {
+                        return LatticeValue.finiteScalar(spec.mask(literal.getString()));
                     }
+                    return LatticeValue.openText(literal.getString());
                 case LIST:
-                    Set<String> values = new TreeSet<>(literal.getList());
-                    if (spec.kind() == Spec.Kind.MEMBERSHIP) {
-                        return new MembershipSet(values, values);
+                    if (spec.kind() == Spec.Kind.FINITE_MEMBERSHIP) {
+                        long listMask = spec.mask(new TreeSet<>(literal.getList()));
+                        return LatticeValue.membership(listMask, listMask);
                     }
-                    return new ListSummary(values, values);
+                    return LatticeValue.top(spec);
                 default:
                     return LatticeValue.top(spec);
             }

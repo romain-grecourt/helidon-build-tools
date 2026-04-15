@@ -35,7 +35,7 @@
         </inputs>
     </step>
     <variables>
-        <text path="~app-type"><![CDATA[]]></text>
+        <text path="~app-type" if="${left} != ${right}"><![CDATA[]]></text>
     </variables>
     <step name="Extras" if="${app-type} != &apos;custom&apos; &amp;&amp; ${left} == ${right}">
         <inputs>

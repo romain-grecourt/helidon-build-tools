@@ -22,8 +22,6 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import io.helidon.build.archetype.engine.v2.Domain.Spec.FiniteText;
-
 import org.hamcrest.FeatureMatcher;
 import org.hamcrest.Matcher;
 import org.junit.jupiter.api.Test;
@@ -79,8 +77,8 @@ class FlowTest {
     @Test
     void testAnalyzeMergesBranchValuesAndUseGuards() {
         Domain.Symbol.Table.Builder builder = Domain.Symbol.Table.builder();
-        int enabled = builder.define("enabled", new Domain.Spec.Boolean(), true, false);
-        int flavor = builder.define("flavor", new Domain.Spec.Choice(Set.of("mp", "se")), true, false);
+        int enabled = builder.define("enabled", Domain.Spec.booleanSpec(), true, false);
+        int flavor = builder.define("flavor", Domain.Spec.choice(Set.of("mp", "se")), true, false);
         Domain.Symbol.Table symbols = builder.build();
         Domain.Guards guards = new Domain.Guards(symbols);
         Flow.SourceAnchor anchor = new Flow.SourceAnchor(Nodes.script());
@@ -118,8 +116,8 @@ class FlowTest {
 
         assertThat(guards.equivalent(beforeUse.path(), TRUE), is(true));
         assertThat(guards.equivalent(fact.definedUnder(), TRUE), is(true));
-        assertThat(fact.value(), instanceOf(Domain.LatticeValue.ChoiceSet.class));
-        assertThat(((Domain.LatticeValue.ChoiceSet) fact.value()).values(), is(Set.of("mp", "se")));
+        assertThat(fact.value().kind(), is(Domain.LatticeValue.Kind.FINITE_SCALAR));
+        assertThat(fact.value().scalarValues(symbols.symbol(flavor).domain()), is(Set.of("mp", "se")));
         assertThat(exactByValue.keySet(), containsInAnyOrder("mp", "se"));
         assertThat(guards.equivalent(exactByValue.get("mp"), guards.eq(enabled, "true")), is(true));
         assertThat(guards.equivalent(exactByValue.get("se"), guards.eq(enabled, "false")), is(true));
@@ -131,9 +129,9 @@ class FlowTest {
     @Test
     void testAnalyzeMergesSameExactValueAcrossMultiplePaths() {
         Domain.Symbol.Table.Builder builder = Domain.Symbol.Table.builder();
-        int primary = builder.define("primary", new Domain.Spec.Boolean(), true, false);
-        int secondary = builder.define("secondary", new Domain.Spec.Boolean(), true, false);
-        int flavor = builder.define("flavor", new Domain.Spec.Choice(Set.of("mp", "se")), true, false);
+        int primary = builder.define("primary", Domain.Spec.booleanSpec(), true, false);
+        int secondary = builder.define("secondary", Domain.Spec.booleanSpec(), true, false);
+        int flavor = builder.define("flavor", Domain.Spec.choice(Set.of("mp", "se")), true, false);
         Domain.Symbol.Table symbols = builder.build();
         Domain.Guards guards = new Domain.Guards(symbols);
         Flow.SourceAnchor anchor = new Flow.SourceAnchor(Nodes.script());
@@ -183,11 +181,54 @@ class FlowTest {
                 .collect(Collectors.toMap(Domain.Symbol.Fact.ExactCase::scalarLiteral, Domain.Symbol.Fact.ExactCase::guard));
 
         assertThat(guards.equivalent(beforeUse.path(), TRUE), is(true));
-        assertThat(((Domain.LatticeValue.ChoiceSet) fact.value()).values(), is(Set.of("mp", "se")));
+        assertThat(fact.value().scalarValues(symbols.symbol(flavor).domain()), is(Set.of("mp", "se")));
         assertThat(exactByValue.keySet(), containsInAnyOrder("mp", "se"));
         assertThat(guards.equivalent(exactByValue.get("mp"), guards.or(primaryTrue, guards.and(primaryFalse,
                 secondaryTrue))), is(true));
         assertThat(guards.equivalent(exactByValue.get("se"), guards.and(primaryFalse, secondaryFalse)), is(true));
+    }
+
+    @Test
+    void testAnalyzeMergesEquivalentBooleanExactValuesAcrossLiteralTypes() {
+        Domain.Symbol.Table.Builder builder = Domain.Symbol.Table.builder();
+        int enabled = builder.define("enabled", Domain.Spec.booleanSpec(), true, false);
+        int flag = builder.define("flag", Domain.Spec.booleanSpec(), true, false);
+        Domain.Symbol.Table symbols = builder.build();
+        Domain.Guards guards = new Domain.Guards(symbols);
+        Flow.SourceAnchor anchor = new Flow.SourceAnchor(Nodes.script());
+
+        Flow.Op declareEnabled = Flow.Op.declareInput(0, 0, anchor, enabled);
+        Flow.Op defineBoolean = Flow.Op.defineValue(1, 1, anchor, flag, Expression.create("true"));
+        Flow.Op defineString = Flow.Op.defineValue(2, 2, anchor, flag, Expression.create("'true'"));
+        Flow.Op useFlag = Flow.Op.recordUse(3, 3, anchor, flag);
+
+        Domain.Guard enabledTrue = guards.eq(enabled, "true");
+        Flow.Block entry = new Flow.Block(List.of(0),
+                Flow.Terminator.branch(anchor, enabledTrue, 1, 2),
+                Flow.ControlPath.ROOT_ID);
+        Flow.Block trueBranch = new Flow.Block(List.of(1), Flow.Terminator.jump(anchor, 3), 1);
+        Flow.Block falseBranch = new Flow.Block(List.of(2), Flow.Terminator.jump(anchor, 3), 2);
+        Flow.Block exit = new Flow.Block(List.of(3), Flow.Terminator.ret(anchor), Flow.ControlPath.ROOT_ID);
+        List<Flow.ControlPath> controlPaths = List.of(
+                Flow.ControlPath.ROOT,
+                new Flow.ControlPath(Flow.ControlPath.ROOT_ID, enabledTrue),
+                new Flow.ControlPath(Flow.ControlPath.ROOT_ID, guards.eq(enabled, "false")));
+
+        Flow.Ir ir = new Flow.Ir(
+                List.of(entry, trueBranch, falseBranch, exit),
+                symbols,
+                List.of(declareEnabled, defineBoolean, defineString, useFlag),
+                guards,
+                controlPaths);
+        Flow flow = new Flow(new Context().scope());
+        flow.process(ir, anchor.node());
+        Flow.Analysis analysis = flow.analysis();
+
+        Domain.Symbol.Fact fact = analysis.beforeByOp().get(3).env().get(flag);
+
+        assertThat(fact.exactCases().size(), is(1));
+        assertThat(fact.exactCases().get(0).scalarLiteral(), is("true"));
+        assertThat(guards.equivalent(fact.exactCases().get(0).guard(), TRUE), is(true));
     }
 
     @Test
@@ -246,8 +287,9 @@ class FlowTest {
         Domain.Symbol symbol = model.symbol("media.json-lib").symbol();
         Node impossible = findCondition(script, "${media} contains 'json' && ${media.json-lib} == 'jsonp'");
 
-        assertThat(symbol.domain(), instanceOf(Domain.Spec.Choice.class));
-        assertThat(((Domain.Spec.Choice) symbol.domain()).values(), is(Set.of("jackson", "jsonb")));
+        assertThat(symbol.domain().kind(), is(Domain.Spec.Kind.FINITE_SCALAR));
+        assertThat(symbol.domain().subKind(), is(Domain.Spec.SubKind.CHOICE));
+        assertThat(symbol.domain().values(), is(Set.of("jackson", "jsonb")));
         assertThat(symbol.guardable(), is(true));
         assertThat(symbol.tainted(), is(false));
         assertThat(flow.guards().equivalent(model.activeGuard(impossible), FALSE), is(true));
@@ -264,8 +306,9 @@ class FlowTest {
         Domain.Symbol symbol = model.symbol("json-lib").symbol();
         Node impossible = findCondition(script, "${json-lib} == 'jsonp'");
 
-        assertThat(symbol.domain(), isSubtype(FiniteText.class,
-                hasProperty("values", FiniteText::values, is(Set.of("jackson", "jsonb")))));
+        assertThat(symbol.domain().kind(), is(Domain.Spec.Kind.FINITE_SCALAR));
+        assertThat(symbol.domain().subKind(), is(Domain.Spec.SubKind.FINITE_TEXT));
+        assertThat(symbol.domain().values(), is(Set.of("jackson", "jsonb")));
         assertThat(symbol.guardable(), is(true));
         assertThat(symbol.tainted(), is(false));
         assertThat(flow.guards().equivalent(model.activeGuard(impossible), FALSE), is(true));

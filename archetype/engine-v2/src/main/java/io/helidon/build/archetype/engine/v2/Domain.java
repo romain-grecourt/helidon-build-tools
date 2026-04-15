@@ -16,8 +16,10 @@
 package io.helidon.build.archetype.engine.v2;
 
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -29,6 +31,7 @@ import java.util.TreeSet;
 import java.util.function.IntFunction;
 
 import io.helidon.build.archetype.engine.v2.Context.Scope;
+import io.helidon.build.archetype.engine.v2.Expression.Token;
 import io.helidon.build.common.Lists;
 
 import static java.util.Objects.requireNonNull;
@@ -38,164 +41,173 @@ final class Domain {
     private Domain() {
     }
 
-    interface Spec {
-        Kind kind();
+    static final class Spec {
+        static final Spec OPEN_TEXT = new Spec(Kind.OPEN_TEXT, SubKind.OPEN_TEXT, null, null, 0L);
+        static final Spec BOOLEAN = finiteScalar(SubKind.BOOLEAN, Set.of("false", "true"));
 
         enum Kind {
+            OPEN_TEXT,
+            FINITE_SCALAR,
+            FINITE_MEMBERSHIP
+        }
+
+        enum SubKind {
+            OPEN_TEXT,
             BOOLEAN,
             CHOICE,
-            MEMBERSHIP,
-            OPEN_TEXT,
-            FINITE_TEXT
+            FINITE_TEXT,
+            MEMBERSHIP
         }
 
-        final class Boolean implements Spec {
-            @Override
-            public Kind kind() {
-                return Kind.BOOLEAN;
-            }
+        private final Kind kind;
+        private final SubKind subKind;
+        private final Map<String, Integer> ordinals;
+        private final String[] valuesByOrdinal;
+        private final long fullMask;
 
-            @Override
-            public boolean equals(Object o) {
-                return o instanceof Boolean;
-            }
-
-            @Override
-            public int hashCode() {
-                return Kind.BOOLEAN.hashCode();
-            }
-
-            @Override
-            public String toString() {
-                return kind().name();
-            }
+        private Spec(Kind kind,
+                     SubKind subKind,
+                     Map<String, Integer> ordinals,
+                     String[] valuesByOrdinal,
+                     long fullMask) {
+            this.kind = requireNonNull(kind, "kind is null");
+            this.subKind = requireNonNull(subKind, "subKind is null");
+            this.ordinals = ordinals;
+            this.valuesByOrdinal = valuesByOrdinal;
+            this.fullMask = fullMask;
         }
 
-        final class Choice implements Spec {
-            private final Set<String> values;
-
-            Choice(Set<String> values) {
-                if (values.isEmpty()) {
-                    throw new IllegalArgumentException("Choice spec requires at least one value");
-                }
-                this.values = new TreeSet<>(values);
-            }
-
-            @Override
-            public Kind kind() {
-                return Kind.CHOICE;
-            }
-
-            Set<String> values() {
-                return values;
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                return o instanceof Choice && values.equals(((Choice) o).values);
-            }
-
-            @Override
-            public int hashCode() {
-                return Objects.hash(kind(), values);
-            }
-
-            @Override
-            public String toString() {
-                return kind() + values.toString();
-            }
+        static Spec booleanSpec() {
+            return BOOLEAN;
         }
 
-        final class Membership implements Spec {
-            private final Set<String> items;
-
-            Membership(Set<String> items) {
-                if (items.isEmpty()) {
-                    throw new IllegalArgumentException("Membership spec requires at least one item");
-                }
-                this.items = new TreeSet<>(items);
-            }
-
-            @Override
-            public Kind kind() {
-                return Kind.MEMBERSHIP;
-            }
-
-            Set<String> items() {
-                return items;
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                return o instanceof Membership && items.equals(((Membership) o).items);
-            }
-
-            @Override
-            public int hashCode() {
-                return Objects.hash(kind(), items);
-            }
-
-            @Override
-            public String toString() {
-                return kind() + items.toString();
-            }
+        static Spec choice(Set<String> values) {
+            return finiteScalar(SubKind.CHOICE, values);
         }
 
-        final class OpenText implements Spec {
-            @Override
-            public Kind kind() {
-                return Kind.OPEN_TEXT;
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                return o instanceof OpenText;
-            }
-
-            @Override
-            public int hashCode() {
-                return Kind.OPEN_TEXT.hashCode();
-            }
-
-            @Override
-            public String toString() {
-                return kind().name();
-            }
+        static Spec finiteText(Set<String> values) {
+            return finiteScalar(SubKind.FINITE_TEXT, values);
         }
 
-        final class FiniteText implements Spec {
-            private final Set<String> values;
-
-            FiniteText(Set<String> values) {
-                if (values.isEmpty()) {
-                    throw new IllegalArgumentException("Finite text spec requires at least one value");
-                }
-                this.values = new TreeSet<>(values);
+        static Spec finiteScalar(SubKind subKind, Set<String> values) {
+            requireNonNull(subKind, "subKind is null");
+            if (subKind != SubKind.BOOLEAN && subKind != SubKind.CHOICE && subKind != SubKind.FINITE_TEXT) {
+                throw new IllegalArgumentException("Invalid finite scalar subKind: " + subKind);
             }
+            Map<String, Integer> ordinals = stringOrdinals(values, "Finite scalar");
+            return new Spec(Kind.FINITE_SCALAR, subKind, ordinals, stringsByOrdinal(ordinals), fullMask(ordinals.size()));
+        }
 
-            @Override
-            public Kind kind() {
-                return Kind.FINITE_TEXT;
-            }
+        static Spec finiteMembership(Set<String> items) {
+            Map<String, Integer> ordinals = stringOrdinals(items, "Finite membership");
+            return new Spec(Kind.FINITE_MEMBERSHIP,
+                    SubKind.MEMBERSHIP,
+                    ordinals,
+                    stringsByOrdinal(ordinals),
+                    fullMask(ordinals.size()));
+        }
 
-            Set<String> values() {
-                return values;
-            }
+        Kind kind() {
+            return kind;
+        }
 
-            @Override
-            public boolean equals(Object o) {
-                return o instanceof FiniteText && values.equals(((FiniteText) o).values);
-            }
+        SubKind subKind() {
+            return subKind;
+        }
 
-            @Override
-            public int hashCode() {
-                return Objects.hash(kind(), values);
-            }
+        boolean scalar() {
+            return kind == Kind.FINITE_SCALAR;
+        }
 
-            @Override
-            public String toString() {
-                return kind() + values.toString();
+        boolean membership() {
+            return kind == Kind.FINITE_MEMBERSHIP;
+        }
+
+        boolean booleanLike() {
+            return subKind == SubKind.BOOLEAN;
+        }
+
+        Set<String> values() {
+            return ordinals == null ? Set.of() : ordinals.keySet();
+        }
+
+        long fullMask() {
+            return fullMask;
+        }
+
+        long mask(String value) {
+            if (ordinals == null) {
+                throw new IllegalStateException("Mask requested for non-finite spec: " + subKind);
             }
+            Integer ordinal = ordinals.get(value);
+            if (ordinal == null) {
+                throw new IllegalArgumentException("Unknown value for " + subKind + " spec: " + value);
+            }
+            return 1L << ordinal;
+        }
+
+        long mask(Set<String> values) {
+            requireNonNull(values, "values is null");
+            long mask = 0L;
+            for (String value : values) {
+                mask |= mask(value);
+            }
+            return mask;
+        }
+
+        String value(int ordinal) {
+            if (valuesByOrdinal == null) {
+                throw new IllegalStateException("Ordinal requested for non-finite spec: " + subKind);
+            }
+            return valuesByOrdinal[ordinal];
+        }
+
+        private static Map<String, Integer> stringOrdinals(Set<String> values, String label) {
+            requireNonNull(values, "values is null");
+            if (values.isEmpty()) {
+                throw new IllegalArgumentException(label + " requires at least one value");
+            }
+            if (values.size() > Long.SIZE) {
+                throw new IllegalArgumentException(label + " supports at most " + Long.SIZE + " values");
+            }
+            Map<String, Integer> ordinals = new LinkedHashMap<>();
+            int ordinal = 0;
+            for (String value : new TreeSet<>(values)) {
+                ordinals.put(value, ordinal++);
+            }
+            return Map.copyOf(ordinals);
+        }
+
+        private static String[] stringsByOrdinal(Map<String, Integer> ordinals) {
+            String[] values = new String[ordinals.size()];
+            ordinals.forEach((value, ordinal) -> values[ordinal] = value);
+            return values;
+        }
+
+        private static long fullMask(int size) {
+            return size == Long.SIZE ? -1L : (1L << size) - 1L;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof Spec)) {
+                return false;
+            }
+            Spec other = (Spec) o;
+            return kind == other.kind
+                    && subKind == other.subKind
+                    && fullMask == other.fullMask
+                    && Objects.equals(ordinals, other.ordinals);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(kind, subKind, ordinals, fullMask);
+        }
+
+        @Override
+        public String toString() {
+            return ordinals == null ? subKind.name() : subKind + values().toString();
         }
     }
 
@@ -217,28 +229,11 @@ final class Domain {
             this.domain = requireNonNull(domain, "domain is null");
             this.guardable = guardable;
             this.tainted = tainted;
-            boolean scalar = false;
-            boolean member = false;
-            Map<String, Integer> ordinals = null;
-            switch (domain.kind()) {
-                case BOOLEAN:
-                case CHOICE:
-                case FINITE_TEXT:
-                    scalar = true;
-                    ordinals = stringOrdinals(scalarValues(domain));
-                    break;
-                case MEMBERSHIP:
-                    member = true;
-                    ordinals = stringOrdinals(((Spec.Membership) domain).items());
-                    break;
-                default:
-                    // no-op
-            }
-            this.scalar = scalar;
-            this.member = member;
-            this.ordinals = ordinals;
-            this.valuesByOrdinal = stringsByOrdinal(ordinals);
-            this.fullMask = fullMask(valuesByOrdinal);
+            this.scalar = domain.kind() == Spec.Kind.FINITE_SCALAR;
+            this.member = domain.kind() == Spec.Kind.FINITE_MEMBERSHIP;
+            this.ordinals = scalar || member ? domain.ordinals : null;
+            this.valuesByOrdinal = scalar || member ? domain.valuesByOrdinal : null;
+            this.fullMask = scalar || member ? domain.fullMask : 0L;
         }
 
         int id() {
@@ -265,11 +260,7 @@ final class Domain {
             if (!scalar) {
                 throw new IllegalStateException("Scalar mask requested for non-maskable symbol: " + name);
             }
-            Integer ordinal = ordinals.get(value);
-            if (ordinal == null) {
-                throw new IllegalArgumentException("Unknown scalar value for symbol " + name + ": " + value);
-            }
-            return 1L << ordinal;
+            return domain.mask(value);
         }
 
         long scalarMask(Set<String> values) {
@@ -287,11 +278,7 @@ final class Domain {
             if (!member) {
                 throw new IllegalStateException("Membership mask requested for non-maskable symbol: " + name);
             }
-            Integer ordinal = ordinals.get(value);
-            if (ordinal == null) {
-                throw new IllegalArgumentException("Unknown membership item for symbol " + name + ": " + value);
-            }
-            return 1L << ordinal;
+            return domain.mask(value);
         }
 
         long membershipMask(Set<String> values) {
@@ -309,42 +296,14 @@ final class Domain {
             if (!scalar) {
                 throw new IllegalStateException("Scalar value requested for non-maskable symbol: " + name);
             }
-            return valuesByOrdinal[ordinal];
+            return domain.value(ordinal);
         }
 
         String membershipItem(int ordinal) {
             if (!member) {
                 throw new IllegalStateException("Membership item requested for non-maskable symbol: " + name);
             }
-            return valuesByOrdinal[ordinal];
-        }
-
-        private static Map<String, Integer> stringOrdinals(Set<String> values) {
-            if (values.size() > Long.SIZE) {
-                return null;
-            }
-            Map<String, Integer> ordinals = new LinkedHashMap<>();
-            int ordinal = 0;
-            for (String value : new TreeSet<>(values)) {
-                ordinals.put(value, ordinal++);
-            }
-            return ordinals;
-        }
-
-        private static String[] stringsByOrdinal(Map<String, Integer> ordinals) {
-            if (ordinals == null) {
-                return null;
-            }
-            String[] values = new String[ordinals.size()];
-            ordinals.forEach((value, ordinal) -> values[ordinal] = value);
-            return values;
-        }
-
-        private static long fullMask(String[] valuesByOrdinal) {
-            if (valuesByOrdinal == null) {
-                return 0L;
-            }
-            return valuesByOrdinal.length == Long.SIZE ? -1L : (1L << valuesByOrdinal.length) - 1L;
+            return domain.value(ordinal);
         }
 
         @Override
@@ -405,31 +364,63 @@ final class Domain {
                 return result;
             }
 
-            Guard match(Value<?> candidate, Guards guards) {
+            Guard supportedExactDefined(Symbol symbol, Guards guards) {
                 Guard result = Guard.FALSE;
                 for (ExactCase exactCase : exactCases) {
-                    if (Value.isEqual(exactCase.value, candidate)) {
+                    if (exactCase.supportedExact(symbol.domain())) {
                         result = guards.or(result, exactCase.guard);
                     }
                 }
                 return result;
             }
 
-            Guard scalarAny(Set<String> values, Guards guards) {
+            Guard match(Symbol symbol, Value<?> candidate, Guards guards) {
                 Guard result = Guard.FALSE;
                 for (ExactCase exactCase : exactCases) {
-                    String scalar = exactCase.scalarLiteral();
-                    if (scalar != null && values.contains(scalar)) {
+                    if (exactCase.matches(symbol.domain(), candidate)) {
                         result = guards.or(result, exactCase.guard);
                     }
                 }
                 return result;
             }
 
-            Guard listContains(Set<String> required, Guards guards) {
+            Guard scalarAny(Symbol symbol, Set<String> values, Guards guards) {
+                if (!symbol.scalar) {
+                    return Guard.FALSE;
+                }
+                long allowedMask = 0L;
+                for (String value : values) {
+                    Integer ordinal = symbol.ordinals.get(value);
+                    if (ordinal != null) {
+                        allowedMask |= 1L << ordinal;
+                    }
+                }
+                if (allowedMask == 0L) {
+                    return Guard.FALSE;
+                }
                 Guard result = Guard.FALSE;
                 for (ExactCase exactCase : exactCases) {
-                    if (exactCase.containsAll(required)) {
+                    if ((exactCase.scalarMask & allowedMask) != 0L) {
+                        result = guards.or(result, exactCase.guard);
+                    }
+                }
+                return result;
+            }
+
+            Guard listContains(Symbol symbol, Set<String> required, Guards guards) {
+                if (!symbol.member) {
+                    return Guard.FALSE;
+                }
+                if (required.isEmpty()) {
+                    return exactDefined(guards);
+                }
+                if (!symbol.domain().values().containsAll(required)) {
+                    return Guard.FALSE;
+                }
+                long requiredMask = symbol.membershipMask(required);
+                Guard result = Guard.FALSE;
+                for (ExactCase exactCase : exactCases) {
+                    if (exactCase.containsAll(requiredMask)) {
                         result = guards.or(result, exactCase.guard);
                     }
                 }
@@ -437,12 +428,13 @@ final class Domain {
             }
 
             static Fact exact(Guard definedUnder,
+                              Spec spec,
                               LatticeValue value,
                               Value<?> exactValue) {
                 if (exactValue == null || !exactValue.isPresent()) {
                     return new Fact(definedUnder, value);
                 }
-                return new Fact(definedUnder, value, List.of(new ExactCase(exactValue, definedUnder)));
+                return new Fact(definedUnder, value, List.of(new ExactCase(exactValue, definedUnder, spec)));
             }
 
             static Fact merge(Fact left, Fact right, Guards guards) {
@@ -469,8 +461,8 @@ final class Domain {
             private static void mergeExactCase(List<ExactCase> merged, ExactCase next, Guards guards) {
                 for (int i = 0; i < merged.size(); i++) {
                     ExactCase current = merged.get(i);
-                    if (Value.isEqual(current.value, next.value)) {
-                        merged.set(i, new ExactCase(current.value, guards.or(current.guard, next.guard)));
+                    if (current.sameValue(next)) {
+                        merged.set(i, current.withGuard(guards.or(current.guard, next.guard)));
                         return;
                     }
                 }
@@ -501,14 +493,18 @@ final class Domain {
             static final class ExactCase {
                 private final Value<?> value;
                 private final Guard guard;
-                private final Set<String> listItems;
+                private final long scalarMask;
+                private final long listMask;
 
-                ExactCase(Value<?> value, Guard guard) {
+                ExactCase(Value<?> value, Guard guard, Spec spec) {
+                    this(value, guard, exactScalarMask(spec, value), exactListMask(spec, value));
+                }
+
+                private ExactCase(Value<?> value, Guard guard, long scalarMask, long listMask) {
                     this.value = requireNonNull(value, "value is null");
                     this.guard = requireNonNull(guard, "guard is null");
-                    this.listItems = value.type() == Value.Type.LIST
-                            ? new TreeSet<>(value.getList())
-                            : null;
+                    this.scalarMask = scalarMask;
+                    this.listMask = listMask;
                 }
 
                 Value<?> value() {
@@ -519,8 +515,46 @@ final class Domain {
                     return guard;
                 }
 
-                boolean containsAll(Set<String> required) {
-                    return listItems != null && listItems.containsAll(required);
+                long scalarMask() {
+                    return scalarMask;
+                }
+
+                long listMask() {
+                    return listMask;
+                }
+
+                ExactCase withGuard(Guard nextGuard) {
+                    return guard.equals(nextGuard) ? this : new ExactCase(value, nextGuard, scalarMask, listMask);
+                }
+
+                boolean matches(Spec spec, Value<?> candidate) {
+                    return exactValueEquals(spec, value, candidate, scalarMask, listMask);
+                }
+
+                boolean sameValue(ExactCase other) {
+                    if (scalarMask != 0L || other.scalarMask != 0L) {
+                        return scalarMask != 0L && scalarMask == other.scalarMask;
+                    }
+                    if (listMask != 0L || other.listMask != 0L) {
+                        return listMask != 0L && listMask == other.listMask;
+                    }
+                    return Value.isEqual(value, other.value);
+                }
+
+                boolean containsAll(long requiredMask) {
+                    return requiredMask == 0L ? value.type() == Value.Type.LIST : listMask != 0L && (requiredMask & ~listMask) == 0L;
+                }
+
+                boolean supportedExact(Spec spec) {
+                    switch (spec.kind()) {
+                        case FINITE_SCALAR:
+                            return scalarMask != 0L;
+                        case FINITE_MEMBERSHIP:
+                            return value.type() == Value.Type.LIST && (listMask != 0L || value.getList().isEmpty());
+                        case OPEN_TEXT:
+                        default:
+                            return true;
+                    }
                 }
 
                 String scalarLiteral() {
@@ -536,13 +570,13 @@ final class Domain {
                         return false;
                     }
                     ExactCase other = (ExactCase) o;
-                    return Value.isEqual(value, other.value)
+                    return sameValue(other)
                            && (guard == other.guard || guard.equals(other.guard));
                 }
 
                 @Override
                 public int hashCode() {
-                    return 31 * Value.hash(value) + guard.hashCode();
+                    return 31 * exactValueHash(value, scalarMask, listMask) + guard.hashCode();
                 }
             }
         }
@@ -606,36 +640,61 @@ final class Domain {
         }
     }
 
-    interface LatticeValue {
-
-        Kind kind();
+    static final class LatticeValue {
+        static final LatticeValue BOTTOM = new LatticeValue(Kind.BOTTOM, null, 0L, 0L, 0L);
+        static final LatticeValue TOP = new LatticeValue(Kind.TOP, null, 0L, 0L, 0L);
 
         enum Kind {
             BOTTOM,
             TOP,
-            BOOLEAN_SET,
-            CHOICE_SET,
-            MEMBERSHIP_SET,
             OPEN_TEXT,
-            FINITE_TEXT,
-            LIST_SUMMARY
+            FINITE_SCALAR,
+            MEMBERSHIP
+        }
+
+        private final Kind kind;
+        private final String sample;
+        private final long scalarMask;
+        private final long requiredMask;
+        private final long possibleMask;
+
+        private LatticeValue(Kind kind, String sample, long scalarMask, long requiredMask, long possibleMask) {
+            this.kind = requireNonNull(kind, "kind is null");
+            this.sample = sample;
+            this.scalarMask = scalarMask;
+            this.requiredMask = requiredMask;
+            this.possibleMask = possibleMask;
         }
 
         static LatticeValue top(Spec spec) {
             switch (spec.kind()) {
-                case BOOLEAN:
-                    return new BooleanSet(Set.of(false, true));
-                case CHOICE:
-                    return new ChoiceSet(((Spec.Choice) spec).values());
-                case MEMBERSHIP:
-                    return new ListSummary(Set.of(), ((Spec.Membership) spec).items());
                 case OPEN_TEXT:
-                    return new OpenText(null);
-                case FINITE_TEXT:
-                    return new FiniteText(((Spec.FiniteText) spec).values());
+                    return openText(null);
+                case FINITE_SCALAR:
+                    return finiteScalar(spec.fullMask());
+                case FINITE_MEMBERSHIP:
+                    return membership(0L, spec.fullMask());
                 default:
-                    return Top.INSTANCE;
+                    return TOP;
             }
+        }
+
+        static LatticeValue openText(String sample) {
+            return new LatticeValue(Kind.OPEN_TEXT, sample, 0L, 0L, 0L);
+        }
+
+        static LatticeValue finiteScalar(long scalarMask) {
+            if (scalarMask == 0L) {
+                throw new IllegalArgumentException("Finite scalar mask must not be empty");
+            }
+            return new LatticeValue(Kind.FINITE_SCALAR, null, scalarMask, 0L, 0L);
+        }
+
+        static LatticeValue membership(long requiredMask, long possibleMask) {
+            if ((requiredMask & ~possibleMask) != 0L) {
+                throw new IllegalArgumentException("Membership required mask must be included in possible mask");
+            }
+            return new LatticeValue(Kind.MEMBERSHIP, null, 0L, requiredMask, possibleMask);
         }
 
         static LatticeValue join(LatticeValue left, LatticeValue right) {
@@ -644,312 +703,122 @@ final class Domain {
             if (left.equals(right)) {
                 return left;
             }
-            if (left.kind() == Kind.BOTTOM) {
+            if (left.kind == Kind.BOTTOM) {
                 return right;
             }
-            if (right.kind() == Kind.BOTTOM) {
+            if (right.kind == Kind.BOTTOM) {
                 return left;
             }
-            if (left.kind() == Kind.TOP || right.kind() == Kind.TOP) {
-                return Top.INSTANCE;
+            if (left.kind == Kind.TOP || right.kind == Kind.TOP) {
+                return TOP;
             }
-            if (left instanceof BooleanSet && right instanceof BooleanSet) {
-                Set<Boolean> values = new TreeSet<>(((BooleanSet) left).values());
-                values.addAll(((BooleanSet) right).values());
-                return new BooleanSet(values);
+            if (left.kind == Kind.OPEN_TEXT && right.kind == Kind.OPEN_TEXT) {
+                return openText(Objects.equals(left.sample, right.sample) ? left.sample : null);
             }
-            if (left instanceof ChoiceSet && right instanceof ChoiceSet) {
-                Set<String> values = new TreeSet<>(((ChoiceSet) left).values());
-                values.addAll(((ChoiceSet) right).values());
-                return new ChoiceSet(values);
+            if (left.kind == Kind.OPEN_TEXT || right.kind == Kind.OPEN_TEXT) {
+                return openText(null);
             }
-            if (left instanceof FiniteText && right instanceof FiniteText) {
-                Set<String> values = new TreeSet<>(((FiniteText) left).values());
-                values.addAll(((FiniteText) right).values());
-                return new FiniteText(values);
+            if (left.kind != right.kind) {
+                return TOP;
             }
-            if (left instanceof MembershipSet && right instanceof MembershipSet) {
-                Set<String> required = new TreeSet<>(((MembershipSet) left).required());
-                required.retainAll(((MembershipSet) right).required());
-                Set<String> possible = new TreeSet<>(((MembershipSet) left).possible());
-                possible.addAll(((MembershipSet) right).possible());
-                return new MembershipSet(required, possible);
-            }
-            if (left instanceof ListSummary && right instanceof ListSummary) {
-                Set<String> required = new TreeSet<>(((ListSummary) left).required());
-                required.retainAll(((ListSummary) right).required());
-                Set<String> possible = new TreeSet<>(((ListSummary) left).possible());
-                possible.addAll(((ListSummary) right).possible());
-                return new ListSummary(required, possible);
-            }
-            if (left instanceof OpenText && right instanceof OpenText) {
-                String leftSample = ((OpenText) left).sample();
-                String rightSample = ((OpenText) right).sample();
-                return new OpenText(Objects.equals(leftSample, rightSample) ? leftSample : null);
-            }
-            if (left instanceof MembershipSet && right instanceof ListSummary) {
-                return join(new ListSummary(((MembershipSet) left).required(), ((MembershipSet) left).possible()), right);
-            }
-            if (left instanceof ListSummary && right instanceof MembershipSet) {
-                return join(left, new ListSummary(((MembershipSet) right).required(), ((MembershipSet) right).possible()));
-            }
-            if (left.kind() == Kind.OPEN_TEXT || right.kind() == Kind.OPEN_TEXT) {
-                return new OpenText(null);
-            }
-            return Top.INSTANCE;
-        }
-
-        final class Bottom implements LatticeValue {
-
-            private Bottom() {
-            }
-
-            @Override
-            public Kind kind() {
-                return Kind.BOTTOM;
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                return o instanceof Bottom;
-            }
-
-            @Override
-            public int hashCode() {
-                return kind().hashCode();
+            switch (left.kind) {
+                case FINITE_SCALAR:
+                    return finiteScalar(left.scalarMask | right.scalarMask);
+                case MEMBERSHIP:
+                    return membership(left.requiredMask & right.requiredMask, left.possibleMask | right.possibleMask);
+                default:
+                    return TOP;
             }
         }
 
-        final class Top implements LatticeValue {
-            private static final Top INSTANCE = new Top();
-
-            private Top() {
-            }
-
-            @Override
-            public Kind kind() {
-                return Kind.TOP;
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                return o instanceof Top;
-            }
-
-            @Override
-            public int hashCode() {
-                return kind().hashCode();
-            }
+        Kind kind() {
+            return kind;
         }
 
-        final class BooleanSet implements LatticeValue {
-            private final Set<Boolean> values;
-
-            BooleanSet(Set<Boolean> values) {
-                if (values.isEmpty()) {
-                    throw new IllegalArgumentException("Boolean set must not be empty");
-                }
-                this.values = new TreeSet<>(values);
-            }
-
-            @Override
-            public Kind kind() {
-                return Kind.BOOLEAN_SET;
-            }
-
-            Set<Boolean> values() {
-                return values;
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                return o instanceof BooleanSet && values.equals(((BooleanSet) o).values);
-            }
-
-            @Override
-            public int hashCode() {
-                return Objects.hash(kind(), values);
-            }
+        String sample() {
+            return sample;
         }
 
-        final class ChoiceSet implements LatticeValue {
-            private final Set<String> values;
-
-            ChoiceSet(Set<String> values) {
-                if (values.isEmpty()) {
-                    throw new IllegalArgumentException("Choice set must not be empty");
-                }
-                this.values = new TreeSet<>(values);
-            }
-
-            @Override
-            public Kind kind() {
-                return Kind.CHOICE_SET;
-            }
-
-            Set<String> values() {
-                return values;
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                return o instanceof ChoiceSet && values.equals(((ChoiceSet) o).values);
-            }
-
-            @Override
-            public int hashCode() {
-                return Objects.hash(kind(), values);
-            }
+        long scalarMask() {
+            return scalarMask;
         }
 
-        final class MembershipSet implements LatticeValue {
-            private final Set<String> required;
-            private final Set<String> possible;
-
-            MembershipSet(Set<String> required, Set<String> possible) {
-                if (!possible.containsAll(required)) {
-                    throw new IllegalArgumentException("Required membership must be included in possible membership");
-                }
-                this.required = new TreeSet<>(required);
-                this.possible = new TreeSet<>(possible);
-            }
-
-            @Override
-            public Kind kind() {
-                return Kind.MEMBERSHIP_SET;
-            }
-
-            Set<String> required() {
-                return required;
-            }
-
-            Set<String> possible() {
-                return possible;
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                if (!(o instanceof MembershipSet)) {
-                    return false;
-                }
-                MembershipSet other = (MembershipSet) o;
-                return required.equals(other.required) && possible.equals(other.possible);
-            }
-
-            @Override
-            public int hashCode() {
-                return Objects.hash(kind(), required, possible);
-            }
+        long requiredMask() {
+            return requiredMask;
         }
 
-        final class OpenText implements LatticeValue {
-            private final String sample;
-
-            OpenText(String sample) {
-                this.sample = sample;
-            }
-
-            @Override
-            public Kind kind() {
-                return Kind.OPEN_TEXT;
-            }
-
-            String sample() {
-                return sample;
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                return o instanceof OpenText && Objects.equals(sample, ((OpenText) o).sample);
-            }
-
-            @Override
-            public int hashCode() {
-                return Objects.hash(kind(), sample);
-            }
+        long possibleMask() {
+            return possibleMask;
         }
 
-        final class FiniteText implements LatticeValue {
-            private final Set<String> values;
-
-            FiniteText(Set<String> values) {
-                if (values.isEmpty()) {
-                    throw new IllegalArgumentException("Finite text values must not be empty");
-                }
-                this.values = new TreeSet<>(values);
+        Set<String> scalarValues(Spec spec) {
+            if (kind != Kind.FINITE_SCALAR || !spec.scalar()) {
+                throw new IllegalArgumentException("Scalar values requested for non-finite scalar");
             }
-
-            @Override
-            public Kind kind() {
-                return Kind.FINITE_TEXT;
-            }
-
-            Set<String> values() {
-                return values;
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                return o instanceof FiniteText && values.equals(((FiniteText) o).values);
-            }
-
-            @Override
-            public int hashCode() {
-                return Objects.hash(kind(), values);
-            }
+            return values(spec, scalarMask);
         }
 
-        final class ListSummary implements LatticeValue {
-            private final Set<String> required;
-            private final Set<String> possible;
-
-            ListSummary(Set<String> required, Set<String> possible) {
-                if (!possible.containsAll(required)) {
-                    throw new IllegalArgumentException("Required list members must be included in possible list members");
-                }
-                this.required = new TreeSet<>(required);
-                this.possible = new TreeSet<>(possible);
+        String singletonScalar(Spec spec) {
+            if (kind != Kind.FINITE_SCALAR || Long.bitCount(scalarMask) != 1) {
+                return null;
             }
+            return spec.value(Long.numberOfTrailingZeros(scalarMask));
+        }
 
-            @Override
-            public Kind kind() {
-                return Kind.LIST_SUMMARY;
+        Set<String> requiredValues(Spec spec) {
+            if (kind != Kind.MEMBERSHIP || !spec.membership()) {
+                throw new IllegalArgumentException("Required values requested for non-membership");
             }
+            return values(spec, requiredMask);
+        }
 
-            Set<String> required() {
-                return required;
+        Set<String> possibleValues(Spec spec) {
+            if (kind != Kind.MEMBERSHIP || !spec.membership()) {
+                throw new IllegalArgumentException("Possible values requested for non-membership");
             }
+            return values(spec, possibleMask);
+        }
 
-            Set<String> possible() {
-                return possible;
+        private static Set<String> values(Spec spec, long mask) {
+            Set<String> values = new TreeSet<>();
+            long remaining = mask;
+            while (remaining != 0L) {
+                int ordinal = Long.numberOfTrailingZeros(remaining);
+                values.add(spec.value(ordinal));
+                remaining &= remaining - 1L;
             }
+            return values;
+        }
 
-            @Override
-            public boolean equals(Object o) {
-                if (!(o instanceof ListSummary)) {
-                    return false;
-                }
-                ListSummary other = (ListSummary) o;
-                return required.equals(other.required) && possible.equals(other.possible);
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof LatticeValue)) {
+                return false;
             }
+            LatticeValue other = (LatticeValue) o;
+            return kind == other.kind
+                    && Objects.equals(sample, other.sample)
+                    && scalarMask == other.scalarMask
+                    && requiredMask == other.requiredMask
+                    && possibleMask == other.possibleMask;
+        }
 
-            @Override
-            public int hashCode() {
-                return Objects.hash(kind(), required, possible);
-            }
+        @Override
+        public int hashCode() {
+            return Objects.hash(kind, sample, scalarMask, requiredMask, possibleMask);
         }
     }
 
     static final class Guard {
         static final int FALSE_ID = 0;
         static final int TRUE_ID = 1;
-        static final Guard FALSE = new Guard(FALSE_ID, Expression.TRUE);
-        static final Guard TRUE = new Guard(TRUE_ID, Expression.TRUE);
+        static final Guard FALSE = new Guard(FALSE_ID, Residual.TRUE);
+        static final Guard TRUE = new Guard(TRUE_ID, Residual.TRUE);
 
         private final int id;
-        private final Expression residual;
+        private final Residual residual;
 
-        Guard(int id, Expression residual) {
+        Guard(int id, Residual residual) {
             this.id = id;
             this.residual = requireNonNull(residual, "residual is null");
         }
@@ -958,16 +827,16 @@ final class Domain {
             return id;
         }
 
-        Expression residual() {
+        Residual residual() {
             return residual;
         }
 
         boolean isPure() {
-            return residual == Expression.TRUE;
+            return residual.isTrue();
         }
 
         boolean isFalse() {
-            return id == FALSE_ID || residual == Expression.FALSE;
+            return id == FALSE_ID || residual.isFalse();
         }
 
         @Override
@@ -979,12 +848,251 @@ final class Domain {
                 return false;
             }
             Guard other = (Guard) o;
-            return id == other.id && (residual == other.residual || residual.equals(other.residual));
+            return id == other.id && residual.equals(other.residual);
         }
 
         @Override
         public int hashCode() {
             return 31 * Integer.hashCode(id) + residual.hashCode();
+        }
+    }
+
+    private static final class Residual {
+        static final Residual TRUE = new Residual(Kind.TRUE, -1, 0L, null, null, List.of());
+        static final Residual FALSE = new Residual(Kind.FALSE, -1, 0L, null, null, List.of());
+
+        enum Kind {
+            TRUE,
+            FALSE,
+            OPAQUE,
+            DEFINED,
+            SCALAR_EQ,
+            SCALAR_IN,
+            MEMBERSHIP_CONTAINS_ALL,
+            NOT,
+            AND,
+            OR
+        }
+
+        private final Kind kind;
+        private final int symbolId;
+        private final long mask;
+        private final String value;
+        private final Expression expression;
+        private final List<Residual> children;
+
+        private Residual(Kind kind,
+                         int symbolId,
+                         long mask,
+                         String value,
+                         Expression expression,
+                         List<Residual> children) {
+            this.kind = requireNonNull(kind, "kind is null");
+            this.symbolId = symbolId;
+            this.mask = mask;
+            this.value = value;
+            this.expression = expression;
+            this.children = children;
+        }
+
+        static Residual opaque(Expression expression) {
+            Expression folded = requireNonNull(expression, "expression is null").fold();
+            if (folded == Expression.TRUE) {
+                return TRUE;
+            }
+            if (folded == Expression.FALSE) {
+                return FALSE;
+            }
+            return new Residual(Kind.OPAQUE, -1, 0L, null, folded, List.of());
+        }
+
+        static Residual defined(int symbolId) {
+            return new Residual(Kind.DEFINED, symbolId, 0L, null, null, List.of());
+        }
+
+        static Residual scalarEq(int symbolId, String value) {
+            return new Residual(Kind.SCALAR_EQ, symbolId, 0L, requireNonNull(value, "value is null"), null, List.of());
+        }
+
+        static Residual scalarIn(int symbolId, long mask) {
+            if (mask == 0L) {
+                return FALSE;
+            }
+            return new Residual(Kind.SCALAR_IN, symbolId, mask, null, null, List.of());
+        }
+
+        static Residual membershipContainsAll(int symbolId, long mask) {
+            if (mask == 0L) {
+                return TRUE;
+            }
+            return new Residual(Kind.MEMBERSHIP_CONTAINS_ALL, symbolId, mask, null, null, List.of());
+        }
+
+        static Residual not(Residual child) {
+            requireNonNull(child, "child is null");
+            if (child == TRUE) {
+                return FALSE;
+            }
+            if (child == FALSE) {
+                return TRUE;
+            }
+            if (child.kind == Kind.NOT) {
+                return child.children.get(0);
+            }
+            return new Residual(Kind.NOT, -1, 0L, null, null, List.of(child));
+        }
+
+        static Residual and(List<Residual> children) {
+            return combine(Kind.AND, TRUE, FALSE, children);
+        }
+
+        static Residual or(List<Residual> children) {
+            return combine(Kind.OR, FALSE, TRUE, children);
+        }
+
+        private static Residual combine(Kind kind, Residual identity, Residual absorbing, List<Residual> children) {
+            LinkedHashSet<Residual> normalized = new LinkedHashSet<>();
+            for (Residual child : children) {
+                if (child == null || child == identity) {
+                    continue;
+                }
+                if (child == absorbing) {
+                    return absorbing;
+                }
+                if (child.kind == kind) {
+                    normalized.addAll(child.children);
+                } else {
+                    normalized.add(child);
+                }
+            }
+            if (normalized.isEmpty()) {
+                return identity;
+            }
+            if (normalized.size() == 1) {
+                return normalized.iterator().next();
+            }
+            return new Residual(kind, -1, 0L, null, null, List.copyOf(normalized));
+        }
+
+        Residual fold() {
+            switch (kind) {
+                case OPAQUE:
+                    return opaque(expression);
+                case NOT:
+                    return not(children.get(0).fold());
+                case AND:
+                    return and(Lists.map(children, Residual::fold));
+                case OR:
+                    return or(Lists.map(children, Residual::fold));
+                default:
+                    return this;
+            }
+        }
+
+        boolean isTrue() {
+            return this == TRUE || kind == Kind.TRUE;
+        }
+
+        boolean isFalse() {
+            return this == FALSE || kind == Kind.FALSE;
+        }
+
+        Expression toExpression(IntFunction<String> keyResolver, Symbol.Table symbols) {
+            switch (kind) {
+                case TRUE:
+                    return Expression.TRUE;
+                case FALSE:
+                    return Expression.FALSE;
+                case OPAQUE:
+                    return expression;
+                case DEFINED:
+                    return Expression.create("${" + keyResolver.apply(symbolId) + "}");
+                case SCALAR_EQ: {
+                    Symbol symbol = symbols.symbol(symbolId);
+                    String key = keyResolver.apply(symbolId);
+                    if (symbol.domain().booleanLike()) {
+                        if ("true".equals(value)) {
+                            return Expression.create("${" + key + "}");
+                        }
+                        if ("false".equals(value)) {
+                            return Expression.create("!${" + key + "}");
+                        }
+                    }
+                    return Expression.create("${" + key + "} == '" + value + "'");
+                }
+                case SCALAR_IN: {
+                    Symbol symbol = symbols.symbol(symbolId);
+                    String key = keyResolver.apply(symbolId);
+                    if (mask == symbol.fullMask) {
+                        return Expression.TRUE;
+                    }
+                    if (symbol.domain().booleanLike() && Long.bitCount(mask) == 1) {
+                        String value = symbol.scalarValue(Long.numberOfTrailingZeros(mask));
+                        return "true".equals(value) ? Expression.create("${" + key + "}") : Expression.create("!${" + key + "}");
+                    }
+                    long excludedMask = symbol.fullMask & ~mask;
+                    if (Long.bitCount(excludedMask) == 1) {
+                        return Expression.create("${" + key + "} != '" + symbol.scalarValue(Long.numberOfTrailingZeros(excludedMask)) + "'");
+                    }
+                    List<Expression> terms = new ArrayList<>();
+                    long remaining = mask;
+                    while (remaining != 0L) {
+                        int ordinal = Long.numberOfTrailingZeros(remaining);
+                        terms.add(Expression.create("${" + key + "} == '" + symbol.scalarValue(ordinal) + "'"));
+                        remaining &= remaining - 1L;
+                    }
+                    return Expression.FALSE.or(terms);
+                }
+                case MEMBERSHIP_CONTAINS_ALL: {
+                    Symbol symbol = symbols.symbol(symbolId);
+                    String key = keyResolver.apply(symbolId);
+                    List<Expression> terms = new ArrayList<>();
+                    long remaining = mask;
+                    while (remaining != 0L) {
+                        int ordinal = Long.numberOfTrailingZeros(remaining);
+                        terms.add(Expression.create("${" + key + "} contains '" + symbol.membershipItem(ordinal) + "'"));
+                        remaining &= remaining - 1L;
+                    }
+                    return Expression.TRUE.and(terms);
+                }
+                case NOT:
+                    return negate(children.get(0).toExpression(keyResolver, symbols));
+                case AND:
+                    return Expression.TRUE.and(Lists.map(children, child -> child.toExpression(keyResolver, symbols)));
+                case OR:
+                    return Expression.FALSE.or(Lists.map(children, child -> child.toExpression(keyResolver, symbols)));
+                default:
+                    return Expression.FALSE;
+            }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof Residual)) {
+                return false;
+            }
+            Residual other = (Residual) o;
+            return kind == other.kind
+                    && symbolId == other.symbolId
+                    && mask == other.mask
+                    && Objects.equals(value, other.value)
+                    && Objects.equals(expression, other.expression)
+                    && children.equals(other.children);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(kind, symbolId, mask, value, expression, children);
+        }
+
+        private static Expression negate(Expression expression) {
+            if (expression == Expression.TRUE) {
+                return Expression.FALSE;
+            }
+            if (expression == Expression.FALSE) {
+                return Expression.TRUE;
+            }
+            return Expression.create("!(" + expression.literal() + ")");
         }
     }
 
@@ -1008,11 +1116,11 @@ final class Domain {
                 return Guard.FALSE;
             }
             Decision decision = decision(left).and(decision(right), symbols);
-            Expression leftResidual = left.residual();
-            Expression rightResidual = right.residual();
-            Expression residual = leftResidual.equals(rightResidual)
+            Residual leftResidual = left.residual();
+            Residual rightResidual = right.residual();
+            Residual residual = leftResidual.equals(rightResidual)
                     ? leftResidual
-                    : leftResidual.and(rightResidual);
+                    : Residual.and(List.of(leftResidual, rightResidual));
             return guard(decision, residual);
         }
 
@@ -1045,15 +1153,15 @@ final class Domain {
                 }
                 result = guard(leftDecision.orWithoutSubsetChecks(rightDecision, symbols), left.residual());
             } else if (leftDecision.equals(rightDecision)) {
-                result = guard(leftDecision, left.residual().or(right.residual()), false);
+                result = guard(leftDecision, Residual.or(List.of(left.residual(), right.residual())), false);
             } else if (right.isPure() && subsetOf(left.id(), right.id())) {
                 return right;
             } else if (left.isPure() && subsetOf(right.id(), left.id())) {
                 return left;
             } else if (left.isPure() && right.isPure()) {
-                result = guard(leftDecision.orWithoutSubsetChecks(rightDecision, symbols), Expression.TRUE);
+                result = guard(leftDecision.orWithoutSubsetChecks(rightDecision, symbols), Residual.TRUE);
             } else {
-                result = guard(Decision.TRUE, rawExpression(left).or(rawExpression(right)), false);
+                result = residualGuard(rawExpression(left).or(rawExpression(right)));
             }
             if (cacheable && cacheable(result)) {
                 rememberOr(left, right, result);
@@ -1069,7 +1177,7 @@ final class Domain {
                 return Guard.FALSE;
             }
             if (guard.isPure()) {
-                return guard(Decision.TRUE.subtract(decision(guard), symbols), Expression.TRUE);
+                return guard(Decision.TRUE.subtract(decision(guard), symbols), Residual.TRUE);
             }
             return residualGuard(negate(rawExpression(guard)));
         }
@@ -1110,14 +1218,12 @@ final class Domain {
 
         Guard eq(int symbolId, String value) {
             Symbol symbol = guardableScalar(symbolId);
-            Set<String> allowed = new TreeSet<>();
-            allowed.add(requireNonNull(value, "value is null"));
-            allowed.retainAll(scalarValues(symbol.domain()));
-            if (allowed.isEmpty()) {
+            String literal = requireNonNull(value, "value is null");
+            if (!symbol.domain().values().contains(literal)) {
                 return Guard.FALSE;
             }
-            DecisionShape shape = new DecisionShape(symbolId, new ScalarShape(symbol, allowed));
-            return guard(Decision.of(List.of(shape), symbols), Expression.TRUE);
+            DecisionShape shape = new DecisionShape(symbolId, new ScalarShape(symbol, symbol.scalarMask(literal)));
+            return guard(Decision.of(List.of(shape), symbols), Residual.TRUE);
         }
 
         Guard contains(int symbolId, String value) {
@@ -1126,23 +1232,26 @@ final class Domain {
 
         Guard containsAll(int symbolId, Set<String> values) {
             Symbol symbol = symbols.symbol(symbolId);
-            if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Spec.Kind.MEMBERSHIP) {
+            if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Spec.Kind.FINITE_MEMBERSHIP) {
                 return Guard.FALSE;
             }
-            Spec.Membership spec = (Spec.Membership) symbol.domain();
             Set<String> required = requireNonNull(values, "values is null");
-            if (!spec.items().containsAll(required)) {
+            if (!symbol.domain().values().containsAll(required)) {
                 return Guard.FALSE;
             }
             MembershipShape membership = MembershipShape.required(symbol, required);
             DecisionShape shape = new DecisionShape(symbolId, membership);
-            return guard(Decision.of(List.of(shape), symbols), Expression.TRUE);
+            return guard(Decision.of(List.of(shape), symbols), Residual.TRUE);
+        }
+
+        Guard defined(int symbolId) {
+            return guard(Decision.TRUE, Residual.defined(symbolId));
         }
 
         Expression toExpression(Guard guard, Scope scope) {
             requireNonNull(scope, "scope is null");
             Expression supported = decision(guard).toExpression(symbolId -> scope.key(symbols.symbol(symbolId).name()), symbols);
-            Expression residual = guard.residual();
+            Expression residual = guard.residual().toExpression(symbolId -> scope.key(symbols.symbol(symbolId).name()), symbols);
             if (supported == Expression.FALSE || residual == Expression.FALSE) {
                 return Expression.FALSE;
             }
@@ -1160,26 +1269,22 @@ final class Domain {
             if (!symbol.guardable() || symbol.tainted()) {
                 throw new IllegalArgumentException("Symbol is not guardable: " + symbol.name());
             }
-            switch (symbol.domain().kind()) {
-                case BOOLEAN:
-                case CHOICE:
-                case FINITE_TEXT:
-                    return symbol;
-                default:
-                    throw new IllegalArgumentException("Symbol is not scalar guardable: " + symbol.name());
+            if (symbol.domain().kind() == Spec.Kind.FINITE_SCALAR) {
+                return symbol;
             }
+            throw new IllegalArgumentException("Symbol is not scalar guardable: " + symbol.name());
         }
 
-        private Guard guard(Decision decision, Expression residual) {
+        private Guard guard(Decision decision, Residual residual) {
             return guard(decision, residual, true);
         }
 
-        private Guard guard(Decision decision, Expression residual, boolean foldConstants) {
-            Expression normalizedResidual = foldConstants ? residual.fold() : residual;
-            if (decision.isFalse() || normalizedResidual == Expression.FALSE) {
+        private Guard guard(Decision decision, Residual residual, boolean foldConstants) {
+            Residual normalizedResidual = foldConstants ? residual.fold() : residual;
+            if (decision.isFalse() || normalizedResidual.isFalse()) {
                 return Guard.FALSE;
             }
-            if (decision.equals(Decision.TRUE) && normalizedResidual == Expression.TRUE) {
+            if (decision.equals(Decision.TRUE) && normalizedResidual.isTrue()) {
                 return Guard.TRUE;
             }
             int id = register(decision);
@@ -1187,7 +1292,146 @@ final class Domain {
         }
 
         Guard residualGuard(Expression expression) {
-            return guard(Decision.TRUE, expression);
+            return guard(Decision.TRUE, residual(expression));
+        }
+
+        private Residual residual(Expression expression) {
+            Expression normalized = requireNonNull(expression, "expression is null").fold();
+            if (normalized == Expression.TRUE) {
+                return Residual.TRUE;
+            }
+            if (normalized == Expression.FALSE) {
+                return Residual.FALSE;
+            }
+            Deque<ResidualValue> stack = new ArrayDeque<>();
+            for (Token token : normalized.tokens()) {
+                if (token.isVariable()) {
+                    String variable = token.variable();
+                    Integer symbolId = symbols.findId(variable);
+                    stack.push(ResidualValue.variable(variable, symbolId));
+                    continue;
+                }
+                if (token.isOperand()) {
+                    stack.push(ResidualValue.literal(token.operand()));
+                    continue;
+                }
+                switch (token.operator()) {
+                    case NOT:
+                        stack.push(not(stack.pop()));
+                        break;
+                    case AND:
+                        stack.push(and(stack.pop(), stack.pop()));
+                        break;
+                    case OR:
+                        stack.push(or(stack.pop(), stack.pop()));
+                        break;
+                    case EQUAL:
+                        stack.push(compare(true, stack.pop(), stack.pop()));
+                        break;
+                    case NOT_EQUAL:
+                        stack.push(compare(false, stack.pop(), stack.pop()));
+                        break;
+                    case CONTAINS:
+                        stack.push(contains(stack.pop(), stack.pop()));
+                        break;
+                    default:
+                        return Residual.opaque(normalized);
+                }
+            }
+            return stack.size() == 1 ? stack.pop().residual : Residual.opaque(normalized);
+        }
+
+        private ResidualValue not(ResidualValue value) {
+            return ResidualValue.of(Residual.not(value.residual), negate(value.expression));
+        }
+
+        private ResidualValue and(ResidualValue right, ResidualValue left) {
+            return ResidualValue.of(Residual.and(List.of(left.residual, right.residual)), left.expression.and(right.expression));
+        }
+
+        private ResidualValue or(ResidualValue right, ResidualValue left) {
+            return ResidualValue.of(Residual.or(List.of(left.residual, right.residual)), left.expression.or(right.expression));
+        }
+
+        private ResidualValue compare(boolean equal, ResidualValue right, ResidualValue left) {
+            Residual direct = compareResidual(left, right);
+            if (direct == null) {
+                direct = compareResidual(right, left);
+            }
+            Expression expression = combine(left.expression, equal ? "==" : "!=", right.expression);
+            if (direct == null) {
+                return ResidualValue.of(Residual.opaque(expression), expression);
+            }
+            return ResidualValue.of(equal ? direct : Residual.not(direct), expression);
+        }
+
+        private Residual compareResidual(ResidualValue symbolValue, ResidualValue literalValue) {
+            if (symbolValue.symbolId == null || literalValue.literal == null) {
+                return null;
+            }
+            Symbol symbol = symbols.symbol(symbolValue.symbolId);
+            if (symbol.domain().kind() != Spec.Kind.FINITE_SCALAR && symbol.domain().kind() != Spec.Kind.OPEN_TEXT) {
+                return null;
+            }
+            String scalar = literalScalar(literalValue.literal);
+            if (scalar == null) {
+                return null;
+            }
+            if (symbol.domain().kind() == Spec.Kind.FINITE_SCALAR) {
+                return symbol.domain().values().contains(scalar) ? Residual.scalarEq(symbol.id(), scalar) : Residual.FALSE;
+            }
+            return Residual.scalarEq(symbol.id(), scalar);
+        }
+
+        private ResidualValue contains(ResidualValue right, ResidualValue left) {
+            Residual direct = containsResidual(left, right);
+            if (direct == null) {
+                direct = scalarInResidual(right, left);
+            }
+            Expression expression = combine(left.expression, "contains", right.expression);
+            return direct == null ? ResidualValue.of(Residual.opaque(expression), expression) : ResidualValue.of(direct, expression);
+        }
+
+        private Residual containsResidual(ResidualValue symbolValue, ResidualValue literalValue) {
+            if (symbolValue.symbolId == null || literalValue.literal == null) {
+                return null;
+            }
+            Symbol symbol = symbols.symbol(symbolValue.symbolId);
+            if (symbol.domain().kind() != Spec.Kind.FINITE_MEMBERSHIP) {
+                return null;
+            }
+            if (literalValue.literal.type() == Value.Type.STRING) {
+                String item = literalValue.literal.getString();
+                return symbol.domain().values().contains(item)
+                        ? Residual.membershipContainsAll(symbol.id(), symbol.domain().mask(item))
+                        : Residual.FALSE;
+            }
+            if (literalValue.literal.type() == Value.Type.LIST) {
+                Set<String> required = new TreeSet<>(literalValue.literal.getList());
+                return symbol.domain().values().containsAll(required)
+                        ? Residual.membershipContainsAll(symbol.id(), symbol.domain().mask(required))
+                        : Residual.FALSE;
+            }
+            return null;
+        }
+
+        private Residual scalarInResidual(ResidualValue symbolValue, ResidualValue literalValue) {
+            if (symbolValue.symbolId == null || literalValue.literal == null || literalValue.literal.type() != Value.Type.LIST) {
+                return null;
+            }
+            Symbol symbol = symbols.symbol(symbolValue.symbolId);
+            if (symbol.domain().kind() != Spec.Kind.FINITE_SCALAR) {
+                return null;
+            }
+            Set<String> allowed = new TreeSet<>(literalValue.literal.getList());
+            allowed.retainAll(symbol.domain().values());
+            if (allowed.isEmpty()) {
+                return Residual.FALSE;
+            }
+            if (allowed.size() == symbol.domain().values().size()) {
+                return Residual.TRUE;
+            }
+            return Residual.scalarIn(symbol.id(), symbol.domain().mask(allowed));
         }
 
         private Guard cachedOr(Guard left, Guard right) {
@@ -1241,16 +1485,17 @@ final class Domain {
 
         private Expression rawExpression(Guard guard) {
             Expression supported = decision(guard).toExpression(symbolId -> symbols.symbol(symbolId).name(), symbols);
-            if (supported == Expression.FALSE || guard.residual() == Expression.FALSE) {
+            Expression residual = guard.residual().toExpression(symbolId -> symbols.symbol(symbolId).name(), symbols);
+            if (supported == Expression.FALSE || residual == Expression.FALSE) {
                 return Expression.FALSE;
             }
             if (supported == Expression.TRUE) {
-                return guard.residual();
+                return residual;
             }
-            if (guard.residual() == Expression.TRUE) {
+            if (residual == Expression.TRUE) {
                 return supported;
             }
-            return supported.and(guard.residual());
+            return supported.and(residual);
         }
 
         private static Expression negate(Expression expression) {
@@ -1263,29 +1508,121 @@ final class Domain {
             return Expression.create("!(" + expression.literal() + ")");
         }
 
-        private static boolean equivalentExpressions(Expression left, Expression right) {
-            return left.equals(right) || left.reduce().equals(right.reduce());
+        private static Expression combine(Expression left, String operator, Expression right) {
+            return Expression.create("(" + left.literal() + ") " + operator + " (" + right.literal() + ")");
         }
 
-        private static boolean cacheable(Guard guard) {
-            return guard.residual() == Expression.TRUE
-                    || guard.residual() == Expression.FALSE
-                    || guard.residual().tokens().size() <= COMPACT_MAX_TOKENS
-                    && guard.residual().variableCountAtMost(COMPACT_MAX_VARIABLES);
+        private static String literalScalar(Value<?> value) {
+            switch (value.type()) {
+                case BOOLEAN:
+                    return String.valueOf(value.getBoolean());
+                case STRING:
+                case DYNAMIC:
+                    return value.getString();
+                default:
+                    return null;
+            }
+        }
+
+        private static boolean equivalentExpressions(Expression left, Expression right) {
+            return left.equals(right) || left.fold().equals(right.fold());
+        }
+
+        private boolean cacheable(Guard guard) {
+            if (guard.residual().isTrue() || guard.residual().isFalse()) {
+                return true;
+            }
+            Expression residual = guard.residual().toExpression(symbolId -> symbols.symbol(symbolId).name(), symbols);
+            return residual.tokens().size() <= COMPACT_MAX_TOKENS && residual.variableCountAtMost(COMPACT_MAX_VARIABLES);
+        }
+
+        private static final class ResidualValue {
+            private final Residual residual;
+            private final Integer symbolId;
+            private final Value<?> literal;
+            private final Expression expression;
+
+            private ResidualValue(Residual residual, Integer symbolId, Value<?> literal, Expression expression) {
+                this.residual = requireNonNull(residual, "residual is null");
+                this.symbolId = symbolId;
+                this.literal = literal;
+                this.expression = requireNonNull(expression, "expression is null");
+            }
+
+            static ResidualValue of(Residual residual, Expression expression) {
+                return new ResidualValue(residual, null, null, expression);
+            }
+
+            static ResidualValue variable(String name, Integer symbolId) {
+                Expression expression = Expression.create("${" + name + "}");
+                return new ResidualValue(Residual.opaque(expression), symbolId, null, expression);
+            }
+
+            static ResidualValue literal(Value<?> literal) {
+                Expression expression = new Expression(List.of(Token.of(literal)), true);
+                return new ResidualValue(Residual.opaque(expression), null, literal, expression);
+            }
         }
     }
 
     private static Set<String> scalarValues(Spec spec) {
-        switch (spec.kind()) {
-            case BOOLEAN:
-                return Set.of("false", "true");
-            case CHOICE:
-                return ((Spec.Choice) spec).values();
-            case FINITE_TEXT:
-                return ((Spec.FiniteText) spec).values();
-            default:
-                throw new IllegalArgumentException("Spec is not scalar: " + spec.kind());
+        if (spec.kind() != Spec.Kind.FINITE_SCALAR) {
+            throw new IllegalArgumentException("Spec is not scalar: " + spec.kind());
         }
+        return spec.values();
+    }
+
+    private static long exactScalarMask(Spec spec, Value<?> value) {
+        if (spec.kind() != Spec.Kind.FINITE_SCALAR) {
+            return 0L;
+        }
+        String literal = Value.scalarLiteral(value);
+        if (literal == null) {
+            return 0L;
+        }
+        Integer ordinal = spec.ordinals.get(literal);
+        return ordinal == null ? 0L : 1L << ordinal;
+    }
+
+    private static long exactListMask(Spec spec, Value<?> value) {
+        if (spec.kind() != Spec.Kind.FINITE_MEMBERSHIP || value == null || value.type() != Value.Type.LIST) {
+            return 0L;
+        }
+        long mask = 0L;
+        for (String item : new TreeSet<>(value.getList())) {
+            Integer ordinal = spec.ordinals.get(item);
+            if (ordinal == null) {
+                return 0L;
+            }
+            mask |= 1L << ordinal;
+        }
+        return mask;
+    }
+
+    private static boolean exactValueEquals(Spec spec, Value<?> left, Value<?> right, long leftScalarMask, long leftListMask) {
+        long rightScalarMask = exactScalarMask(spec, right);
+        if (leftScalarMask != 0L || rightScalarMask != 0L) {
+            return leftScalarMask != 0L && leftScalarMask == rightScalarMask;
+        }
+        long rightListMask = exactListMask(spec, right);
+        if (leftListMask != 0L || rightListMask != 0L) {
+            return leftListMask != 0L && leftListMask == rightListMask;
+        }
+        return Value.isEqual(left, right);
+    }
+
+    static boolean sameExactValue(Spec spec, Value<?> left, Value<?> right) {
+        return exactValueEquals(spec, left, right, exactScalarMask(spec, left), exactListMask(spec, left));
+    }
+
+    private static int exactValueHash(Value<?> value, long scalarMask, long listMask) {
+        if (scalarMask != 0L) {
+            return Long.hashCode(scalarMask);
+        }
+        if (listMask != 0L) {
+            return Long.hashCode(listMask);
+        }
+        return Value.hash(value);
     }
 
     private static final class Decision {
@@ -1713,38 +2050,19 @@ final class Domain {
                     rightScalar++;
                 }
                 Symbol symbol = symbols.symbol(symbolId);
-                if (symbol.scalar) {
-                    long fullMask = symbol.fullMask;
-                    long leftMask = leftShape == null ? fullMask : leftShape.allowedMask;
-                    long rightMask = rightShape == null ? fullMask : rightShape.allowedMask;
-                    if (leftMask != rightMask) {
-                        if (diffSymbolId != null) {
-                            return null;
-                        }
-                        diffSymbolId = symbolId;
-                        long unionMask = leftMask | rightMask;
-                        if (unionMask != fullMask) {
-                            nextScalars.add(symbolId, new ScalarShape(symbol, unionMask));
-                        }
-                    } else if (leftMask != fullMask) {
-                        nextScalars.add(symbolId, leftShape == null ? rightShape : leftShape);
-                    }
-                    continue;
-                }
-                Set<String> domainValues = scalarValues(symbol.domain());
-                Set<String> leftAllowed = leftShape == null ? domainValues : leftShape.allowed;
-                Set<String> rightAllowed = rightShape == null ? domainValues : rightShape.allowed;
-                if (!leftAllowed.equals(rightAllowed)) {
+                long fullMask = symbol.fullMask;
+                long leftMask = leftShape == null ? fullMask : leftShape.allowedMask;
+                long rightMask = rightShape == null ? fullMask : rightShape.allowedMask;
+                if (leftMask != rightMask) {
                     if (diffSymbolId != null) {
                         return null;
                     }
                     diffSymbolId = symbolId;
-                    Set<String> union = new TreeSet<>(leftAllowed);
-                    union.addAll(rightAllowed);
-                    if (!union.equals(domainValues)) {
-                        nextScalars.add(symbolId, new ScalarShape(symbol, union));
+                    long unionMask = leftMask | rightMask;
+                    if (unionMask != fullMask) {
+                        nextScalars.add(symbolId, new ScalarShape(symbol, unionMask));
                     }
-                } else if (!leftAllowed.equals(domainValues)) {
+                } else if (leftMask != fullMask) {
                     nextScalars.add(symbolId, leftShape == null ? rightShape : leftShape);
                 }
             }
@@ -1821,32 +2139,16 @@ final class Domain {
                     leftScalar++;
                 }
                 Symbol symbol = symbols.symbol(symbolId);
-                if (symbol.scalar) {
-                    long leftMask = leftScalar < scalarShapes.length && scalarIds[leftScalar] == symbolId
-                            ? scalarShapes[leftScalar].allowedMask
-                            : symbol.fullMask;
-                    long rightMask = other.scalarShapes[rightScalar].allowedMask;
-                    long outsideMask = leftMask & ~rightMask;
-                    if (outsideMask != 0L) {
-                        long overlapMask = leftMask & rightMask;
-                        return new DecisionPartition(
-                                withScalar(symbolId, new ScalarShape(symbol, outsideMask), symbol),
-                                withScalar(symbolId, new ScalarShape(symbol, overlapMask), symbol));
-                    }
-                    continue;
-                }
-                Set<String> leftAllowed = leftScalar < scalarShapes.length && scalarIds[leftScalar] == symbolId
-                        ? scalarShapes[leftScalar].allowed
-                        : scalarValues(symbol.domain());
-                Set<String> rightAllowed = other.scalarShapes[rightScalar].allowed;
-                if (!rightAllowed.containsAll(leftAllowed)) {
-                    Set<String> outside = new TreeSet<>(leftAllowed);
-                    outside.removeAll(rightAllowed);
-                    Set<String> overlap = new TreeSet<>(leftAllowed);
-                    overlap.retainAll(rightAllowed);
+                long leftMask = leftScalar < scalarShapes.length && scalarIds[leftScalar] == symbolId
+                        ? scalarShapes[leftScalar].allowedMask
+                        : symbol.fullMask;
+                long rightMask = other.scalarShapes[rightScalar].allowedMask;
+                long outsideMask = leftMask & ~rightMask;
+                if (outsideMask != 0L) {
+                    long overlapMask = leftMask & rightMask;
                     return new DecisionPartition(
-                            withScalar(symbolId, new ScalarShape(symbol, outside), symbol),
-                            withScalar(symbolId, new ScalarShape(symbol, overlap), symbol));
+                            withScalar(symbolId, new ScalarShape(symbol, outsideMask), symbol),
+                            withScalar(symbolId, new ScalarShape(symbol, overlapMask), symbol));
                 }
             }
             int leftMembership = 0;
@@ -1858,45 +2160,22 @@ final class Domain {
                 Symbol symbol = symbols.symbol(symbolId);
                 MembershipShape left = leftMembership < membershipShapes.length && membershipIds[leftMembership] == symbolId
                         ? membershipShapes[leftMembership]
-                        : MembershipShape.EMPTY;
+                        : MembershipShape.empty();
                 MembershipShape right = other.membershipShapes[rightMembership];
-                if (right.maskBased()) {
-                    if (!left.maskBased() && !left.isEmpty()) {
-                        throw new IllegalStateException("Membership shape maskability mismatch");
-                    }
-                    long knownMask = left.maskBased() ? left.requiredMask | left.forbiddenMask : 0L;
-                    long unresolvedRequiredMask = right.requiredMask & ~knownMask;
-                    if (unresolvedRequiredMask != 0L) {
-                        String item = symbol.membershipItem(Long.numberOfTrailingZeros(unresolvedRequiredMask));
-                        return new DecisionPartition(
-                                withMembershipForbidden(symbolId, item, symbol),
-                                withMembershipRequired(symbolId, item, symbol));
-                    }
-                    long unresolvedForbiddenMask = right.forbiddenMask & ~knownMask;
-                    if (unresolvedForbiddenMask != 0L) {
-                        String item = symbol.membershipItem(Long.numberOfTrailingZeros(unresolvedForbiddenMask));
-                        return new DecisionPartition(
-                                withMembershipRequired(symbolId, item, symbol),
-                                withMembershipForbidden(symbolId, item, symbol));
-                    }
-                    continue;
+                long knownMask = left.requiredMask | left.forbiddenMask;
+                long unresolvedRequiredMask = right.requiredMask & ~knownMask;
+                if (unresolvedRequiredMask != 0L) {
+                    String item = symbol.membershipItem(Long.numberOfTrailingZeros(unresolvedRequiredMask));
+                    return new DecisionPartition(
+                            withMembershipForbidden(symbolId, item, symbol),
+                            withMembershipRequired(symbolId, item, symbol));
                 }
-                if (left.maskBased()) {
-                    throw new IllegalStateException("Membership shape maskability mismatch");
-                }
-                for (String required : right.required) {
-                    if (!left.required.contains(required) && !left.forbidden.contains(required)) {
-                        return new DecisionPartition(
-                                withMembershipForbidden(symbolId, required, symbol),
-                                withMembershipRequired(symbolId, required, symbol));
-                    }
-                }
-                for (String forbidden : right.forbidden) {
-                    if (!left.required.contains(forbidden) && !left.forbidden.contains(forbidden)) {
-                        return new DecisionPartition(
-                                withMembershipRequired(symbolId, forbidden, symbol),
-                                withMembershipForbidden(symbolId, forbidden, symbol));
-                    }
+                long unresolvedForbiddenMask = right.forbiddenMask & ~knownMask;
+                if (unresolvedForbiddenMask != 0L) {
+                    String item = symbol.membershipItem(Long.numberOfTrailingZeros(unresolvedForbiddenMask));
+                    return new DecisionPartition(
+                            withMembershipRequired(symbolId, item, symbol),
+                            withMembershipForbidden(symbolId, item, symbol));
                 }
             }
             return null;
@@ -1934,7 +2213,7 @@ final class Domain {
 
         DecisionShape withMembershipRequired(int symbolId, String item, Symbol symbol) {
             int index = Arrays.binarySearch(membershipIds, symbolId);
-            MembershipShape current = index < 0 ? MembershipShape.empty(symbol) : membershipShapes[index];
+            MembershipShape current = index < 0 ? MembershipShape.empty() : membershipShapes[index];
             MembershipShape nextShape = current.withRequired(item, symbol);
             if (nextShape.equals(current)) {
                 return this;
@@ -1944,7 +2223,7 @@ final class Domain {
 
         DecisionShape withMembershipForbidden(int symbolId, String item, Symbol symbol) {
             int index = Arrays.binarySearch(membershipIds, symbolId);
-            MembershipShape current = index < 0 ? MembershipShape.empty(symbol) : membershipShapes[index];
+            MembershipShape current = index < 0 ? MembershipShape.empty() : membershipShapes[index];
             MembershipShape nextShape = current.withForbidden(item, symbol);
             if (nextShape.equals(current)) {
                 return this;
@@ -1953,6 +2232,19 @@ final class Domain {
         }
 
         DecisionShape withMembership(int index, int symbolId, MembershipShape nextShape) {
+            if (nextShape.isEmpty()) {
+                if (index < 0) {
+                    return this;
+                }
+                if (membershipShapes.length == 1) {
+                    return new DecisionShape(scalarIds, scalarShapes, NO_SYMBOL_IDS, NO_MEMBERSHIPS);
+                }
+                return new DecisionShape(
+                        scalarIds,
+                        scalarShapes,
+                        removeIndex(membershipIds, index),
+                        removeIndex(membershipShapes, index));
+            }
             if (index >= 0) {
                 MembershipShape[] nextMemberships = Arrays.copyOf(membershipShapes, membershipShapes.length);
                 nextMemberships[index] = nextShape;
@@ -2068,21 +2360,7 @@ final class Domain {
     }
 
     private static final class ScalarShape {
-        private final Set<String> allowed;
         private final long allowedMask;
-
-        ScalarShape(Symbol symbol, Set<String> allowed) {
-            if (allowed.isEmpty()) {
-                throw new IllegalArgumentException("Scalar constraint must not be empty");
-            }
-            if (symbol.scalar) {
-                this.allowed = null;
-                this.allowedMask = symbol.scalarMask(allowed);
-            } else {
-                this.allowed = new TreeSet<>(allowed);
-                this.allowedMask = 0L;
-            }
-        }
 
         ScalarShape(Symbol symbol, long allowedMask) {
             if (!symbol.scalar) {
@@ -2091,7 +2369,6 @@ final class Domain {
             if (allowedMask == 0L || (allowedMask & ~symbol.fullMask) != 0L) {
                 throw new IllegalArgumentException("Scalar mask must be non-empty and within the symbol domain");
             }
-            this.allowed = null;
             this.allowedMask = allowedMask;
         }
 
@@ -2099,53 +2376,24 @@ final class Domain {
             if (this == other || equals(other)) {
                 return this;
             }
-            if (allowed == null && other.allowed == null) {
-                long intersectionMask = allowedMask & other.allowedMask;
-                if (intersectionMask == 0L) {
-                    return null;
-                }
-                if (intersectionMask == allowedMask) {
-                    return this;
-                }
-                if (intersectionMask == other.allowedMask) {
-                    return other;
-                }
-                return new ScalarShape(symbol, intersectionMask);
+            long intersectionMask = allowedMask & other.allowedMask;
+            if (intersectionMask == 0L) {
+                return null;
             }
-            if (allowed == null || other.allowed == null) {
-                throw new IllegalStateException("Scalar shape maskability mismatch");
-            }
-            if (subsetOf(other)) {
+            if (intersectionMask == allowedMask) {
                 return this;
             }
-            if (other.subsetOf(this)) {
+            if (intersectionMask == other.allowedMask) {
                 return other;
             }
-            Set<String> intersection = new TreeSet<>(allowed);
-            intersection.retainAll(other.allowed);
-            return intersection.isEmpty() ? null : new ScalarShape(symbol, intersection);
+            return new ScalarShape(symbol, intersectionMask);
         }
 
         boolean subsetOf(ScalarShape other) {
-            if (this == other) {
-                return true;
-            }
-            if (allowed == null && other.allowed == null) {
-                return (allowedMask & ~other.allowedMask) == 0L;
-            }
-            if (allowed == null || other.allowed == null) {
-                throw new IllegalStateException("Scalar shape maskability mismatch");
-            }
-            if (allowed.size() > other.allowed.size()) {
-                return false;
-            }
-            return allowed.equals(other.allowed) || other.allowed.containsAll(allowed);
+            return this == other || (allowedMask & ~other.allowedMask) == 0L;
         }
 
         boolean isFull(Symbol symbol) {
-            if (allowed != null) {
-                return allowed.equals(scalarValues(symbol.domain()));
-            }
             if (!symbol.scalar) {
                 throw new IllegalStateException("Scalar shape maskability mismatch");
             }
@@ -2153,7 +2401,7 @@ final class Domain {
         }
 
         Expression toExpression(String key, Symbol symbol) {
-            if (symbol.domain().kind() == Spec.Kind.BOOLEAN) {
+            if (symbol.domain().booleanLike()) {
                 if (isSingleton(symbol, "true")) {
                     return Expression.create("${" + key + "}");
                 }
@@ -2164,96 +2412,59 @@ final class Domain {
             if (isFull(symbol)) {
                 return Expression.TRUE;
             }
-            if (allowed == null) {
-                if (!symbol.scalar) {
-                    throw new IllegalStateException("Scalar shape maskability mismatch");
-                }
-                long excludedMask = symbol.fullMask & ~allowedMask;
-                if (Long.bitCount(excludedMask) == 1) {
-                    String excluded = symbol.scalarValue(Long.numberOfTrailingZeros(excludedMask));
-                    return Expression.create("${" + key + "} != '" + excluded + "'");
-                }
-                Expression expression = Expression.FALSE;
-                long remaining = allowedMask;
-                while (remaining != 0L) {
-                    int ordinal = Long.numberOfTrailingZeros(remaining);
-                    expression = expression.or(Expression.create("${" + key + "} == '" + symbol.scalarValue(ordinal) + "'"));
-                    remaining &= remaining - 1L;
-                }
-                return expression;
-            }
-            Set<String> domainValues = scalarValues(symbol.domain());
-            Set<String> excluded = new TreeSet<>(domainValues);
-            excluded.removeAll(allowed);
-            if (excluded.size() == 1) {
-                return Expression.create("${" + key + "} != '" + excluded.iterator().next() + "'");
+            long excludedMask = symbol.fullMask & ~allowedMask;
+            if (Long.bitCount(excludedMask) == 1) {
+                String excluded = symbol.scalarValue(Long.numberOfTrailingZeros(excludedMask));
+                return Expression.create("${" + key + "} != '" + excluded + "'");
             }
             Expression expression = Expression.FALSE;
-            for (String value : allowed) {
-                expression = expression.or(Expression.create("${" + key + "} == '" + value + "'"));
+            long remaining = allowedMask;
+            while (remaining != 0L) {
+                int ordinal = Long.numberOfTrailingZeros(remaining);
+                expression = expression.or(Expression.create("${" + key + "} == '" + symbol.scalarValue(ordinal) + "'"));
+                remaining &= remaining - 1L;
             }
             return expression;
         }
 
         private boolean isSingleton(Symbol symbol, String value) {
-            return allowed == null ? allowedMask == symbol.scalarMask(value) : allowed.size() == 1 && allowed.contains(value);
+            return allowedMask == symbol.scalarMask(value);
         }
 
         void appendLiteral(StringBuilder builder, Symbol symbol) {
-            if (allowed == null) {
-                builder.append('[');
-                long remaining = allowedMask;
-                boolean first = true;
-                while (remaining != 0L) {
-                    if (!first) {
-                        builder.append(", ");
-                    }
-                    builder.append(symbol.scalarValue(Long.numberOfTrailingZeros(remaining)));
-                    remaining &= remaining - 1L;
-                    first = false;
+            builder.append('[');
+            long remaining = allowedMask;
+            boolean first = true;
+            while (remaining != 0L) {
+                if (!first) {
+                    builder.append(", ");
                 }
-                builder.append(']');
-                return;
+                builder.append(symbol.scalarValue(Long.numberOfTrailingZeros(remaining)));
+                remaining &= remaining - 1L;
+                first = false;
             }
-            builder.append(allowed);
+            builder.append(']');
         }
 
         @Override
         public boolean equals(Object o) {
-            if (!(o instanceof ScalarShape)) {
-                return false;
-            }
-            ScalarShape other = (ScalarShape) o;
-            if (allowed == null || other.allowed == null) {
-                return allowed == null && other.allowed == null && allowedMask == other.allowedMask;
-            }
-            return allowed.equals(other.allowed);
+            return o instanceof ScalarShape && allowedMask == ((ScalarShape) o).allowedMask;
         }
 
         @Override
         public int hashCode() {
-            return allowed == null ? Long.hashCode(allowedMask) : allowed.hashCode();
+            return Long.hashCode(allowedMask);
         }
     }
 
     private static final class MembershipShape {
-        private static final MembershipShape EMPTY = new MembershipShape(Set.of(), Set.of());
-
-        private final Set<String> required;
-        private final Set<String> forbidden;
+        private static final MembershipShape EMPTY = new MembershipShape(0L, 0L);
         private final long requiredMask;
         private final long forbiddenMask;
 
-        MembershipShape(Set<String> required, Set<String> forbidden) {
-            Set<String> nextRequired = new TreeSet<>(required);
-            Set<String> nextForbidden = new TreeSet<>(forbidden);
-            if (Lists.intersects(nextRequired, nextForbidden)) {
-                throw new IllegalArgumentException("Membership required and forbidden items must be disjoint");
-            }
-            this.required = nextRequired;
-            this.forbidden = nextForbidden;
-            this.requiredMask = 0L;
-            this.forbiddenMask = 0L;
+        private MembershipShape(long requiredMask, long forbiddenMask) {
+            this.requiredMask = requiredMask;
+            this.forbiddenMask = forbiddenMask;
         }
 
         MembershipShape(Symbol symbol, long requiredMask, long forbiddenMask) {
@@ -2267,28 +2478,20 @@ final class Domain {
             if ((requiredMask & forbiddenMask) != 0L) {
                 throw new IllegalArgumentException("Membership required and forbidden items must be disjoint");
             }
-            this.required = null;
-            this.forbidden = null;
             this.requiredMask = requiredMask;
             this.forbiddenMask = forbiddenMask;
         }
 
-        static MembershipShape empty(Symbol symbol) {
-            return symbol.member ? new MembershipShape(symbol, 0L, 0L) : EMPTY;
+        static MembershipShape empty() {
+            return EMPTY;
         }
 
         static MembershipShape required(Symbol symbol, Set<String> items) {
-            return symbol.member
-                    ? new MembershipShape(symbol, symbol.membershipMask(items), 0L)
-                    : new MembershipShape(items, Set.of());
-        }
-
-        boolean maskBased() {
-            return required == null;
+            return items.isEmpty() ? EMPTY : new MembershipShape(symbol, symbol.membershipMask(items), 0L);
         }
 
         boolean isEmpty() {
-            return maskBased() ? requiredMask == 0L && forbiddenMask == 0L : required.isEmpty() && forbidden.isEmpty();
+            return requiredMask == 0L && forbiddenMask == 0L;
         }
 
         MembershipShape intersect(MembershipShape other, Symbol symbol) {
@@ -2301,37 +2504,18 @@ final class Domain {
             if (equals(other)) {
                 return this;
             }
-            if (maskBased() && other.maskBased()) {
-                if ((requiredMask & other.forbiddenMask) != 0L || (forbiddenMask & other.requiredMask) != 0L) {
-                    return null;
-                }
-                long nextRequiredMask = requiredMask | other.requiredMask;
-                long nextForbiddenMask = forbiddenMask | other.forbiddenMask;
-                if (nextRequiredMask == requiredMask && nextForbiddenMask == forbiddenMask) {
-                    return this;
-                }
-                if (nextRequiredMask == other.requiredMask && nextForbiddenMask == other.forbiddenMask) {
-                    return other;
-                }
-                return new MembershipShape(symbol, nextRequiredMask, nextForbiddenMask);
-            }
-            if (maskBased() || other.maskBased()) {
-                throw new IllegalStateException("Membership shape maskability mismatch");
-            }
-            if (Lists.intersects(required, other.forbidden) || Lists.intersects(forbidden, other.required)) {
+            if ((requiredMask & other.forbiddenMask) != 0L || (forbiddenMask & other.requiredMask) != 0L) {
                 return null;
             }
-            if (subsetOf(other)) {
+            long nextRequiredMask = requiredMask | other.requiredMask;
+            long nextForbiddenMask = forbiddenMask | other.forbiddenMask;
+            if (nextRequiredMask == requiredMask && nextForbiddenMask == forbiddenMask) {
                 return this;
             }
-            if (other.subsetOf(this)) {
+            if (nextRequiredMask == other.requiredMask && nextForbiddenMask == other.forbiddenMask) {
                 return other;
             }
-            Set<String> nextRequired = new TreeSet<>(required);
-            nextRequired.addAll(other.required);
-            Set<String> nextForbidden = new TreeSet<>(forbidden);
-            nextForbidden.addAll(other.forbidden);
-            return new MembershipShape(nextRequired, nextForbidden);
+            return new MembershipShape(symbol, nextRequiredMask, nextForbiddenMask);
         }
 
         boolean subsetOf(MembershipShape other) {
@@ -2341,99 +2525,50 @@ final class Domain {
             if (isEmpty()) {
                 return false;
             }
-            if (maskBased() && other.maskBased()) {
-                return (other.requiredMask & ~requiredMask) == 0L && (other.forbiddenMask & ~forbiddenMask) == 0L;
-            }
-            if (maskBased() || other.maskBased()) {
-                throw new IllegalStateException("Membership shape maskability mismatch");
-            }
-            if (required.size() < other.required.size() || forbidden.size() < other.forbidden.size()) {
-                return false;
-            }
-            return (required.equals(other.required) || required.containsAll(other.required))
-                    && (forbidden.equals(other.forbidden) || forbidden.containsAll(other.forbidden));
+            return (other.requiredMask & ~requiredMask) == 0L && (other.forbiddenMask & ~forbiddenMask) == 0L;
         }
 
         MembershipShape withRequired(String item, Symbol symbol) {
-            if (symbol.member) {
-                if (!maskBased() && !isEmpty()) {
-                    throw new IllegalStateException("Membership shape maskability mismatch");
-                }
-                long itemMask = symbol.membershipMask(item);
-                if ((requiredMask & itemMask) != 0L) {
-                    return this;
-                }
-                return new MembershipShape(symbol, requiredMask | itemMask, forbiddenMask);
-            }
-            if (required.contains(item)) {
+            long itemMask = symbol.membershipMask(item);
+            if ((requiredMask & itemMask) != 0L) {
                 return this;
             }
-            Set<String> nextRequired = new TreeSet<>(required);
-            nextRequired.add(item);
-            return new MembershipShape(nextRequired, forbidden);
+            return new MembershipShape(symbol, requiredMask | itemMask, forbiddenMask);
         }
 
         MembershipShape withForbidden(String item, Symbol symbol) {
-            if (symbol.member) {
-                if (!maskBased() && !isEmpty()) {
-                    throw new IllegalStateException("Membership shape maskability mismatch");
-                }
-                long itemMask = symbol.membershipMask(item);
-                if ((forbiddenMask & itemMask) != 0L) {
-                    return this;
-                }
-                return new MembershipShape(symbol, requiredMask, forbiddenMask | itemMask);
-            }
-            if (forbidden.contains(item)) {
+            long itemMask = symbol.membershipMask(item);
+            if ((forbiddenMask & itemMask) != 0L) {
                 return this;
             }
-            Set<String> nextForbidden = new TreeSet<>(forbidden);
-            nextForbidden.add(item);
-            return new MembershipShape(required, nextForbidden);
+            return new MembershipShape(symbol, requiredMask, forbiddenMask | itemMask);
         }
 
         Expression toExpression(String key, Symbol symbol) {
             Expression expression = Expression.TRUE;
-            if (maskBased()) {
-                long remainingRequired = requiredMask;
-                while (remainingRequired != 0L) {
-                    int ordinal = Long.numberOfTrailingZeros(remainingRequired);
-                    expression = expression.and(Expression.create("${" + key + "} contains '" + symbol.membershipItem(ordinal) + "'"));
-                    remainingRequired &= remainingRequired - 1L;
-                }
-                long remainingForbidden = forbiddenMask;
-                while (remainingForbidden != 0L) {
-                    int ordinal = Long.numberOfTrailingZeros(remainingForbidden);
-                    expression = expression.and(Expression.create("!(${"
-                            + key
-                            + "} contains '"
-                            + symbol.membershipItem(ordinal)
-                            + "')"));
-                    remainingForbidden &= remainingForbidden - 1L;
-                }
-                return expression;
+            long remainingRequired = requiredMask;
+            while (remainingRequired != 0L) {
+                int ordinal = Long.numberOfTrailingZeros(remainingRequired);
+                expression = expression.and(Expression.create("${" + key + "} contains '" + symbol.membershipItem(ordinal) + "'"));
+                remainingRequired &= remainingRequired - 1L;
             }
-            for (String item : required) {
-                expression = expression.and(Expression.create("${" + key + "} contains '" + item + "'"));
-            }
-            for (String item : forbidden) {
+            long remainingForbidden = forbiddenMask;
+            while (remainingForbidden != 0L) {
+                int ordinal = Long.numberOfTrailingZeros(remainingForbidden);
                 expression = expression.and(Expression.create("!(${"
                         + key
                         + "} contains '"
-                        + item
+                        + symbol.membershipItem(ordinal)
                         + "')"));
+                remainingForbidden &= remainingForbidden - 1L;
             }
             return expression;
         }
 
         void appendLiteral(StringBuilder builder, Symbol symbol) {
-            if (maskBased()) {
-                appendItems(builder, symbol, requiredMask);
-                builder.append('/');
-                appendItems(builder, symbol, forbiddenMask);
-                return;
-            }
-            builder.append(required).append('/').append(forbidden);
+            appendItems(builder, symbol, requiredMask);
+            builder.append('/');
+            appendItems(builder, symbol, forbiddenMask);
         }
 
         private static void appendItems(StringBuilder builder, Symbol symbol, long mask) {
@@ -2457,25 +2592,12 @@ final class Domain {
                 return false;
             }
             MembershipShape other = (MembershipShape) o;
-            if (isEmpty() && other.isEmpty()) {
-                return true;
-            }
-            if (maskBased() || other.maskBased()) {
-                return maskBased() && other.maskBased()
-                        && requiredMask == other.requiredMask
-                        && forbiddenMask == other.forbiddenMask;
-            }
-            return required.equals(other.required) && forbidden.equals(other.forbidden);
+            return requiredMask == other.requiredMask && forbiddenMask == other.forbiddenMask;
         }
 
         @Override
         public int hashCode() {
-            if (isEmpty()) {
-                return 0;
-            }
-            return maskBased()
-                    ? 31 * Long.hashCode(requiredMask) + Long.hashCode(forbiddenMask)
-                    : 31 * required.hashCode() + forbidden.hashCode();
+            return 31 * Long.hashCode(requiredMask) + Long.hashCode(forbiddenMask);
         }
     }
 

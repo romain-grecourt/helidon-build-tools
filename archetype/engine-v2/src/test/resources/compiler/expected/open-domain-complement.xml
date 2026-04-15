@@ -39,7 +39,7 @@
         </variables>
     </step>
     <step name="JSON Model"
-          if="${media} contains &apos;json&apos; &amp;&amp; (${media.json-lib} == &apos;jackson&apos; || ${media.json-lib} == &apos;jsonb&apos;)">
+          if="${media} contains &apos;json&apos; &amp;&amp; ${media.json-lib} != &apos;jsonp&apos;">
         <inputs>
             <boolean id="enabled" name="Enabled"/>
         </inputs>

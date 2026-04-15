@@ -846,7 +846,7 @@ public class ScriptCompiler {
             }
             if (!caseGuard.equals(exactCase.guard())) {
                 changed = true;
-                constrainedCases.add(new Fact.ExactCase(exactCase.value(), caseGuard));
+                constrainedCases.add(exactCase.withGuard(caseGuard));
             } else {
                 constrainedCases.add(exactCase);
             }
@@ -1394,7 +1394,7 @@ public class ScriptCompiler {
             if (term instanceof AnalysisRef) {
                 String key = ((AnalysisRef) term).key;
                 Flow.SymbolInfo info = symbolInfo(key);
-                if (info == null || info.symbol().domain().kind() != Domain.Spec.Kind.BOOLEAN) {
+                if (info == null || !info.symbol().domain().booleanLike()) {
                     return new AnalysisBoolean(null, null, term::collect);
                 }
                 return new AnalysisBoolean(translatedEquality(key, Value.TRUE),
@@ -1506,7 +1506,8 @@ public class ScriptCompiler {
 
         Guard translatedEquality(String key, Value<?> value) {
             Fact fact = factFor(key);
-            Guard bound = fact == null ? FALSE : fact.match(value, flow.guards());
+            Flow.SymbolInfo info = symbolInfo(key);
+            Guard bound = fact == null || info == null ? FALSE : fact.match(info.symbol(), value, flow.guards());
             Guard raw = rawEquality(key, value);
             return combine(key, bound, raw);
         }
@@ -1522,7 +1523,8 @@ public class ScriptCompiler {
 
         Guard translatedScalarAny(String key, Set<String> values) {
             Fact fact = factFor(key);
-            Guard bound = fact == null ? FALSE : fact.scalarAny(values, flow.guards());
+            Flow.SymbolInfo info = symbolInfo(key);
+            Guard bound = fact == null || info == null ? FALSE : fact.scalarAny(info.symbol(), values, flow.guards());
             Guard raw = rawScalarAny(key, values);
             return combine(key, bound, raw);
         }
@@ -1542,7 +1544,8 @@ public class ScriptCompiler {
                 return null;
             }
             Fact fact = factFor(key);
-            Guard bound = fact == null ? FALSE : fact.listContains(required, flow.guards());
+            Flow.SymbolInfo info = symbolInfo(key);
+            Guard bound = fact == null || info == null ? FALSE : fact.listContains(info.symbol(), required, flow.guards());
             Guard raw = rawListContains(key, required);
             return combine(key, bound, raw);
         }
@@ -1562,6 +1565,8 @@ public class ScriptCompiler {
 
         Guard combine(String key, Guard bound, Guard raw) {
             Fact fact = factFor(key);
+            Flow.SymbolInfo info = symbolInfo(key);
+            Domain.Symbol symbol = info == null ? null : info.symbol();
             Guard defined = definitionFor(key);
             if (fact == null) {
                 if (raw == null) {
@@ -1574,7 +1579,7 @@ public class ScriptCompiler {
                     return null;
                 }
                 if (flow.isFalse(bound)) {
-                    Guard exact = fact.exactDefined(flow.guards());
+                    Guard exact = symbol == null ? fact.exactDefined(flow.guards()) : fact.supportedExactDefined(symbol, flow.guards());
                     if (defined == null || flow.isFalse(exact) || !flow.contains(exact, defined)) {
                         return null;
                     }
@@ -1582,7 +1587,7 @@ public class ScriptCompiler {
                 return bound;
             }
             Guard available = defined == null ? TRUE : defined;
-            Guard exact = fact.exactDefined(flow.guards());
+            Guard exact = symbol == null ? fact.exactDefined(flow.guards()) : fact.supportedExactDefined(symbol, flow.guards());
             Guard unresolved = flow.and(flow.minus(available, exact), raw);
             return flow.or(bound, unresolved);
         }
@@ -1611,21 +1616,10 @@ public class ScriptCompiler {
             }
             Domain.Symbol symbol = info.symbol();
             if (symbol.guardable() && !symbol.tainted()) {
-                switch (symbol.domain().kind()) {
-                    case BOOLEAN:
-                        return Set.of("false", "true").contains(scalarValue)
-                                ? available(info, scalarValue, flow.guards().eq(symbol.id(), scalarValue))
-                                : FALSE;
-                    case CHOICE:
-                        return ((Domain.Spec.Choice) symbol.domain()).values().contains(scalarValue)
-                                ? available(info, scalarValue, flow.guards().eq(symbol.id(), scalarValue))
-                                : FALSE;
-                    case FINITE_TEXT:
-                        return ((Domain.Spec.FiniteText) symbol.domain()).values().contains(scalarValue)
-                                ? available(info, scalarValue, flow.guards().eq(symbol.id(), scalarValue))
-                                : FALSE;
-                    default:
-                        break;
+                if (symbol.domain().kind() == Domain.Spec.Kind.FINITE_SCALAR) {
+                    return symbol.domain().values().contains(scalarValue)
+                            ? available(info, scalarValue, flow.guards().eq(symbol.id(), scalarValue))
+                            : FALSE;
                 }
             }
             return fallbackScalarEquality(info, key, scalarValue);
@@ -1639,19 +1633,10 @@ public class ScriptCompiler {
             Domain.Symbol symbol = info.symbol();
             Set<String> allowed = new TreeSet<>(values);
             if (symbol.guardable() && !symbol.tainted()) {
-                switch (symbol.domain().kind()) {
-                    case BOOLEAN:
-                        allowed.retainAll(Set.of("false", "true"));
-                        break;
-                    case CHOICE:
-                        allowed.retainAll(((Domain.Spec.Choice) symbol.domain()).values());
-                        break;
-                    case FINITE_TEXT:
-                        allowed.retainAll(((Domain.Spec.FiniteText) symbol.domain()).values());
-                        break;
-                    default:
-                        allowed.clear();
-                        break;
+                if (symbol.domain().kind() == Domain.Spec.Kind.FINITE_SCALAR) {
+                    allowed.retainAll(symbol.domain().values());
+                } else {
+                    allowed.clear();
                 }
                 Guard raw = FALSE;
                 for (String value : allowed) {
@@ -1675,10 +1660,10 @@ public class ScriptCompiler {
                 return null;
             }
             Domain.Symbol symbol = info.symbol();
-            if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Domain.Spec.Kind.MEMBERSHIP) {
+            if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Domain.Spec.Kind.FINITE_MEMBERSHIP) {
                 return null;
             }
-            Set<String> items = ((Domain.Spec.Membership) symbol.domain()).items();
+            Set<String> items = symbol.domain().values();
             if (!items.containsAll(required)) {
                 return FALSE;
             }
@@ -2446,7 +2431,7 @@ public class ScriptCompiler {
             Domain.LatticeValue value = Domain.LatticeValue.top(info.symbol().domain());
             Fact next = exactValue == null
                     ? new Fact(definition, value)
-                    : Fact.exact(definition, value, exactValue);
+                    : Fact.exact(definition, info.symbol().domain(), value, exactValue);
             currentFacts.merge(key, next, (left, right) -> Fact.merge(left, right, flow.guards()));
         }
 
