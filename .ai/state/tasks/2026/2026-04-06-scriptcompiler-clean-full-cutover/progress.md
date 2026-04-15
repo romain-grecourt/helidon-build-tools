@@ -1,5 +1,82 @@
 # Progress
 
+- 2026-04-15: Replaced the remaining trivial private-inner accessors in
+  `Flow` with direct field reads. `Ir`, `Block`, and `Op` no longer
+  expose the one-line `blocks()` / `symbols()` / `ops()` / `guards()`,
+  `ops()` / `terminator()`, or `id()` / `kind()` / `symbolId()`
+  wrappers, and `Analyzer.ExactProvenance` now checks
+  `blockIds.length == 0` directly instead of carrying a private
+  `isEmpty()` helper. `State` and the non-trivial `Model` /
+  `SymbolInfoBuilder` helpers were intentionally left alone. Focused
+  validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=FlowTest -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`12` tests, `BUILD SUCCESS`, total time `3.010 s`), and the broader
+  slice also passed with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`217` tests, `BUILD SUCCESS`, total time `4.816 s`).
+- 2026-04-15: Removed the redundant private `Flow.SourceAnchor`
+  wrapper. `Flow.Op` and `Flow.Terminator` now store `Node` directly,
+  the projector/indexing code reads those `Node` references directly,
+  and `Flow.Lowerer` no longer carries the trivial `anchor(...)`
+  helper. This is an internal-only cleanup; lowering, projection, and
+  facade behavior are unchanged. Focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=FlowTest -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`12` tests, `BUILD SUCCESS`, total time `3.998 s`), and the broader
+  slice also passed with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`217` tests, `BUILD SUCCESS`, total time `6.405 s`).
+- 2026-04-15: Reduced the remaining `Flow` API/test-only surface in
+  `engine-v2`. `Flow` no longer exposes `process(Ir, Node)`, `ir()`,
+  `analysis()`, or `model()`, the nested IR/model carriers used only by
+  internal lowering/projection are now private, and the dead
+  `RECORD_USE` / `Use` analysis path is removed end-to-end. `FlowTest`
+  is rewritten to exercise only the public `Flow` facade
+  (`process(...)`, `before(...)`, `symbol(...)`, `activeGuard(...)`,
+  `declaredValue(...)`, `guards()`), with new XML-backed fixtures for
+  branch merge, same-value merge, and mixed literal-type exact-value
+  merge coverage. Focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=FlowTest -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`12` tests, `BUILD SUCCESS`, total time `3.184 s`), and the broader
+  slice also passed with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`217` tests, `BUILD SUCCESS`, total time `4.864 s`).
+- 2026-04-14: Revalidated the current exact-domain checkpoint and
+  updated the `.ai` routers to match it. `git diff --check` is clean,
+  and the focused validation slice still passes with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`217` tests, `BUILD SUCCESS`, total time `5.536 s`). No Helidon
+  regression wrapper was rerun in this pass.
+- 2026-04-14: Completed another redesign-spec alignment pass in
+  `engine-v2`. `Domain.Symbol.Fact.ExactCase` now caches scalar/list
+  masks and merges or matches finite exact values by domain masks
+  instead of raw `Value` shape, `DecisionShape` / `ScalarShape` /
+  `MembershipShape` are now mask-only for finite guard algebra,
+  `Flow.Lowerer.definitionSeed(...)` now preserves declared finite
+  input domains across text fallbacks, `Flow.Projector` no longer turns
+  full-domain finite facts into unconditional option availability, and
+  `Flow` / `ScriptCompiler` now distinguish supported in-domain exact
+  coverage from out-of-domain fallback text when normalizing guards.
+  Added `DomainTest.testFactExactCasesUseFiniteMasksInsteadOfRawLiteralShape`
+  plus
+  `FlowTest.testAnalyzeMergesEquivalentBooleanExactValuesAcrossLiteralTypes`,
+  and updated the expected compiled XML fixtures for
+  `open-domain-complement` and `unsupported-block-pruning` to match the
+  tighter spec-aligned output. Focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`217` tests, `BUILD SUCCESS`, total time `4.647 s`).
 - 2026-04-11: Removed the plain zero-arg `reduce()` calls that were only
   re-reducing expressions already normalized by producer boundaries in
   `ScriptCompiler`. `reachabilityExpression(...)` now returns

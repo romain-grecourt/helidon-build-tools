@@ -276,6 +276,20 @@ class FlowTest {
         assertThat(flow.activeGuard(condition).equals(FALSE), is(false));
     }
 
+    @Test
+    void testIrLoweringFallsBackToOriginalConditionWhenMixedControlIsNotFinite() {
+        Context.Scope scope = new Context().scope();
+        Node script = load("flow/mixed-open-text-condition.xml");
+
+        Flow flow = new Flow(scope);
+        flow.process(script);
+        Node condition = findCondition(script, "${enabled} && ${name} == 'blue'");
+
+        assertThat(flow.activeGuard(condition).equals(TRUE), is(false));
+        assertThat(flow.activeGuard(condition).equals(FALSE), is(false));
+        assertThat(flow.activationCondition(condition).literal(), is("${enabled} && ${name} == 'blue'"));
+    }
+
     static Node load(String path) {
         return Script.load(testResourcePath(FlowTest.class, path));
     }

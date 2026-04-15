@@ -63,27 +63,32 @@ final class Flow {
     }
 
     String key(Node node) {
-        return model.key(node);
+        return node == null ? model.scope.key() : model.node(node).key;
     }
 
     Scope scope(Node node) {
-        return model.scope(node);
+        if (node == null) {
+            return model.scope;
+        }
+        String key = model.node(node).key;
+        return key.isEmpty() ? model.scope : model.scope.get("~" + key);
     }
 
     Guard renderGuard(Node node) {
-        return model.renderGuard(node);
+        return node == null ? Guard.TRUE : model.node(node).renderGuard;
     }
 
     Guard activeGuard(Node node) {
-        return model.activeGuard(node);
+        return node == null ? Guard.TRUE : model.node(node).activeGuard;
     }
 
     State before(Node node) {
-        return model.before(node);
+        return node == null ? model.analysis.entryByBlock.get(0) : model.node(node).before;
     }
 
     SymbolInfo symbol(String name) {
-        return model.symbol(name);
+        Integer symbolId = ir.symbols.findId(name);
+        return symbolId == null ? null : model.symbols.get(symbolId);
     }
 
     Symbol symbol(int symbolId) {
@@ -91,23 +96,41 @@ final class Flow {
     }
 
     Expression expression(Guard guard) {
-        return model.expression(guard, scope);
+        return expression(guard, scope);
     }
 
     Expression expression(Guard guard, Scope scope) {
-        return model.expression(guard, scope);
+        return ir.guards.toExpression(guard, scope).reduce();
     }
 
     Expression activationCondition(Node node) {
-        return model.activationCondition(node);
+        if (node == null) {
+            return Expression.TRUE;
+        }
+        Scope scope = scope(node);
+        if (node.kind() == Kind.CONDITION) {
+            return expression(activeGuard(node), scope).reduce(expression(renderGuard(node), scope));
+        }
+        return expression(activeGuard(node), scope);
     }
 
     Value<?> declaredValue(Node node, String key) {
-        return model.declaredValue(node, key);
+        Fact fact = fact(node, key);
+        Guard required = activeGuard(node == null ? null : node.parent());
+        if (fact == null || !ir.guards.implies(required, fact.definedUnder())) {
+            return Value.empty();
+        }
+        SymbolInfo info = symbol(key);
+        if (info == null && !key.startsWith("~")) {
+            info = symbol("~" + key);
+        }
+        Value.Type type = info == null ? Value.Type.EMPTY : valueType(info);
+        Value<?> exact = exactValue(fact, required, type);
+        return exact != null ? exact : info == null ? Value.empty() : singletonValue(fact.value(), info.symbol.domain(), type);
     }
 
     Value<?> declaredValue(Node node) {
-        return model.declaredValue(node, model.key(node));
+        return declaredValue(node, key(node));
     }
 
     Guard residualGuard(Expression expression) {
@@ -153,6 +176,79 @@ final class Flow {
         return left != null && right != null && ir.guards.equivalent(left, right);
     }
 
+    private Fact fact(Node node, String key) {
+        State before = before(node);
+        if (before.env.isEmpty()) {
+            return null;
+        }
+        Integer symbolId = ir.symbols.findId(key);
+        if (symbolId == null && !key.startsWith("~")) {
+            symbolId = ir.symbols.findId("~" + key);
+        }
+        return symbolId == null ? null : before.env.get(symbolId);
+    }
+
+    private static Value.Type valueType(SymbolInfo info) {
+        switch (info.symbol.domain().kind()) {
+            case FINITE_SCALAR:
+                return info.symbol.domain().booleanLike() ? Value.Type.BOOLEAN : Value.Type.STRING;
+            case FINITE_MEMBERSHIP:
+                return Value.Type.LIST;
+            case OPEN_TEXT:
+                return Value.Type.STRING;
+            default:
+                return Value.Type.EMPTY;
+        }
+    }
+
+    private Value<?> exactValue(Fact fact, Guard required, Value.Type type) {
+        if (fact.exactCases().isEmpty()) {
+            return null;
+        }
+        Value<?> exact = null;
+        Guard coverage = Guard.FALSE;
+        for (Fact.ExactCase exactCase : fact.exactCases()) {
+            Guard overlap = ir.guards.and(required, exactCase.guard());
+            if (overlap.equals(Guard.FALSE)) {
+                continue;
+            }
+            Value<?> candidate = coerceExactValue(exactCase.value(), type);
+            if (exact == null) {
+                exact = candidate;
+            } else if (!Value.isEqual(exact, candidate)) {
+                return null;
+            }
+            coverage = ir.guards.or(coverage, overlap);
+        }
+        return exact != null && ir.guards.implies(required, coverage) ? exact : null;
+    }
+
+    private static Value<?> coerceExactValue(Value<?> value, Value.Type type) {
+        if (type == Value.Type.EMPTY) {
+            return value;
+        }
+        try {
+            Value<?> coerced = Value.typed(value, type);
+            return coerced.isPresent() ? coerced : value;
+        } catch (RuntimeException ex) {
+            return value;
+        }
+    }
+
+    private static Value<?> singletonValue(LatticeValue value, Spec spec, Value.Type type) {
+        if (value.kind() == LatticeValue.Kind.FINITE_SCALAR) {
+            String scalar = value.singletonScalar(spec);
+            if (scalar == null) {
+                return Value.empty();
+            }
+            return type == Value.Type.BOOLEAN ? Value.of(Boolean.parseBoolean(scalar)) : Value.of(scalar);
+        }
+        if (value.kind() == LatticeValue.Kind.OPEN_TEXT) {
+            return value.sample() == null ? Value.empty() : Value.of(value.sample());
+        }
+        return Value.empty();
+    }
+
     private static int requireSymbolId(Table symbols, String key) {
         Integer symbolId = symbols.findId(key);
         if (symbolId == null) {
@@ -163,10 +259,10 @@ final class Flow {
 
     private static Guard directBooleanGuard(Table symbols, Guards guards, String key) {
         Symbol symbol = symbols.symbol(requireSymbolId(symbols, key));
-        if (symbol.guardable() && !symbol.tainted() && symbol.domain().booleanLike()) {
-            return guards.eq(symbol.id(), "true");
+        if (!symbol.guardable() || symbol.tainted() || !symbol.domain().booleanLike()) {
+            return Guard.TRUE;
         }
-        return guards.residualGuard(Expression.create("${" + key + "}"));
+        return guards.eq(symbol.id(), "true");
     }
 
     private static Guard directOptionGuard(Table symbols, Guards guards, String key, Node input, Node option) {
@@ -174,15 +270,15 @@ final class Flow {
         String value = option.value().getString();
         switch (input.kind()) {
             case INPUT_ENUM:
-                if (symbol.guardable() && !symbol.tainted() && symbol.domain().kind() == Spec.Kind.FINITE_SCALAR) {
-                    return guards.eq(symbol.id(), value);
+                if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Spec.Kind.FINITE_SCALAR) {
+                    return Guard.TRUE;
                 }
-                return guards.residualGuard(Expression.create("${" + key + "} == '" + value + "'"));
+                return guards.eq(symbol.id(), value);
             case INPUT_LIST:
-                if (symbol.guardable() && !symbol.tainted() && symbol.domain().kind() == Spec.Kind.FINITE_MEMBERSHIP) {
-                    return guards.contains(symbol.id(), value);
+                if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Spec.Kind.FINITE_MEMBERSHIP) {
+                    return Guard.TRUE;
                 }
-                return guards.residualGuard(Expression.create("${" + key + "} contains '" + value + "'"));
+                return guards.contains(symbol.id(), value);
             default:
                 throw new IllegalArgumentException("Unsupported option parent: " + input.kind());
         }
@@ -348,9 +444,7 @@ final class Flow {
         private final List<State> beforeByOp;
         private final List<State> afterByOp;
 
-        Analysis(List<State> entryByBlock,
-                 List<State> beforeByOp,
-                 List<State> afterByOp) {
+        Analysis(List<State> entryByBlock, List<State> beforeByOp, List<State> afterByOp) {
             this.entryByBlock = entryByBlock;
             this.beforeByOp = beforeByOp;
             this.afterByOp = afterByOp;
@@ -358,14 +452,12 @@ final class Flow {
     }
 
     private static final class Model {
-        private final Ir ir;
         private final Analysis analysis;
         private final Scope scope;
         private final Map<Node, NodeFacts> nodes;
         private final List<SymbolInfo> symbols;
 
-        Model(Ir ir, Analysis analysis, Scope scope, Map<Node, NodeFacts> nodes, List<SymbolInfo> symbols) {
-            this.ir = ir;
+        Model(Analysis analysis, Scope scope, Map<Node, NodeFacts> nodes, List<SymbolInfo> symbols) {
             this.analysis = analysis;
             this.scope = scope;
             this.nodes = nodes;
@@ -379,138 +471,6 @@ final class Flow {
                 return facts;
             }
             throw new IllegalArgumentException("Node is not part of this flow model: " + node.kind() + "#" + node.id());
-        }
-
-        String key(Node node) {
-            return node == null ? scope.key() : node(node).key;
-        }
-
-        Scope scope(Node node) {
-            if (node == null) {
-                return scope;
-            }
-            String key = key(node);
-            return key.isEmpty() ? scope : scope.get("~" + key);
-        }
-
-        Guard renderGuard(Node node) {
-            return node == null ? Guard.TRUE : node(node).renderGuard;
-        }
-
-        Guard activeGuard(Node node) {
-            return node == null ? Guard.TRUE : node(node).activeGuard;
-        }
-
-        State before(Node node) {
-            return node == null ? analysis.entryByBlock.get(0) : node(node).before;
-        }
-
-        SymbolInfo symbol(String name) {
-            Integer symbolId = ir.symbols.findId(name);
-            return symbolId == null ? null : symbols.get(symbolId);
-        }
-
-        Expression expression(Guard guard, Scope scope) {
-            return ir.guards.toExpression(guard, scope).reduce();
-        }
-
-        Expression activationCondition(Node node) {
-            if (node == null) {
-                return Expression.TRUE;
-            }
-            Scope scope = scope(node);
-            if (node.kind() == Kind.CONDITION) {
-                return expression(activeGuard(node), scope).reduce(expression(renderGuard(node), scope));
-            }
-            return expression(activeGuard(node), scope);
-        }
-
-        Value<?> declaredValue(Node node, String key) {
-            Fact fact = fact(node, key);
-            Guard required = activeGuard(node == null ? null : node.parent());
-            if (fact == null || !ir.guards.implies(required, fact.definedUnder())) {
-                return Value.empty();
-            }
-            SymbolInfo info = symbol(key);
-            if (info == null && !key.startsWith("~")) {
-                info = symbol("~" + key);
-            }
-            Value.Type type = info == null ? Value.Type.EMPTY : valueType(info);
-            Value<?> exact = exactValue(fact, required, type);
-            return exact != null ? exact : info == null ? Value.empty() : singletonValue(fact.value(), info.symbol.domain(), type);
-        }
-
-        Fact fact(Node node, String key) {
-            State before = before(node);
-            if (before.env.isEmpty()) {
-                return null;
-            }
-            Integer symbolId = ir.symbols.findId(key);
-            if (symbolId == null && !key.startsWith("~")) {
-                symbolId = ir.symbols.findId("~" + key);
-            }
-            return symbolId == null ? null : before.env.get(symbolId);
-        }
-
-        Value.Type valueType(SymbolInfo info) {
-            switch (info.symbol.domain().kind()) {
-                case FINITE_SCALAR:
-                    return info.symbol.domain().booleanLike() ? Value.Type.BOOLEAN : Value.Type.STRING;
-                case FINITE_MEMBERSHIP:
-                    return Value.Type.LIST;
-                case OPEN_TEXT:
-                    return Value.Type.STRING;
-                default:
-                    return Value.Type.EMPTY;
-            }
-        }
-
-        Value<?> exactValue(Fact fact, Guard required, Value.Type type) {
-            if (fact.exactCases().isEmpty()) {
-                return null;
-            }
-            Value<?> exact = null;
-            Guard coverage = Guard.FALSE;
-            for (Fact.ExactCase exactCase : fact.exactCases()) {
-                Guard overlap = ir.guards.and(required, exactCase.guard());
-                if (overlap.equals(Guard.FALSE)) {
-                    continue;
-                }
-                Value<?> candidate = coerceExactValue(exactCase.value(), type);
-                if (exact == null) {
-                    exact = candidate;
-                } else if (!Value.isEqual(exact, candidate)) {
-                    return null;
-                }
-                coverage = ir.guards.or(coverage, overlap);
-            }
-            return exact != null && ir.guards.implies(required, coverage) ? exact : null;
-        }
-
-        Value<?> coerceExactValue(Value<?> value, Value.Type type) {
-            if (type == Value.Type.EMPTY) {
-                return value;
-            }
-            try {
-                Value<?> coerced = Value.typed(value, type);
-                return coerced.isPresent() ? coerced : value;
-            } catch (RuntimeException ex) {
-                return value;
-            }
-        }
-
-        Value<?> singletonValue(LatticeValue value, Spec spec, Value.Type type) {
-            if (value.kind() == LatticeValue.Kind.FINITE_SCALAR) {
-                String scalar = value.singletonScalar(spec);
-                if (scalar == null) {
-                    return Value.empty();
-                }
-                return type == Value.Type.BOOLEAN ? Value.of(Boolean.parseBoolean(scalar)) : Value.of(scalar);
-            }
-            if (value.kind() == LatticeValue.Kind.OPEN_TEXT) {
-                return value.sample() == null ? Value.empty() : Value.of(value.sample());
-            }
-            return Value.empty();
         }
     }
 
@@ -534,9 +494,9 @@ final class Flow {
         private final Node root;
         private final Scope scope;
         private final Guards guards;
-        private final Map<Node, List<Integer>> opsByNode = new IdentityHashMap<>();
-        private final Map<Node, BranchInfo> branchesByNode = new IdentityHashMap<>();
-        private final List<SymbolInfoBuilder> symbolInfos = new ArrayList<>();
+        private final Map<Node, List<Integer>> ops = new IdentityHashMap<>();
+        private final Map<Node, BranchInfo> branches = new IdentityHashMap<>();
+        private final List<SymbolInfoBuilder> symbols = new ArrayList<>();
 
         Projector(Ir ir, Analysis analysis, Node root, Scope scope) {
             this.ir = ir;
@@ -545,7 +505,7 @@ final class Flow {
             this.scope = scope;
             this.guards = ir.guards;
             for (Symbol symbol : ir.symbols.symbols()) {
-                symbolInfos.add(new SymbolInfoBuilder(symbol));
+                symbols.add(new SymbolInfoBuilder(symbol));
             }
         }
 
@@ -554,16 +514,16 @@ final class Flow {
             scanSymbols();
             Map<Node, NodeFacts> nodes = new IdentityHashMap<>();
             projectNode(root, scope, analysis.entryByBlock.get(0), nodes);
-            List<SymbolInfo> builtSymbols = new ArrayList<>(symbolInfos.size());
-            for (SymbolInfoBuilder builder : symbolInfos) {
+            List<SymbolInfo> builtSymbols = new ArrayList<>(symbols.size());
+            for (SymbolInfoBuilder builder : symbols) {
                 builtSymbols.add(builder.build());
             }
-            return new Model(ir, analysis, scope, nodes, builtSymbols);
+            return new Model(analysis, scope, nodes, builtSymbols);
         }
 
         void indexAnchors() {
             for (Op op : ir.ops) {
-                opsByNode.computeIfAbsent(op.source, key -> new ArrayList<>()).add(op.id);
+                ops.computeIfAbsent(op.source, key -> new ArrayList<>()).add(op.id);
             }
             for (Block block : ir.blocks) {
                 Terminator terminator = block.terminator;
@@ -575,7 +535,7 @@ final class Flow {
                 if (falseTerminator.kind == Terminator.Kind.GOTO) {
                     joinId = falseTerminator.targetId;
                 }
-                branchesByNode.put(terminator.source, new BranchInfo(terminator.trueId, joinId));
+                branches.put(terminator.source, new BranchInfo(terminator.trueId, joinId));
             }
         }
 
@@ -584,7 +544,7 @@ final class Flow {
                 State before = analysis.beforeByOp.get(op.id);
                 switch (op.kind) {
                     case DECLARE_INPUT: {
-                        SymbolInfoBuilder builder = symbolInfos.get(op.symbolId);
+                        SymbolInfoBuilder builder = symbols.get(op.symbolId);
                         builder.addDefinition(before.path, guards);
                         if (builder.symbol.domain().booleanLike()) {
                             builder.addAvailability("true", before.path, guards);
@@ -593,12 +553,12 @@ final class Flow {
                         break;
                     }
                     case DECLARE_OPTION: {
-                        SymbolInfoBuilder builder = symbolInfos.get(op.symbolId);
+                        SymbolInfoBuilder builder = symbols.get(op.symbolId);
                         builder.addAvailability(op.source.value().getString(), before.path, guards);
                         break;
                     }
                     case DEFINE_VALUE: {
-                        SymbolInfoBuilder builder = symbolInfos.get(op.symbolId);
+                        SymbolInfoBuilder builder = symbols.get(op.symbolId);
                         Fact fact = analysis.afterByOp.get(op.id).env.get(op.symbolId);
                         if (fact != null) {
                             builder.addDefinition(fact.definedUnder(), guards);
@@ -657,11 +617,11 @@ final class Flow {
         State projectNode(Node node, Scope scope, State current, Map<Node, NodeFacts> nodes) {
             Scope childScope = childScope(scope, node);
             Scope nodeScope = node.kind().isInput() ? childScope : scope;
-            List<Integer> opIds = opsByNode.getOrDefault(node, List.of());
+            List<Integer> opIds = ops.getOrDefault(node, List.of());
             State before = opIds.isEmpty() ? current : constrainPath(analysis.beforeByOp.get(opIds.get(0)), current.path);
             State afterOps = opIds.isEmpty() ? before : constrainPath(analysis.afterByOp.get(opIds.get(opIds.size() - 1)),
                     current.path);
-            BranchInfo branch = branchesByNode.get(node);
+            BranchInfo branch = branches.get(node);
             State branchEntry = branch == null ? null : constrainPath(analysis.entryByBlock.get(branch.trueId), current.path);
             Guard activeGuard = branch != null
                     ? activeGuard(node, nodeScope, branchEntry)
@@ -866,16 +826,16 @@ final class Flow {
             Fact fact = factFor(state, key);
             Flow.SymbolInfo info = symbolInfo(key);
             Guard bound = fact == null || info == null ? Guard.FALSE : fact.match(info.symbol, value, guards);
-            Guard raw = rawEquality(key, value);
-            return combine(key, fact, bound, raw);
+            Guard direct = directEquality(key, value);
+            return combine(key, fact, bound, direct);
         }
 
         Guard translatedScalarAny(String key, Set<String> values, State state) {
             Fact fact = factFor(state, key);
             Flow.SymbolInfo info = symbolInfo(key);
             Guard bound = fact == null || info == null ? Guard.FALSE : fact.scalarAny(info.symbol, values, guards);
-            Guard raw = rawScalarAny(key, values);
-            return combine(key, fact, bound, raw);
+            Guard direct = directScalarAny(key, values);
+            return combine(key, fact, bound, direct);
         }
 
         Guard translatedListContains(String key, Value<?> value, State state) {
@@ -886,21 +846,18 @@ final class Flow {
             Fact fact = factFor(state, key);
             Flow.SymbolInfo info = symbolInfo(key);
             Guard bound = fact == null || info == null ? Guard.FALSE : fact.listContains(info.symbol, required, guards);
-            Guard raw = rawListContains(symbolInfo(key), required);
-            return combine(key, fact, bound, raw);
+            Guard direct = directListContains(symbolInfo(key), required);
+            return combine(key, fact, bound, direct);
         }
 
-        Guard combine(String key, Fact fact, Guard bound, Guard raw) {
+        Guard combine(String key, Fact fact, Guard bound, Guard direct) {
             Flow.SymbolInfo info = symbolInfo(key);
             Symbol symbol = info == null ? null : info.symbol;
             Guard defined = definitionFor(key, fact);
             if (fact == null) {
-                if (raw == null) {
-                    return bound;
-                }
-                return defined == null ? raw : guards.and(defined, raw);
+                return direct == null ? null : defined == null ? direct : guards.and(defined, direct);
             }
-            if (raw == null) {
+            if (direct == null) {
                 if (bound == null) {
                     return null;
                 }
@@ -914,7 +871,7 @@ final class Flow {
             }
             Guard available = defined == null ? Guard.TRUE : defined;
             Guard exact = symbol == null ? fact.exactDefined(guards) : fact.supportedExactDefined(symbol, guards);
-            Guard unresolved = guards.and(guards.minus(available, exact), raw);
+            Guard unresolved = guards.and(guards.minus(available, exact), direct);
             return guards.or(bound, unresolved);
         }
 
@@ -933,10 +890,10 @@ final class Flow {
 
         Flow.SymbolInfo symbolInfo(String key) {
             Integer symbolId = ir.symbols.findId(key);
-            return symbolId == null ? null : symbolInfos.get(symbolId).build();
+            return symbolId == null ? null : symbols.get(symbolId).build();
         }
 
-        Guard rawEquality(String key, Value<?> value) {
+        Guard directEquality(String key, Value<?> value) {
             String scalar = Value.scalarLiteral(value);
             if (scalar == null) {
                 return null;
@@ -946,46 +903,33 @@ final class Flow {
                 return null;
             }
             Symbol symbol = info.symbol;
-            if (symbol.guardable() && !symbol.tainted()) {
-                if (symbol.domain().kind() == Spec.Kind.FINITE_SCALAR) {
-                    return symbol.domain().values().contains(scalar)
-                            ? available(info, scalar, guards.eq(symbol.id(), scalar))
-                            : Guard.FALSE;
-                }
+            if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Spec.Kind.FINITE_SCALAR) {
+                return null;
             }
-            return fallbackScalarEquality(info, key, scalar);
+            return symbol.domain().values().contains(scalar)
+                    ? available(info, scalar, guards.eq(symbol.id(), scalar))
+                    : Guard.FALSE;
         }
 
-        Guard rawScalarAny(String key, Set<String> values) {
+        Guard directScalarAny(String key, Set<String> values) {
             Flow.SymbolInfo info = symbolInfo(key);
             if (info == null) {
                 return null;
             }
             Symbol symbol = info.symbol;
+            if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Spec.Kind.FINITE_SCALAR) {
+                return null;
+            }
             Set<String> allowed = new TreeSet<>(values);
-            if (symbol.guardable() && !symbol.tainted()) {
-                if (symbol.domain().kind() == Spec.Kind.FINITE_SCALAR) {
-                    allowed.retainAll(symbol.domain().values());
-                } else {
-                    allowed.clear();
-                }
-                Guard raw = Guard.FALSE;
-                for (String value : allowed) {
-                    raw = guards.or(raw, available(info, value, guards.eq(symbol.id(), value)));
-                }
-                return raw;
-            }
-            Guard raw = Guard.FALSE;
+            allowed.retainAll(symbol.domain().values());
+            Guard direct = Guard.FALSE;
             for (String value : allowed) {
-                Guard equality = fallbackScalarEquality(info, key, value);
-                if (equality != null) {
-                    raw = guards.or(raw, equality);
-                }
+                direct = guards.or(direct, available(info, value, guards.eq(symbol.id(), value)));
             }
-            return raw.equals(Guard.FALSE) ? null : raw;
+            return direct;
         }
 
-        Guard rawListContains(Flow.SymbolInfo info, Set<String> required) {
+        Guard directListContains(Flow.SymbolInfo info, Set<String> required) {
             if (info == null) {
                 return null;
             }
@@ -1011,15 +955,6 @@ final class Flow {
         Guard available(Flow.SymbolInfo info, String value, Guard direct) {
             Guard availability = info.availabilityByValue.get(value);
             return availability == null ? Guard.FALSE : guards.and(availability, direct);
-        }
-
-        Guard fallbackScalarEquality(Flow.SymbolInfo info, String key, String value) {
-            Guard availability = info.availabilityByValue.get(value);
-            if (availability == null) {
-                return null;
-            }
-            Expression expression = Expression.create("${" + key + "} == '" + value + "'");
-            return guards.and(availability, guards.residualGuard(expression));
         }
 
         Set<String> containsValues(Value<?> value) {
@@ -1567,77 +1502,79 @@ final class Flow {
         }
 
         Guard lower(Expression expression) {
-            if (expression == Expression.TRUE) {
+            Expression original = requireNonNull(expression, "expression is null");
+            if (original == Expression.TRUE) {
                 return Guard.TRUE;
             }
-            if (expression == Expression.FALSE) {
+            if (original == Expression.FALSE) {
                 return Guard.FALSE;
             }
             Deque<ConditionValue> stack = new ArrayDeque<>();
-            for (Token token : expression.tokens()) {
+            for (Token token : original.tokens()) {
                 if (token.isVariable()) {
                     String key = scope.key(token.variable());
-                    stack.push(ConditionValue.variable(key, findSymbol(key)));
+                    stack.push(ConditionValue.variable(findSymbol(key)));
                     continue;
                 }
                 if (token.isOperand()) {
                     stack.push(ConditionValue.literal(token.operand()));
                     continue;
                 }
+                ConditionValue value;
                 switch (token.operator()) {
                     case NOT:
-                        stack.push(not(stack.pop()));
+                        value = not(stack.pop());
                         break;
                     case AND:
-                        stack.push(and(stack.pop(), stack.pop()));
+                        value = and(stack.pop(), stack.pop());
                         break;
                     case OR:
-                        stack.push(or(stack.pop(), stack.pop()));
+                        value = or(stack.pop(), stack.pop());
                         break;
                     case EQUAL:
-                        stack.push(compare(true, stack.pop(), stack.pop()));
+                        value = compare(true, stack.pop(), stack.pop());
                         break;
                     case NOT_EQUAL:
-                        stack.push(compare(false, stack.pop(), stack.pop()));
+                        value = compare(false, stack.pop(), stack.pop());
                         break;
                     case CONTAINS:
-                        stack.push(contains(stack.pop(), stack.pop()));
+                        value = contains(stack.pop(), stack.pop());
                         break;
                     default:
-                        return residual(expression);
+                        return residual(original);
                 }
+                if (value == null) {
+                    return residual(original);
+                }
+                stack.push(value);
             }
             if (stack.size() != 1) {
                 throw new IllegalStateException("Unexpected expression stack size: " + stack.size());
             }
             ConditionValue value = stack.pop();
             Guard guard = value.asGuard(guards);
-            return guard != null ? guard : residual(value.expression);
+            return guard != null ? guard : residual(original);
         }
 
         ConditionValue not(ConditionValue value) {
             Guard guard = value.asGuard(guards);
-            Expression expression = negate(value.expression);
-            return guard != null ? ConditionValue.guard(guards.not(guard), expression)
-                    : ConditionValue.expression(negate(value.expression));
+            return guard == null ? null : ConditionValue.guard(guards.not(guard));
         }
 
         ConditionValue and(ConditionValue right, ConditionValue left) {
             Guard leftGuard = left.asGuard(guards);
             Guard rightGuard = right.asGuard(guards);
-            Expression expression = left.expression.and(right.expression);
             return leftGuard != null && rightGuard != null
-                    ? ConditionValue.guard(guards.and(leftGuard, rightGuard), expression)
-                    : ConditionValue.expression(expression);
+                    ? ConditionValue.guard(guards.and(leftGuard, rightGuard))
+                    : null;
         }
 
         ConditionValue or(ConditionValue right, ConditionValue left) {
             Guard leftGuard = left.asGuard(guards);
             Guard rightGuard = right.asGuard(guards);
-            Expression expression = left.expression.or(right.expression);
             return leftGuard != null && rightGuard != null
-                    ? ConditionValue.guard(guards.or(leftGuard, rightGuard), expression)
-                    : ConditionValue.expression(expression);
+                    ? ConditionValue.guard(guards.or(leftGuard, rightGuard))
+                    : null;
         }
 
         ConditionValue compare(boolean equal, ConditionValue right, ConditionValue left) {
@@ -1645,11 +1582,7 @@ final class Flow {
             if (direct == null) {
                 direct = compareGuard(right, left);
             }
-            Expression expression = combine(left.expression, equal ? "==" : "!=", right.expression);
-            if (direct != null) {
-                return ConditionValue.guard(equal ? direct : guards.not(direct), expression);
-            }
-            return ConditionValue.expression(expression);
+            return direct == null ? null : ConditionValue.guard(equal ? direct : guards.not(direct));
         }
 
         Guard compareGuard(ConditionValue symbolValue, ConditionValue literalValue) {
@@ -1680,8 +1613,7 @@ final class Flow {
             if (direct == null) {
                 direct = scalarAnyGuard(right, left);
             }
-            Expression expression = combine(left.expression, "contains", right.expression);
-            return direct == null ? ConditionValue.expression(expression) : ConditionValue.guard(direct, expression);
+            return direct == null ? null : ConditionValue.guard(direct);
         }
 
         Guard containsGuard(ConditionValue symbolValue, ConditionValue literalValue) {
@@ -1727,49 +1659,29 @@ final class Flow {
             Integer id = symbols.findId(name);
             return id == null ? null : symbols.symbol(id);
         }
-
-        static Expression combine(Expression left, String operator, Expression right) {
-            return Expression.create("(" + left.literal() + ") " + operator + " (" + right.literal() + ")");
-        }
-
-        static Expression negate(Expression expression) {
-            if (expression == Expression.TRUE) {
-                return Expression.FALSE;
-            }
-            if (expression == Expression.FALSE) {
-                return Expression.TRUE;
-            }
-            return Expression.create("!(" + expression.literal() + ")");
-        }
     }
 
     private static final class ConditionValue {
-        private final Expression expression;
         private final Guard guard;
         private final Symbol symbol;
         private final Value<?> literal;
 
-        ConditionValue(Expression expression, Guard guard, Symbol symbol, Value<?> literal) {
-            this.expression = requireNonNull(expression, "expression is null");
+        ConditionValue(Guard guard, Symbol symbol, Value<?> literal) {
             this.guard = guard;
             this.symbol = symbol;
             this.literal = literal;
         }
 
-        static ConditionValue guard(Guard guard, Expression expression) {
-            return new ConditionValue(expression, guard, null, null);
+        static ConditionValue guard(Guard guard) {
+            return new ConditionValue(requireNonNull(guard, "guard is null"), null, null);
         }
 
-        static ConditionValue expression(Expression expression) {
-            return new ConditionValue(expression, null, null, null);
-        }
-
-        static ConditionValue variable(String name, Symbol symbol) {
-            return new ConditionValue(Expression.create("${" + name + "}"), null, symbol, null);
+        static ConditionValue variable(Symbol symbol) {
+            return new ConditionValue(null, symbol, null);
         }
 
         static ConditionValue literal(Value<?> literal) {
-            return new ConditionValue(new Expression(List.of(Token.of(literal)), true), null, null, literal);
+            return new ConditionValue(null, null, literal);
         }
 
         Guard asGuard(Guards guards) {
