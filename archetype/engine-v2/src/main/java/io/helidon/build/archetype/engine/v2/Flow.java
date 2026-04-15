@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.BiConsumer;
 
 import io.helidon.build.archetype.engine.v2.Context.Scope;
 import io.helidon.build.archetype.engine.v2.Domain.Guard;
@@ -1246,44 +1247,43 @@ final class Flow {
             return new Ir(loweredBlocks, symbols, ops, guards, controlPaths);
         }
 
-        void collectDeclaredInputs(Node node, Scope scope) {
-            Scope childScope = scope;
+        void collectDeclaredInputs(Node root, Scope scope) {
+            traverse(root, scope, this::collectDeclaredInput);
+        }
+
+        void collectDeclaredInput(Node node, Scope scope) {
+            Scope childScope = childScope(scope, node);
             switch (node.kind()) {
                 case INPUT_BOOLEAN:
-                    childScope = scope.getOrCreate(node);
                     rememberDeclaredInput(childScope.key(), Spec.booleanSpec(), true, false);
                     break;
                 case INPUT_ENUM:
                 case INPUT_LIST:
-                    childScope = scope.getOrCreate(node);
                     rememberDeclaredInput(childScope.key(), inputSpec(node), !optionValues(node).isEmpty(), false);
                     break;
                 case INPUT_TEXT:
-                    childScope = scope.getOrCreate(node);
                     rememberDeclaredInput(childScope.key(), Spec.OPEN_TEXT, false, true);
                     break;
                 default:
                     break;
             }
-            for (Node child : node.children()) {
-                collectDeclaredInputs(child, childScope);
-            }
         }
 
-        void collectSymbols(Node node, Scope scope) {
-            Scope childScope = scope;
+        void collectSymbols(Node root, Scope scope) {
+            traverse(root, scope, this::collectSymbol);
+        }
+
+        void collectSymbol(Node node, Scope scope) {
+            Scope childScope = childScope(scope, node);
             switch (node.kind()) {
                 case INPUT_BOOLEAN:
-                    childScope = scope.getOrCreate(node);
                     rememberSymbol(childScope.key(), Spec.booleanSpec(), true, false);
                     break;
                 case INPUT_ENUM:
                 case INPUT_LIST:
-                    childScope = scope.getOrCreate(node);
                     rememberSymbol(childScope.key(), inputSpec(node), !optionValues(node).isEmpty(), false);
                     break;
                 case INPUT_TEXT:
-                    childScope = scope.getOrCreate(node);
                     rememberSymbol(childScope.key(), Spec.OPEN_TEXT, false, true);
                     break;
                 case PRESET_BOOLEAN:
@@ -1310,8 +1310,33 @@ final class Flow {
                 default:
                     break;
             }
-            for (Node child : node.children()) {
-                collectSymbols(child, childScope);
+        }
+
+        void traverse(Node root, Scope scope, BiConsumer<Node, Scope> visitor) {
+            Map<Node, Scope> scopes = new IdentityHashMap<>();
+            scopes.put(root, scope);
+            for (Node node : root.traverse()) {
+                Scope nodeScope = scopes.get(node);
+                if (nodeScope == null) {
+                    throw new IllegalStateException("Missing scope for node: " + node);
+                }
+                visitor.accept(node, nodeScope);
+                Scope childScope = childScope(nodeScope, node);
+                for (Node child : node.children()) {
+                    scopes.put(child, childScope);
+                }
+            }
+        }
+
+        Scope childScope(Scope scope, Node node) {
+            switch (node.kind()) {
+                case INPUT_BOOLEAN:
+                case INPUT_ENUM:
+                case INPUT_LIST:
+                case INPUT_TEXT:
+                    return scope.getOrCreate(node);
+                default:
+                    return scope;
             }
         }
 
