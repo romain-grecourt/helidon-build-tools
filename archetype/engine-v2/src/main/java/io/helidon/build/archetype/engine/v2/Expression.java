@@ -121,6 +121,20 @@ public final class Expression implements Comparable<Expression> {
      * @param right    right expression
      * @return Expression
      */
+    public static Expression create(Expression left, String operator, Expression right) {
+        Operator op = OPS.get(operator);
+        return op == null ? create("(" + left.literal() + ") " + operator + " (" + right.literal() + ")")
+                : create(left, op, right);
+    }
+
+    /**
+     * Get or create a binary expression.
+     *
+     * @param left     left expression
+     * @param operator operator
+     * @param right    right expression
+     * @return Expression
+     */
     public static Expression create(Expression left, Operator operator, Expression right) {
         List<Token> tokens = new ArrayList<>(left.tokens);
         tokens.addAll(right.tokens);
@@ -346,7 +360,7 @@ public final class Expression implements Comparable<Expression> {
      *
      * @return folded expression
      */
-    Expression fold() {
+    public Expression fold() {
         if (this == TRUE || this == FALSE) {
             return this;
         }
@@ -397,6 +411,18 @@ public final class Expression implements Comparable<Expression> {
     }
 
     /**
+     * Check whether this expression is equivalent to the given expression
+     * after constant folding.
+     *
+     * @param expression expression
+     * @return {@code true} when the expressions are token-equal or fold to
+     *         the same expression, {@code false} otherwise
+     */
+    public boolean equivalent(Expression expression) {
+        return this == expression || expression != null && (equals(expression) || fold().equals(expression.fold()));
+    }
+
+    /**
      * Inline variables.
      *
      * @param resolver resolver
@@ -415,21 +441,6 @@ public final class Expression implements Comparable<Expression> {
             inlined.add(token);
         }
         return new Expression(inlined, false).fold();
-    }
-
-    boolean variableCountAtMost(int maxVariables) {
-        if (maxVariables < 0) {
-            return false;
-        }
-        Set<String> names = new HashSet<>();
-        for (Token token : tokens) {
-            if (token.isVariable()
-                && names.add(token.variable)
-                && names.size() > maxVariables) {
-                return false;
-            }
-        }
-        return true;
     }
 
     /**
@@ -477,6 +488,21 @@ public final class Expression implements Comparable<Expression> {
     @Override
     public int hashCode() {
         return tokens.hashCode();
+    }
+
+    boolean variableCountAtMost(int maxVariables) {
+        if (maxVariables < 0) {
+            return false;
+        }
+        Set<String> names = new HashSet<>();
+        for (Token token : tokens) {
+            if (token.isVariable()
+                && names.add(token.variable)
+                && names.size() > maxVariables) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // QMC algorithm

@@ -986,7 +986,6 @@ final class Flow {
 
     private static final class Lowerer {
         private final Scope scope;
-        private final Table.Builder symbolsBuilder = Table.builder();
         private final Map<String, SymbolSeed> symbolSeeds = new LinkedHashMap<>();
         private final Map<String, SymbolSeed> declaredInputSymbols = new LinkedHashMap<>();
         private final List<Integer> controlParentIds = new ArrayList<>();
@@ -1015,6 +1014,7 @@ final class Flow {
         Ir lower(Node root) {
             collectDeclaredInputs(root, scope);
             collectSymbols(root, scope);
+            Table.Builder symbolsBuilder = Table.builder();
             for (SymbolSeed seed : symbolSeeds.values()) {
                 symbolsBuilder.define(seed.name, seed.spec, seed.guardable, seed.tainted);
             }
@@ -1053,7 +1053,7 @@ final class Flow {
                 Scope childScope = childScope(nodeScope, node);
                 switch (node.kind()) {
                     case INPUT_BOOLEAN:
-                        addDeclaredInput(childScope.key(), Spec.booleanSpec(), true, false);
+                        addDeclaredInput(childScope.key(), Spec.BOOLEAN, true, false);
                         break;
                     case INPUT_ENUM:
                     case INPUT_LIST:
@@ -1073,7 +1073,7 @@ final class Flow {
                 Scope childScope = childScope(nodeScope, node);
                 switch (node.kind()) {
                     case INPUT_BOOLEAN:
-                        addSymbol(childScope.key(), Spec.booleanSpec(), true, false);
+                        addSymbol(childScope.key(), Spec.BOOLEAN, true, false);
                         break;
                     case INPUT_ENUM:
                     case INPUT_LIST:
@@ -1084,7 +1084,7 @@ final class Flow {
                         break;
                     case PRESET_BOOLEAN:
                     case VARIABLE_BOOLEAN:
-                        addSymbol(definitionId(nodeScope, node), Spec.booleanSpec(), true, false);
+                        addSymbol(definitionId(nodeScope, node), Spec.BOOLEAN, true, false);
                         break;
                     case PRESET_ENUM:
                     case VARIABLE_ENUM:
@@ -1388,7 +1388,7 @@ final class Flow {
             switch (spec.kind()) {
                 case FINITE_SCALAR:
                     if (spec.subKind() == Spec.SubKind.BOOLEAN && other.spec.subKind() == Spec.SubKind.BOOLEAN) {
-                        return new SymbolSeed(name, Spec.booleanSpec(), guardable && other.guardable, tainted || other.tainted);
+                        return new SymbolSeed(name, Spec.BOOLEAN, guardable && other.guardable, tainted || other.tainted);
                     }
                     if (spec.subKind() == Spec.SubKind.BOOLEAN || other.spec.subKind() == Spec.SubKind.BOOLEAN) {
                         return new SymbolSeed(name, Spec.OPEN_TEXT, false, tainted || other.tainted);

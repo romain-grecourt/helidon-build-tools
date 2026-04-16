@@ -764,6 +764,13 @@ class ExpressionTest {
     }
 
     @Test
+    void testProgrammaticEquivalent() {
+        assertThat(expr("${a} == 'x'").equivalent(expr("${a} == 'x'")), is(true));
+        assertThat(expr("true || false").equivalent(Expression.TRUE), is(true));
+        assertThat(expr("${a}").equivalent(expr("${b}")), is(false));
+    }
+
+    @Test
     void testProgrammaticDeepComparisonOrReduceSkipsQmcLimit() {
         Expression actual = Expression.FALSE;
         for (int i = 0; i < 32; i++) {

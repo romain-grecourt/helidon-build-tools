@@ -39,7 +39,7 @@ class DomainTest {
 
     @Test
     void testTopValuesFollowSpecs() {
-        Spec booleanSpec = Spec.booleanSpec();
+        Spec booleanSpec = Spec.BOOLEAN;
         Spec choiceSpec = Spec.choice(Set.of("mp", "se"));
         Spec membershipSpec = Spec.finiteMembership(Set.of("rest", "grpc"));
         LatticeValue booleanTop = LatticeValue.top(booleanSpec);
@@ -63,7 +63,7 @@ class DomainTest {
     @Test
     void testGuardAlgebraRendersFiniteConditions() {
         Table.Builder builder = Table.builder();
-        int enabled = builder.define("enabled", Spec.booleanSpec(), true, false);
+        int enabled = builder.define("enabled", Spec.BOOLEAN, true, false);
         int flavor = builder.define("flavor", Spec.choice(Set.of("mp", "se")), true, false);
         int features = builder.define("features", Spec.finiteMembership(Set.of("rest", "grpc")), true, false);
         Table symbols = builder.build();
@@ -89,7 +89,7 @@ class DomainTest {
     @Test
     void testGuardImplicationKeepsBroaderPureDecision() {
         Table.Builder builder = Table.builder();
-        int enabled = builder.define("enabled", Spec.booleanSpec(), true, false);
+        int enabled = builder.define("enabled", Spec.BOOLEAN, true, false);
         int flavor = builder.define("flavor", Spec.choice(Set.of("mp", "se")), true, false);
         Table symbols = builder.build();
         Guards guards = new Guards(symbols);
@@ -108,7 +108,7 @@ class DomainTest {
     @Test
     void testGuardOrMergesPureDecisionBranches() {
         Table.Builder builder = Table.builder();
-        int enabled = builder.define("enabled", Spec.booleanSpec(), true, false);
+        int enabled = builder.define("enabled", Spec.BOOLEAN, true, false);
         int flavor = builder.define("flavor", Spec.choice(Set.of("mp", "se")), true, false);
         Table symbols = builder.build();
         Guards guards = new Guards(symbols);
@@ -158,7 +158,7 @@ class DomainTest {
     @Test
     void testFactExactCasesUseFiniteMasksInsteadOfRawLiteralShape() {
         Table.Builder builder = Table.builder();
-        int enabled = builder.define("enabled", Spec.booleanSpec(), true, false);
+        int enabled = builder.define("enabled", Spec.BOOLEAN, true, false);
         int features = builder.define("features", Spec.finiteMembership(Set.of("grpc", "rest")), true, false);
         Table symbols = builder.build();
         Guards guards = new Guards(symbols);
@@ -204,7 +204,7 @@ class DomainTest {
     @Test
     void testSymbolTableRejectsUnknownSymbolId() {
         Table.Builder builder = Table.builder();
-        builder.define("enabled", Spec.booleanSpec(), true, false);
+        builder.define("enabled", Spec.BOOLEAN, true, false);
         Table symbols = builder.build();
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> symbols.symbol(99));
@@ -215,7 +215,7 @@ class DomainTest {
     @Test
     void testGuardsRejectUnknownGuardId() {
         Table.Builder builder = Table.builder();
-        int enabled = builder.define("enabled", Spec.booleanSpec(), true, false);
+        int enabled = builder.define("enabled", Spec.BOOLEAN, true, false);
         Table symbols = builder.build();
         Guards guards = new Guards(symbols);
         Guard valid = guards.eq(enabled, "true");

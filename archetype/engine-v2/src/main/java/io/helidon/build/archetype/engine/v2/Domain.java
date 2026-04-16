@@ -71,10 +71,6 @@ final class Domain {
             this.mask = mask;
         }
 
-        static Spec booleanSpec() {
-            return BOOLEAN;
-        }
-
         static Spec choice(Set<String> values) {
             return finiteScalar(SubKind.CHOICE, values);
         }
@@ -478,23 +474,14 @@ final class Domain {
         }
 
         Set<String> scalarValues(Spec spec) {
-            if (kind != Kind.FINITE_SCALAR || spec.kind != Spec.Kind.FINITE_SCALAR) {
-                throw new IllegalArgumentException("Scalar values requested for non-finite scalar");
-            }
             return values(spec, scalarMask);
         }
 
         String singletonScalar(Spec spec) {
-            if (kind != Kind.FINITE_SCALAR || Long.bitCount(scalarMask) != 1) {
-                return null;
-            }
             return spec.value(Long.numberOfTrailingZeros(scalarMask));
         }
 
         Set<String> possibleValues(Spec spec) {
-            if (kind != Kind.MEMBERSHIP || spec.kind != Spec.Kind.FINITE_MEMBERSHIP) {
-                throw new IllegalArgumentException("Possible values requested for non-membership");
-            }
             return values(spec, possibleMask);
         }
 
@@ -829,7 +816,7 @@ final class Domain {
             Residual residual = leftResidual.equals(rightResidual)
                     ? leftResidual
                     : Residual.and(List.of(leftResidual, rightResidual));
-            return guard(decision, residual);
+            return guard(decision, residual, true);
         }
 
         Guard or(Guard left, Guard right) {
@@ -844,7 +831,10 @@ final class Domain {
             }
             boolean cacheable = cacheable(left) && cacheable(right);
             if (cacheable) {
-                Guard cached = cachedOr(left, right);
+                Guard cached = orCache.getOrDefault(left, Map.of()).get(right);
+                if (cached == null) {
+                    cached = orCache.getOrDefault(right, Map.of()).get(left);
+                }
                 if (cached != null) {
                     return cached;
                 }
@@ -859,7 +849,8 @@ final class Domain {
                 if (subsetOf(right.id(), left.id())) {
                     return left;
                 }
-                result = guard(leftDecision.orWithoutSubsetChecks(rightDecision, symbols), left.residual());
+                Decision decision = leftDecision.orWithoutSubsetChecks(rightDecision, symbols);
+                result = guard(decision, left.residual(), true);
             } else if (leftDecision.equals(rightDecision)) {
                 result = guard(leftDecision, Residual.or(List.of(left.residual(), right.residual())), false);
             } else if (right.isPure() && subsetOf(left.id(), right.id())) {
@@ -867,7 +858,8 @@ final class Domain {
             } else if (left.isPure() && subsetOf(right.id(), left.id())) {
                 return left;
             } else if (left.isPure() && right.isPure()) {
-                result = guard(leftDecision.orWithoutSubsetChecks(rightDecision, symbols), Residual.TRUE);
+                Decision decision = leftDecision.orWithoutSubsetChecks(rightDecision, symbols);
+                result = guard(decision, Residual.TRUE, true);
             } else {
                 result = residualGuard(expression(left).or(expression(right)));
             }
@@ -886,7 +878,8 @@ final class Domain {
                 return Guard.FALSE;
             }
             if (guard.isPure()) {
-                return guard(Decision.TRUE.subtract(decision(guard), symbols), Residual.TRUE);
+                Decision decision = Decision.TRUE.subtract(decision(guard), symbols);
+                return guard(decision, Residual.TRUE, true);
             }
             return residualGuard(expression(guard).negate());
         }
@@ -904,7 +897,7 @@ final class Domain {
             if (left.isPure() && right.isPure()) {
                 return leftDecision.subtract(rightDecision, symbols).isFalse();
             }
-            return equivalentExpressions(expression(left), expression(right));
+            return expression(left).equivalent(expression(right));
         }
 
         private boolean implies0(Guard left, Guard right) {
@@ -922,16 +915,17 @@ final class Domain {
             if (left.isPure() && right.isPure()) {
                 return decision(left).equals(decision(right));
             }
-            return equivalentExpressions(expression(left), expression(right));
+            return expression(left).equivalent(expression(right));
         }
 
         Guard eq(int id, String value) {
-            Symbol symbol = guardableScalar(id);
+            Symbol symbol = symbols.symbol(id);
             if (!symbol.domain().values().contains(value)) {
                 return Guard.FALSE;
             }
-            Clause clause = new Clause(id, symbol.mask(value));
-            return guard(Decision.of(List.of(clause), symbols), Residual.TRUE);
+            Clause clause = new Clause(new int[]{id}, new long[]{symbol.mask(value), 0L});
+            Decision decision = Decision.of(List.of(clause), symbols);
+            return guard(decision, Residual.TRUE, true);
         }
 
         Guard contains(int id, String value) {
@@ -947,8 +941,9 @@ final class Domain {
             if (!domain.values().containsAll(values)) {
                 return Guard.FALSE;
             }
-            Clause clause = new Clause(id, symbol.mask(values), 0L);
-            return guard(Decision.of(List.of(clause), symbols), Residual.TRUE);
+            Clause clause = new Clause(new int[]{id}, new long[]{symbol.mask(values), 0L});
+            Decision decision = Decision.of(List.of(clause), symbols);
+            return guard(decision, Residual.TRUE, true);
         }
 
         Expression expression(Guard guard, Scope scope) {
@@ -970,21 +965,6 @@ final class Domain {
             return supported.and(residual);
         }
 
-        private Symbol guardableScalar(int id) {
-            Symbol symbol = symbols.symbol(id);
-            if (!symbol.guardable() || symbol.tainted()) {
-                throw new IllegalArgumentException("Symbol is not guardable: " + symbol.name());
-            }
-            if (symbol.domain().kind() == Spec.Kind.FINITE_SCALAR) {
-                return symbol;
-            }
-            throw new IllegalArgumentException("Symbol is not scalar guardable: " + symbol.name());
-        }
-
-        private Guard guard(Decision decision, Residual residual) {
-            return guard(decision, residual, true);
-        }
-
         private Guard guard(Decision decision, Residual residual, boolean foldConstants) {
             Residual normalizedResidual = foldConstants ? residual.fold() : residual;
             if (decision.isFalse() || normalizedResidual.isFalse()) {
@@ -998,7 +978,7 @@ final class Domain {
         }
 
         Guard residualGuard(Expression expr) {
-            return guard(Decision.TRUE, residual(expr));
+            return guard(Decision.TRUE, residual(expr), true);
         }
 
         private Residual residual(Expression expr) {
@@ -1115,7 +1095,7 @@ final class Domain {
             if (domain.kind() != Spec.Kind.FINITE_SCALAR && domain.kind() != Spec.Kind.OPEN_TEXT) {
                 return null;
             }
-            String scalar = literalScalar(literal);
+            String scalar = Value.scalarLiteral(literal);
             if (scalar == null) {
                 return null;
             }
@@ -1172,18 +1152,6 @@ final class Domain {
             return Residual.scalarIn(symbol.id(), domain.mask(allowed));
         }
 
-        private Guard cachedOr(Guard left, Guard right) {
-            Map<Guard, Guard> cached = orCache.get(left);
-            if (cached != null) {
-                Guard result = cached.get(right);
-                if (result != null) {
-                    return result;
-                }
-            }
-            cached = orCache.get(right);
-            return cached == null ? null : cached.get(left);
-        }
-
         private int register(Decision decision) {
             Integer existing = ids.get(decision);
             if (existing != null) {
@@ -1227,22 +1195,6 @@ final class Domain {
             Expression supported = decision(guard).expression(id -> symbols.symbol(id).name(), symbols);
             Expression residual = guard.residual().expression(id -> symbols.symbol(id).name(), symbols);
             return expression(supported, residual);
-        }
-
-        private static String literalScalar(Value<?> value) {
-            switch (value.type()) {
-                case BOOLEAN:
-                    return String.valueOf(value.getBoolean());
-                case STRING:
-                case DYNAMIC:
-                    return value.getString();
-                default:
-                    return null;
-            }
-        }
-
-        private static boolean equivalentExpressions(Expression left, Expression right) {
-            return left.equals(right) || left.fold().equals(right.fold());
         }
 
         private boolean cacheable(Guard guard) {
@@ -1437,7 +1389,7 @@ final class Domain {
             Set<Clause> unique = new LinkedHashSet<>();
             for (Clause clause : clauses) {
                 Clause next = clause.normalized(symbols);
-                if (next.isTrue()) {
+                if (next.ids.length == 0) {
                     return TRUE;
                 }
                 unique.add(next);
@@ -1531,7 +1483,7 @@ final class Domain {
                         if (result.size() <= TRY_MERGE_MAX_CLAUSES) {
                             Clause merged = existing.tryMerge(candidate, symbols);
                             if (merged != null) {
-                                if (merged.isTrue()) {
+                                if (merged.ids.length == 0) {
                                     return TRUE;
                                 }
                                 result.remove(i);
@@ -1544,7 +1496,7 @@ final class Domain {
                     }
                 } while (restart);
                 if (candidate != null) {
-                    if (candidate.isTrue()) {
+                    if (candidate.ids.length == 0) {
                         return TRUE;
                     }
                     result.add(candidate);
@@ -1632,22 +1584,10 @@ final class Domain {
         private final long[] masks;
         private final int hashCode;
 
-        Clause(int id, long mask0) {
-            this(new int[]{id}, new long[]{mask0, 0L});
-        }
-
-        Clause(int id, long mask0, long mask1) {
-            this(new int[] {id}, new long[] {mask0, mask1});
-        }
-
         Clause(int[] ids, long[] masks) {
             this.ids = ids;
             this.masks = masks;
             this.hashCode = entriesHash(ids, masks);
-        }
-
-        boolean isTrue() {
-            return ids.length == 0;
         }
 
         Clause normalized(Table symbols) {
@@ -1687,10 +1627,10 @@ final class Domain {
             if (this == other) {
                 return this;
             }
-            if (isTrue()) {
+            if (ids.length == 0) {
                 return other;
             }
-            if (other.isTrue()) {
+            if (other.ids.length == 0) {
                 return this;
             }
             int[] nextIds = new int[ids.length + other.ids.length];
@@ -1775,7 +1715,7 @@ final class Domain {
         }
 
         Clause tryMerge(Clause other, Table symbols) {
-            boolean sawDiff = false;
+            boolean diff = false;
             int[] nextIds = new int[ids.length + other.ids.length];
             long[] nextMasks = new long[(ids.length + other.ids.length) * 2];
             int left = 0;
@@ -1830,10 +1770,10 @@ final class Domain {
                 }
                 long fullMask = symbols.symbol(id).mask;
                 if (leftMask != rightMask) {
-                    if (sawDiff) {
+                    if (diff) {
                         return null;
                     }
-                    sawDiff = true;
+                    diff = true;
                     long unionMask = leftMask | rightMask;
                     if (unionMask != fullMask) {
                         writeEntry(nextIds, nextMasks, nextIndex, id, unionMask, 0L);
@@ -1844,7 +1784,7 @@ final class Domain {
                     nextIndex++;
                 }
             }
-            return sawDiff ? sizedClause(nextIds, nextMasks, nextIndex) : null;
+            return diff ? sizedClause(nextIds, nextMasks, nextIndex) : null;
         }
 
         List<Clause> subtract(Clause other, Table symbols) {
@@ -1887,18 +1827,24 @@ final class Domain {
                 long known = leftRequired | leftForbidden;
                 long unresolvedRequired = other.masks[i * 2] & ~known;
                 if (unresolvedRequired != 0L) {
-                    String item = symbol.value(Long.numberOfTrailingZeros(unresolvedRequired));
+                    int ordinal = Long.numberOfTrailingZeros(unresolvedRequired);
+                    String value = symbol.value(ordinal);
+                    Clause forbiddenClause = withMembership(id, value, symbol, false);
+                    Clause requiredClause = withMembership(id, value, symbol, true);
                     List<Clause> result = new ArrayList<>();
-                    result.add(withMembershipForbidden(id, item, symbol));
-                    result.addAll(withMembershipRequired(id, item, symbol).subtract(other, symbols));
+                    result.add(forbiddenClause);
+                    result.addAll(requiredClause.subtract(other, symbols));
                     return result;
                 }
                 long unresolvedForbidden = other.masks[i * 2 + 1] & ~known;
                 if (unresolvedForbidden != 0L) {
-                    String item = symbol.value(Long.numberOfTrailingZeros(unresolvedForbidden));
+                    int ordinal = Long.numberOfTrailingZeros(unresolvedForbidden);
+                    String value = symbol.value(ordinal);
+                    Clause requiredClause = withMembership(id, value, symbol, true);
+                    Clause forbiddenClause = withMembership(id, value, symbol, false);
                     List<Clause> result = new ArrayList<>();
-                    result.add(withMembershipRequired(id, item, symbol));
-                    result.addAll(withMembershipForbidden(id, item, symbol).subtract(other, symbols));
+                    result.add(requiredClause);
+                    result.addAll(forbiddenClause.subtract(other, symbols));
                     return result;
                 }
             }
@@ -1973,26 +1919,18 @@ final class Domain {
             return insertEntry(-index - 1, id, nextMask, 0L);
         }
 
-        Clause withMembershipRequired(int id, String value, Symbol symbol) {
+        Clause withMembership(int id, String value, Symbol symbol, boolean required) {
             int index = Arrays.binarySearch(ids, id);
-            long required = index < 0 ? 0L : masks[index * 2];
-            long forbidden = index < 0 ? 0L : masks[index * 2 + 1];
-            long mask = symbol.mask(value);
-            if ((required & mask) != 0L) {
-                return this;
-            }
-            return withMembership(index, id, required | mask, forbidden);
-        }
-
-        Clause withMembershipForbidden(int id, String value, Symbol symbol) {
-            int index = Arrays.binarySearch(ids, id);
-            long required = index < 0 ? 0L : masks[index * 2];
+            long requiredMask = index < 0 ? 0L : masks[index * 2];
             long forbidden = index < 0 ? 0L : masks[index * 2 + 1];
             long mask = symbol.mask(value);
             if ((forbidden & mask) != 0L) {
                 return this;
             }
-            return withMembership(index, id, required, forbidden | mask);
+            if (required) {
+                return withMembership(index, id, requiredMask | mask, forbidden);
+            }
+            return withMembership(index, id, requiredMask, forbidden | mask);
         }
 
         Clause withMembership(int index, int id, long nextRequired, long nextForbidden) {

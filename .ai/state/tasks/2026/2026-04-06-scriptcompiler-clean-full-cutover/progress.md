@@ -1,5 +1,28 @@
 # Progress
 
+- 2026-04-16: Investigated the in-flight regression after the recent
+  `Expression` helper and `Spec.BOOLEAN` cleanup. The break was not the
+  `Spec.booleanSpec()` removal; that swap is behavior-preserving because
+  the old method only returned `Spec.BOOLEAN`. The real regression came
+  from the current dirty `Domain.Clause.subtract(...)` membership
+  rewrite: the parity-style loop inverted the original asymmetric
+  required-vs-forbidden branching, which widened complements and caused
+  `DomainTest.testGuardAlgebraRendersFiniteConditions` plus the
+  `ScriptCompilerTest` open-domain / media-json-lib complement cases to
+  lose their finite negative guards. Fixed the dirty pass by restoring
+  the original asymmetric membership subtraction behavior, correcting
+  the `unresolvedForbidden` ordinal bug, restoring the two-slot scalar
+  clause mask in `Guards.eq(...)`, and fixing the follow-up
+  `withMembership(...)` rename fallout so the code compiles again.
+  Validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest#testGuardAlgebraRendersFiniteConditions,ScriptCompilerTest#testConditionalJsonLibValue+testConditionalJsonLibComplement+testOpenDomainComplement+testOpenDomainOptionOutput+testResidualList \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`6` tests, `BUILD SUCCESS`, total time `2.941 s`) and then with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`225` tests, `BUILD SUCCESS`, total time `4.730 s`).
 - 2026-04-16: Collapsed the two guarded-value merge loops in
   `Domain.Fact.merge(...)` into a single iterator-driven pass and
   inlined the old `mergeGuardedValue(...)` helper at the only call
@@ -1732,3 +1755,25 @@
   -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest
   -Dsurefire.failIfNoSpecifiedTests=false test` passed with `224` tests
   and `BUILD SUCCESS`.
+- 2026-04-16: Moved the fold-based expression equivalence check out of
+  `Domain.Guards` into shared `Expression.equivalent(...)` and switched
+  the guard implication/equivalence fallback to use that API directly.
+  Added focused `ExpressionTest` coverage for both exact-token and
+  folded equivalence, and kept the `Expression.create(Expression,
+  String, Expression)` overload available alongside the token-based
+  operator overload so the public programmatic API remains coherent with
+  the existing tests and task notes. Follow-up kept the same behavior
+  but made `equivalent(...)` an instance method on `Expression`.
+- 2026-04-16: Removed the last duplicate scalar-literal helper in
+  `Domain.Guards` by switching `compareResidual(...)` to
+  `Value.scalarLiteral(...)` and deleting the private
+  `literalScalar(...)` wrapper. This is a behavior-preserving cleanup;
+  `Value.scalarLiteral(...)` handles the same boolean/string/dynamic
+  cases and is slightly safer because it also tolerates `null`.
+- 2026-04-16: Inlined `Clause.isTrue()` into its private callers in
+  `Decision` and `Clause.intersect(...)` and removed the helper. The
+  implementation now tests `ids.length == 0` directly where needed,
+  shrinking the private clause API without changing behavior.
+- 2026-04-16: Replaced remaining `Spec.booleanSpec()` call sites with
+  the shared constant `Spec.BOOLEAN` in `Flow` and `DomainTest`, then
+  removed the redundant `Spec.booleanSpec()` wrapper from `Domain`.
