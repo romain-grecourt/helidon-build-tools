@@ -1172,7 +1172,7 @@ final class Domain {
             if (!symbol.domain().values().contains(value)) {
                 return Guard.FALSE;
             }
-            DecisionShape shape = new DecisionShape(symbolId, new ScalarShape(symbol, symbol.scalarMask(value)));
+            DecisionShape shape = new DecisionShape(symbolId, new ScalarShape(symbol.scalarMask(value)));
             return guard(Decision.of(List.of(shape), symbols), Residual.TRUE);
         }
 
@@ -1377,22 +1377,24 @@ final class Domain {
         }
 
         private Residual scalarInResidual(ResidualValue symbolValue, ResidualValue literalValue) {
-            if (symbolValue.symbolId < 0 || literalValue.literal == null || literalValue.literal.type() != Value.Type.LIST) {
+            Value<?> literal = literalValue.literal;
+            if (symbolValue.symbolId < 0 || literal == null || literal.type() != Value.Type.LIST) {
                 return null;
             }
             Symbol symbol = symbols.symbol(symbolValue.symbolId);
-            if (symbol.domain().kind() != Spec.Kind.FINITE_SCALAR) {
+            Spec domain = symbol.domain();
+            if (domain.kind() != Spec.Kind.FINITE_SCALAR) {
                 return null;
             }
-            Set<String> allowed = new TreeSet<>(literalValue.literal.getList());
-            allowed.retainAll(symbol.domain().values());
+            Set<String> allowed = new TreeSet<>(literal.getList());
+            allowed.retainAll(domain.values());
             if (allowed.isEmpty()) {
                 return Residual.FALSE;
             }
-            if (allowed.size() == symbol.domain().values().size()) {
+            if (allowed.size() == domain.values().size()) {
                 return Residual.TRUE;
             }
-            return Residual.scalarIn(symbol.id(), symbol.domain().mask(allowed));
+            return Residual.scalarIn(symbol.id(), domain.mask(allowed));
         }
 
         private Guard cachedOr(Guard left, Guard right) {
@@ -1488,11 +1490,12 @@ final class Domain {
         }
 
         private boolean cacheable(Guard guard) {
-            if (guard.residual().isTrue() || guard.residual().isFalse()) {
+            Residual residual = guard.residual();
+            if (residual.isTrue() || residual.isFalse()) {
                 return true;
             }
-            Expression residual = guard.residual().toExpression(symbolId -> symbols.symbol(symbolId).name(), symbols);
-            return residual.tokens().size() <= COMPACT_MAX_TOKENS && residual.variableCountAtMost(COMPACT_MAX_VARIABLES);
+            Expression expr = residual.toExpression(symbolId -> symbols.symbol(symbolId).name(), symbols);
+            return expr.tokens().size() <= COMPACT_MAX_TOKENS && expr.variableCountAtMost(COMPACT_MAX_VARIABLES);
         }
 
         private static final class ResidualValue {
@@ -1888,8 +1891,7 @@ final class Domain {
                     rightScalar++;
                 } else {
                     int symbolId = scalarIds[leftScalar];
-                    ScalarShape intersection = scalarShapes[leftScalar].intersect(other.scalarShapes[rightScalar],
-                            symbols.symbol(symbolId));
+                    ScalarShape intersection = scalarShapes[leftScalar].intersect(other.scalarShapes[rightScalar]);
                     if (intersection == null) {
                         return null;
                     }
@@ -2012,7 +2014,7 @@ final class Domain {
                     diffSymbolId = symbolId;
                     long unionMask = leftMask | rightMask;
                     if (unionMask != fullMask) {
-                        nextScalars.add(symbolId, new ScalarShape(symbol, unionMask));
+                        nextScalars.add(symbolId, new ScalarShape(unionMask));
                     }
                 } else if (leftMask != fullMask) {
                     nextScalars.add(symbolId, leftShape == null ? rightShape : leftShape);
@@ -2100,8 +2102,8 @@ final class Domain {
                 if (outsideMask != 0L) {
                     long overlapMask = leftMask & rightMask;
                     return new DecisionPartition(
-                            withScalar(symbolId, new ScalarShape(symbol, outsideMask), symbol),
-                            withScalar(symbolId, new ScalarShape(symbol, overlapMask), symbol));
+                            withScalar(symbolId, new ScalarShape(outsideMask), symbol),
+                            withScalar(symbolId, new ScalarShape(overlapMask), symbol));
                 }
             }
             int leftMembership = 0;
@@ -2192,23 +2194,19 @@ final class Domain {
                 if (membershipShapes.length == 1) {
                     return new DecisionShape(scalarIds, scalarShapes, NO_SYMBOL_IDS, NO_MEMBERSHIPS);
                 }
-                return new DecisionShape(
-                        scalarIds,
-                        scalarShapes,
-                        removeIndex(membershipIds, index),
-                        removeIndex(membershipShapes, index));
+                int[] ids = removeIndex(membershipIds, index);
+                MembershipShape[] shapes = removeIndex(membershipShapes, index);
+                return new DecisionShape(scalarIds, scalarShapes, ids, shapes);
             }
             if (index >= 0) {
-                MembershipShape[] nextMemberships = Arrays.copyOf(membershipShapes, membershipShapes.length);
-                nextMemberships[index] = nextShape;
-                return new DecisionShape(scalarIds, scalarShapes, membershipIds, nextMemberships);
+                MembershipShape[] shapes = Arrays.copyOf(membershipShapes, membershipShapes.length);
+                shapes[index] = nextShape;
+                return new DecisionShape(scalarIds, scalarShapes, membershipIds, shapes);
             }
             int insertion = -index - 1;
-            return new DecisionShape(
-                    scalarIds,
-                    scalarShapes,
-                    insert(membershipIds, insertion, symbolId),
-                    insert(membershipShapes, insertion, nextShape));
+            int[] ids = insert(membershipIds, insertion, symbolId);
+            MembershipShape[] shapes = insert(membershipShapes, insertion, nextShape);
+            return new DecisionShape(scalarIds, scalarShapes, ids, shapes);
         }
 
         static int entriesHash(int[] symbolIds, Object[] values) {
@@ -2315,17 +2313,11 @@ final class Domain {
     private static final class ScalarShape {
         private final long allowedMask;
 
-        ScalarShape(Symbol symbol, long allowedMask) {
-            if (!symbol.scalar) {
-                throw new IllegalArgumentException("Masked scalar constraint requires a maskable symbol");
-            }
-            if (allowedMask == 0L || (allowedMask & ~symbol.mask) != 0L) {
-                throw new IllegalArgumentException("Scalar mask must be non-empty and within the symbol domain");
-            }
+        ScalarShape(long allowedMask) {
             this.allowedMask = allowedMask;
         }
 
-        ScalarShape intersect(ScalarShape other, Symbol symbol) {
+        ScalarShape intersect(ScalarShape other) {
             if (this == other || equals(other)) {
                 return this;
             }
@@ -2339,7 +2331,7 @@ final class Domain {
             if (intersectionMask == other.allowedMask) {
                 return other;
             }
-            return new ScalarShape(symbol, intersectionMask);
+            return new ScalarShape(intersectionMask);
         }
 
         boolean subsetOf(ScalarShape other) {
@@ -2374,7 +2366,8 @@ final class Domain {
             long remaining = allowedMask;
             while (remaining != 0L) {
                 int ordinal = Long.numberOfTrailingZeros(remaining);
-                expr = expr.or(Expression.create("${" + key + "} == '" + symbol.scalarValue(ordinal) + "'"));
+                String str = symbol.scalarValue(ordinal);
+                expr = expr.or(Expression.create("${" + key + "} == '" + str + "'"));
                 remaining &= remaining - 1L;
             }
             return expr;
@@ -2386,13 +2379,14 @@ final class Domain {
 
         void appendLiteral(StringBuilder builder, Symbol symbol) {
             builder.append('[');
-            long remaining = allowedMask;
             boolean first = true;
+            long remaining = allowedMask;
             while (remaining != 0L) {
                 if (!first) {
                     builder.append(", ");
                 }
-                builder.append(symbol.scalarValue(Long.numberOfTrailingZeros(remaining)));
+                int ordinal = Long.numberOfTrailingZeros(remaining);
+                builder.append(symbol.scalarValue(ordinal));
                 remaining &= remaining - 1L;
                 first = false;
             }
