@@ -17,7 +17,6 @@ package io.helidon.build.archetype.engine.v2;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -849,7 +848,7 @@ final class Domain {
                 if (subsetOf(right.id(), left.id())) {
                     return left;
                 }
-                Decision decision = leftDecision.orWithoutSubsetChecks(rightDecision, symbols);
+                Decision decision = leftDecision.or(rightDecision, symbols);
                 result = guard(decision, left.residual(), true);
             } else if (leftDecision.equals(rightDecision)) {
                 result = guard(leftDecision, Residual.or(List.of(left.residual(), right.residual())), false);
@@ -858,7 +857,7 @@ final class Domain {
             } else if (left.isPure() && subsetOf(right.id(), left.id())) {
                 return left;
             } else if (left.isPure() && right.isPure()) {
-                Decision decision = leftDecision.orWithoutSubsetChecks(rightDecision, symbols);
+                Decision decision = leftDecision.or(rightDecision, symbols);
                 result = guard(decision, Residual.TRUE, true);
             } else {
                 result = residualGuard(expression(left).or(expression(right)));
@@ -1427,7 +1426,7 @@ final class Domain {
             if (normalized.isEmpty()) {
                 return FALSE;
             }
-            normalized.sort(Comparator.comparing(clause -> clause.literal(symbols)));
+            normalized.sort(Clause::compare);
             return new Decision(normalized);
         }
 
@@ -1460,7 +1459,7 @@ final class Domain {
             return of(result, symbols);
         }
 
-        Decision orWithoutSubsetChecks(Decision other, Table symbols) {
+        Decision or(Decision other, Table symbols) {
             List<Clause> result = new ArrayList<>(clauses);
             boolean changed = false;
             for (Clause clause : other.clauses) {
@@ -1506,7 +1505,7 @@ final class Domain {
             if (!changed) {
                 return this;
             }
-            result.sort(Comparator.comparing(clause -> clause.literal(symbols)));
+            result.sort(Clause::compare);
             return new Decision(result);
         }
 
@@ -1531,13 +1530,13 @@ final class Domain {
             return of(remaining, symbols);
         }
 
-        Expression expression(IntFunction<String> keyResolver, Table symbols) {
+        Expression expression(IntFunction<String> resolver, Table symbols) {
             if (isFalse()) {
                 return Expression.FALSE;
             }
             Expression expr = Expression.FALSE;
             for (Clause clause : clauses) {
-                expr = expr.or(clause.toExpression(keyResolver, symbols));
+                expr = expr.or(clause.expression(resolver, symbols));
             }
             return expr;
         }
@@ -1582,12 +1581,27 @@ final class Domain {
 
         private final int[] ids;
         private final long[] masks;
-        private final int hashCode;
 
         Clause(int[] ids, long[] masks) {
             this.ids = ids;
             this.masks = masks;
-            this.hashCode = entriesHash(ids, masks);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (!(o instanceof Clause)) {
+                return false;
+            }
+            Clause other = (Clause) o;
+            return Arrays.equals(ids, other.ids) && Arrays.equals(masks, other.masks);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * Arrays.hashCode(ids) + Arrays.hashCode(masks);
         }
 
         Clause normalized(Table symbols) {
@@ -1682,7 +1696,7 @@ final class Domain {
                 right++;
                 nextIndex++;
             }
-            return sizedClause(nextIds, nextMasks, nextIndex);
+            return create(nextIds, nextMasks, nextIndex);
         }
 
         boolean subsetOf(Clause other, Table symbols) {
@@ -1784,7 +1798,7 @@ final class Domain {
                     nextIndex++;
                 }
             }
-            return diff ? sizedClause(nextIds, nextMasks, nextIndex) : null;
+            return diff ? create(nextIds, nextMasks, nextIndex) : null;
         }
 
         List<Clause> subtract(Clause other, Table symbols) {
@@ -1842,7 +1856,7 @@ final class Domain {
             return List.of(this);
         }
 
-        Expression toExpression(IntFunction<String> resolver, Table symbols) {
+        Expression expression(IntFunction<String> resolver, Table symbols) {
             Expression expr = Expression.TRUE;
             for (int i = 0; i < ids.length; i++) {
                 Symbol symbol = symbols.symbol(ids[i]);
@@ -1852,43 +1866,6 @@ final class Domain {
                         : expr.and(expression(resolver.apply(ids[i]), masks[offset], masks[offset + 1], symbol));
             }
             return expr;
-        }
-
-        String literal(Table symbols) {
-            StringBuilder sb = new StringBuilder();
-            sb.append('{');
-            boolean first = true;
-            for (int i = 0; i < ids.length; i++) {
-                Symbol symbol = symbols.symbol(ids[i]);
-                if (!symbol.scalar) {
-                    continue;
-                }
-                if (!first) {
-                    sb.append(',');
-                }
-                sb.append(ids[i]).append(':');
-                appendSymbol(sb, masks[i * 2], symbol);
-                first = false;
-            }
-            sb.append("}|{");
-            first = true;
-            for (int i = 0; i < ids.length; i++) {
-                Symbol symbol = symbols.symbol(ids[i]);
-                if (symbol.scalar) {
-                    continue;
-                }
-                if (!first) {
-                    sb.append(',');
-                }
-                sb.append(ids[i]).append(':');
-                int offset = i * 2;
-                appendSymbol(sb, masks[offset], symbol);
-                sb.append('/');
-                appendSymbol(sb, masks[offset + 1], symbol);
-                first = false;
-            }
-            sb.append('}');
-            return sb.toString();
         }
 
         Clause withScalar(int id, long nextMask, Symbol symbol) {
@@ -1956,7 +1933,6 @@ final class Domain {
             int[] nextIds = new int[ids.length - 1];
             System.arraycopy(ids, 0, nextIds, 0, index);
             System.arraycopy(ids, index + 1, nextIds, index, ids.length - index - 1);
-
             int offset = index * 2;
             long[] nextMasks = new long[masks.length - 2];
             System.arraycopy(masks, 0, nextMasks, 0, offset);
@@ -1969,7 +1945,6 @@ final class Domain {
             System.arraycopy(ids, 0, nextIds, 0, insertion);
             nextIds[insertion] = id;
             System.arraycopy(ids, insertion, nextIds, insertion + 1, ids.length - insertion);
-
             int offset = insertion * 2;
             long[] nextMasks = new long[masks.length + 2];
             System.arraycopy(masks, 0, nextMasks, 0, offset);
@@ -1979,7 +1954,12 @@ final class Domain {
             return new Clause(nextIds, nextMasks);
         }
 
-        static Clause sizedClause(int[] ids, long[] masks, int size) {
+        int compare(Clause other) {
+            int compared = Arrays.compare(ids, other.ids);
+            return compared != 0 ? compared : Arrays.compare(masks, other.masks);
+        }
+
+        static Clause create(int[] ids, long[] masks, int size) {
             if (size == 0) {
                 return EMPTY;
             }
@@ -2024,7 +2004,7 @@ final class Domain {
             return expr;
         }
 
-        private static Expression expression(String key, long required, long forbidden, Symbol symbol) {
+        static Expression expression(String key, long required, long forbidden, Symbol symbol) {
             Expression expr = Expression.TRUE;
             long remaining = required;
             while (remaining != 0L) {
@@ -2045,48 +2025,5 @@ final class Domain {
             return expr;
         }
 
-        private static void appendSymbol(StringBuilder sb, long mask, Symbol symbol) {
-            sb.append('[');
-            boolean first = true;
-            long remaining = mask;
-            while (remaining != 0L) {
-                if (!first) {
-                    sb.append(", ");
-                }
-                int ordinal = Long.numberOfTrailingZeros(remaining);
-                sb.append(symbol.value(ordinal));
-                remaining &= remaining - 1L;
-                first = false;
-            }
-            sb.append(']');
-        }
-
-        static int entriesHash(int[] ids, long[] masks) {
-            int result = 1;
-            for (int i = 0; i < ids.length; i++) {
-                int offset = i * 2;
-                result = 31 * result + Integer.hashCode(ids[i]);
-                result = 31 * result + Long.hashCode(masks[offset]);
-                result = 31 * result + Long.hashCode(masks[offset + 1]);
-            }
-            return result;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (!(o instanceof Clause)) {
-                return false;
-            }
-            Clause other = (Clause) o;
-            return hashCode == other.hashCode && Arrays.equals(ids, other.ids) && Arrays.equals(masks, other.masks);
-        }
-
-        @Override
-        public int hashCode() {
-            return hashCode;
-        }
     }
 }

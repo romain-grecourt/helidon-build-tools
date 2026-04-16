@@ -1,5 +1,41 @@
 # Progress
 
+- 2026-04-16: Removed the cached `Domain.Clause.hashCode` field and the
+  old `entriesHash(...)` helper. `Clause.equals(...)` now compares only
+  `ids` and `masks`, and `Clause.hashCode()` computes directly from
+  `Arrays.hashCode(ids)` and `Arrays.hashCode(masks)` on demand. This
+  keeps the current `LinkedHashSet<Clause>` dedup in `Decision.of(...)`
+  intact while shrinking the private carrier further. Focused validation
+  reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`225` tests, `BUILD SUCCESS`, total time `4.755 s`).
+- 2026-04-16: Simplified `Domain.Decision` clause canonicalization
+  again after removing `Clause.literal()`. The temporary section-aware
+  structural comparator is gone; `Decision.of(...)` and `Decision.or(...)`
+  now sort clauses directly by the stored representation with
+  `Arrays.compare(ids, ...)` and then `Arrays.compare(masks, ...)`.
+  This makes canonical ordering match the actual private `Clause`
+  layout and deletes the extra helper chain that only existed to mimic
+  the old rendered order. Focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`225` tests, `BUILD SUCCESS`, total time `5.718 s`).
+- 2026-04-16: Removed `Domain.Clause.literal()` and its private
+  `appendSymbol(...)` helper. `Domain.Decision` now canonicalizes clause
+  order with a structural comparator over clause sections instead of
+  allocating debug strings: scalar entries are compared before
+  membership entries, entry ids are compared in rendered decimal order,
+  and masks compare directly by their sorted finite-domain ordinals.
+  This keeps `Decision` interning and rendered guard output stable
+  while shrinking the private `Clause` surface. Focused validation reran
+  green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`225` tests, `BUILD SUCCESS`, total time `4.796 s`).
 - 2026-04-16: Collapsed the duplicated membership branches in
   `Domain.Clause.subtract(...)` into a two-iteration parity loop.
   The branch kind is now derived from `parity == 0`, while the
