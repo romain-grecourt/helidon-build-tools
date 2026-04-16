@@ -1282,7 +1282,7 @@ final class Domain {
 
     private static final class Decision {
         private static final Decision FALSE = new Decision(List.of());
-        private static final Decision TRUE = new Decision(List.of(new Clause()));
+        private static final Decision TRUE = new Decision(List.of(Clause.EMPTY));
         private static final int TRY_MERGE_MAX_CLAUSES = 32;
 
         private final List<Clause> clauses;
@@ -1487,14 +1487,11 @@ final class Domain {
     private static final class Clause {
         private static final int[] EMPTY_IDS = new int[0];
         private static final long[] EMPTY_MASKS = new long[0];
+        private static final Clause EMPTY = new Clause(EMPTY_IDS, EMPTY_MASKS);
 
         private final int[] ids;
         private final long[] masks;
         private final int hashCode;
-
-        Clause() {
-            this(EMPTY_IDS, EMPTY_MASKS);
-        }
 
         Clause(int id, long mask0) {
             this(new int[]{id}, new long[]{mask0, 0L});
@@ -1529,7 +1526,7 @@ final class Domain {
                 return this;
             }
             if (nextCount == 0) {
-                return new Clause();
+                return EMPTY;
             }
             int[] nextSymbolIds = new int[nextCount];
             long[] nextMasks = new long[nextCount * 2];
@@ -1873,28 +1870,47 @@ final class Domain {
             writeEntry(nextIds, nextMasks, nextIndex, ids[sourceIndex], mask0(sourceIndex), mask1(sourceIndex));
         }
 
-        Clause updateEntry(int index, long nextMask0, long nextMask1) {
-            long[] nextMasks = Arrays.copyOf(masks, masks.length);
+        Clause updateEntry(int index, long mask0, long mask1) {
+            long[] masks = Arrays.copyOf(this.masks, this.masks.length);
             int offset = index * 2;
-            nextMasks[offset] = nextMask0;
-            nextMasks[offset + 1] = nextMask1;
-            return new Clause(ids, nextMasks);
+            masks[offset] = mask0;
+            masks[offset + 1] = mask1;
+            return new Clause(ids, masks);
         }
 
         Clause removeEntry(int index) {
             if (ids.length == 1) {
-                return new Clause();
+                return EMPTY;
             }
-            return new Clause(removeIndex(ids, index), removeEntryMasks(masks, index));
+            int[] nextIds = new int[ids.length - 1];
+            System.arraycopy(ids, 0, nextIds, 0, index);
+            System.arraycopy(ids, index + 1, nextIds, index, ids.length - index - 1);
+
+            int offset = index * 2;
+            long[] nextMasks = new long[masks.length - 2];
+            System.arraycopy(masks, 0, nextMasks, 0, offset);
+            System.arraycopy(masks, offset + 2, nextMasks, offset, masks.length - offset - 2);
+            return new Clause(nextIds, nextMasks);
         }
 
         Clause insertEntry(int insertion, int symbolId, long mask0, long mask1) {
-            return new Clause(insert(ids, insertion, symbolId), insertEntryMasks(masks, insertion, mask0, mask1));
+            int[] nextIds = new int[ids.length + 1];
+            System.arraycopy(ids, 0, nextIds, 0, insertion);
+            nextIds[insertion] = symbolId;
+            System.arraycopy(ids, insertion, nextIds, insertion + 1, ids.length - insertion);
+
+            int offset = insertion * 2;
+            long[] nextMasks = new long[masks.length + 2];
+            System.arraycopy(masks, 0, nextMasks, 0, offset);
+            nextMasks[offset] = mask0;
+            nextMasks[offset + 1] = mask1;
+            System.arraycopy(masks, offset, nextMasks, offset + 2, masks.length - offset);
+            return new Clause(nextIds, nextMasks);
         }
 
         static Clause sizedClause(int[] ids, long[] masks, int size) {
             if (size == 0) {
-                return new Clause();
+                return EMPTY;
             }
             return new Clause(size == ids.length ? ids : Arrays.copyOf(ids, size),
                     size * 2 == masks.length ? masks : Arrays.copyOf(masks, size * 2));
@@ -1981,39 +1997,6 @@ final class Domain {
                 result = 31 * result + Long.hashCode(masks[offset + 1]);
             }
             return result;
-        }
-
-        static int[] removeIndex(int[] values, int index) {
-            int[] next = new int[values.length - 1];
-            System.arraycopy(values, 0, next, 0, index);
-            System.arraycopy(values, index + 1, next, index, values.length - index - 1);
-            return next;
-        }
-
-        static long[] removeEntryMasks(long[] values, int index) {
-            int offset = index * 2;
-            long[] next = new long[values.length - 2];
-            System.arraycopy(values, 0, next, 0, offset);
-            System.arraycopy(values, offset + 2, next, offset, values.length - offset - 2);
-            return next;
-        }
-
-        static int[] insert(int[] values, int insertion, int value) {
-            int[] next = new int[values.length + 1];
-            System.arraycopy(values, 0, next, 0, insertion);
-            next[insertion] = value;
-            System.arraycopy(values, insertion, next, insertion + 1, values.length - insertion);
-            return next;
-        }
-
-        static long[] insertEntryMasks(long[] values, int insertion, long mask0, long mask1) {
-            int offset = insertion * 2;
-            long[] next = new long[values.length + 2];
-            System.arraycopy(values, 0, next, 0, offset);
-            next[offset] = mask0;
-            next[offset + 1] = mask1;
-            System.arraycopy(values, offset, next, offset + 2, values.length - offset);
-            return next;
         }
 
         @Override

@@ -1,5 +1,30 @@
 # Progress
 
+- 2026-04-16: Added a shared `Domain.Clause.EMPTY` constant for the
+  true/empty clause and replaced the remaining empty-clause
+  constructions with it. `Decision.TRUE` now uses `Clause.EMPTY`,
+  `Clause.normalized(...)`, `Clause.removeEntry(...)`, and
+  `Clause.sizedClause(...)` return the shared empty instance, and the
+  zero-arg `Clause()` constructor is gone. This is an internal
+  read-only-value cleanup only; behavior is unchanged. Focused
+  validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`222` tests, `BUILD SUCCESS`, total time `4.645 s`), and
+  `git diff --check` is clean.
+- 2026-04-16: Inlined the last tiny array-shim helpers under
+  `Domain.Clause` that only served `removeEntry(...)` and
+  `insertEntry(...)`. `removeIndex(...)`, `removeEntryMasks(...)`,
+  `insert(...)`, and `insertEntryMasks(...)` are gone, and the two
+  mutators now spell out the array copy logic directly. This is a pure
+  mechanical compaction on top of the single-buffer clause layout;
+  behavior is unchanged. Focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`222` tests, `BUILD SUCCESS`, total time `4.719 s`), and
+  `git diff --check` is clean.
 - 2026-04-16: Inlined the private `Clause.offset(int)` helper after the
   single-buffer clause compaction. `mask0(...)`, `mask1(...)`, and
   `updateEntry(...)` now compute `index * 2` directly, and the helper
