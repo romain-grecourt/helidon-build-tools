@@ -1,5 +1,41 @@
 # Progress
 
+- 2026-04-16: Collapsed the two guarded-value merge loops in
+  `Domain.Fact.merge(...)` into a single iterator-driven pass and
+  inlined the old `mergeGuardedValue(...)` helper at the only call
+  site. Left and right guarded values still merge in the same left-then-
+  right order, but the helper is gone and the merge logic now sits
+  directly in `Fact.merge(...)`. Focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`222` tests, `BUILD SUCCESS`, total time `4.729 s`), and
+  `git diff --check` is clean.
+- 2026-04-16: Replaced the boxed `Clause.tryMerge(...)` difference
+  sentinel with a primitive boolean. `diffId` is gone, `sawDiff`
+  now directly tracks whether one scalar mismatch has already been
+  merged, and the final return now reads that boolean instead of
+  relying on boxed-null state. This is a pure local cleanup; merge
+  behavior is unchanged. Focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`222` tests, `BUILD SUCCESS`, total time `4.617 s`), and
+  `git diff --check` is clean.
+- 2026-04-16: Moved the exact-value normalization helper onto
+  `Domain.Spec` as `mask(Value<?>)` and deleted the old static
+  `exactMask(...)` helper. `exactValueEquals(...)`,
+  `sameExactValue(...)`, and `Fact.GuardedValue` construction now call
+  the `Spec` instance API directly, so the finite-domain value-to-mask
+  logic now lives with the rest of the domain encoding surface
+  (`mask()`, `mask(String)`, `mask(Set<String>)`, `value(int)`). This
+  was applied on top of the current in-flight `Domain.java` cleanup and
+  focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`222` tests, `BUILD SUCCESS`, total time `4.911 s`), and
+  `git diff --check` is clean.
 - 2026-04-16: Inlined the remaining pseudo-accessor logic on
   `Domain.Fact.GuardedValue`. `supportedExact(...)`, `matches(...)`,
   `containsAll(...)`, and `sameValue(...)` are gone; `Fact` now spells
@@ -1685,3 +1721,14 @@
   the `VariationEngine` post-`exec` filter recheck, the projected-fact
   fix in `ScriptCompiler`, and the new compiler/variation fixtures that
   reproduce the earlier `mp/observability` packaged-artifact failure.
+- 2026-04-16: Added `Expression.create(Expression, String, Expression)`
+  and `Expression.negate()` so `Domain` no longer carries duplicate
+  private string-building helpers for binary residual expressions and
+  negation. `Domain.Residual.expression(...)`,
+  `Domain.Guards.not(...)`, and the residual-expression parser now use
+  the shared `Expression` API directly, and `ExpressionTest` adds
+  focused coverage for the new helpers. Validation with
+  `git diff --check` and `mvn -pl archetype/engine-v2 -am
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest
+  -Dsurefire.failIfNoSpecifiedTests=false test` passed with `224` tests
+  and `BUILD SUCCESS`.

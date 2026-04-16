@@ -30,12 +30,13 @@ import java.util.function.BiConsumer;
 
 import io.helidon.build.archetype.engine.v2.Context.Scope;
 import io.helidon.build.archetype.engine.v2.Domain.Guard;
+import io.helidon.build.archetype.engine.v2.Domain.GuardedValue;
 import io.helidon.build.archetype.engine.v2.Domain.Guards;
 import io.helidon.build.archetype.engine.v2.Domain.LatticeValue;
 import io.helidon.build.archetype.engine.v2.Domain.Spec;
 import io.helidon.build.archetype.engine.v2.Domain.Symbol;
 import io.helidon.build.archetype.engine.v2.Domain.Fact;
-import io.helidon.build.archetype.engine.v2.Domain.Symbol.Table;
+import io.helidon.build.archetype.engine.v2.Domain.Table;
 import io.helidon.build.archetype.engine.v2.Expression.Operator;
 import io.helidon.build.archetype.engine.v2.Expression.Token;
 import io.helidon.build.archetype.engine.v2.Node.Kind;
@@ -107,7 +108,7 @@ final class Flow {
     }
 
     Expression expression(Guard guard, Scope scope) {
-        return ir.guards.toExpression(guard, scope).reduce();
+        return ir.guards.expression(guard, scope).reduce();
     }
 
     Expression activationCondition(Node node) {
@@ -209,7 +210,7 @@ final class Flow {
         if (!fact.guardedValues().isEmpty()) {
             Value<?> exact = null;
             Guard coverage = Guard.FALSE;
-            for (Fact.GuardedValue guardedValue : fact.guardedValues()) {
+            for (GuardedValue guardedValue : fact.guardedValues()) {
                 Guard overlap = ir.guards.and(required, guardedValue.guard());
                 if (overlap.equals(Guard.FALSE)) {
                     continue;
@@ -549,7 +550,7 @@ final class Flow {
 
         void recordAvailability(SymbolInfo info, Fact fact) {
             if (!fact.guardedValues().isEmpty()) {
-                for (Fact.GuardedValue guardedValue : fact.guardedValues()) {
+                for (GuardedValue guardedValue : fact.guardedValues()) {
                     recordExactAvailability(info, guardedValue);
                 }
                 return;
@@ -566,7 +567,7 @@ final class Flow {
             }
         }
 
-        void recordExactAvailability(SymbolInfo info, Fact.GuardedValue guardedValue) {
+        void recordExactAvailability(SymbolInfo info, GuardedValue guardedValue) {
             switch (info.symbol.domain().kind()) {
                 case FINITE_SCALAR:
                 case FINITE_MEMBERSHIP:
@@ -2020,9 +2021,11 @@ final class Flow {
                 return cached;
             }
             Symbol symbol = ir.symbols.symbol(symbolId);
-            List<Fact.GuardedValue> guardedValues = new ArrayList<>(fact.exactCases.size());
+            List<GuardedValue> guardedValues = new ArrayList<>(fact.exactCases.size());
             for (ExactCaseState exactCase : fact.exactCases) {
-                guardedValues.add(new Fact.GuardedValue(exactCase.value, materializeGuard(exactCase.coverage), symbol.domain()));
+                Guard guard = materializeGuard(exactCase.coverage);
+                Spec domain = symbol.domain();
+                guardedValues.add(new GuardedValue(exactCase.value, guard, domain.mask(exactCase.value)));
             }
             Fact materialized = new Fact(materializeGuard(fact.definedUnder), fact.value, guardedValues);
             cacheBySymbol.put(fact, materialized);

@@ -750,6 +750,20 @@ class ExpressionTest {
     }
 
     @Test
+    void testProgrammaticCreateBinaryExpression() {
+        Expression actual = Expression.create(expr("${a} || ${b}"), "==", expr("${c} && ${d}"));
+
+        assertThat(actual.literal(), is("(${a} || ${b}) == (${c} && ${d})"));
+    }
+
+    @Test
+    void testProgrammaticNegate() {
+        assertThat(Expression.TRUE.negate(), is(Expression.FALSE));
+        assertThat(Expression.FALSE.negate(), is(Expression.TRUE));
+        assertThat(expr("${a} == 'x'").negate().literal(), is("!(${a} == 'x')"));
+    }
+
+    @Test
     void testProgrammaticDeepComparisonOrReduceSkipsQmcLimit() {
         Expression actual = Expression.FALSE;
         for (int i = 0; i < 32; i++) {

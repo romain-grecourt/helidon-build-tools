@@ -47,6 +47,7 @@ import java.util.regex.Pattern;
 import io.helidon.build.archetype.engine.v2.Context.Scope;
 import io.helidon.build.archetype.engine.v2.Domain.Guard;
 import io.helidon.build.archetype.engine.v2.Domain.Fact;
+import io.helidon.build.archetype.engine.v2.Domain.GuardedValue;
 import io.helidon.build.archetype.engine.v2.Expression.Token;
 import io.helidon.build.archetype.engine.v2.Node.Kind;
 import io.helidon.build.archetype.engine.v2.Value.Type;
@@ -832,13 +833,13 @@ public class ScriptCompiler {
         if (flow.isFalse(definedUnder)) {
             return null;
         }
-        List<Fact.GuardedValue> guardedValues = fact.guardedValues();
+        List<GuardedValue> guardedValues = fact.guardedValues();
         if (guardedValues.isEmpty()) {
-            return definedUnder.equals(fact.guard()) ? fact : new Fact(definedUnder, fact.value());
+            return definedUnder.equals(fact.guard()) ? fact : new Fact(definedUnder, fact.value(), List.of());
         }
-        List<Fact.GuardedValue> constrainedValues = new ArrayList<>(guardedValues.size());
+        List<GuardedValue> constrainedValues = new ArrayList<>(guardedValues.size());
         boolean changed = !definedUnder.equals(fact.guard());
-        for (Fact.GuardedValue guardedValue : guardedValues) {
+        for (GuardedValue guardedValue : guardedValues) {
             Guard caseGuard = flow.and(guardedValue.guard(), required);
             if (flow.isFalse(caseGuard)) {
                 changed = true;
@@ -2428,10 +2429,11 @@ public class ScriptCompiler {
             if (info == null) {
                 return;
             }
-            Domain.LatticeValue value = Domain.LatticeValue.top(info.symbol().domain());
+            Domain.Spec domain = info.symbol().domain();
+            Domain.LatticeValue value = Domain.LatticeValue.top(domain);
             Fact next = exactValue == null
-                    ? new Fact(definition, value)
-                    : Fact.exact(definition, info.symbol().domain(), value, exactValue);
+                    ? new Fact(definition, value, List.of())
+                    : Fact.exact(definition, domain, value, exactValue);
             currentFacts.merge(key, next, (left, right) -> Fact.merge(left, right, flow.guards()));
         }
 

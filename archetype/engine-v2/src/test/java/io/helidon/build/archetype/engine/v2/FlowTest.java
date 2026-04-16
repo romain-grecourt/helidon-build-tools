@@ -19,6 +19,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import io.helidon.build.archetype.engine.v2.Domain.Fact;
+import io.helidon.build.archetype.engine.v2.Domain.Guard;
+import io.helidon.build.archetype.engine.v2.Domain.GuardedValue;
+import io.helidon.build.archetype.engine.v2.Domain.LatticeValue;
+import io.helidon.build.archetype.engine.v2.Domain.Spec;
+import io.helidon.build.archetype.engine.v2.Domain.Symbol;
+
 import org.junit.jupiter.api.Test;
 
 import static io.helidon.build.archetype.engine.v2.Domain.Guard.FALSE;
@@ -40,16 +47,16 @@ class FlowTest {
         Flow flow = new Flow(scope);
         flow.process(script);
 
-        Domain.Symbol enabled = symbol(flow, "enabled");
-        Domain.Symbol flavor = symbol(flow, "flavor");
-        Domain.Symbol features = symbol(flow, "features");
+        Symbol enabled = symbol(flow, "enabled");
+        Symbol flavor = symbol(flow, "flavor");
+        Symbol features = symbol(flow, "features");
         Node setup = findStep(script, "setup");
         Node pom = findFile(script, "pom.xml");
 
-        assertThat(enabled.domain().subKind(), is(Domain.Spec.SubKind.BOOLEAN));
-        assertThat(flavor.domain().kind(), is(Domain.Spec.Kind.FINITE_SCALAR));
+        assertThat(enabled.domain().subKind(), is(Spec.SubKind.BOOLEAN));
+        assertThat(flavor.domain().kind(), is(Spec.Kind.FINITE_SCALAR));
         assertThat(flavor.domain().values(), is(Set.of("mp", "se")));
-        assertThat(features.domain().kind(), is(Domain.Spec.Kind.FINITE_MEMBERSHIP));
+        assertThat(features.domain().kind(), is(Spec.Kind.FINITE_MEMBERSHIP));
         assertThat(features.domain().values(), is(Set.of("rest")));
         assertThat(flow.guards().equivalent(flow.activeGuard(setup), flow.guards().eq(enabled.id(), "true")), is(true));
         assertThat(flow.guards().equivalent(flow.activeGuard(pom), flow.guards().contains(features.id(), "rest")), is(true));
@@ -87,15 +94,15 @@ class FlowTest {
         Flow flow = new Flow(scope);
         flow.process(script);
 
-        Domain.Symbol enabled = symbol(flow, "enabled");
-        Domain.Symbol flavor = symbol(flow, "flavor");
+        Symbol enabled = symbol(flow, "enabled");
+        Symbol flavor = symbol(flow, "flavor");
         Flow.State before = flow.before(findStep(script, "Observe"));
-        Domain.Fact fact = before.env().get(flavor.id());
-        Map<String, Domain.Guard> exactByValue = exactGuards(fact);
+        Fact fact = before.env().get(flavor.id());
+        Map<String, Guard> exactByValue = exactGuards(fact);
 
         assertThat(flow.guards().equivalent(before.path(), TRUE), is(true));
         assertThat(flow.guards().equivalent(fact.guard(), TRUE), is(true));
-        assertThat(fact.value().kind(), is(Domain.LatticeValue.Kind.FINITE_SCALAR));
+        assertThat(fact.value().kind(), is(LatticeValue.Kind.FINITE_SCALAR));
         assertThat(fact.value().scalarValues(flavor.domain()), is(Set.of("mp", "se")));
         assertThat(exactByValue.keySet(), containsInAnyOrder("mp", "se"));
         assertThat(flow.guards().equivalent(exactByValue.get("mp"), flow.guards().eq(enabled.id(), "true")), is(true));
@@ -110,12 +117,12 @@ class FlowTest {
         Flow flow = new Flow(scope);
         flow.process(script);
 
-        Domain.Symbol primary = symbol(flow, "primary");
-        Domain.Symbol secondary = symbol(flow, "secondary");
-        Domain.Symbol flavor = symbol(flow, "flavor");
+        Symbol primary = symbol(flow, "primary");
+        Symbol secondary = symbol(flow, "secondary");
+        Symbol flavor = symbol(flow, "flavor");
         Flow.State before = flow.before(findStep(script, "Observe"));
-        Domain.Fact fact = before.env().get(flavor.id());
-        Map<String, Domain.Guard> exactByValue = exactGuards(fact);
+        Fact fact = before.env().get(flavor.id());
+        Map<String, Guard> exactByValue = exactGuards(fact);
 
         assertThat(flow.guards().equivalent(before.path(), TRUE), is(true));
         assertThat(fact.value().scalarValues(flavor.domain()), is(Set.of("mp", "se")));
@@ -142,8 +149,8 @@ class FlowTest {
         Flow flow = new Flow(scope);
         flow.process(script);
 
-        Domain.Symbol flag = symbol(flow, "flag");
-        Domain.Fact fact = flow.before(findStep(script, "Observe")).env().get(flag.id());
+        Symbol flag = symbol(flow, "flag");
+        Fact fact = flow.before(findStep(script, "Observe")).env().get(flag.id());
 
         assertThat(fact.guardedValues().size(), is(1));
         assertThat(Value.scalarLiteral(fact.guardedValues().get(0).value()), is("true"));
@@ -160,9 +167,9 @@ class FlowTest {
 
         Node condition = findCondition(script, "${enabled} && ${flag}");
         Flow.State before = flow.before(condition);
-        Domain.Symbol flag = symbol(flow, "flag");
-        Domain.Fact fact = before.env().get(flag.id());
-        Set<String> names = before.env().keySet().stream().map(flow::symbol).map(Domain.Symbol::name).collect(Collectors.toSet());
+        Symbol flag = symbol(flow, "flag");
+        Fact fact = before.env().get(flag.id());
+        Set<String> names = before.env().keySet().stream().map(flow::symbol).map(Symbol::name).collect(Collectors.toSet());
 
         assertThat(names, is(Set.of("enabled", "flag")));
         assertThat(flow.declaredValue(condition, "flag").getBoolean(), is(true));
@@ -179,8 +186,8 @@ class FlowTest {
         Flow flow = new Flow(scope);
         flow.process(script);
 
-        Domain.Symbol enabled = symbol(flow, "enabled");
-        Domain.Symbol flavor = symbol(flow, "flavor");
+        Symbol enabled = symbol(flow, "enabled");
+        Symbol flavor = symbol(flow, "flavor");
         Node enabledFlag = findNodeByPath(script, Node.Kind.VARIABLE_BOOLEAN, "enabled-flag");
         Node mpFlag = findNodeByPath(script, Node.Kind.VARIABLE_BOOLEAN, "mp-flag");
         Node seFlag = findNodeByPath(script, Node.Kind.VARIABLE_BOOLEAN, "se-flag");
@@ -198,8 +205,8 @@ class FlowTest {
         Flow flow = new Flow(scope);
         flow.process(script);
 
-        Domain.Symbol enabled = symbol(flow, "enabled");
-        Domain.Symbol flavor = symbol(flow, "flavor");
+        Symbol enabled = symbol(flow, "enabled");
+        Symbol flavor = symbol(flow, "flavor");
         Node enabledInput = findInput(script, Node.Kind.INPUT_BOOLEAN, "enabled");
         Node mpOption = findOption(script, "mp");
         Node seOption = findOption(script, "se");
@@ -216,11 +223,11 @@ class FlowTest {
 
         Flow flow = new Flow(scope);
         flow.process(script);
-        Domain.Symbol symbol = symbol(flow, "media.json-lib");
+        Symbol symbol = symbol(flow, "media.json-lib");
         Node impossible = findCondition(script, "${media} contains 'json' && ${media.json-lib} == 'jsonp'");
 
-        assertThat(symbol.domain().kind(), is(Domain.Spec.Kind.FINITE_SCALAR));
-        assertThat(symbol.domain().subKind(), is(Domain.Spec.SubKind.CHOICE));
+        assertThat(symbol.domain().kind(), is(Spec.Kind.FINITE_SCALAR));
+        assertThat(symbol.domain().subKind(), is(Spec.SubKind.CHOICE));
         assertThat(symbol.domain().values(), is(Set.of("jackson", "jsonb")));
         assertThat(symbol.guardable(), is(true));
         assertThat(symbol.tainted(), is(false));
@@ -234,11 +241,11 @@ class FlowTest {
 
         Flow flow = new Flow(scope);
         flow.process(script);
-        Domain.Symbol symbol = symbol(flow, "json-lib");
+        Symbol symbol = symbol(flow, "json-lib");
         Node impossible = findCondition(script, "${json-lib} == 'jsonp'");
 
-        assertThat(symbol.domain().kind(), is(Domain.Spec.Kind.FINITE_SCALAR));
-        assertThat(symbol.domain().subKind(), is(Domain.Spec.SubKind.FINITE_TEXT));
+        assertThat(symbol.domain().kind(), is(Spec.Kind.FINITE_SCALAR));
+        assertThat(symbol.domain().subKind(), is(Spec.SubKind.FINITE_TEXT));
         assertThat(symbol.domain().values(), is(Set.of("jackson", "jsonb")));
         assertThat(symbol.guardable(), is(true));
         assertThat(symbol.tainted(), is(false));
@@ -269,7 +276,7 @@ class FlowTest {
         int features = symbol(flow, "features").id();
         Node required = findCondition(script, "${features} contains ['grpc','rest']");
         Node impossible = findCondition(script, "${features} contains ['rest','websocket']");
-        Domain.Guard expected = flow.guards().containsAll(features, Set.of("grpc", "rest"));
+        Guard expected = flow.guards().containsAll(features, Set.of("grpc", "rest"));
 
         assertThat(flow.guards().equivalent(flow.activeGuard(required), expected), is(true));
         assertThat(flow.guards().equivalent(flow.activeGuard(impossible), FALSE), is(true));
@@ -360,7 +367,7 @@ class FlowTest {
         throw new IllegalArgumentException("Missing " + kind + " path: " + path);
     }
 
-    static Domain.Symbol symbol(Flow flow, String name) {
+    static Symbol symbol(Flow flow, String name) {
         Flow.SymbolInfo info = flow.symbol(name);
         if (info == null) {
             throw new IllegalArgumentException("Missing symbol: " + name);
@@ -368,8 +375,8 @@ class FlowTest {
         return info.symbol();
     }
 
-    static Map<String, Domain.Guard> exactGuards(Domain.Fact fact) {
+    static Map<String, Guard> exactGuards(Fact fact) {
         return fact.guardedValues().stream()
-                .collect(Collectors.toMap(it -> Value.scalarLiteral(it.value()), Domain.Fact.GuardedValue::guard));
+                .collect(Collectors.toMap(it -> Value.scalarLiteral(it.value()), GuardedValue::guard));
     }
 }

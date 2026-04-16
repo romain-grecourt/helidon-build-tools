@@ -113,6 +113,21 @@ public final class Expression implements Comparable<Expression> {
         return CACHE1.computeIfAbsent(expression, Expression::new);
     }
 
+    /**
+     * Get or create a binary expression.
+     *
+     * @param left     left expression
+     * @param operator operator
+     * @param right    right expression
+     * @return Expression
+     */
+    public static Expression create(Expression left, Operator operator, Expression right) {
+        List<Token> tokens = new ArrayList<>(left.tokens);
+        tokens.addAll(right.tokens);
+        tokens.add(Token.of(operator));
+        return new Expression(tokens, false);
+    }
+
     static List<Token> parseTokens(String expression) {
         Expression cached = CACHE1.get(expression);
         return cached != null ? cached.tokens : CACHE3.computeIfAbsent(expression, e -> unmodifiableList(parse(e)));
@@ -192,6 +207,21 @@ public final class Expression implements Comparable<Expression> {
             result = result.or(expression);
         }
         return result;
+    }
+
+    /**
+     * Negate this expression.
+     *
+     * @return Expression
+     */
+    public Expression negate() {
+        if (this == TRUE) {
+            return FALSE;
+        } else if (this == FALSE) {
+            return TRUE;
+        } else {
+            return create("!(" + literal() + ")");
+        }
     }
 
     /**
