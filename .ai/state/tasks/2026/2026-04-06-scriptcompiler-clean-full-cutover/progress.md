@@ -1,5 +1,63 @@
 # Progress
 
+- 2026-04-15: Made `Flow.Analyzer` one-shot in practice and froze the
+  remaining read-only indexed `Flow` tables to arrays. The analyzer no
+  longer carries a shared work deque or pass-time reset logic:
+  `analyzeControl()` and `analyzeFacts()` now use method-local stacks,
+  `entryGuards` / `beforeGuards` are initialized to `Guard.FALSE` once
+  in the constructor, and the fact arrays are no longer cleared before
+  use. On the read-only side, `Flow.symbolInfos`,
+  `Projector.symbolInfos`, and `Ir.blocks` / `Ir.ops` /
+  `Ir.controls` are now arrays frozen at the lowering/projection
+  boundary, while the lowerer keeps its construction-time buffers as
+  growable lists. Focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`222` tests, `BUILD SUCCESS`, total time `5.000 s`), and
+  `git diff --check` is clean.
+- 2026-04-15: Replaced the fixed-size indexed analyzer staging tables
+  in `Flow.Analyzer` with arrays instead of mutable lists. The
+  constructor-owned analysis state now allocates `Guard[]`,
+  `State[]`, and `Map<Integer, FactState>[]` once up front, the
+  control/fact passes refill them in place with `Arrays.fill(...)` and
+  direct indexed writes, and the list-only `Flow.element(...)` helper
+  is gone. Added local array lookup helpers for nullable staging slots
+  versus finalized required slots so internal missing-state failures
+  still surface as explicit exceptions. Focused validation reran green
+  with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`222` tests, `BUILD SUCCESS`, total time `5.231 s`), and
+  `git diff --check` is clean.
+- 2026-04-15: Renamed the `Flow.Analyzer` control-guard helper methods
+  to match what they actually do. `materializeStructuredControls(...)`
+  is now `computeControlEntryGuards(...)`, and
+  `materializeStructuredPath(...)` is now `computeControlGuard(...)`.
+  This is a pure private-method naming cleanup on top of the stateful
+  analyzer refactor; behavior is unchanged. Focused validation reran
+  green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`222` tests, `BUILD SUCCESS`, total time `4.788 s`), and
+  `git diff --check` is clean.
+- 2026-04-15: Made `Flow.Analyzer` constructor-owned and stateful. The
+  analysis result collections (`entryGuards`, `beforeGuards`,
+  `entryFacts`, `beforeFacts`, `afterFacts`, `entryStates`,
+  `beforeStates`, `afterStates`) are now all initialized in the
+  constructor as final mutable lists and then filled in place during
+  `analyzeControl()`, `analyzeFacts()`, and state materialization.
+  The shared work deque is now explicitly cleared at each pass
+  boundary, and the control/fact passes no longer replace those lists
+  with freshly allocated result collections. Focused validation reran
+  green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`222` tests, `BUILD SUCCESS`, total time `5.308 s`), and
+  `git diff --check` is clean.
 - 2026-04-15: Removed the remaining private-path defensive null checks
   and freeze copies in `Flow` / `Domain`. Internal constructors and
   helpers now trust their callers instead of repeating
