@@ -124,7 +124,7 @@ final class Flow {
     Value<?> declaredValue(Node node, String key) {
         Fact fact = fact(node, key);
         Guard required = activeGuard(node == null ? null : node.parent());
-        if (fact == null || !ir.guards.implies(required, fact.definedUnder())) {
+        if (fact == null || !ir.guards.implies(required, fact.guard())) {
             return Value.empty();
         }
         SymbolInfo info = symbol(key);
@@ -206,15 +206,15 @@ final class Flow {
     }
 
     private Value<?> exactValue(Fact fact, Guard required, Value.Type type) {
-        if (!fact.exactCases().isEmpty()) {
+        if (!fact.guardedValues().isEmpty()) {
             Value<?> exact = null;
             Guard coverage = Guard.FALSE;
-            for (Fact.ExactCase exactCase : fact.exactCases()) {
-                Guard overlap = ir.guards.and(required, exactCase.guard());
+            for (Fact.GuardedValue guardedValue : fact.guardedValues()) {
+                Guard overlap = ir.guards.and(required, guardedValue.guard());
                 if (overlap.equals(Guard.FALSE)) {
                     continue;
                 }
-                Value<?> candidate = coerceExactValue(exactCase.value(), type);
+                Value<?> candidate = coerceExactValue(guardedValue.value(), type);
                 if (exact == null) {
                     exact = candidate;
                 } else if (!Value.isEqual(exact, candidate)) {
@@ -537,7 +537,7 @@ final class Flow {
                         if (fact == null) {
                             throw new IllegalStateException("Missing flow fact after op for key: " + opId);
                         }
-                        info.addDefinition(fact.definedUnder(), guards);
+                        info.addDefinition(fact.guard(), guards);
                         recordAvailability(info, fact);
                         break;
                     }
@@ -548,9 +548,9 @@ final class Flow {
         }
 
         void recordAvailability(SymbolInfo info, Fact fact) {
-            if (!fact.exactCases().isEmpty()) {
-                for (Fact.ExactCase exactCase : fact.exactCases()) {
-                    recordExactAvailability(info, exactCase);
+            if (!fact.guardedValues().isEmpty()) {
+                for (Fact.GuardedValue guardedValue : fact.guardedValues()) {
+                    recordExactAvailability(info, guardedValue);
                 }
                 return;
             }
@@ -562,26 +562,19 @@ final class Flow {
                 return;
             }
             for (String value : fact.value().scalarValues(info.symbol.domain())) {
-                info.addAvailability(value, fact.definedUnder(), guards);
+                info.addAvailability(value, fact.guard(), guards);
             }
         }
 
-        void recordExactAvailability(SymbolInfo info, Fact.ExactCase exactCase) {
+        void recordExactAvailability(SymbolInfo info, Fact.GuardedValue guardedValue) {
             switch (info.symbol.domain().kind()) {
                 case FINITE_SCALAR:
-                    long scalarMask = exactCase.scalarMask();
-                    while (scalarMask != 0L) {
-                        int ordinal = Long.numberOfTrailingZeros(scalarMask);
-                        info.addAvailability(info.symbol.value(ordinal), exactCase.guard(), guards);
-                        scalarMask &= scalarMask - 1L;
-                    }
-                    break;
                 case FINITE_MEMBERSHIP:
-                    long listMask = exactCase.listMask();
-                    while (listMask != 0L) {
-                        int ordinal = Long.numberOfTrailingZeros(listMask);
-                        info.addAvailability(info.symbol.value(ordinal), exactCase.guard(), guards);
-                        listMask &= listMask - 1L;
+                    long mask = guardedValue.mask();
+                    while (mask != 0L) {
+                        int ordinal = Long.numberOfTrailingZeros(mask);
+                        info.addAvailability(info.symbol.value(ordinal), guardedValue.guard(), guards);
+                        mask &= mask - 1L;
                     }
                     break;
                 default:
@@ -900,7 +893,7 @@ final class Flow {
 
         Guard definitionFor(String key, Fact fact) {
             if (fact != null) {
-                return fact.definedUnder();
+                return fact.guard();
             }
             SymbolInfo info = symbolInfo(key);
             return info == null ? null : info.definition;
@@ -2027,11 +2020,11 @@ final class Flow {
                 return cached;
             }
             Symbol symbol = ir.symbols.symbol(symbolId);
-            List<Fact.ExactCase> exactCases = new ArrayList<>(fact.exactCases.size());
+            List<Fact.GuardedValue> guardedValues = new ArrayList<>(fact.exactCases.size());
             for (ExactCaseState exactCase : fact.exactCases) {
-                exactCases.add(new Fact.ExactCase(exactCase.value, materializeGuard(exactCase.coverage), symbol.domain()));
+                guardedValues.add(new Fact.GuardedValue(exactCase.value, materializeGuard(exactCase.coverage), symbol.domain()));
             }
-            Fact materialized = new Fact(materializeGuard(fact.definedUnder), fact.value, exactCases);
+            Fact materialized = new Fact(materializeGuard(fact.definedUnder), fact.value, guardedValues);
             cacheBySymbol.put(fact, materialized);
             return materialized;
         }

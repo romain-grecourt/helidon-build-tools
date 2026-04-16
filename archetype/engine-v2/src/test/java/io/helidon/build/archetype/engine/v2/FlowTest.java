@@ -94,7 +94,7 @@ class FlowTest {
         Map<String, Domain.Guard> exactByValue = exactGuards(fact);
 
         assertThat(flow.guards().equivalent(before.path(), TRUE), is(true));
-        assertThat(flow.guards().equivalent(fact.definedUnder(), TRUE), is(true));
+        assertThat(flow.guards().equivalent(fact.guard(), TRUE), is(true));
         assertThat(fact.value().kind(), is(Domain.LatticeValue.Kind.FINITE_SCALAR));
         assertThat(fact.value().scalarValues(flavor.domain()), is(Set.of("mp", "se")));
         assertThat(exactByValue.keySet(), containsInAnyOrder("mp", "se"));
@@ -145,9 +145,9 @@ class FlowTest {
         Domain.Symbol flag = symbol(flow, "flag");
         Domain.Fact fact = flow.before(findStep(script, "Observe")).env().get(flag.id());
 
-        assertThat(fact.exactCases().size(), is(1));
-        assertThat(fact.exactCases().get(0).scalarLiteral(), is("true"));
-        assertThat(flow.guards().equivalent(fact.exactCases().get(0).guard(), TRUE), is(true));
+        assertThat(fact.guardedValues().size(), is(1));
+        assertThat(Value.scalarLiteral(fact.guardedValues().get(0).value()), is("true"));
+        assertThat(flow.guards().equivalent(fact.guardedValues().get(0).guard(), TRUE), is(true));
     }
 
     @Test
@@ -166,9 +166,9 @@ class FlowTest {
 
         assertThat(names, is(Set.of("enabled", "flag")));
         assertThat(flow.declaredValue(condition, "flag").getBoolean(), is(true));
-        assertThat(flow.guards().equivalent(fact.definedUnder(), TRUE), is(true));
-        assertThat(fact.exactCases().size(), is(1));
-        assertThat(fact.exactCases().get(0).scalarLiteral(), is("true"));
+        assertThat(flow.guards().equivalent(fact.guard(), TRUE), is(true));
+        assertThat(fact.guardedValues().size(), is(1));
+        assertThat(Value.scalarLiteral(fact.guardedValues().get(0).value()), is("true"));
     }
 
     @Test
@@ -369,7 +369,7 @@ class FlowTest {
     }
 
     static Map<String, Domain.Guard> exactGuards(Domain.Fact fact) {
-        return fact.exactCases().stream()
-                .collect(Collectors.toMap(Domain.Fact.ExactCase::scalarLiteral, Domain.Fact.ExactCase::guard));
+        return fact.guardedValues().stream()
+                .collect(Collectors.toMap(it -> Value.scalarLiteral(it.value()), Domain.Fact.GuardedValue::guard));
     }
 }

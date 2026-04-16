@@ -499,7 +499,7 @@ public class ScriptCompiler {
                     requiredReach = requiredReach == null ? variableDemand : flow.and(requiredReach, variableDemand);
                 }
                 Fact refFact = fact(facts, ref);
-                Guard refReach = refFact == null ? null : refFact.definedUnder();
+                Guard refReach = refFact == null ? null : refFact.guard();
                 if (requiredReach != null && refReach != null) {
                     variableResolved = flow.contains(refReach, requiredReach);
                     if (!variableResolved) {
@@ -828,30 +828,30 @@ public class ScriptCompiler {
     }
 
     private Fact constrainFact(Fact fact, Guard required) {
-        Guard definedUnder = flow.and(fact.definedUnder(), required);
+        Guard definedUnder = flow.and(fact.guard(), required);
         if (flow.isFalse(definedUnder)) {
             return null;
         }
-        List<Fact.ExactCase> exactCases = fact.exactCases();
-        if (exactCases.isEmpty()) {
-            return definedUnder.equals(fact.definedUnder()) ? fact : new Fact(definedUnder, fact.value());
+        List<Fact.GuardedValue> guardedValues = fact.guardedValues();
+        if (guardedValues.isEmpty()) {
+            return definedUnder.equals(fact.guard()) ? fact : new Fact(definedUnder, fact.value());
         }
-        List<Fact.ExactCase> constrainedCases = new ArrayList<>(exactCases.size());
-        boolean changed = !definedUnder.equals(fact.definedUnder());
-        for (Fact.ExactCase exactCase : exactCases) {
-            Guard caseGuard = flow.and(exactCase.guard(), required);
+        List<Fact.GuardedValue> constrainedValues = new ArrayList<>(guardedValues.size());
+        boolean changed = !definedUnder.equals(fact.guard());
+        for (Fact.GuardedValue guardedValue : guardedValues) {
+            Guard caseGuard = flow.and(guardedValue.guard(), required);
             if (flow.isFalse(caseGuard)) {
                 changed = true;
                 continue;
             }
-            if (!caseGuard.equals(exactCase.guard())) {
+            if (!caseGuard.equals(guardedValue.guard())) {
                 changed = true;
-                constrainedCases.add(exactCase.withGuard(caseGuard));
+                constrainedValues.add(guardedValue.withGuard(caseGuard));
             } else {
-                constrainedCases.add(exactCase);
+                constrainedValues.add(guardedValue);
             }
         }
-        return changed ? new Fact(definedUnder, fact.value(), constrainedCases) : fact;
+        return changed ? new Fact(definedUnder, fact.value(), constrainedValues) : fact;
     }
 
     private Fact fact(Map<String, Fact> facts, String key) {
@@ -1599,7 +1599,7 @@ public class ScriptCompiler {
         Guard definitionFor(String key) {
             Fact fact = factFor(key);
             if (fact != null) {
-                return fact.definedUnder();
+                return fact.guard();
             }
             Flow.SymbolInfo info = symbolInfo(key);
             return info == null ? null : info.definition();
@@ -2593,7 +2593,7 @@ public class ScriptCompiler {
                     required = flow.and(required, demand);
                 }
                 Fact snapshot = fact(snapshots, key);
-                Guard defined = snapshot == null ? FALSE : snapshot.definedUnder();
+                Guard defined = snapshot == null ? FALSE : snapshot.guard();
                 Guard missing = normalizeGuard(flow.minus(required, defined), scope, snapshots);
                 if (flow.isFalse(missing)) {
                     continue;
@@ -2619,7 +2619,7 @@ public class ScriptCompiler {
                                                       Scope scope,
                                                       Map<String, Fact> facts) {
             Fact definitionFact = fact(facts, key);
-            Guard definition = definitionFact == null ? FALSE : definitionFact.definedUnder();
+            Guard definition = definitionFact == null ? FALSE : definitionFact.guard();
             if (!flow.equivalent(flow.minus(base, definition), missing)) {
                 return null;
             }

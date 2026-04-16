@@ -1,5 +1,47 @@
 # Progress
 
+- 2026-04-16: Inlined the remaining pseudo-accessor logic on
+  `Domain.Fact.GuardedValue`. `supportedExact(...)`, `matches(...)`,
+  `containsAll(...)`, and `sameValue(...)` are gone; `Fact` now spells
+  those checks directly against `GuardedValue.value`, `guard`, and
+  `mask` at the only call sites (`supportedExactDefined(...)`,
+  `match(...)`, `listContains(...)`, and `mergeGuardedValue(...)`).
+  This keeps the renamed guarded-value carrier as a minimal private
+  data holder plus `withGuard(...)`. Focused validation reran green
+  with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`222` tests, `BUILD SUCCESS`, total time `4.798 s`), and
+  `git diff --check` is clean.
+- 2026-04-16: Continued the in-flight `Domain.Fact` cleanup by
+  renaming the nested exact-value carrier to `GuardedValue` and
+  collapsing its cached finite-domain normalization to a single
+  `mask`. `Fact.exactCases()` is now `guardedValues()`, the
+  scalar-membership split helpers collapsed into one `exactMask(...)`,
+  `sameExactValue(...)` / `matches(...)` now compare through that
+  single mask, and `Flow` / `ScriptCompiler` / tests now consume
+  `Fact.GuardedValue` end to end. This builds on the same dirty pass
+  that already renamed `Fact.definedUnder()` to `guard()` and removed
+  the old `scalarLiteral()` shim. Focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`222` tests, `BUILD SUCCESS`, total time `4.830 s`), and
+  `git diff --check` is clean.
+- 2026-04-16: Continued the `Domain.Fact` surface cleanup on top of the
+  current `definedUnder()` -> `guard()` and `ExactCase.scalarLiteral()`
+  removal pass. `Fact` and `Fact.ExactCase` no longer implement
+  structural `equals(...)` / `hashCode()`, so the materialized fact
+  carriers now rely only on the domain operations that are actually
+  used (`guard()`, `value()`, `exactCases()`, `sameValue(...)`,
+  `matches(...)`, `containsAll(...)`, `supportedExact(...)`). Focused
+  validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`222` tests, `BUILD SUCCESS`, total time `4.723 s`), and
+  `git diff --check` is clean.
 - 2026-04-16: Inlined the remaining trivial `Domain.Clause` mask-entry
   accessors after the single-buffer clause compaction. `mask0(...)`,
   `mask1(...)`, and `copyEntry(...)` are gone, and the clause algebra

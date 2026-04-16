@@ -1227,57 +1227,42 @@ final class Domain {
         }
     }
 
-    private static long exactScalarMask(Spec spec, Value<?> value) {
-        if (spec.kind() != Spec.Kind.FINITE_SCALAR) {
-            return 0L;
-        }
-        String literal = Value.scalarLiteral(value);
-        if (literal == null) {
-            return 0L;
-        }
-        Integer ordinal = spec.ordinals.get(literal);
-        return ordinal == null ? 0L : 1L << ordinal;
-    }
-
-    private static long exactListMask(Spec spec, Value<?> value) {
-        if (spec.kind() != Spec.Kind.FINITE_MEMBERSHIP || value == null || value.type() != Value.Type.LIST) {
-            return 0L;
-        }
-        long mask = 0L;
-        for (String item : new TreeSet<>(value.getList())) {
-            Integer ordinal = spec.ordinals.get(item);
-            if (ordinal == null) {
-                return 0L;
+    private static long exactMask(Spec spec, Value<?> value) {
+        switch (spec.kind()) {
+            case FINITE_SCALAR: {
+                String literal = Value.scalarLiteral(value);
+                if (literal == null) {
+                    return 0L;
+                }
+                Integer ordinal = spec.ordinals.get(literal);
+                return ordinal == null ? 0L : 1L << ordinal;
             }
-            mask |= 1L << ordinal;
+            case FINITE_MEMBERSHIP:
+                if (value == null || value.type() != Value.Type.LIST) {
+                    return 0L;
+                }
+                long mask = 0L;
+                for (String item : new TreeSet<>(value.getList())) {
+                    Integer ordinal = spec.ordinals.get(item);
+                    if (ordinal == null) {
+                        return 0L;
+                    }
+                    mask |= 1L << ordinal;
+                }
+                return mask;
+            case OPEN_TEXT:
+            default:
+                return 0L;
         }
-        return mask;
     }
 
-    private static boolean exactValueEquals(Spec spec, Value<?> left, Value<?> right, long leftScalarMask, long leftListMask) {
-        long rightScalarMask = exactScalarMask(spec, right);
-        if (leftScalarMask != 0L || rightScalarMask != 0L) {
-            return leftScalarMask != 0L && leftScalarMask == rightScalarMask;
-        }
-        long rightListMask = exactListMask(spec, right);
-        if (leftListMask != 0L || rightListMask != 0L) {
-            return leftListMask != 0L && leftListMask == rightListMask;
-        }
-        return Value.isEqual(left, right);
+    private static boolean exactValueEquals(Spec spec, Value<?> left, Value<?> right, long leftMask) {
+        long rightMask = exactMask(spec, right);
+        return leftMask != 0L || rightMask != 0L ? leftMask != 0L && leftMask == rightMask : Value.isEqual(left, right);
     }
 
     static boolean sameExactValue(Spec spec, Value<?> left, Value<?> right) {
-        return exactValueEquals(spec, left, right, exactScalarMask(spec, left), exactListMask(spec, left));
-    }
-
-    private static int exactValueHash(Value<?> value, long scalarMask, long listMask) {
-        if (scalarMask != 0L) {
-            return Long.hashCode(scalarMask);
-        }
-        if (listMask != 0L) {
-            return Long.hashCode(listMask);
-        }
-        return Value.hash(value);
+        return exactValueEquals(spec, left, right, exactMask(spec, left));
     }
 
     private static final class Decision {
@@ -2023,19 +2008,19 @@ final class Domain {
     static final class Fact {
         private final Guard guard;
         private final LatticeValue value;
-        private final List<ExactCase> exactCases;
+        private final List<GuardedValue> guardedValues;
 
         Fact(Guard guard, LatticeValue value) {
             this(guard, value, List.of());
         }
 
-        Fact(Guard guard, LatticeValue value, List<ExactCase> exactCases) {
+        Fact(Guard guard, LatticeValue value, List<GuardedValue> guardedValues) {
             this.guard = guard;
             this.value = value;
-            this.exactCases = exactCases;
+            this.guardedValues = guardedValues;
         }
 
-        Guard definedUnder() {
+        Guard guard() {
             return guard;
         }
 
@@ -2043,23 +2028,38 @@ final class Domain {
             return value;
         }
 
-        List<ExactCase> exactCases() {
-            return exactCases;
+        List<GuardedValue> guardedValues() {
+            return guardedValues;
         }
 
         Guard exactDefined(Guards guards) {
             Guard result = Guard.FALSE;
-            for (ExactCase exactCase : exactCases) {
-                result = guards.or(result, exactCase.guard);
+            for (GuardedValue guardedValue : guardedValues) {
+                result = guards.or(result, guardedValue.guard);
             }
             return result;
         }
 
         Guard supportedExactDefined(Symbol symbol, Guards guards) {
             Guard result = Guard.FALSE;
-            for (ExactCase exactCase : exactCases) {
-                if (exactCase.supportedExact(symbol.domain())) {
-                    result = guards.or(result, exactCase.guard);
+            Spec domain = symbol.domain();
+            for (GuardedValue guardedValue : guardedValues) {
+                boolean supported;
+                switch (domain.kind()) {
+                    case FINITE_SCALAR:
+                        supported = guardedValue.mask != 0L;
+                        break;
+                    case FINITE_MEMBERSHIP:
+                        supported = guardedValue.value.type() == Value.Type.LIST
+                                && (guardedValue.mask != 0L || guardedValue.value.getList().isEmpty());
+                        break;
+                    case OPEN_TEXT:
+                    default:
+                        supported = true;
+                        break;
+                }
+                if (supported) {
+                    result = guards.or(result, guardedValue.guard);
                 }
             }
             return result;
@@ -2067,9 +2067,10 @@ final class Domain {
 
         Guard match(Symbol symbol, Value<?> candidate, Guards guards) {
             Guard result = Guard.FALSE;
-            for (ExactCase exactCase : exactCases) {
-                if (exactCase.matches(symbol.domain(), candidate)) {
-                    result = guards.or(result, exactCase.guard);
+            Spec domain = symbol.domain();
+            for (GuardedValue guardedValue : guardedValues) {
+                if (exactValueEquals(domain, guardedValue.value, candidate, guardedValue.mask)) {
+                    result = guards.or(result, guardedValue.guard);
                 }
             }
             return result;
@@ -2090,9 +2091,9 @@ final class Domain {
                 return Guard.FALSE;
             }
             Guard result = Guard.FALSE;
-            for (ExactCase exactCase : exactCases) {
-                if ((exactCase.scalarMask & allowedMask) != 0L) {
-                    result = guards.or(result, exactCase.guard);
+            for (GuardedValue guardedValue : guardedValues) {
+                if ((guardedValue.mask & allowedMask) != 0L) {
+                    result = guards.or(result, guardedValue.guard);
                 }
             }
             return result;
@@ -2111,9 +2112,11 @@ final class Domain {
             }
             long required = symbol.mask(values);
             Guard result = Guard.FALSE;
-            for (ExactCase exactCase : exactCases) {
-                if (exactCase.containsAll(required)) {
-                    result = guards.or(result, exactCase.guard);
+            for (GuardedValue guardedValue : guardedValues) {
+                boolean contains = required == 0L ? guardedValue.value.type() == Value.Type.LIST
+                        : guardedValue.mask != 0L && (required & ~guardedValue.mask) == 0L;
+                if (contains) {
+                    result = guards.or(result, guardedValue.guard);
                 }
             }
             return result;
@@ -2123,34 +2126,37 @@ final class Domain {
             if (exactValue == null || !exactValue.isPresent()) {
                 return new Fact(guard, value);
             }
-            return new Fact(guard, value, List.of(new ExactCase(exactValue, guard, spec)));
+            return new Fact(guard, value, List.of(new GuardedValue(exactValue, guard, spec)));
         }
 
         static Fact merge(Fact left, Fact right, Guards guards) {
-            Guard definedUnder = guards.or(left.guard, right.guard);
+            Guard guard = guards.or(left.guard, right.guard);
             LatticeValue value = LatticeValue.join(left.value, right.value);
-            if (left.exactCases.isEmpty()) {
-                return right.exactCases.isEmpty()
-                        ? new Fact(definedUnder, value)
-                        : new Fact(definedUnder, value, right.exactCases);
+            if (left.guardedValues.isEmpty()) {
+                return right.guardedValues.isEmpty()
+                        ? new Fact(guard, value)
+                        : new Fact(guard, value, right.guardedValues);
             }
-            if (right.exactCases.isEmpty()) {
-                return new Fact(definedUnder, value, left.exactCases);
+            if (right.guardedValues.isEmpty()) {
+                return new Fact(guard, value, left.guardedValues);
             }
-            List<ExactCase> merged = new ArrayList<>();
-            for (ExactCase exactCase : left.exactCases) {
-                mergeExactCase(merged, exactCase, guards);
+            List<GuardedValue> merged = new ArrayList<>();
+            for (GuardedValue guardedValue : left.guardedValues) {
+                mergeGuardedValue(merged, guardedValue, guards);
             }
-            for (ExactCase exactCase : right.exactCases) {
-                mergeExactCase(merged, exactCase, guards);
+            for (GuardedValue guardedValue : right.guardedValues) {
+                mergeGuardedValue(merged, guardedValue, guards);
             }
-            return new Fact(definedUnder, value, merged);
+            return new Fact(guard, value, merged);
         }
 
-        private static void mergeExactCase(List<ExactCase> merged, ExactCase next, Guards guards) {
+        private static void mergeGuardedValue(List<GuardedValue> merged, GuardedValue next, Guards guards) {
             for (int i = 0; i < merged.size(); i++) {
-                ExactCase current = merged.get(i);
-                if (current.sameValue(next)) {
+                GuardedValue current = merged.get(i);
+                boolean sameValue = current.mask != 0L || next.mask != 0L
+                        ? current.mask != 0L && current.mask == next.mask
+                        : Value.isEqual(current.value, next.value);
+                if (sameValue) {
                     merged.set(i, current.withGuard(guards.or(current.guard, next.guard)));
                     return;
                 }
@@ -2158,42 +2164,19 @@ final class Domain {
             merged.add(next);
         }
 
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (!(o instanceof Fact)) {
-                return false;
-            }
-            Fact other = (Fact) o;
-            return (guard == other.guard || guard.equals(other.guard))
-                   && value.equals(other.value)
-                   && (exactCases == other.exactCases || exactCases.equals(other.exactCases));
-        }
-
-        @Override
-        public int hashCode() {
-            int result = guard.hashCode();
-            result = 31 * result + value.hashCode();
-            return 31 * result + exactCases.hashCode();
-        }
-
-        static final class ExactCase {
+        static final class GuardedValue {
             private final Value<?> value;
             private final Guard guard;
-            private final long scalarMask;
-            private final long listMask;
+            private final long mask;
 
-            ExactCase(Value<?> value, Guard guard, Spec spec) {
-                this(value, guard, exactScalarMask(spec, value), exactListMask(spec, value));
+            GuardedValue(Value<?> value, Guard guard, Spec spec) {
+                this(value, guard, exactMask(spec, value));
             }
 
-            private ExactCase(Value<?> value, Guard guard, long scalarMask, long listMask) {
+            private GuardedValue(Value<?> value, Guard guard, long mask) {
                 this.value = value;
                 this.guard = guard;
-                this.scalarMask = scalarMask;
-                this.listMask = listMask;
+                this.mask = mask;
             }
 
             Value<?> value() {
@@ -2204,68 +2187,12 @@ final class Domain {
                 return guard;
             }
 
-            long scalarMask() {
-                return scalarMask;
+            long mask() {
+                return mask;
             }
 
-            long listMask() {
-                return listMask;
-            }
-
-            ExactCase withGuard(Guard nextGuard) {
-                return guard.equals(nextGuard) ? this : new ExactCase(value, nextGuard, scalarMask, listMask);
-            }
-
-            boolean matches(Spec spec, Value<?> candidate) {
-                return exactValueEquals(spec, value, candidate, scalarMask, listMask);
-            }
-
-            boolean sameValue(ExactCase other) {
-                if (scalarMask != 0L || other.scalarMask != 0L) {
-                    return scalarMask != 0L && scalarMask == other.scalarMask;
-                }
-                if (listMask != 0L || other.listMask != 0L) {
-                    return listMask != 0L && listMask == other.listMask;
-                }
-                return Value.isEqual(value, other.value);
-            }
-
-            boolean containsAll(long requiredMask) {
-                return requiredMask == 0L ? value.type() == Value.Type.LIST : listMask != 0L && (requiredMask & ~listMask) == 0L;
-            }
-
-            boolean supportedExact(Spec spec) {
-                switch (spec.kind()) {
-                    case FINITE_SCALAR:
-                        return scalarMask != 0L;
-                    case FINITE_MEMBERSHIP:
-                        return value.type() == Value.Type.LIST && (listMask != 0L || value.getList().isEmpty());
-                    case OPEN_TEXT:
-                    default:
-                        return true;
-                }
-            }
-
-            String scalarLiteral() {
-                return Value.scalarLiteral(value);
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                if (this == o) {
-                    return true;
-                }
-                if (!(o instanceof ExactCase)) {
-                    return false;
-                }
-                ExactCase other = (ExactCase) o;
-                return sameValue(other)
-                       && (guard == other.guard || guard.equals(other.guard));
-            }
-
-            @Override
-            public int hashCode() {
-                return 31 * exactValueHash(value, scalarMask, listMask) + guard.hashCode();
+            GuardedValue withGuard(Guard nextGuard) {
+                return guard.equals(nextGuard) ? this : new GuardedValue(value, nextGuard, mask);
             }
         }
     }
