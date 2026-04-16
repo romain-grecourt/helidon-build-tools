@@ -1825,26 +1825,17 @@ final class Domain {
                 long leftRequired = index >= 0 ? masks[index * 2] : 0L;
                 long leftForbidden = index >= 0 ? masks[index * 2 + 1] : 0L;
                 long known = leftRequired | leftForbidden;
-                long unresolvedRequired = other.masks[i * 2] & ~known;
-                if (unresolvedRequired != 0L) {
-                    int ordinal = Long.numberOfTrailingZeros(unresolvedRequired);
-                    String value = symbol.value(ordinal);
-                    Clause forbiddenClause = withMembership(id, value, symbol, false);
-                    Clause requiredClause = withMembership(id, value, symbol, true);
+                for (int y = 0; y < 2; y++) {
+                    boolean parity = y == 0;
+                    long unresolved = other.masks[i * 2 + y] & ~known;
+                    if (unresolved == 0L) {
+                        continue;
+                    }
                     List<Clause> result = new ArrayList<>();
-                    result.add(forbiddenClause);
-                    result.addAll(requiredClause.subtract(other, symbols));
-                    return result;
-                }
-                long unresolvedForbidden = other.masks[i * 2 + 1] & ~known;
-                if (unresolvedForbidden != 0L) {
-                    int ordinal = Long.numberOfTrailingZeros(unresolvedForbidden);
+                    int ordinal = Long.numberOfTrailingZeros(unresolved);
                     String value = symbol.value(ordinal);
-                    Clause requiredClause = withMembership(id, value, symbol, true);
-                    Clause forbiddenClause = withMembership(id, value, symbol, false);
-                    List<Clause> result = new ArrayList<>();
-                    result.add(requiredClause);
-                    result.addAll(forbiddenClause.subtract(other, symbols));
+                    result.add(withMembership(id, value, symbol, !parity));
+                    result.addAll(withMembership(id, value, symbol, parity).subtract(other, symbols));
                     return result;
                 }
             }
@@ -1919,18 +1910,18 @@ final class Domain {
             return insertEntry(-index - 1, id, nextMask, 0L);
         }
 
-        Clause withMembership(int id, String value, Symbol symbol, boolean required) {
+        Clause withMembership(int id, String value, Symbol symbol, boolean parity) {
             int index = Arrays.binarySearch(ids, id);
-            long requiredMask = index < 0 ? 0L : masks[index * 2];
+            long required = index < 0 ? 0L : masks[index * 2];
             long forbidden = index < 0 ? 0L : masks[index * 2 + 1];
             long mask = symbol.mask(value);
             if ((forbidden & mask) != 0L) {
                 return this;
             }
-            if (required) {
-                return withMembership(index, id, requiredMask | mask, forbidden);
+            if (parity) {
+                return withMembership(index, id, required | mask, forbidden);
             }
-            return withMembership(index, id, requiredMask, forbidden | mask);
+            return withMembership(index, id, required, forbidden | mask);
         }
 
         Clause withMembership(int index, int id, long nextRequired, long nextForbidden) {

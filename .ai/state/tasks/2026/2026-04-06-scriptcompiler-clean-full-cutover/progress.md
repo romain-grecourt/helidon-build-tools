@@ -1,5 +1,15 @@
 # Progress
 
+- 2026-04-16: Collapsed the duplicated membership branches in
+  `Domain.Clause.subtract(...)` into a two-iteration parity loop.
+  The branch kind is now derived from `parity == 0`, while the
+  asymmetric outside-vs-overlap behavior remains unchanged by using
+  `required` for the recursive overlap branch and `!required` for the
+  outside branch. Focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`225` tests, `BUILD SUCCESS`, total time `4.752 s`).
 - 2026-04-16: Investigated the in-flight regression after the recent
   `Expression` helper and `Spec.BOOLEAN` cleanup. The break was not the
   `Spec.booleanSpec()` removal; that swap is behavior-preserving because
