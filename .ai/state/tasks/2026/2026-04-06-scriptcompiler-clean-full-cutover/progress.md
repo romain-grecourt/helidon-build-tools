@@ -1,5 +1,17 @@
 # Progress
 
+- 2026-04-16: Inlined the remaining trivial `Domain.Clause` mask-entry
+  accessors after the single-buffer clause compaction. `mask0(...)`,
+  `mask1(...)`, and `copyEntry(...)` are gone, and the clause algebra
+  now reads or writes the interleaved `masks` buffer directly at each
+  use site. This is a pure internal compaction on top of the earlier
+  `Clause` storage rewrite; behavior is unchanged. Focused validation
+  reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`222` tests, `BUILD SUCCESS`, total time `4.590 s`), and
+  `git diff --check` is clean.
 - 2026-04-16: Added a shared `Domain.Clause.EMPTY` constant for the
   true/empty clause and replaced the remaining empty-clause
   constructions with it. `Decision.TRUE` now uses `Clause.EMPTY`,

@@ -1516,8 +1516,9 @@ final class Domain {
             boolean changed = false;
             for (int i = 0; i < ids.length; i++) {
                 Symbol symbol = symbols.symbol(ids[i]);
-                long mask0 = mask0(i);
-                if (symbol.scalar ? mask0 == symbol.mask : mask0 == 0L && mask1(i) == 0L) {
+                int offset = i * 2;
+                long mask0 = masks[offset];
+                if (symbol.scalar ? mask0 == symbol.mask : mask0 == 0L && masks[offset + 1] == 0L) {
                     changed = true;
                     nextCount--;
                 }
@@ -1533,9 +1534,10 @@ final class Domain {
             int nextIndex = 0;
             for (int i = 0; i < ids.length; i++) {
                 Symbol symbol = symbols.symbol(ids[i]);
-                long mask0 = mask0(i);
-                if (symbol.scalar ? mask0 != symbol.mask : mask0 != 0L || mask1(i) != 0L) {
-                    copyEntry(i, nextSymbolIds, nextMasks, nextIndex);
+                int offset = i * 2;
+                long mask0 = masks[offset];
+                if (symbol.scalar ? mask0 != symbol.mask : mask0 != 0L || masks[offset + 1] != 0L) {
+                    writeEntry(nextSymbolIds, nextMasks, nextIndex, ids[i], mask0, masks[offset + 1]);
                     nextIndex++;
                 }
             }
@@ -1559,13 +1561,16 @@ final class Domain {
             int nextIndex = 0;
             while (left < ids.length || right < other.ids.length) {
                 if (right == other.ids.length || left < ids.length && ids[left] < other.ids[right]) {
-                    copyEntry(left, nextSymbolIds, nextMasks, nextIndex);
+                    int leftOffset = left * 2;
+                    writeEntry(nextSymbolIds, nextMasks, nextIndex, ids[left], masks[leftOffset], masks[leftOffset + 1]);
                     left++;
                     nextIndex++;
                     continue;
                 }
                 if (left == ids.length || other.ids[right] < ids[left]) {
-                    other.copyEntry(right, nextSymbolIds, nextMasks, nextIndex);
+                    int rightOffset = right * 2;
+                    writeEntry(nextSymbolIds, nextMasks, nextIndex, other.ids[right],
+                            other.masks[rightOffset], other.masks[rightOffset + 1]);
                     right++;
                     nextIndex++;
                     continue;
@@ -1575,16 +1580,18 @@ final class Domain {
                 long nextMask0;
                 long nextMask1;
                 if (symbol.scalar) {
-                    nextMask0 = mask0(left) & other.mask0(right);
+                    nextMask0 = masks[left * 2] & other.masks[right * 2];
                     if (nextMask0 == 0L) {
                         return null;
                     }
                     nextMask1 = 0L;
                 } else {
-                    long leftRequired = mask0(left);
-                    long leftForbidden = mask1(left);
-                    long rightRequired = other.mask0(right);
-                    long rightForbidden = other.mask1(right);
+                    int leftOffset = left * 2;
+                    int rightOffset = right * 2;
+                    long leftRequired = masks[leftOffset];
+                    long leftForbidden = masks[leftOffset + 1];
+                    long rightRequired = other.masks[rightOffset];
+                    long rightForbidden = other.masks[rightOffset + 1];
                     if ((leftRequired & rightForbidden) != 0L || (leftForbidden & rightRequired) != 0L) {
                         return null;
                     }
@@ -1617,10 +1624,11 @@ final class Domain {
                 }
                 Symbol symbol = symbols.symbol(symbolId);
                 if (symbol.scalar) {
-                    if ((mask0(left) & ~other.mask0(right)) != 0L) {
+                    if ((masks[left * 2] & ~other.masks[right * 2]) != 0L) {
                         return false;
                     }
-                } else if ((other.mask0(right) & ~mask0(left)) != 0L || (other.mask1(right) & ~mask1(left)) != 0L) {
+                } else if ((other.masks[right * 2] & ~masks[left * 2]) != 0L
+                        || (other.masks[right * 2 + 1] & ~masks[left * 2 + 1]) != 0L) {
                     return false;
                 }
             }
@@ -1646,7 +1654,7 @@ final class Domain {
                     if (!symbol.scalar) {
                         return null;
                     }
-                    leftMask = mask0(left);
+                    leftMask = masks[left * 2];
                     rightMask = symbol.mask;
                     left++;
                 } else if (left == ids.length || other.ids[right] < ids[left]) {
@@ -1656,25 +1664,28 @@ final class Domain {
                         return null;
                     }
                     leftMask = symbol.mask;
-                    rightMask = other.mask0(right);
+                    rightMask = other.masks[right * 2];
                     right++;
                 } else {
                     symbolId = ids[left];
                     Symbol symbol = symbols.symbol(symbolId);
                     if (!symbol.scalar) {
-                        if (mask0(left) != other.mask0(right) || mask1(left) != other.mask1(right)) {
+                        int leftOffset = left * 2;
+                        int rightOffset = right * 2;
+                        if (masks[leftOffset] != other.masks[rightOffset]
+                                || masks[leftOffset + 1] != other.masks[rightOffset + 1]) {
                             return null;
                         }
-                        nextMask0 = mask0(left);
-                        nextMask1 = mask1(left);
+                        nextMask0 = masks[leftOffset];
+                        nextMask1 = masks[leftOffset + 1];
                         left++;
                         right++;
                         writeEntry(nextSymbolIds, nextMasks, nextIndex, symbolId, nextMask0, nextMask1);
                         nextIndex++;
                         continue;
                     }
-                    leftMask = mask0(left);
-                    rightMask = other.mask0(right);
+                    leftMask = masks[left * 2];
+                    rightMask = other.masks[right * 2];
                     left++;
                     right++;
                 }
@@ -1712,8 +1723,8 @@ final class Domain {
                     continue;
                 }
                 int index = Arrays.binarySearch(ids, symbolId);
-                long leftMask = index >= 0 ? mask0(index) : symbol.mask;
-                long rightMask = other.mask0(i);
+                long leftMask = index >= 0 ? masks[index * 2] : symbol.mask;
+                long rightMask = other.masks[i * 2];
                 long outsideMask = leftMask & ~rightMask;
                 if (outsideMask != 0L) {
                     long overlapMask = leftMask & rightMask;
@@ -1732,10 +1743,10 @@ final class Domain {
                     continue;
                 }
                 int index = Arrays.binarySearch(ids, symbolId);
-                long leftRequired = index >= 0 ? mask0(index) : 0L;
-                long leftForbidden = index >= 0 ? mask1(index) : 0L;
+                long leftRequired = index >= 0 ? masks[index * 2] : 0L;
+                long leftForbidden = index >= 0 ? masks[index * 2 + 1] : 0L;
                 long known = leftRequired | leftForbidden;
-                long unresolvedRequired = other.mask0(i) & ~known;
+                long unresolvedRequired = other.masks[i * 2] & ~known;
                 if (unresolvedRequired != 0L) {
                     String item = symbol.value(Long.numberOfTrailingZeros(unresolvedRequired));
                     List<Clause> result = new ArrayList<>();
@@ -1743,7 +1754,7 @@ final class Domain {
                     result.addAll(withMembershipRequired(symbolId, item, symbol).subtract(other, symbols));
                     return result;
                 }
-                long unresolvedForbidden = other.mask1(i) & ~known;
+                long unresolvedForbidden = other.masks[i * 2 + 1] & ~known;
                 if (unresolvedForbidden != 0L) {
                     String item = symbol.value(Long.numberOfTrailingZeros(unresolvedForbidden));
                     List<Clause> result = new ArrayList<>();
@@ -1759,9 +1770,10 @@ final class Domain {
             Expression expr = Expression.TRUE;
             for (int i = 0; i < ids.length; i++) {
                 Symbol symbol = symbols.symbol(ids[i]);
+                int offset = i * 2;
                 expr = symbol.scalar
-                        ? expr.and(expression(resolver.apply(ids[i]), mask0(i), symbol))
-                        : expr.and(expression(resolver.apply(ids[i]), mask0(i), mask1(i), symbol));
+                        ? expr.and(expression(resolver.apply(ids[i]), masks[offset], symbol))
+                        : expr.and(expression(resolver.apply(ids[i]), masks[offset], masks[offset + 1], symbol));
             }
             return expr;
         }
@@ -1779,7 +1791,7 @@ final class Domain {
                     sb.append(',');
                 }
                 sb.append(ids[i]).append(':');
-                appendSymbol(sb, mask0(i), symbol);
+                appendSymbol(sb, masks[i * 2], symbol);
                 first = false;
             }
             sb.append("}|{");
@@ -1793,9 +1805,10 @@ final class Domain {
                     sb.append(',');
                 }
                 sb.append(ids[i]).append(':');
-                appendSymbol(sb, mask0(i), symbol);
+                int offset = i * 2;
+                appendSymbol(sb, masks[offset], symbol);
                 sb.append('/');
-                appendSymbol(sb, mask1(i), symbol);
+                appendSymbol(sb, masks[offset + 1], symbol);
                 first = false;
             }
             sb.append('}');
@@ -1812,7 +1825,8 @@ final class Domain {
             }
             int index = Arrays.binarySearch(ids, id);
             if (index >= 0) {
-                if (mask0(index) == nextMask && mask1(index) == 0L) {
+                int offset = index * 2;
+                if (masks[offset] == nextMask && masks[offset + 1] == 0L) {
                     return this;
                 }
                 return updateEntry(index, nextMask, 0L);
@@ -1822,8 +1836,8 @@ final class Domain {
 
         Clause withMembershipRequired(int id, String value, Symbol symbol) {
             int index = Arrays.binarySearch(ids, id);
-            long required = index < 0 ? 0L : mask0(index);
-            long forbidden = index < 0 ? 0L : mask1(index);
+            long required = index < 0 ? 0L : masks[index * 2];
+            long forbidden = index < 0 ? 0L : masks[index * 2 + 1];
             long mask = symbol.mask(value);
             if ((required & mask) != 0L) {
                 return this;
@@ -1833,8 +1847,8 @@ final class Domain {
 
         Clause withMembershipForbidden(int id, String value, Symbol symbol) {
             int index = Arrays.binarySearch(ids, id);
-            long required = index < 0 ? 0L : mask0(index);
-            long forbidden = index < 0 ? 0L : mask1(index);
+            long required = index < 0 ? 0L : masks[index * 2];
+            long forbidden = index < 0 ? 0L : masks[index * 2 + 1];
             long mask = symbol.mask(value);
             if ((forbidden & mask) != 0L) {
                 return this;
@@ -1850,24 +1864,13 @@ final class Domain {
                 return removeEntry(index);
             }
             if (index >= 0) {
-                if (mask0(index) == nextRequired && mask1(index) == nextForbidden) {
+                int offset = index * 2;
+                if (masks[offset] == nextRequired && masks[offset + 1] == nextForbidden) {
                     return this;
                 }
                 return updateEntry(index, nextRequired, nextForbidden);
             }
             return insertEntry(-index - 1, id, nextRequired, nextForbidden);
-        }
-
-        long mask0(int index) {
-            return masks[index * 2];
-        }
-
-        long mask1(int index) {
-            return masks[index * 2 + 1];
-        }
-
-        void copyEntry(int sourceIndex, int[] nextIds, long[] nextMasks, int nextIndex) {
-            writeEntry(nextIds, nextMasks, nextIndex, ids[sourceIndex], mask0(sourceIndex), mask1(sourceIndex));
         }
 
         Clause updateEntry(int index, long mask0, long mask1) {
