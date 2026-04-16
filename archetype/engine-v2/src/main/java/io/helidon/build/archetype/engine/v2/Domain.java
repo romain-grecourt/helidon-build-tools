@@ -1172,8 +1172,8 @@ final class Domain {
             if (!symbol.domain().values().contains(value)) {
                 return Guard.FALSE;
             }
-            DecisionShape shape = new DecisionShape(symbolId, new ScalarShape(symbol.scalarMask(value)));
-            return guard(Decision.of(List.of(shape), symbols), Residual.TRUE);
+            ConstraintClause clause = new ConstraintClause(symbolId, new ScalarConstraint(symbol.scalarMask(value)));
+            return guard(Decision.of(List.of(clause), symbols), Residual.TRUE);
         }
 
         Guard contains(int symbolId, String value) {
@@ -1188,9 +1188,9 @@ final class Domain {
             if (!symbol.domain().values().containsAll(values)) {
                 return Guard.FALSE;
             }
-            MembershipShape membership = MembershipShape.required(symbol, values);
-            DecisionShape shape = new DecisionShape(symbolId, membership);
-            return guard(Decision.of(List.of(shape), symbols), Residual.TRUE);
+            MembershipConstraint constraint = MembershipConstraint.required(symbol, values);
+            ConstraintClause clause = new ConstraintClause(symbolId, constraint);
+            return guard(Decision.of(List.of(clause), symbols), Residual.TRUE);
         }
 
         Expression toExpression(Guard guard, Scope scope) {
@@ -1582,35 +1582,35 @@ final class Domain {
 
     private static final class Decision {
         private static final Decision FALSE = new Decision(List.of());
-        private static final Decision TRUE = new Decision(List.of(new DecisionShape()));
-        private static final int TRY_MERGE_MAX_SHAPES = 32;
+        private static final Decision TRUE = new Decision(List.of(new ConstraintClause()));
+        private static final int TRY_MERGE_MAX_CLAUSES = 32;
 
-        private final List<DecisionShape> shapes;
+        private final List<ConstraintClause> clauses;
 
-        Decision(List<DecisionShape> shapes) {
-            this.shapes = shapes;
+        Decision(List<ConstraintClause> clauses) {
+            this.clauses = clauses;
         }
 
-        static Decision of(List<DecisionShape> shapes, Symbol.Table symbols) {
-            if (shapes.isEmpty()) {
+        static Decision of(List<ConstraintClause> clauses, Symbol.Table symbols) {
+            if (clauses.isEmpty()) {
                 return FALSE;
             }
-            Set<DecisionShape> unique = new LinkedHashSet<>();
-            for (DecisionShape shape : shapes) {
-                DecisionShape next = shape.normalized(symbols);
+            Set<ConstraintClause> unique = new LinkedHashSet<>();
+            for (ConstraintClause clause : clauses) {
+                ConstraintClause next = clause.normalized(symbols);
                 if (next.isTrue()) {
                     return TRUE;
                 }
                 unique.add(next);
             }
-            List<DecisionShape> normalized = new ArrayList<>(unique);
+            List<ConstraintClause> normalized = new ArrayList<>(unique);
             boolean changed;
             do {
                 changed = false;
                 for (int i = 0; i < normalized.size() && !changed; i++) {
                     for (int j = i + 1; j < normalized.size(); j++) {
-                        DecisionShape left = normalized.get(i);
-                        DecisionShape right = normalized.get(j);
+                        ConstraintClause left = normalized.get(i);
+                        ConstraintClause right = normalized.get(j);
                         if (left.subsetOf(right)) {
                             normalized.remove(i);
                             changed = true;
@@ -1621,8 +1621,8 @@ final class Domain {
                             changed = true;
                             break;
                         }
-                        if (normalized.size() <= TRY_MERGE_MAX_SHAPES) {
-                            DecisionShape merged = left.tryMerge(right, symbols);
+                        if (normalized.size() <= TRY_MERGE_MAX_CLAUSES) {
+                            ConstraintClause merged = left.tryMerge(right, symbols);
                             if (merged != null) {
                                 normalized.set(i, merged);
                                 normalized.remove(j);
@@ -1636,12 +1636,12 @@ final class Domain {
             if (normalized.isEmpty()) {
                 return FALSE;
             }
-            normalized.sort(Comparator.comparing(shape -> shape.literal(symbols)));
+            normalized.sort(Comparator.comparing(clause -> clause.literal(symbols)));
             return new Decision(normalized);
         }
 
         boolean isFalse() {
-            return shapes.isEmpty();
+            return clauses.isEmpty();
         }
 
         Decision and(Decision other, Symbol.Table symbols) {
@@ -1657,10 +1657,10 @@ final class Domain {
             if (other == TRUE) {
                 return this;
             }
-            List<DecisionShape> result = new ArrayList<>();
-            for (DecisionShape left : shapes) {
-                for (DecisionShape right : other.shapes) {
-                    DecisionShape intersection = left.intersect(right, symbols);
+            List<ConstraintClause> result = new ArrayList<>();
+            for (ConstraintClause left : clauses) {
+                for (ConstraintClause right : other.clauses) {
+                    ConstraintClause intersection = left.intersect(right, symbols);
                     if (intersection != null) {
                         result.add(intersection);
                     }
@@ -1670,15 +1670,15 @@ final class Domain {
         }
 
         Decision orWithoutSubsetChecks(Decision other, Symbol.Table symbols) {
-            List<DecisionShape> result = new ArrayList<>(shapes);
+            List<ConstraintClause> result = new ArrayList<>(clauses);
             boolean changed = false;
-            for (DecisionShape shape : other.shapes) {
-                DecisionShape candidate = shape;
+            for (ConstraintClause clause : other.clauses) {
+                ConstraintClause candidate = clause;
                 boolean restart;
                 do {
                     restart = false;
                     for (int i = 0; i < result.size(); i++) {
-                        DecisionShape existing = result.get(i);
+                        ConstraintClause existing = result.get(i);
                         if (candidate.subsetOf(existing)) {
                             candidate = null;
                             break;
@@ -1689,8 +1689,8 @@ final class Domain {
                             restart = true;
                             break;
                         }
-                        if (result.size() <= TRY_MERGE_MAX_SHAPES) {
-                            DecisionShape merged = existing.tryMerge(candidate, symbols);
+                        if (result.size() <= TRY_MERGE_MAX_CLAUSES) {
+                            ConstraintClause merged = existing.tryMerge(candidate, symbols);
                             if (merged != null) {
                                 if (merged.isTrue()) {
                                     return TRUE;
@@ -1715,7 +1715,7 @@ final class Domain {
             if (!changed) {
                 return this;
             }
-            result.sort(Comparator.comparing(shape -> shape.literal(symbols)));
+            result.sort(Comparator.comparing(clause -> clause.literal(symbols)));
             return new Decision(result);
         }
 
@@ -1726,10 +1726,10 @@ final class Domain {
             if (other == TRUE) {
                 return FALSE;
             }
-            List<DecisionShape> remaining = new ArrayList<>(shapes);
-            for (DecisionShape right : other.shapes) {
-                List<DecisionShape> next = new ArrayList<>();
-                for (DecisionShape left : remaining) {
+            List<ConstraintClause> remaining = new ArrayList<>(clauses);
+            for (ConstraintClause right : other.clauses) {
+                List<ConstraintClause> next = new ArrayList<>();
+                for (ConstraintClause left : remaining) {
                     next.addAll(left.subtract(right, symbols));
                 }
                 remaining = next;
@@ -1745,20 +1745,20 @@ final class Domain {
                 return Expression.FALSE;
             }
             Expression expr = Expression.FALSE;
-            for (DecisionShape shape : shapes) {
-                expr = expr.or(shape.toExpression(keyResolver, symbols));
+            for (ConstraintClause clause : clauses) {
+                expr = expr.or(clause.toExpression(keyResolver, symbols));
             }
             return expr;
         }
 
         @Override
         public boolean equals(Object o) {
-            return o instanceof Decision && shapes.equals(((Decision) o).shapes);
+            return o instanceof Decision && clauses.equals(((Decision) o).clauses);
         }
 
         @Override
         public int hashCode() {
-            return shapes.hashCode();
+            return clauses.hashCode();
         }
 
         boolean subsetOf(Decision other) {
@@ -1768,9 +1768,9 @@ final class Domain {
             if (other.isFalse()) {
                 return false;
             }
-            for (DecisionShape left : shapes) {
+            for (ConstraintClause left : clauses) {
                 boolean covered = false;
-                for (DecisionShape right : other.shapes) {
+                for (ConstraintClause right : other.clauses) {
                     if (left.subsetOf(right)) {
                         covered = true;
                         break;
@@ -1784,53 +1784,57 @@ final class Domain {
         }
     }
 
-    private static final class DecisionShape {
+    private static final class ConstraintClause {
         private static final int[] NO_SYMBOL_IDS = new int[0];
-        private static final ScalarShape[] NO_SCALARS = new ScalarShape[0];
-        private static final MembershipShape[] NO_MEMBERSHIPS = new MembershipShape[0];
+        private static final ScalarConstraint[] NO_SCALAR_CONSTRAINTS = new ScalarConstraint[0];
+        private static final MembershipConstraint[] NO_MEMBERSHIP_CONSTRAINTS = new MembershipConstraint[0];
 
         private final int[] scalarIds;
-        private final ScalarShape[] scalarShapes;
+        private final ScalarConstraint[] scalarConstraints;
         private final int[] membershipIds;
-        private final MembershipShape[] membershipShapes;
+        private final MembershipConstraint[] membershipConstraints;
         private final int hashCode;
 
-        DecisionShape() {
-            this(NO_SYMBOL_IDS, NO_SCALARS, NO_SYMBOL_IDS, NO_MEMBERSHIPS);
+        ConstraintClause() {
+            this(NO_SYMBOL_IDS, NO_SCALAR_CONSTRAINTS, NO_SYMBOL_IDS, NO_MEMBERSHIP_CONSTRAINTS);
         }
 
-        DecisionShape(int symbolId, ScalarShape scalarShape) {
-            this(new int[] {symbolId}, new ScalarShape[] {scalarShape}, NO_SYMBOL_IDS, NO_MEMBERSHIPS);
+        ConstraintClause(int symbolId, ScalarConstraint scalarConstraint) {
+            this(new int[] {symbolId}, new ScalarConstraint[] {scalarConstraint}, NO_SYMBOL_IDS, NO_MEMBERSHIP_CONSTRAINTS);
         }
 
-        DecisionShape(int symbolId, MembershipShape membershipShape) {
-            this(NO_SYMBOL_IDS, NO_SCALARS, new int[] {symbolId}, new MembershipShape[] {membershipShape});
+        ConstraintClause(int symbolId, MembershipConstraint membershipConstraint) {
+            this(NO_SYMBOL_IDS, NO_SCALAR_CONSTRAINTS, new int[] {symbolId}, new MembershipConstraint[] {membershipConstraint});
         }
 
-        DecisionShape(int[] scalarIds, ScalarShape[] scalarShapes, int[] membershipIds, MembershipShape[] membershipShapes) {
+        ConstraintClause(int[] scalarIds,
+                         ScalarConstraint[] scalarConstraints,
+                         int[] membershipIds,
+                         MembershipConstraint[] membershipConstraints) {
             this.scalarIds = scalarIds;
-            this.scalarShapes = scalarShapes;
+            this.scalarConstraints = scalarConstraints;
             this.membershipIds = membershipIds;
-            this.membershipShapes = membershipShapes;
-            this.hashCode = 31 * entriesHash(scalarIds, scalarShapes) + entriesHash(membershipIds, membershipShapes);
+            this.membershipConstraints = membershipConstraints;
+            this.hashCode = 31 * entriesHash(scalarIds, scalarConstraints)
+                    + entriesHash(membershipIds, membershipConstraints);
         }
 
         boolean isTrue() {
-            return scalarShapes.length == 0 && membershipShapes.length == 0;
+            return scalarConstraints.length == 0 && membershipConstraints.length == 0;
         }
 
-        DecisionShape normalized(Symbol.Table symbols) {
-            int nextScalarCount = scalarShapes.length;
-            int nextMembershipCount = membershipShapes.length;
+        ConstraintClause normalized(Symbol.Table symbols) {
+            int nextScalarCount = scalarConstraints.length;
+            int nextMembershipCount = membershipConstraints.length;
             boolean changed = false;
-            for (int i = 0; i < scalarShapes.length; i++) {
-                if (scalarShapes[i].isFull(symbols.symbol(scalarIds[i]))) {
+            for (int i = 0; i < scalarConstraints.length; i++) {
+                if (scalarConstraints[i].isFull(symbols.symbol(scalarIds[i]))) {
                     changed = true;
                     nextScalarCount--;
                 }
             }
-            for (MembershipShape membershipShape : membershipShapes) {
-                if (membershipShape.isEmpty()) {
+            for (MembershipConstraint membershipConstraint : membershipConstraints) {
+                if (membershipConstraint.isEmpty()) {
                     changed = true;
                     nextMembershipCount--;
                 }
@@ -1839,34 +1843,36 @@ final class Domain {
                 return this;
             }
             if (nextScalarCount == 0 && nextMembershipCount == 0) {
-                return new DecisionShape();
+                return new ConstraintClause();
             }
             int[] nextScalarIds = nextScalarCount == 0 ? NO_SYMBOL_IDS : new int[nextScalarCount];
-            ScalarShape[] nextScalars = nextScalarCount == 0 ? NO_SCALARS : new ScalarShape[nextScalarCount];
+            ScalarConstraint[] nextScalarConstraints = nextScalarCount == 0
+                    ? NO_SCALAR_CONSTRAINTS
+                    : new ScalarConstraint[nextScalarCount];
             int scalarIndex = 0;
-            for (int i = 0; i < scalarShapes.length; i++) {
-                if (!scalarShapes[i].isFull(symbols.symbol(scalarIds[i]))) {
+            for (int i = 0; i < scalarConstraints.length; i++) {
+                if (!scalarConstraints[i].isFull(symbols.symbol(scalarIds[i]))) {
                     nextScalarIds[scalarIndex] = scalarIds[i];
-                    nextScalars[scalarIndex] = scalarShapes[i];
+                    nextScalarConstraints[scalarIndex] = scalarConstraints[i];
                     scalarIndex++;
                 }
             }
             int[] nextMembershipIds = nextMembershipCount == 0 ? NO_SYMBOL_IDS : new int[nextMembershipCount];
-            MembershipShape[] nextMemberships = nextMembershipCount == 0
-                    ? NO_MEMBERSHIPS
-                    : new MembershipShape[nextMembershipCount];
+            MembershipConstraint[] nextMembershipConstraints = nextMembershipCount == 0
+                    ? NO_MEMBERSHIP_CONSTRAINTS
+                    : new MembershipConstraint[nextMembershipCount];
             int membershipIndex = 0;
-            for (int i = 0; i < membershipShapes.length; i++) {
-                if (!membershipShapes[i].isEmpty()) {
+            for (int i = 0; i < membershipConstraints.length; i++) {
+                if (!membershipConstraints[i].isEmpty()) {
                     nextMembershipIds[membershipIndex] = membershipIds[i];
-                    nextMemberships[membershipIndex] = membershipShapes[i];
+                    nextMembershipConstraints[membershipIndex] = membershipConstraints[i];
                     membershipIndex++;
                 }
             }
-            return new DecisionShape(nextScalarIds, nextScalars, nextMembershipIds, nextMemberships);
+            return new ConstraintClause(nextScalarIds, nextScalarConstraints, nextMembershipIds, nextMembershipConstraints);
         }
 
-        DecisionShape intersect(DecisionShape other, Symbol.Table symbols) {
+        ConstraintClause intersect(ConstraintClause other, Symbol.Table symbols) {
             if (this == other) {
                 return this;
             }
@@ -1876,171 +1882,269 @@ final class Domain {
             if (other.isTrue()) {
                 return this;
             }
-            ScalarBuilder nextScalars = new ScalarBuilder(scalarShapes.length + other.scalarShapes.length);
+            int scalarCount = 0;
             int leftScalar = 0;
             int rightScalar = 0;
-            while (leftScalar < scalarShapes.length || rightScalar < other.scalarShapes.length) {
-                if (rightScalar == other.scalarShapes.length
-                        || leftScalar < scalarShapes.length
+            while (leftScalar < scalarConstraints.length || rightScalar < other.scalarConstraints.length) {
+                if (rightScalar == other.scalarConstraints.length
+                        || leftScalar < scalarConstraints.length
                            && scalarIds[leftScalar] < other.scalarIds[rightScalar]) {
-                    nextScalars.add(scalarIds[leftScalar], scalarShapes[leftScalar]);
+                    scalarCount++;
                     leftScalar++;
-                } else if (leftScalar == scalarShapes.length
+                } else if (leftScalar == scalarConstraints.length
                         || other.scalarIds[rightScalar] < scalarIds[leftScalar]) {
-                    nextScalars.add(other.scalarIds[rightScalar], other.scalarShapes[rightScalar]);
+                    scalarCount++;
                     rightScalar++;
                 } else {
-                    int symbolId = scalarIds[leftScalar];
-                    ScalarShape intersection = scalarShapes[leftScalar].intersect(other.scalarShapes[rightScalar]);
+                    ScalarConstraint intersection = scalarConstraints[leftScalar].intersect(other.scalarConstraints[rightScalar]);
                     if (intersection == null) {
                         return null;
                     }
-                    nextScalars.add(symbolId, intersection);
+                    scalarCount++;
                     leftScalar++;
                     rightScalar++;
                 }
             }
-            MembershipBuilder nextMemberships = new MembershipBuilder(membershipShapes.length + other.membershipShapes.length);
+            int membershipCount = 0;
             int leftMembership = 0;
             int rightMembership = 0;
-            while (leftMembership < membershipShapes.length || rightMembership < other.membershipShapes.length) {
-                if (rightMembership == other.membershipShapes.length
-                        || leftMembership < membershipShapes.length
+            while (leftMembership < membershipConstraints.length || rightMembership < other.membershipConstraints.length) {
+                if (rightMembership == other.membershipConstraints.length
+                        || leftMembership < membershipConstraints.length
                            && membershipIds[leftMembership] < other.membershipIds[rightMembership]) {
-                    nextMemberships.add(membershipIds[leftMembership], membershipShapes[leftMembership]);
+                    membershipCount++;
                     leftMembership++;
-                } else if (leftMembership == membershipShapes.length
+                } else if (leftMembership == membershipConstraints.length
                         || other.membershipIds[rightMembership] < membershipIds[leftMembership]) {
-                    nextMemberships.add(other.membershipIds[rightMembership], other.membershipShapes[rightMembership]);
+                    membershipCount++;
                     rightMembership++;
                 } else {
                     int symbolId = membershipIds[leftMembership];
-                    MembershipShape intersection = membershipShapes[leftMembership]
-                            .intersect(other.membershipShapes[rightMembership], symbols.symbol(symbolId));
+                    MembershipConstraint intersection = membershipConstraints[leftMembership]
+                            .intersect(other.membershipConstraints[rightMembership], symbols.symbol(symbolId));
                     if (intersection == null) {
                         return null;
                     }
-                    nextMemberships.add(symbolId, intersection);
+                    membershipCount++;
                     leftMembership++;
                     rightMembership++;
                 }
             }
-            return new DecisionShape(
-                    trim(nextScalars.symbolIds, nextScalars.size),
-                    trim(nextScalars.shapes, nextScalars.size, NO_SCALARS),
-                    trim(nextMemberships.symbolIds, nextMemberships.size),
-                    trim(nextMemberships.shapes, nextMemberships.size, NO_MEMBERSHIPS));
+            int[] nextScalarIds = scalarCount == 0 ? NO_SYMBOL_IDS : new int[scalarCount];
+            ScalarConstraint[] nextScalarConstraints = scalarCount == 0
+                    ? NO_SCALAR_CONSTRAINTS
+                    : new ScalarConstraint[scalarCount];
+            leftScalar = 0;
+            rightScalar = 0;
+            int scalarIndex = 0;
+            while (leftScalar < scalarConstraints.length || rightScalar < other.scalarConstraints.length) {
+                if (rightScalar == other.scalarConstraints.length
+                        || leftScalar < scalarConstraints.length
+                           && scalarIds[leftScalar] < other.scalarIds[rightScalar]) {
+                    nextScalarIds[scalarIndex] = scalarIds[leftScalar];
+                    nextScalarConstraints[scalarIndex] = scalarConstraints[leftScalar];
+                    leftScalar++;
+                } else if (leftScalar == scalarConstraints.length
+                        || other.scalarIds[rightScalar] < scalarIds[leftScalar]) {
+                    nextScalarIds[scalarIndex] = other.scalarIds[rightScalar];
+                    nextScalarConstraints[scalarIndex] = other.scalarConstraints[rightScalar];
+                    rightScalar++;
+                } else {
+                    nextScalarIds[scalarIndex] = scalarIds[leftScalar];
+                    nextScalarConstraints[scalarIndex] = scalarConstraints[leftScalar]
+                            .intersect(other.scalarConstraints[rightScalar]);
+                    leftScalar++;
+                    rightScalar++;
+                }
+                scalarIndex++;
+            }
+            int[] nextMembershipIds = membershipCount == 0 ? NO_SYMBOL_IDS : new int[membershipCount];
+            MembershipConstraint[] nextMembershipConstraints = membershipCount == 0
+                    ? NO_MEMBERSHIP_CONSTRAINTS
+                    : new MembershipConstraint[membershipCount];
+            leftMembership = 0;
+            rightMembership = 0;
+            int membershipIndex = 0;
+            while (leftMembership < membershipConstraints.length || rightMembership < other.membershipConstraints.length) {
+                if (rightMembership == other.membershipConstraints.length
+                        || leftMembership < membershipConstraints.length
+                           && membershipIds[leftMembership] < other.membershipIds[rightMembership]) {
+                    nextMembershipIds[membershipIndex] = membershipIds[leftMembership];
+                    nextMembershipConstraints[membershipIndex] = membershipConstraints[leftMembership];
+                    leftMembership++;
+                } else if (leftMembership == membershipConstraints.length
+                        || other.membershipIds[rightMembership] < membershipIds[leftMembership]) {
+                    nextMembershipIds[membershipIndex] = other.membershipIds[rightMembership];
+                    nextMembershipConstraints[membershipIndex] = other.membershipConstraints[rightMembership];
+                    rightMembership++;
+                } else {
+                    int symbolId = membershipIds[leftMembership];
+                    nextMembershipIds[membershipIndex] = symbolId;
+                    nextMembershipConstraints[membershipIndex] = membershipConstraints[leftMembership]
+                            .intersect(other.membershipConstraints[rightMembership], symbols.symbol(symbolId));
+                    leftMembership++;
+                    rightMembership++;
+                }
+                membershipIndex++;
+            }
+            return new ConstraintClause(nextScalarIds, nextScalarConstraints, nextMembershipIds, nextMembershipConstraints);
         }
 
-        boolean subsetOf(DecisionShape other) {
+        boolean subsetOf(ConstraintClause other) {
             if (this == other) {
                 return true;
             }
-            if (scalarShapes.length < other.scalarShapes.length || membershipShapes.length < other.membershipShapes.length) {
+            if (scalarConstraints.length < other.scalarConstraints.length
+                || membershipConstraints.length < other.membershipConstraints.length) {
                 return false;
             }
             int leftScalar = 0;
-            for (int rightScalar = 0; rightScalar < other.scalarShapes.length; rightScalar++) {
+            for (int rightScalar = 0; rightScalar < other.scalarConstraints.length; rightScalar++) {
                 int symbolId = other.scalarIds[rightScalar];
-                while (leftScalar < scalarShapes.length && scalarIds[leftScalar] < symbolId) {
+                while (leftScalar < scalarConstraints.length && scalarIds[leftScalar] < symbolId) {
                     leftScalar++;
                 }
-                if (leftScalar == scalarShapes.length
+                if (leftScalar == scalarConstraints.length
                     || scalarIds[leftScalar] != symbolId
-                    || !scalarShapes[leftScalar].subsetOf(other.scalarShapes[rightScalar])) {
+                    || !scalarConstraints[leftScalar].subsetOf(other.scalarConstraints[rightScalar])) {
                     return false;
                 }
             }
             int leftMembership = 0;
-            for (int rightMembership = 0; rightMembership < other.membershipShapes.length; rightMembership++) {
+            for (int rightMembership = 0; rightMembership < other.membershipConstraints.length; rightMembership++) {
                 int symbolId = other.membershipIds[rightMembership];
-                while (leftMembership < membershipShapes.length && membershipIds[leftMembership] < symbolId) {
+                while (leftMembership < membershipConstraints.length && membershipIds[leftMembership] < symbolId) {
                     leftMembership++;
                 }
-                if (leftMembership == membershipShapes.length || membershipIds[leftMembership] != symbolId) {
+                if (leftMembership == membershipConstraints.length || membershipIds[leftMembership] != symbolId) {
                     return false;
                 }
-                if (!membershipShapes[leftMembership].subsetOf(other.membershipShapes[rightMembership])) {
+                if (!membershipConstraints[leftMembership].subsetOf(other.membershipConstraints[rightMembership])) {
                     return false;
                 }
             }
             return true;
         }
 
-        DecisionShape tryMerge(DecisionShape other, Symbol.Table symbols) {
+        ConstraintClause tryMerge(ConstraintClause other, Symbol.Table symbols) {
             if (!Arrays.equals(membershipIds, other.membershipIds)
-                    || !Arrays.equals(membershipShapes, other.membershipShapes)) {
+                    || !Arrays.equals(membershipConstraints, other.membershipConstraints)) {
                 return null;
             }
-            if (Math.abs(scalarShapes.length - other.scalarShapes.length) > 1) {
+            if (Math.abs(scalarConstraints.length - other.scalarConstraints.length) > 1) {
                 return null;
             }
             Integer diffSymbolId = null;
-            ScalarBuilder nextScalars = new ScalarBuilder(scalarShapes.length + other.scalarShapes.length);
+            int scalarCount = 0;
             int leftScalar = 0;
             int rightScalar = 0;
-            while (leftScalar < scalarShapes.length || rightScalar < other.scalarShapes.length) {
+            while (leftScalar < scalarConstraints.length || rightScalar < other.scalarConstraints.length) {
                 int symbolId;
-                ScalarShape leftShape;
-                ScalarShape rightShape;
-                if (rightScalar == other.scalarShapes.length
-                        || leftScalar < scalarShapes.length
+                ScalarConstraint leftConstraint;
+                ScalarConstraint rightConstraint;
+                if (rightScalar == other.scalarConstraints.length
+                        || leftScalar < scalarConstraints.length
                            && scalarIds[leftScalar] < other.scalarIds[rightScalar]) {
                     symbolId = scalarIds[leftScalar];
-                    leftShape = scalarShapes[leftScalar];
-                    rightShape = null;
+                    leftConstraint = scalarConstraints[leftScalar];
+                    rightConstraint = null;
                     leftScalar++;
-                } else if (leftScalar == scalarShapes.length
+                } else if (leftScalar == scalarConstraints.length
                         || other.scalarIds[rightScalar] < scalarIds[leftScalar]) {
                     symbolId = other.scalarIds[rightScalar];
-                    leftShape = null;
-                    rightShape = other.scalarShapes[rightScalar];
+                    leftConstraint = null;
+                    rightConstraint = other.scalarConstraints[rightScalar];
                     rightScalar++;
                 } else {
                     symbolId = scalarIds[leftScalar];
-                    leftShape = scalarShapes[leftScalar];
-                    rightShape = other.scalarShapes[rightScalar];
+                    leftConstraint = scalarConstraints[leftScalar];
+                    rightConstraint = other.scalarConstraints[rightScalar];
                     leftScalar++;
                     rightScalar++;
                 }
                 Symbol symbol = symbols.symbol(symbolId);
                 long fullMask = symbol.mask;
-                long leftMask = leftShape == null ? fullMask : leftShape.allowedMask;
-                long rightMask = rightShape == null ? fullMask : rightShape.allowedMask;
+                long leftMask = leftConstraint == null ? fullMask : leftConstraint.allowedMask;
+                long rightMask = rightConstraint == null ? fullMask : rightConstraint.allowedMask;
                 if (leftMask != rightMask) {
                     if (diffSymbolId != null) {
                         return null;
                     }
                     diffSymbolId = symbolId;
-                    long unionMask = leftMask | rightMask;
-                    if (unionMask != fullMask) {
-                        nextScalars.add(symbolId, new ScalarShape(unionMask));
+                    if ((leftMask | rightMask) != fullMask) {
+                        scalarCount++;
                     }
                 } else if (leftMask != fullMask) {
-                    nextScalars.add(symbolId, leftShape == null ? rightShape : leftShape);
+                    scalarCount++;
                 }
             }
-            if (diffSymbolId != null) {
-                int[] ids = trim(nextScalars.symbolIds, nextScalars.size);
-                ScalarShape[] shapes = trim(nextScalars.shapes, nextScalars.size, NO_SCALARS);
-                return new DecisionShape(ids, shapes, membershipIds, membershipShapes);
+            if (diffSymbolId == null) {
+                return null;
             }
-            return null;
+            int[] nextScalarIds = scalarCount == 0 ? NO_SYMBOL_IDS : new int[scalarCount];
+            ScalarConstraint[] nextScalarConstraints = scalarCount == 0
+                    ? NO_SCALAR_CONSTRAINTS
+                    : new ScalarConstraint[scalarCount];
+            leftScalar = 0;
+            rightScalar = 0;
+            int scalarIndex = 0;
+            while (leftScalar < scalarConstraints.length || rightScalar < other.scalarConstraints.length) {
+                int symbolId;
+                ScalarConstraint leftConstraint;
+                ScalarConstraint rightConstraint;
+                if (rightScalar == other.scalarConstraints.length
+                        || leftScalar < scalarConstraints.length
+                           && scalarIds[leftScalar] < other.scalarIds[rightScalar]) {
+                    symbolId = scalarIds[leftScalar];
+                    leftConstraint = scalarConstraints[leftScalar];
+                    rightConstraint = null;
+                    leftScalar++;
+                } else if (leftScalar == scalarConstraints.length
+                        || other.scalarIds[rightScalar] < scalarIds[leftScalar]) {
+                    symbolId = other.scalarIds[rightScalar];
+                    leftConstraint = null;
+                    rightConstraint = other.scalarConstraints[rightScalar];
+                    rightScalar++;
+                } else {
+                    symbolId = scalarIds[leftScalar];
+                    leftConstraint = scalarConstraints[leftScalar];
+                    rightConstraint = other.scalarConstraints[rightScalar];
+                    leftScalar++;
+                    rightScalar++;
+                }
+                Symbol symbol = symbols.symbol(symbolId);
+                long fullMask = symbol.mask;
+                long leftMask = leftConstraint == null ? fullMask : leftConstraint.allowedMask;
+                long rightMask = rightConstraint == null ? fullMask : rightConstraint.allowedMask;
+                if (leftMask != rightMask) {
+                    long unionMask = leftMask | rightMask;
+                    if (unionMask != fullMask) {
+                        nextScalarIds[scalarIndex] = symbolId;
+                        nextScalarConstraints[scalarIndex] = new ScalarConstraint(unionMask);
+                        scalarIndex++;
+                    }
+                } else if (leftMask != fullMask) {
+                    nextScalarIds[scalarIndex] = symbolId;
+                    nextScalarConstraints[scalarIndex] = leftConstraint == null ? rightConstraint : leftConstraint;
+                    scalarIndex++;
+                }
+            }
+            return new ConstraintClause(nextScalarIds, nextScalarConstraints, membershipIds, membershipConstraints);
         }
 
-        List<DecisionShape> subtract(DecisionShape other, Symbol.Table symbols) {
-            DecisionShape intersection = intersect(other, symbols);
+        List<ConstraintClause> subtract(ConstraintClause other, Symbol.Table symbols) {
+            ConstraintClause intersection = intersect(other, symbols);
             if (intersection == null) {
                 return List.of(this);
             }
             if (subsetOf(other)) {
                 return List.of();
             }
-            DecisionPartition partition = splitAgainst(other, symbols);
+            ClausePartition partition = splitAgainst(other, symbols);
             if (partition == null) {
                 return List.of(this);
             }
-            List<DecisionShape> result = new ArrayList<>();
+            List<ConstraintClause> result = new ArrayList<>();
             if (partition.outside != null) {
                 result.add(partition.outside);
             }
@@ -2053,13 +2157,13 @@ final class Domain {
 
         Expression toExpression(IntFunction<String> keyResolver, Symbol.Table symbols) {
             Expression expr = Expression.TRUE;
-            for (int i = 0; i < scalarShapes.length; i++) {
+            for (int i = 0; i < scalarConstraints.length; i++) {
                 Symbol symbol = symbols.symbol(scalarIds[i]);
-                expr = expr.and(scalarShapes[i].toExpression(keyResolver.apply(scalarIds[i]), symbol));
+                expr = expr.and(scalarConstraints[i].toExpression(keyResolver.apply(scalarIds[i]), symbol));
             }
-            for (int i = 0; i < membershipShapes.length; i++) {
+            for (int i = 0; i < membershipConstraints.length; i++) {
                 Symbol symbol = symbols.symbol(membershipIds[i]);
-                expr = expr.and(membershipShapes[i].toExpression(keyResolver.apply(membershipIds[i]), symbol));
+                expr = expr.and(membershipConstraints[i].toExpression(keyResolver.apply(membershipIds[i]), symbol));
             }
             return expr;
         }
@@ -2067,68 +2171,68 @@ final class Domain {
         String literal(Symbol.Table symbols) {
             StringBuilder builder = new StringBuilder();
             builder.append('{');
-            for (int i = 0; i < scalarShapes.length; i++) {
+            for (int i = 0; i < scalarConstraints.length; i++) {
                 if (i > 0) {
                     builder.append(',');
                 }
                 builder.append(scalarIds[i]).append(':');
-                scalarShapes[i].appendLiteral(builder, symbols.symbol(scalarIds[i]));
+                scalarConstraints[i].appendLiteral(builder, symbols.symbol(scalarIds[i]));
             }
             builder.append("}|{");
-            for (int i = 0; i < membershipShapes.length; i++) {
+            for (int i = 0; i < membershipConstraints.length; i++) {
                 if (i > 0) {
                     builder.append(',');
                 }
                 builder.append(membershipIds[i]).append(':');
-                membershipShapes[i].appendLiteral(builder, symbols.symbol(membershipIds[i]));
+                membershipConstraints[i].appendLiteral(builder, symbols.symbol(membershipIds[i]));
             }
             builder.append('}');
             return builder.toString();
         }
 
-        DecisionPartition splitAgainst(DecisionShape other, Symbol.Table symbols) {
+        ClausePartition splitAgainst(ConstraintClause other, Symbol.Table symbols) {
             int leftScalar = 0;
-            for (int rightScalar = 0; rightScalar < other.scalarShapes.length; rightScalar++) {
+            for (int rightScalar = 0; rightScalar < other.scalarConstraints.length; rightScalar++) {
                 int symbolId = other.scalarIds[rightScalar];
-                while (leftScalar < scalarShapes.length && scalarIds[leftScalar] < symbolId) {
+                while (leftScalar < scalarConstraints.length && scalarIds[leftScalar] < symbolId) {
                     leftScalar++;
                 }
                 Symbol symbol = symbols.symbol(symbolId);
-                long leftMask = leftScalar < scalarShapes.length && scalarIds[leftScalar] == symbolId
-                        ? scalarShapes[leftScalar].allowedMask
+                long leftMask = leftScalar < scalarConstraints.length && scalarIds[leftScalar] == symbolId
+                        ? scalarConstraints[leftScalar].allowedMask
                         : symbol.mask;
-                long rightMask = other.scalarShapes[rightScalar].allowedMask;
+                long rightMask = other.scalarConstraints[rightScalar].allowedMask;
                 long outsideMask = leftMask & ~rightMask;
                 if (outsideMask != 0L) {
                     long overlapMask = leftMask & rightMask;
-                    return new DecisionPartition(
-                            withScalar(symbolId, new ScalarShape(outsideMask), symbol),
-                            withScalar(symbolId, new ScalarShape(overlapMask), symbol));
+                    return new ClausePartition(
+                            withScalar(symbolId, new ScalarConstraint(outsideMask), symbol),
+                            withScalar(symbolId, new ScalarConstraint(overlapMask), symbol));
                 }
             }
             int leftMembership = 0;
-            for (int rightMembership = 0; rightMembership < other.membershipShapes.length; rightMembership++) {
+            for (int rightMembership = 0; rightMembership < other.membershipConstraints.length; rightMembership++) {
                 int symbolId = other.membershipIds[rightMembership];
-                while (leftMembership < membershipShapes.length && membershipIds[leftMembership] < symbolId) {
+                while (leftMembership < membershipConstraints.length && membershipIds[leftMembership] < symbolId) {
                     leftMembership++;
                 }
                 Symbol symbol = symbols.symbol(symbolId);
-                MembershipShape left = leftMembership < membershipShapes.length && membershipIds[leftMembership] == symbolId
-                        ? membershipShapes[leftMembership]
-                        : MembershipShape.EMPTY;
-                MembershipShape right = other.membershipShapes[rightMembership];
+                MembershipConstraint left = leftMembership < membershipConstraints.length && membershipIds[leftMembership] == symbolId
+                        ? membershipConstraints[leftMembership]
+                        : MembershipConstraint.EMPTY;
+                MembershipConstraint right = other.membershipConstraints[rightMembership];
                 long knownMask = left.requiredMask | left.forbiddenMask;
                 long unresolvedRequiredMask = right.requiredMask & ~knownMask;
                 if (unresolvedRequiredMask != 0L) {
                     String item = symbol.membershipItem(Long.numberOfTrailingZeros(unresolvedRequiredMask));
-                    return new DecisionPartition(
+                    return new ClausePartition(
                             withMembershipForbidden(symbolId, item, symbol),
                             withMembershipRequired(symbolId, item, symbol));
                 }
                 long unresolvedForbiddenMask = right.forbiddenMask & ~knownMask;
                 if (unresolvedForbiddenMask != 0L) {
                     String item = symbol.membershipItem(Long.numberOfTrailingZeros(unresolvedForbiddenMask));
-                    return new DecisionPartition(
+                    return new ClausePartition(
                             withMembershipRequired(symbolId, item, symbol),
                             withMembershipForbidden(symbolId, item, symbol));
                 }
@@ -2136,77 +2240,77 @@ final class Domain {
             return null;
         }
 
-        DecisionShape withScalar(int symbolId, ScalarShape nextShape, Symbol symbol) {
-            if (nextShape.isFull(symbol)) {
+        ConstraintClause withScalar(int symbolId, ScalarConstraint nextConstraint, Symbol symbol) {
+            if (nextConstraint.isFull(symbol)) {
                 int index = Arrays.binarySearch(scalarIds, symbolId);
                 if (index < 0) {
                     return this;
                 }
-                if (scalarShapes.length == 1) {
-                    return new DecisionShape(NO_SYMBOL_IDS, NO_SCALARS, membershipIds, membershipShapes);
+                if (scalarConstraints.length == 1) {
+                    return new ConstraintClause(NO_SYMBOL_IDS, NO_SCALAR_CONSTRAINTS, membershipIds, membershipConstraints);
                 }
-                return new DecisionShape(
+                return new ConstraintClause(
                         removeIndex(scalarIds, index),
-                        removeIndex(scalarShapes, index),
+                        removeIndex(scalarConstraints, index),
                         membershipIds,
-                        membershipShapes);
+                        membershipConstraints);
             }
             int index = Arrays.binarySearch(scalarIds, symbolId);
             if (index >= 0) {
-                if (scalarShapes[index].equals(nextShape)) {
+                if (scalarConstraints[index].equals(nextConstraint)) {
                     return this;
                 }
-                ScalarShape[] nextScalars = Arrays.copyOf(scalarShapes, scalarShapes.length);
-                nextScalars[index] = nextShape;
-                return new DecisionShape(scalarIds, nextScalars, membershipIds, membershipShapes);
+                ScalarConstraint[] nextScalars = Arrays.copyOf(scalarConstraints, scalarConstraints.length);
+                nextScalars[index] = nextConstraint;
+                return new ConstraintClause(scalarIds, nextScalars, membershipIds, membershipConstraints);
             }
             int insertion = -index - 1;
             int[] nextScalarIds = insert(scalarIds, insertion, symbolId);
-            ScalarShape[] nextScalars = insert(scalarShapes, insertion, nextShape);
-            return new DecisionShape(nextScalarIds, nextScalars, membershipIds, membershipShapes);
+            ScalarConstraint[] nextScalars = insert(scalarConstraints, insertion, nextConstraint);
+            return new ConstraintClause(nextScalarIds, nextScalars, membershipIds, membershipConstraints);
         }
 
-        DecisionShape withMembershipRequired(int symbolId, String item, Symbol symbol) {
+        ConstraintClause withMembershipRequired(int symbolId, String item, Symbol symbol) {
             int index = Arrays.binarySearch(membershipIds, symbolId);
-            MembershipShape current = index < 0 ? MembershipShape.EMPTY : membershipShapes[index];
-            MembershipShape nextShape = current.withRequired(item, symbol);
-            if (nextShape.equals(current)) {
+            MembershipConstraint current = index < 0 ? MembershipConstraint.EMPTY : membershipConstraints[index];
+            MembershipConstraint nextConstraint = current.withRequired(item, symbol);
+            if (nextConstraint.equals(current)) {
                 return this;
             }
-            return withMembership(index, symbolId, nextShape);
+            return withMembership(index, symbolId, nextConstraint);
         }
 
-        DecisionShape withMembershipForbidden(int symbolId, String item, Symbol symbol) {
+        ConstraintClause withMembershipForbidden(int symbolId, String item, Symbol symbol) {
             int index = Arrays.binarySearch(membershipIds, symbolId);
-            MembershipShape current = index < 0 ? MembershipShape.EMPTY : membershipShapes[index];
-            MembershipShape nextShape = current.withForbidden(item, symbol);
-            if (nextShape.equals(current)) {
+            MembershipConstraint current = index < 0 ? MembershipConstraint.EMPTY : membershipConstraints[index];
+            MembershipConstraint nextConstraint = current.withForbidden(item, symbol);
+            if (nextConstraint.equals(current)) {
                 return this;
             }
-            return withMembership(index, symbolId, nextShape);
+            return withMembership(index, symbolId, nextConstraint);
         }
 
-        DecisionShape withMembership(int index, int symbolId, MembershipShape nextShape) {
-            if (nextShape.isEmpty()) {
+        ConstraintClause withMembership(int index, int symbolId, MembershipConstraint nextConstraint) {
+            if (nextConstraint.isEmpty()) {
                 if (index < 0) {
                     return this;
                 }
-                if (membershipShapes.length == 1) {
-                    return new DecisionShape(scalarIds, scalarShapes, NO_SYMBOL_IDS, NO_MEMBERSHIPS);
+                if (membershipConstraints.length == 1) {
+                    return new ConstraintClause(scalarIds, scalarConstraints, NO_SYMBOL_IDS, NO_MEMBERSHIP_CONSTRAINTS);
                 }
                 int[] ids = removeIndex(membershipIds, index);
-                MembershipShape[] shapes = removeIndex(membershipShapes, index);
-                return new DecisionShape(scalarIds, scalarShapes, ids, shapes);
+                MembershipConstraint[] constraints = removeIndex(membershipConstraints, index);
+                return new ConstraintClause(scalarIds, scalarConstraints, ids, constraints);
             }
             if (index >= 0) {
-                MembershipShape[] shapes = Arrays.copyOf(membershipShapes, membershipShapes.length);
-                shapes[index] = nextShape;
-                return new DecisionShape(scalarIds, scalarShapes, membershipIds, shapes);
+                MembershipConstraint[] constraints = Arrays.copyOf(membershipConstraints, membershipConstraints.length);
+                constraints[index] = nextConstraint;
+                return new ConstraintClause(scalarIds, scalarConstraints, membershipIds, constraints);
             }
             int insertion = -index - 1;
             int[] ids = insert(membershipIds, insertion, symbolId);
-            MembershipShape[] shapes = insert(membershipShapes, insertion, nextShape);
-            return new DecisionShape(scalarIds, scalarShapes, ids, shapes);
+            MembershipConstraint[] constraints = insert(membershipConstraints, insertion, nextConstraint);
+            return new ConstraintClause(scalarIds, scalarConstraints, ids, constraints);
         }
 
         static int entriesHash(int[] symbolIds, Object[] values) {
@@ -2246,78 +2350,36 @@ final class Domain {
             return next;
         }
 
-        static int[] trim(int[] values, int size) {
-            return size == 0 ? DecisionShape.NO_SYMBOL_IDS : size == values.length ? values : Arrays.copyOf(values, size);
-        }
-
-        static <T> T[] trim(T[] values, int size, T[] empty) {
-            return size == 0 ? empty : size == values.length ? values : Arrays.copyOf(values, size);
-        }
-
         @Override
         public boolean equals(Object o) {
             if (this == o) {
                 return true;
             }
-            if (!(o instanceof DecisionShape)) {
+            if (!(o instanceof ConstraintClause)) {
                 return false;
             }
-            DecisionShape other = (DecisionShape) o;
+            ConstraintClause other = (ConstraintClause) o;
             return hashCode == other.hashCode
                     && Arrays.equals(scalarIds, other.scalarIds)
-                    && Arrays.equals(scalarShapes, other.scalarShapes)
+                    && Arrays.equals(scalarConstraints, other.scalarConstraints)
                     && Arrays.equals(membershipIds, other.membershipIds)
-                    && Arrays.equals(membershipShapes, other.membershipShapes);
+                    && Arrays.equals(membershipConstraints, other.membershipConstraints);
         }
 
         @Override
         public int hashCode() {
             return hashCode;
         }
-
-        private static final class ScalarBuilder {
-            private final int[] symbolIds;
-            private final ScalarShape[] shapes;
-            private int size;
-
-            ScalarBuilder(int capacity) {
-                this.symbolIds = capacity == 0 ? NO_SYMBOL_IDS : new int[capacity];
-                this.shapes = capacity == 0 ? NO_SCALARS : new ScalarShape[capacity];
-            }
-
-            void add(int symbolId, ScalarShape shape) {
-                symbolIds[size] = symbolId;
-                shapes[size] = shape;
-                size++;
-            }
-        }
-
-        private static final class MembershipBuilder {
-            private final int[] symbolIds;
-            private final MembershipShape[] shapes;
-            private int size;
-
-            MembershipBuilder(int capacity) {
-                this.symbolIds = capacity == 0 ? NO_SYMBOL_IDS : new int[capacity];
-                this.shapes = capacity == 0 ? NO_MEMBERSHIPS : new MembershipShape[capacity];
-            }
-
-            void add(int symbolId, MembershipShape shape) {
-                symbolIds[size] = symbolId;
-                shapes[size] = shape;
-                size++;
-            }
-        }
     }
 
-    private static final class ScalarShape {
+    private static final class ScalarConstraint {
         private final long allowedMask;
 
-        ScalarShape(long allowedMask) {
+        ScalarConstraint(long allowedMask) {
             this.allowedMask = allowedMask;
         }
 
-        ScalarShape intersect(ScalarShape other) {
+        ScalarConstraint intersect(ScalarConstraint other) {
             if (this == other || equals(other)) {
                 return this;
             }
@@ -2331,16 +2393,16 @@ final class Domain {
             if (intersectionMask == other.allowedMask) {
                 return other;
             }
-            return new ScalarShape(intersectionMask);
+            return new ScalarConstraint(intersectionMask);
         }
 
-        boolean subsetOf(ScalarShape other) {
+        boolean subsetOf(ScalarConstraint other) {
             return this == other || (allowedMask & ~other.allowedMask) == 0L;
         }
 
         boolean isFull(Symbol symbol) {
             if (!symbol.scalar) {
-                throw new IllegalStateException("Scalar shape maskability mismatch");
+                throw new IllegalStateException("Scalar constraint maskability mismatch");
             }
             return allowedMask == symbol.mask;
         }
@@ -2395,7 +2457,7 @@ final class Domain {
 
         @Override
         public boolean equals(Object o) {
-            return o instanceof ScalarShape && allowedMask == ((ScalarShape) o).allowedMask;
+            return o instanceof ScalarConstraint && allowedMask == ((ScalarConstraint) o).allowedMask;
         }
 
         @Override
@@ -2404,17 +2466,17 @@ final class Domain {
         }
     }
 
-    private static final class MembershipShape {
-        private static final MembershipShape EMPTY = new MembershipShape(0L, 0L);
+    private static final class MembershipConstraint {
+        private static final MembershipConstraint EMPTY = new MembershipConstraint(0L, 0L);
         private final long requiredMask;
         private final long forbiddenMask;
 
-        private MembershipShape(long requiredMask, long forbiddenMask) {
+        private MembershipConstraint(long requiredMask, long forbiddenMask) {
             this.requiredMask = requiredMask;
             this.forbiddenMask = forbiddenMask;
         }
 
-        MembershipShape(Symbol symbol, long requiredMask, long forbiddenMask) {
+        MembershipConstraint(Symbol symbol, long requiredMask, long forbiddenMask) {
             if (!symbol.member) {
                 throw new IllegalArgumentException("Masked membership constraint requires a maskable symbol");
             }
@@ -2429,15 +2491,15 @@ final class Domain {
             this.forbiddenMask = forbiddenMask;
         }
 
-        static MembershipShape required(Symbol symbol, Set<String> items) {
-            return items.isEmpty() ? EMPTY : new MembershipShape(symbol, symbol.membershipMask(items), 0L);
+        static MembershipConstraint required(Symbol symbol, Set<String> items) {
+            return items.isEmpty() ? EMPTY : new MembershipConstraint(symbol, symbol.membershipMask(items), 0L);
         }
 
         boolean isEmpty() {
             return requiredMask == 0L && forbiddenMask == 0L;
         }
 
-        MembershipShape intersect(MembershipShape other, Symbol symbol) {
+        MembershipConstraint intersect(MembershipConstraint other, Symbol symbol) {
             if (isEmpty()) {
                 return other;
             }
@@ -2458,10 +2520,10 @@ final class Domain {
             if (nextRequiredMask == other.requiredMask && nextForbiddenMask == other.forbiddenMask) {
                 return other;
             }
-            return new MembershipShape(symbol, nextRequiredMask, nextForbiddenMask);
+            return new MembershipConstraint(symbol, nextRequiredMask, nextForbiddenMask);
         }
 
-        boolean subsetOf(MembershipShape other) {
+        boolean subsetOf(MembershipConstraint other) {
             if (this == other || equals(other) || other.isEmpty()) {
                 return true;
             }
@@ -2471,20 +2533,20 @@ final class Domain {
             return (other.requiredMask & ~requiredMask) == 0L && (other.forbiddenMask & ~forbiddenMask) == 0L;
         }
 
-        MembershipShape withRequired(String item, Symbol symbol) {
+        MembershipConstraint withRequired(String item, Symbol symbol) {
             long itemMask = symbol.membershipMask(item);
             if ((requiredMask & itemMask) != 0L) {
                 return this;
             }
-            return new MembershipShape(symbol, requiredMask | itemMask, forbiddenMask);
+            return new MembershipConstraint(symbol, requiredMask | itemMask, forbiddenMask);
         }
 
-        MembershipShape withForbidden(String item, Symbol symbol) {
+        MembershipConstraint withForbidden(String item, Symbol symbol) {
             long itemMask = symbol.membershipMask(item);
             if ((forbiddenMask & itemMask) != 0L) {
                 return this;
             }
-            return new MembershipShape(symbol, requiredMask, forbiddenMask | itemMask);
+            return new MembershipConstraint(symbol, requiredMask, forbiddenMask | itemMask);
         }
 
         Expression toExpression(String key, Symbol symbol) {
@@ -2530,10 +2592,10 @@ final class Domain {
 
         @Override
         public boolean equals(Object o) {
-            if (!(o instanceof MembershipShape)) {
+            if (!(o instanceof MembershipConstraint)) {
                 return false;
             }
-            MembershipShape other = (MembershipShape) o;
+            MembershipConstraint other = (MembershipConstraint) o;
             return requiredMask == other.requiredMask && forbiddenMask == other.forbiddenMask;
         }
 
@@ -2543,11 +2605,11 @@ final class Domain {
         }
     }
 
-    private static final class DecisionPartition {
-        private final DecisionShape outside;
-        private final DecisionShape overlap;
+    private static final class ClausePartition {
+        private final ConstraintClause outside;
+        private final ConstraintClause overlap;
 
-        DecisionPartition(DecisionShape outside, DecisionShape overlap) {
+        ClausePartition(ConstraintClause outside, ConstraintClause overlap) {
             this.outside = outside;
             this.overlap = overlap;
         }

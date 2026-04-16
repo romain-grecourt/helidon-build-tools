@@ -1638,13 +1638,13 @@ final class Flow {
 
     private static final class Analyzer {
         private static final int EXACT_CASE_MAX = 16;
-        private static final int EXACT_PROVENANCE_MAX = 16;
+        private static final int COVERAGE_MAX = 16;
 
         private final Ir ir;
         private final Guards guards;
         private final Map<Integer, Map<FactState, Fact>> facts = new LinkedHashMap<>();
         private final Map<Map<Integer, FactState>, Map<Integer, Fact>> envs = new IdentityHashMap<>();
-        private final ExactProvenance[] provenances;
+        private final Coverage[] coverages;
         private final Guard[] entryGuards;
         private final Guard[] beforeGuards;
         private final Map<Integer, FactState>[] entryFacts;
@@ -1658,7 +1658,7 @@ final class Flow {
         Analyzer(Ir ir) {
             this.ir = ir;
             this.guards = ir.guards;
-            this.provenances = new ExactProvenance[ir.blocks.length];
+            this.coverages = new Coverage[ir.blocks.length];
             this.entryGuards = new Guard[ir.blocks.length];
             this.beforeGuards = new Guard[ir.ops.length];
             this.entryFacts = new Map[ir.blocks.length];
@@ -1785,7 +1785,7 @@ final class Flow {
             switch (op.kind) {
                 case DECLARE_INPUT: {
                     FactState declared = new FactState(
-                            provenance(op.blockId),
+                            coverage(op.blockId),
                             LatticeValue.top(ir.symbols.symbol(op.symbolId).domain()));
                     FactState existing = state.get(op.symbolId);
                     return define(state, op.symbolId,
@@ -1872,7 +1872,7 @@ final class Flow {
             LatticeValue value = evaluateValue(op.expression, symbol, state);
             Value<?> exactValue = exactValue(op.expression, currentGuard, state);
             return exactValue == null
-                    ? new FactState(provenance(op.blockId), value)
+                    ? new FactState(coverage(op.blockId), value)
                     : FactState.exact(op.blockId, value, exactValue);
         }
 
@@ -1924,7 +1924,7 @@ final class Flow {
                 }
                 Value<?> value = null;
                 for (ExactCaseState exactCase : fact.exactCases) {
-                    if (!overlaps(currentGuard, exactCase.provenance)) {
+                    if (!overlaps(currentGuard, exactCase.coverage)) {
                         continue;
                     }
                     if (value == null) {
@@ -1956,7 +1956,7 @@ final class Flow {
         }
 
         FactState mergeFact(int symbolId, FactState left, FactState right) {
-            ExactProvenance definedUnder = ExactProvenance.merge(left.definedUnder, right.definedUnder, -1);
+            Coverage definedUnder = Coverage.merge(left.definedUnder, right.definedUnder, -1);
             LatticeValue value = LatticeValue.join(left.value, right.value);
             if (left.exactCases.isEmpty()) {
                 return right.exactCases.isEmpty()
@@ -1966,7 +1966,7 @@ final class Flow {
             if (right.exactCases.isEmpty()) {
                 return new FactState(definedUnder, value, left.exactCoverage, left.exactCases);
             }
-            ExactProvenance coverage = ExactProvenance.merge(left.exactCoverage, right.exactCoverage, EXACT_PROVENANCE_MAX);
+            Coverage coverage = Coverage.merge(left.exactCoverage, right.exactCoverage, COVERAGE_MAX);
             if (coverage == null) {
                 return new FactState(definedUnder, value);
             }
@@ -1989,12 +1989,11 @@ final class Flow {
             for (int i = 0; i < merged.size(); i++) {
                 ExactCaseState current = merged.get(i);
                 if (Domain.sameExactValue(symbol.domain(), current.value, next.value)) {
-                    ExactProvenance provenance = ExactProvenance.merge(current.provenance, next.provenance,
-                            EXACT_PROVENANCE_MAX);
-                    if (provenance == null) {
+                    Coverage coverage = Coverage.merge(current.coverage, next.coverage, COVERAGE_MAX);
+                    if (coverage == null) {
                         return false;
                     }
-                    merged.set(i, new ExactCaseState(current.value, provenance));
+                    merged.set(i, new ExactCaseState(current.value, coverage));
                     return true;
                 }
             }
@@ -2036,60 +2035,60 @@ final class Flow {
             Symbol symbol = ir.symbols.symbol(symbolId);
             List<Fact.ExactCase> exactCases = new ArrayList<>(fact.exactCases.size());
             for (ExactCaseState exactCase : fact.exactCases) {
-                exactCases.add(new Fact.ExactCase(exactCase.value, materializeGuard(exactCase.provenance), symbol.domain()));
+                exactCases.add(new Fact.ExactCase(exactCase.value, materializeGuard(exactCase.coverage), symbol.domain()));
             }
             Fact materialized = new Fact(materializeGuard(fact.definedUnder), fact.value, exactCases);
             cacheBySymbol.put(fact, materialized);
             return materialized;
         }
 
-        boolean implies(Guard left, ExactProvenance right) {
+        boolean implies(Guard left, Coverage right) {
             return right.blockIds.length != 0 && guards.implies(left, materializeGuard(right));
         }
 
-        boolean overlaps(Guard left, ExactProvenance right) {
+        boolean overlaps(Guard left, Coverage right) {
             return right.blockIds.length != 0 && !guards.and(left, materializeGuard(right)).equals(Guard.FALSE);
         }
 
-        ExactProvenance provenance(int blockId) {
-            ExactProvenance cached = provenances[blockId];
+        Coverage coverage(int blockId) {
+            Coverage cached = coverages[blockId];
             if (cached != null) {
                 return cached;
             }
-            ExactProvenance created = new ExactProvenance(blockId);
-            provenances[blockId] = created;
+            Coverage created = new Coverage(blockId);
+            coverages[blockId] = created;
             return created;
         }
 
-        Guard materializeGuard(ExactProvenance provenance) {
-            Guard cached = provenance.materializedGuard;
+        Guard materializeGuard(Coverage coverage) {
+            Guard cached = coverage.materializedGuard;
             if (cached != null) {
                 return cached;
             }
-            if (provenance.blockIds.length == 0) {
+            if (coverage.blockIds.length == 0) {
                 return Guard.FALSE;
             }
-            Guard materialized = entryGuards[provenance.blockIds[0]];
-            for (int i = 1; i < provenance.blockIds.length; i++) {
-                materialized = guards.or(materialized, entryGuards[provenance.blockIds[i]]);
+            Guard materialized = entryGuards[coverage.blockIds[0]];
+            for (int i = 1; i < coverage.blockIds.length; i++) {
+                materialized = guards.or(materialized, entryGuards[coverage.blockIds[i]]);
             }
-            provenance.materializedGuard = materialized;
+            coverage.materializedGuard = materialized;
             return materialized;
         }
 
         private static final class FactState {
-            private final ExactProvenance definedUnder;
+            private final Coverage definedUnder;
             private final LatticeValue value;
-            private final ExactProvenance exactCoverage;
+            private final Coverage exactCoverage;
             private final List<ExactCaseState> exactCases;
 
-            FactState(ExactProvenance definedUnder, LatticeValue value) {
-                this(definedUnder, value, ExactProvenance.EMPTY, List.of());
+            FactState(Coverage definedUnder, LatticeValue value) {
+                this(definedUnder, value, Coverage.EMPTY, List.of());
             }
 
-            FactState(ExactProvenance definedUnder,
+            FactState(Coverage definedUnder,
                       LatticeValue value,
-                      ExactProvenance exactCoverage,
+                      Coverage exactCoverage,
                       List<ExactCaseState> exactCases) {
                 this.definedUnder = definedUnder;
                 this.value = value;
@@ -2098,7 +2097,7 @@ final class Flow {
             }
 
             static FactState exact(int blockId, LatticeValue value, Value<?> exactValue) {
-                ExactProvenance definedUnder = new ExactProvenance(blockId);
+                Coverage definedUnder = new Coverage(blockId);
                 if (exactValue == null || !exactValue.isPresent()) {
                     return new FactState(definedUnder, value);
                 }
@@ -2124,11 +2123,11 @@ final class Flow {
 
         private static final class ExactCaseState {
             private final Value<?> value;
-            private final ExactProvenance provenance;
+            private final Coverage coverage;
 
-            ExactCaseState(Value<?> value, ExactProvenance provenance) {
+            ExactCaseState(Value<?> value, Coverage coverage) {
                 this.value = value;
-                this.provenance = provenance;
+                this.coverage = coverage;
             }
 
             @Override
@@ -2140,22 +2139,21 @@ final class Flow {
                     return false;
                 }
                 ExactCaseState other = (ExactCaseState) o;
-                return provenance.equals(other.provenance)
-                       && Value.isEqual(value, other.value);
+                return coverage.equals(other.coverage) && Value.isEqual(value, other.value);
             }
         }
 
-        private static final class ExactProvenance {
-            private static final ExactProvenance EMPTY = new ExactProvenance();
+        private static final class Coverage {
+            private static final Coverage EMPTY = new Coverage();
 
             private final int[] blockIds;
             private Guard materializedGuard;
 
-            ExactProvenance(int... blockIds) {
+            Coverage(int... blockIds) {
                 this.blockIds = blockIds;
             }
 
-            static ExactProvenance merge(ExactProvenance left, ExactProvenance right, int maxEntries) {
+            static Coverage merge(Coverage left, Coverage right, int maxEntries) {
                 if (left.blockIds.length == 0) {
                     return right;
                 }
@@ -2198,7 +2196,7 @@ final class Flow {
                 if (matches(merged, size, right.blockIds)) {
                     return right;
                 }
-                return new ExactProvenance(size == merged.length ? merged : Arrays.copyOf(merged, size));
+                return new Coverage(size == merged.length ? merged : Arrays.copyOf(merged, size));
             }
 
             static boolean matches(int[] merged, int size, int[] other) {
@@ -2218,10 +2216,10 @@ final class Flow {
                 if (this == o) {
                     return true;
                 }
-                if (!(o instanceof ExactProvenance)) {
+                if (!(o instanceof Coverage)) {
                     return false;
                 }
-                ExactProvenance other = (ExactProvenance) o;
+                Coverage other = (Coverage) o;
                 return Arrays.equals(blockIds, other.blockIds);
             }
         }

@@ -1,5 +1,21 @@
 # Progress
 
+- 2026-04-16: Finished the internal naming cleanup that followed the
+  finite-mask cutover in `Domain` and `Flow`. `Domain` now uses
+  `ConstraintClause`, `ScalarConstraint`, `MembershipConstraint`, and
+  `ClausePartition` instead of the old private `*Shape` /
+  `DecisionPartition` names, and the clause algebra now allocates
+  exact-size arrays directly instead of carrying
+  `ScalarBuilder` / `MembershipBuilder` plus `trim(...)` helpers.
+  `Flow.Analyzer.ExactProvenance` is now `Coverage`, the exact-case and
+  `definedUnder` plumbing reads in those terms throughout the analyzer,
+  and the last stale internal "shape" exception text is gone. Focused
+  validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`222` tests, `BUILD SUCCESS`, total time `5.134 s`), and
+  `git diff --check` is clean.
 - 2026-04-15: Made `Flow.Analyzer` one-shot in practice and froze the
   remaining read-only indexed `Flow` tables to arrays. The analyzer no
   longer carries a shared work deque or pass-time reset logic:
