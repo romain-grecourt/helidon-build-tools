@@ -163,37 +163,37 @@ class DomainTest {
         Domain.Symbol enabledSymbol = symbols.symbol(enabled);
         Domain.Symbol featuresSymbol = symbols.symbol(features);
 
-        Domain.Symbol.Fact booleanTrue = Domain.Symbol.Fact.exact(
+        Domain.Fact booleanTrue = Domain.Fact.exact(
                 TRUE,
                 enabledSymbol.domain(),
-                Domain.LatticeValue.finiteScalar(enabledSymbol.scalarMask("true")),
+                Domain.LatticeValue.finiteScalar(enabledSymbol.mask("true")),
                 Value.of(true));
-        Domain.Symbol.Fact stringTrue = Domain.Symbol.Fact.exact(
+        Domain.Fact stringTrue = Domain.Fact.exact(
                 TRUE,
                 enabledSymbol.domain(),
-                Domain.LatticeValue.finiteScalar(enabledSymbol.scalarMask("true")),
+                Domain.LatticeValue.finiteScalar(enabledSymbol.mask("true")),
                 Value.of("true"));
-        Domain.Symbol.Fact mergedBoolean = Domain.Symbol.Fact.merge(booleanTrue, stringTrue, guards);
+        Domain.Fact mergedBoolean = Domain.Fact.merge(booleanTrue, stringTrue, guards);
 
         assertThat(mergedBoolean.exactCases().size(), is(1));
         assertThat(mergedBoolean.match(enabledSymbol, Value.of("true"), guards), is(TRUE));
         assertThat(mergedBoolean.scalarAny(enabledSymbol, Set.of("true"), guards), is(TRUE));
 
-        Domain.Symbol.Fact grpcRest = Domain.Symbol.Fact.exact(
+        Domain.Fact grpcRest = Domain.Fact.exact(
                 TRUE,
                 featuresSymbol.domain(),
                 Domain.LatticeValue.membership(
-                        featuresSymbol.membershipMask(Set.of("grpc", "rest")),
-                        featuresSymbol.membershipMask(Set.of("grpc", "rest"))),
+                        featuresSymbol.mask(Set.of("grpc", "rest")),
+                        featuresSymbol.mask(Set.of("grpc", "rest"))),
                 Value.of(List.of("grpc", "rest")));
-        Domain.Symbol.Fact restGrpc = Domain.Symbol.Fact.exact(
+        Domain.Fact restGrpc = Domain.Fact.exact(
                 TRUE,
                 featuresSymbol.domain(),
                 Domain.LatticeValue.membership(
-                        featuresSymbol.membershipMask(Set.of("grpc", "rest")),
-                        featuresSymbol.membershipMask(Set.of("grpc", "rest"))),
+                        featuresSymbol.mask(Set.of("grpc", "rest")),
+                        featuresSymbol.mask(Set.of("grpc", "rest"))),
                 Value.of(List.of("rest", "grpc")));
-        Domain.Symbol.Fact mergedMembership = Domain.Symbol.Fact.merge(grpcRest, restGrpc, guards);
+        Domain.Fact mergedMembership = Domain.Fact.merge(grpcRest, restGrpc, guards);
 
         assertThat(mergedMembership.exactCases().size(), is(1));
         assertThat(mergedMembership.listContains(featuresSymbol, Set.of("grpc", "rest"), guards), is(TRUE));

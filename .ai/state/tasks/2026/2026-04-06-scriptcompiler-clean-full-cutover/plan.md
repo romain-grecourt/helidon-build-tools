@@ -1,5 +1,24 @@
 # Plan
 
+- [x] Aggressively inline the remaining private carrier types in
+  `Domain` and `Flow` to make the implementation more procedural and
+  compact, while keeping external consumers
+  (`Flow.State`, `Flow.SymbolInfo`, `Domain.Symbol.Fact`,
+  `Fact.ExactCase`) intact.
+- [x] Inline `Domain` clause wrappers first: delete
+  `ScalarConstraint`, `MembershipConstraint`, and `ClausePartition`,
+  move `ConstraintClause` to raw primitive mask arrays, and absorb the
+  current partitioning logic directly into `subtract(...)`.
+- [x] Replace the private expression-stack tuple carriers next: delete
+  `ProjectedTerm`, `ConditionValue`, and `Guards.ResidualValue`, and
+  rewrite the expression walkers around local procedural stacks rather
+  than nested helper objects.
+- [x] Flatten the private `Flow` IR/control graph in one coupled pass:
+  delete `Control`, `Terminator`, `Block`, `Op`, and `BranchInfo`,
+  keep `Ir` as the frozen boundary, and move the implementation to
+  array-backed control, terminator, block-op, and op tables.
+- [x] Validate after each safe cut, and rerun the focused
+  `engine-v2` slice plus `git diff --check` on the final tree.
 - [x] Reproduce the clean-snapshot Helidon `compile_gate` failure and
   keep sampling after each major cut until the dominant hotspot is
   clear.

@@ -46,7 +46,7 @@ import java.util.regex.Pattern;
 
 import io.helidon.build.archetype.engine.v2.Context.Scope;
 import io.helidon.build.archetype.engine.v2.Domain.Guard;
-import io.helidon.build.archetype.engine.v2.Domain.Symbol.Fact;
+import io.helidon.build.archetype.engine.v2.Domain.Fact;
 import io.helidon.build.archetype.engine.v2.Expression.Token;
 import io.helidon.build.archetype.engine.v2.Node.Kind;
 import io.helidon.build.archetype.engine.v2.Value.Type;
@@ -1394,7 +1394,7 @@ public class ScriptCompiler {
             if (term instanceof AnalysisRef) {
                 String key = ((AnalysisRef) term).key;
                 Flow.SymbolInfo info = symbolInfo(key);
-                if (info == null || !info.symbol().domain().booleanLike()) {
+                if (info == null || info.symbol().domain().subKind() != Domain.Spec.SubKind.BOOLEAN) {
                     return new AnalysisBoolean(null, null, term::collect);
                 }
                 return new AnalysisBoolean(translatedEquality(key, Value.TRUE),

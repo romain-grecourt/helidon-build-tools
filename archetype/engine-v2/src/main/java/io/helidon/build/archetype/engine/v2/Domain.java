@@ -16,10 +16,8 @@
 package io.helidon.build.archetype.engine.v2;
 
 import java.util.ArrayList;
-import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.Deque;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -102,18 +100,6 @@ final class Domain {
 
         SubKind subKind() {
             return subKind;
-        }
-
-        boolean scalar() {
-            return kind == Kind.FINITE_SCALAR;
-        }
-
-        boolean membership() {
-            return kind == Kind.FINITE_MEMBERSHIP;
-        }
-
-        boolean booleanLike() {
-            return subKind == SubKind.BOOLEAN;
         }
 
         Set<String> values() {
@@ -241,42 +227,19 @@ final class Domain {
             return tainted;
         }
 
-        long scalarMask(String value) {
-            if (!scalar) {
-                throw new IllegalStateException("Scalar mask requested for non-maskable symbol: " + name);
-            }
+        long mask(String value) {
             return domain.mask(value);
         }
 
-        long membershipMask(String value) {
-            if (!member) {
-                throw new IllegalStateException("Membership mask requested for non-maskable symbol: " + name);
-            }
-            return domain.mask(value);
-        }
-
-        long membershipMask(Set<String> values) {
-            if (!member) {
-                throw new IllegalStateException("Membership mask requested for non-maskable symbol: " + name);
-            }
+        long mask(Set<String> values) {
             long mask = 0L;
             for (String value : values) {
-                mask |= membershipMask(value);
+                mask |= mask(value);
             }
             return mask;
         }
 
-        String scalarValue(int ordinal) {
-            if (!scalar) {
-                throw new IllegalStateException("Scalar value requested for non-maskable symbol: " + name);
-            }
-            return domain.value(ordinal);
-        }
-
-        String membershipItem(int ordinal) {
-            if (!member) {
-                throw new IllegalStateException("Membership item requested for non-maskable symbol: " + name);
-            }
+        String value(int ordinal) {
             return domain.value(ordinal);
         }
 
@@ -301,258 +264,6 @@ final class Domain {
         @Override
         public String toString() {
             return name + "#" + id + ":" + domain;
-        }
-
-        static final class Fact {
-            private final Guard definedUnder;
-            private final LatticeValue value;
-            private final List<ExactCase> exactCases;
-
-            Fact(Guard definedUnder, LatticeValue value) {
-                this(definedUnder, value, List.of());
-            }
-
-            Fact(Guard definedUnder, LatticeValue value, List<ExactCase> exactCases) {
-                this.definedUnder = definedUnder;
-                this.value = value;
-                this.exactCases = exactCases;
-            }
-
-            Guard definedUnder() {
-                return definedUnder;
-            }
-
-            LatticeValue value() {
-                return value;
-            }
-
-            List<ExactCase> exactCases() {
-                return exactCases;
-            }
-
-            Guard exactDefined(Guards guards) {
-                Guard result = Guard.FALSE;
-                for (ExactCase exactCase : exactCases) {
-                    result = guards.or(result, exactCase.guard);
-                }
-                return result;
-            }
-
-            Guard supportedExactDefined(Symbol symbol, Guards guards) {
-                Guard result = Guard.FALSE;
-                for (ExactCase exactCase : exactCases) {
-                    if (exactCase.supportedExact(symbol.domain())) {
-                        result = guards.or(result, exactCase.guard);
-                    }
-                }
-                return result;
-            }
-
-            Guard match(Symbol symbol, Value<?> candidate, Guards guards) {
-                Guard result = Guard.FALSE;
-                for (ExactCase exactCase : exactCases) {
-                    if (exactCase.matches(symbol.domain(), candidate)) {
-                        result = guards.or(result, exactCase.guard);
-                    }
-                }
-                return result;
-            }
-
-            Guard scalarAny(Symbol symbol, Set<String> values, Guards guards) {
-                if (!symbol.scalar) {
-                    return Guard.FALSE;
-                }
-                long allowedMask = 0L;
-                for (String value : values) {
-                    Integer ordinal = symbol.ordinals.get(value);
-                    if (ordinal != null) {
-                        allowedMask |= 1L << ordinal;
-                    }
-                }
-                if (allowedMask == 0L) {
-                    return Guard.FALSE;
-                }
-                Guard result = Guard.FALSE;
-                for (ExactCase exactCase : exactCases) {
-                    if ((exactCase.scalarMask & allowedMask) != 0L) {
-                        result = guards.or(result, exactCase.guard);
-                    }
-                }
-                return result;
-            }
-
-            Guard listContains(Symbol symbol, Set<String> required, Guards guards) {
-                if (!symbol.member) {
-                    return Guard.FALSE;
-                }
-                if (required.isEmpty()) {
-                    return exactDefined(guards);
-                }
-                if (!symbol.domain().values().containsAll(required)) {
-                    return Guard.FALSE;
-                }
-                long requiredMask = symbol.membershipMask(required);
-                Guard result = Guard.FALSE;
-                for (ExactCase exactCase : exactCases) {
-                    if (exactCase.containsAll(requiredMask)) {
-                        result = guards.or(result, exactCase.guard);
-                    }
-                }
-                return result;
-            }
-
-            static Fact exact(Guard definedUnder,
-                              Spec spec,
-                              LatticeValue value,
-                              Value<?> exactValue) {
-                if (exactValue == null || !exactValue.isPresent()) {
-                    return new Fact(definedUnder, value);
-                }
-                return new Fact(definedUnder, value, List.of(new ExactCase(exactValue, definedUnder, spec)));
-            }
-
-            static Fact merge(Fact left, Fact right, Guards guards) {
-                Guard definedUnder = guards.or(left.definedUnder, right.definedUnder);
-                LatticeValue value = LatticeValue.join(left.value, right.value);
-                if (left.exactCases.isEmpty()) {
-                    return right.exactCases.isEmpty()
-                            ? new Fact(definedUnder, value)
-                            : new Fact(definedUnder, value, right.exactCases);
-                }
-                if (right.exactCases.isEmpty()) {
-                    return new Fact(definedUnder, value, left.exactCases);
-                }
-                List<ExactCase> merged = new ArrayList<>();
-                for (ExactCase exactCase : left.exactCases) {
-                    mergeExactCase(merged, exactCase, guards);
-                }
-                for (ExactCase exactCase : right.exactCases) {
-                    mergeExactCase(merged, exactCase, guards);
-                }
-                return new Fact(definedUnder, value, merged);
-            }
-
-            private static void mergeExactCase(List<ExactCase> merged, ExactCase next, Guards guards) {
-                for (int i = 0; i < merged.size(); i++) {
-                    ExactCase current = merged.get(i);
-                    if (current.sameValue(next)) {
-                        merged.set(i, current.withGuard(guards.or(current.guard, next.guard)));
-                        return;
-                    }
-                }
-                merged.add(next);
-            }
-
-            @Override
-            public boolean equals(Object o) {
-                if (this == o) {
-                    return true;
-                }
-                if (!(o instanceof Fact)) {
-                    return false;
-                }
-                Fact other = (Fact) o;
-                return (definedUnder == other.definedUnder || definedUnder.equals(other.definedUnder))
-                       && value.equals(other.value)
-                       && (exactCases == other.exactCases || exactCases.equals(other.exactCases));
-            }
-
-            @Override
-            public int hashCode() {
-                int result = definedUnder.hashCode();
-                result = 31 * result + value.hashCode();
-                return 31 * result + exactCases.hashCode();
-            }
-
-            static final class ExactCase {
-                private final Value<?> value;
-                private final Guard guard;
-                private final long scalarMask;
-                private final long listMask;
-
-                ExactCase(Value<?> value, Guard guard, Spec spec) {
-                    this(value, guard, exactScalarMask(spec, value), exactListMask(spec, value));
-                }
-
-                private ExactCase(Value<?> value, Guard guard, long scalarMask, long listMask) {
-                    this.value = value;
-                    this.guard = guard;
-                    this.scalarMask = scalarMask;
-                    this.listMask = listMask;
-                }
-
-                Value<?> value() {
-                    return value;
-                }
-
-                Guard guard() {
-                    return guard;
-                }
-
-                long scalarMask() {
-                    return scalarMask;
-                }
-
-                long listMask() {
-                    return listMask;
-                }
-
-                ExactCase withGuard(Guard nextGuard) {
-                    return guard.equals(nextGuard) ? this : new ExactCase(value, nextGuard, scalarMask, listMask);
-                }
-
-                boolean matches(Spec spec, Value<?> candidate) {
-                    return exactValueEquals(spec, value, candidate, scalarMask, listMask);
-                }
-
-                boolean sameValue(ExactCase other) {
-                    if (scalarMask != 0L || other.scalarMask != 0L) {
-                        return scalarMask != 0L && scalarMask == other.scalarMask;
-                    }
-                    if (listMask != 0L || other.listMask != 0L) {
-                        return listMask != 0L && listMask == other.listMask;
-                    }
-                    return Value.isEqual(value, other.value);
-                }
-
-                boolean containsAll(long requiredMask) {
-                    return requiredMask == 0L ? value.type() == Value.Type.LIST : listMask != 0L && (requiredMask & ~listMask) == 0L;
-                }
-
-                boolean supportedExact(Spec spec) {
-                    switch (spec.kind()) {
-                        case FINITE_SCALAR:
-                            return scalarMask != 0L;
-                        case FINITE_MEMBERSHIP:
-                            return value.type() == Value.Type.LIST && (listMask != 0L || value.getList().isEmpty());
-                        case OPEN_TEXT:
-                        default:
-                            return true;
-                    }
-                }
-
-                String scalarLiteral() {
-                    return Value.scalarLiteral(value);
-                }
-
-                @Override
-                public boolean equals(Object o) {
-                    if (this == o) {
-                        return true;
-                    }
-                    if (!(o instanceof ExactCase)) {
-                        return false;
-                    }
-                    ExactCase other = (ExactCase) o;
-                    return sameValue(other)
-                           && (guard == other.guard || guard.equals(other.guard));
-                }
-
-                @Override
-                public int hashCode() {
-                    return 31 * exactValueHash(value, scalarMask, listMask) + guard.hashCode();
-                }
-            }
         }
 
         static final class Table {
@@ -714,7 +425,7 @@ final class Domain {
         }
 
         Set<String> scalarValues(Spec spec) {
-            if (kind != Kind.FINITE_SCALAR || !spec.scalar()) {
+            if (kind != Kind.FINITE_SCALAR || spec.kind != Spec.Kind.FINITE_SCALAR) {
                 throw new IllegalArgumentException("Scalar values requested for non-finite scalar");
             }
             return values(spec, scalarMask);
@@ -728,7 +439,7 @@ final class Domain {
         }
 
         Set<String> possibleValues(Spec spec) {
-            if (kind != Kind.MEMBERSHIP || !spec.membership()) {
+            if (kind != Kind.MEMBERSHIP || spec.kind != Spec.Kind.FINITE_MEMBERSHIP) {
                 throw new IllegalArgumentException("Possible values requested for non-membership");
             }
             return values(spec, possibleMask);
@@ -953,7 +664,7 @@ final class Domain {
                 case SCALAR_EQ: {
                     Symbol symbol = symbols.symbol(symbolId);
                     String key = keyResolver.apply(symbolId);
-                    if (symbol.domain().booleanLike()) {
+                    if (symbol.domain().subKind() == Spec.SubKind.BOOLEAN) {
                         if ("true".equals(value)) {
                             return Expression.create("${" + key + "}");
                         }
@@ -969,19 +680,19 @@ final class Domain {
                     if (mask == symbol.mask) {
                         return Expression.TRUE;
                     }
-                    if (symbol.domain().booleanLike() && Long.bitCount(mask) == 1) {
-                        String value = symbol.scalarValue(Long.numberOfTrailingZeros(mask));
+                    if (symbol.domain().subKind() == Spec.SubKind.BOOLEAN && Long.bitCount(mask) == 1) {
+                        String value = symbol.value(Long.numberOfTrailingZeros(mask));
                         return "true".equals(value) ? Expression.create("${" + key + "}") : Expression.create("!${" + key + "}");
                     }
                     long excludedMask = symbol.mask & ~mask;
                     if (Long.bitCount(excludedMask) == 1) {
-                        return Expression.create("${" + key + "} != '" + symbol.scalarValue(Long.numberOfTrailingZeros(excludedMask)) + "'");
+                        return Expression.create("${" + key + "} != '" + symbol.value(Long.numberOfTrailingZeros(excludedMask)) + "'");
                     }
                     List<Expression> terms = new ArrayList<>();
                     long remaining = mask;
                     while (remaining != 0L) {
                         int ordinal = Long.numberOfTrailingZeros(remaining);
-                        terms.add(Expression.create("${" + key + "} == '" + symbol.scalarValue(ordinal) + "'"));
+                        terms.add(Expression.create("${" + key + "} == '" + symbol.value(ordinal) + "'"));
                         remaining &= remaining - 1L;
                     }
                     return Expression.FALSE.or(terms);
@@ -993,7 +704,7 @@ final class Domain {
                     long remaining = mask;
                     while (remaining != 0L) {
                         int ordinal = Long.numberOfTrailingZeros(remaining);
-                        terms.add(Expression.create("${" + key + "} contains '" + symbol.membershipItem(ordinal) + "'"));
+                        terms.add(Expression.create("${" + key + "} contains '" + symbol.value(ordinal) + "'"));
                         remaining &= remaining - 1L;
                     }
                     return Expression.TRUE.and(terms);
@@ -1172,7 +883,7 @@ final class Domain {
             if (!symbol.domain().values().contains(value)) {
                 return Guard.FALSE;
             }
-            ConstraintClause clause = new ConstraintClause(symbolId, new ScalarConstraint(symbol.scalarMask(value)));
+            Clause clause = new Clause(symbolId, symbol.mask(value));
             return guard(Decision.of(List.of(clause), symbols), Residual.TRUE);
         }
 
@@ -1188,8 +899,7 @@ final class Domain {
             if (!symbol.domain().values().containsAll(values)) {
                 return Guard.FALSE;
             }
-            MembershipConstraint constraint = MembershipConstraint.required(symbol, values);
-            ConstraintClause clause = new ConstraintClause(symbolId, constraint);
+            Clause clause = new Clause(symbolId, symbol.mask(values), 0L);
             return guard(Decision.of(List.of(clause), symbols), Residual.TRUE);
         }
 
@@ -1251,82 +961,114 @@ final class Domain {
             if (normalized == Expression.FALSE) {
                 return Residual.FALSE;
             }
-            Deque<ResidualValue> stack = new ArrayDeque<>();
+            int capacity = normalized.tokens().size();
+            Residual[] residualStack = new Residual[capacity];
+            int[] symbolIdStack = new int[capacity];
+            Value<?>[] literalStack = new Value<?>[capacity];
+            Expression[] exprStack = new Expression[capacity];
+            int size = 0;
             for (Token token : normalized.tokens()) {
                 if (token.isVariable()) {
                     String variable = token.variable();
-                    int symbolId = symbols.findId(variable);
-                    stack.push(ResidualValue.variable(variable, symbolId));
+                    Expression termExpr = Expression.create("${" + variable + "}");
+                    residualStack[size] = Residual.opaque(termExpr);
+                    symbolIdStack[size] = symbols.findId(variable);
+                    literalStack[size] = null;
+                    exprStack[size] = termExpr;
+                    size++;
                     continue;
                 }
                 if (token.isOperand()) {
-                    stack.push(ResidualValue.literal(token.operand()));
+                    Value<?> literal = token.operand();
+                    Expression termExpr = new Expression(List.of(Token.of(literal)), true);
+                    residualStack[size] = Residual.opaque(termExpr);
+                    symbolIdStack[size] = -1;
+                    literalStack[size] = literal;
+                    exprStack[size] = termExpr;
+                    size++;
                     continue;
                 }
                 switch (token.operator()) {
-                    case NOT:
-                        stack.push(not(stack.pop()));
+                    case NOT: {
+                        int index = size - 1;
+                        residualStack[index] = Residual.not(residualStack[index]);
+                        symbolIdStack[index] = -1;
+                        literalStack[index] = null;
+                        exprStack[index] = negate(exprStack[index]);
                         break;
-                    case AND:
-                        stack.push(and(stack.pop(), stack.pop()));
+                    }
+                    case AND: {
+                        int right = --size;
+                        int left = --size;
+                        residualStack[left] = Residual.and(List.of(residualStack[left], residualStack[right]));
+                        symbolIdStack[left] = -1;
+                        literalStack[left] = null;
+                        exprStack[left] = exprStack[left].and(exprStack[right]);
+                        size = left + 1;
                         break;
-                    case OR:
-                        stack.push(or(stack.pop(), stack.pop()));
+                    }
+                    case OR: {
+                        int right = --size;
+                        int left = --size;
+                        residualStack[left] = Residual.or(List.of(residualStack[left], residualStack[right]));
+                        symbolIdStack[left] = -1;
+                        literalStack[left] = null;
+                        exprStack[left] = exprStack[left].or(exprStack[right]);
+                        size = left + 1;
                         break;
+                    }
                     case EQUAL:
-                        stack.push(compare(true, stack.pop(), stack.pop()));
+                    case NOT_EQUAL: {
+                        int right = --size;
+                        int left = --size;
+                        Residual direct = compareResidual(symbolIdStack[left], literalStack[right]);
+                        if (direct == null) {
+                            direct = compareResidual(symbolIdStack[right], literalStack[left]);
+                        }
+                        Expression combined = combine(exprStack[left],
+                                token.operator() == Expression.Operator.EQUAL ? "==" : "!=",
+                                exprStack[right]);
+                        residualStack[left] = direct == null
+                                ? Residual.opaque(combined)
+                                : token.operator() == Expression.Operator.EQUAL ? direct : Residual.not(direct);
+                        symbolIdStack[left] = -1;
+                        literalStack[left] = null;
+                        exprStack[left] = combined;
+                        size = left + 1;
                         break;
-                    case NOT_EQUAL:
-                        stack.push(compare(false, stack.pop(), stack.pop()));
+                    }
+                    case CONTAINS: {
+                        int right = --size;
+                        int left = --size;
+                        Residual direct = containsResidual(symbolIdStack[left], literalStack[right]);
+                        if (direct == null) {
+                            direct = scalarInResidual(symbolIdStack[right], literalStack[left]);
+                        }
+                        Expression combined = combine(exprStack[left], "contains", exprStack[right]);
+                        residualStack[left] = direct == null ? Residual.opaque(combined) : direct;
+                        symbolIdStack[left] = -1;
+                        literalStack[left] = null;
+                        exprStack[left] = combined;
+                        size = left + 1;
                         break;
-                    case CONTAINS:
-                        stack.push(contains(stack.pop(), stack.pop()));
-                        break;
+                    }
                     default:
                         return Residual.opaque(normalized);
                 }
             }
-            return stack.size() == 1 ? stack.pop().residual : Residual.opaque(normalized);
+            return size == 1 ? residualStack[0] : Residual.opaque(normalized);
         }
 
-        private ResidualValue not(ResidualValue value) {
-            return ResidualValue.of(Residual.not(value.residual), negate(value.expr));
-        }
-
-        private ResidualValue and(ResidualValue right, ResidualValue left) {
-            return ResidualValue.of(Residual.and(
-                    List.of(left.residual, right.residual)),
-                    left.expr.and(right.expr));
-        }
-
-        private ResidualValue or(ResidualValue right, ResidualValue left) {
-            return ResidualValue.of(Residual.or(
-                    List.of(left.residual, right.residual)),
-                    left.expr.or(right.expr));
-        }
-
-        private ResidualValue compare(boolean equal, ResidualValue right, ResidualValue left) {
-            Residual direct = compareResidual(left, right);
-            if (direct == null) {
-                direct = compareResidual(right, left);
-            }
-            Expression expr = combine(left.expr, equal ? "==" : "!=", right.expr);
-            if (direct == null) {
-                return ResidualValue.of(Residual.opaque(expr), expr);
-            }
-            return ResidualValue.of(equal ? direct : Residual.not(direct), expr);
-        }
-
-        private Residual compareResidual(ResidualValue symbolValue, ResidualValue literalValue) {
-            if (symbolValue.symbolId < 0 || literalValue.literal == null) {
+        private Residual compareResidual(int symbolId, Value<?> literal) {
+            if (symbolId < 0 || literal == null) {
                 return null;
             }
-            Symbol symbol = symbols.symbol(symbolValue.symbolId);
+            Symbol symbol = symbols.symbol(symbolId);
             Spec domain = symbol.domain();
             if (domain.kind() != Spec.Kind.FINITE_SCALAR && domain.kind() != Spec.Kind.OPEN_TEXT) {
                 return null;
             }
-            String scalar = literalScalar(literalValue.literal);
+            String scalar = literalScalar(literal);
             if (scalar == null) {
                 return null;
             }
@@ -1339,24 +1081,11 @@ final class Domain {
             return Residual.scalarEq(symbol.id(), scalar);
         }
 
-        private ResidualValue contains(ResidualValue right, ResidualValue left) {
-            Residual direct = containsResidual(left, right);
-            if (direct == null) {
-                direct = scalarInResidual(right, left);
-            }
-            Expression expr = combine(left.expr, "contains", right.expr);
-            if (direct == null) {
-                return ResidualValue.of(Residual.opaque(expr), expr);
-            }
-            return ResidualValue.of(direct, expr);
-        }
-
-        private Residual containsResidual(ResidualValue symbolValue, ResidualValue literalValue) {
-            Value<?> literal = literalValue.literal;
-            if (symbolValue.symbolId < 0 || literal == null) {
+        private Residual containsResidual(int symbolId, Value<?> literal) {
+            if (symbolId < 0 || literal == null) {
                 return null;
             }
-            Symbol symbol = symbols.symbol(symbolValue.symbolId);
+            Symbol symbol = symbols.symbol(symbolId);
             Spec domain = symbol.domain();
             if (domain.kind() != Spec.Kind.FINITE_MEMBERSHIP) {
                 return null;
@@ -1376,12 +1105,11 @@ final class Domain {
             return null;
         }
 
-        private Residual scalarInResidual(ResidualValue symbolValue, ResidualValue literalValue) {
-            Value<?> literal = literalValue.literal;
-            if (symbolValue.symbolId < 0 || literal == null || literal.type() != Value.Type.LIST) {
+        private Residual scalarInResidual(int symbolId, Value<?> literal) {
+            if (symbolId < 0 || literal == null || literal.type() != Value.Type.LIST) {
                 return null;
             }
-            Symbol symbol = symbols.symbol(symbolValue.symbolId);
+            Symbol symbol = symbols.symbol(symbolId);
             Spec domain = symbol.domain();
             if (domain.kind() != Spec.Kind.FINITE_SCALAR) {
                 return null;
@@ -1448,7 +1176,7 @@ final class Domain {
             if (cached != null) {
                 return cached;
             }
-            boolean result = decision(leftId).subsetOf(decision(rightId));
+            boolean result = decision(leftId).subsetOf(decision(rightId), symbols);
             subsetCache.put(key, result);
             return result;
         }
@@ -1496,34 +1224,6 @@ final class Domain {
             }
             Expression expr = residual.toExpression(symbolId -> symbols.symbol(symbolId).name(), symbols);
             return expr.tokens().size() <= COMPACT_MAX_TOKENS && expr.variableCountAtMost(COMPACT_MAX_VARIABLES);
-        }
-
-        private static final class ResidualValue {
-            private final Residual residual;
-            private final int symbolId;
-            private final Value<?> literal;
-            private final Expression expr;
-
-            private ResidualValue(Residual residual, int symbolId, Value<?> literal, Expression expr) {
-                this.residual = residual;
-                this.symbolId = symbolId;
-                this.literal = literal;
-                this.expr = expr;
-            }
-
-            static ResidualValue of(Residual residual, Expression expr) {
-                return new ResidualValue(residual, -1, null, expr);
-            }
-
-            static ResidualValue variable(String name, int symbolId) {
-                Expression expr = Expression.create("${" + name + "}");
-                return new ResidualValue(Residual.opaque(expr), symbolId, null, expr);
-            }
-
-            static ResidualValue literal(Value<?> literal) {
-                Expression expr = new Expression(List.of(Token.of(literal)), true);
-                return new ResidualValue(Residual.opaque(expr), -1, literal, expr);
-            }
         }
     }
 
@@ -1582,47 +1282,47 @@ final class Domain {
 
     private static final class Decision {
         private static final Decision FALSE = new Decision(List.of());
-        private static final Decision TRUE = new Decision(List.of(new ConstraintClause()));
+        private static final Decision TRUE = new Decision(List.of(new Clause()));
         private static final int TRY_MERGE_MAX_CLAUSES = 32;
 
-        private final List<ConstraintClause> clauses;
+        private final List<Clause> clauses;
 
-        Decision(List<ConstraintClause> clauses) {
+        Decision(List<Clause> clauses) {
             this.clauses = clauses;
         }
 
-        static Decision of(List<ConstraintClause> clauses, Symbol.Table symbols) {
+        static Decision of(List<Clause> clauses, Symbol.Table symbols) {
             if (clauses.isEmpty()) {
                 return FALSE;
             }
-            Set<ConstraintClause> unique = new LinkedHashSet<>();
-            for (ConstraintClause clause : clauses) {
-                ConstraintClause next = clause.normalized(symbols);
+            Set<Clause> unique = new LinkedHashSet<>();
+            for (Clause clause : clauses) {
+                Clause next = clause.normalized(symbols);
                 if (next.isTrue()) {
                     return TRUE;
                 }
                 unique.add(next);
             }
-            List<ConstraintClause> normalized = new ArrayList<>(unique);
+            List<Clause> normalized = new ArrayList<>(unique);
             boolean changed;
             do {
                 changed = false;
                 for (int i = 0; i < normalized.size() && !changed; i++) {
                     for (int j = i + 1; j < normalized.size(); j++) {
-                        ConstraintClause left = normalized.get(i);
-                        ConstraintClause right = normalized.get(j);
-                        if (left.subsetOf(right)) {
+                        Clause left = normalized.get(i);
+                        Clause right = normalized.get(j);
+                        if (left.subsetOf(right, symbols)) {
                             normalized.remove(i);
                             changed = true;
                             break;
                         }
-                        if (right.subsetOf(left)) {
+                        if (right.subsetOf(left, symbols)) {
                             normalized.remove(j);
                             changed = true;
                             break;
                         }
                         if (normalized.size() <= TRY_MERGE_MAX_CLAUSES) {
-                            ConstraintClause merged = left.tryMerge(right, symbols);
+                            Clause merged = left.tryMerge(right, symbols);
                             if (merged != null) {
                                 normalized.set(i, merged);
                                 normalized.remove(j);
@@ -1657,10 +1357,10 @@ final class Domain {
             if (other == TRUE) {
                 return this;
             }
-            List<ConstraintClause> result = new ArrayList<>();
-            for (ConstraintClause left : clauses) {
-                for (ConstraintClause right : other.clauses) {
-                    ConstraintClause intersection = left.intersect(right, symbols);
+            List<Clause> result = new ArrayList<>();
+            for (Clause left : clauses) {
+                for (Clause right : other.clauses) {
+                    Clause intersection = left.intersect(right, symbols);
                     if (intersection != null) {
                         result.add(intersection);
                     }
@@ -1670,27 +1370,27 @@ final class Domain {
         }
 
         Decision orWithoutSubsetChecks(Decision other, Symbol.Table symbols) {
-            List<ConstraintClause> result = new ArrayList<>(clauses);
+            List<Clause> result = new ArrayList<>(clauses);
             boolean changed = false;
-            for (ConstraintClause clause : other.clauses) {
-                ConstraintClause candidate = clause;
+            for (Clause clause : other.clauses) {
+                Clause candidate = clause;
                 boolean restart;
                 do {
                     restart = false;
                     for (int i = 0; i < result.size(); i++) {
-                        ConstraintClause existing = result.get(i);
-                        if (candidate.subsetOf(existing)) {
+                        Clause existing = result.get(i);
+                        if (candidate.subsetOf(existing, symbols)) {
                             candidate = null;
                             break;
                         }
-                        if (existing.subsetOf(candidate)) {
+                        if (existing.subsetOf(candidate, symbols)) {
                             result.remove(i);
                             changed = true;
                             restart = true;
                             break;
                         }
                         if (result.size() <= TRY_MERGE_MAX_CLAUSES) {
-                            ConstraintClause merged = existing.tryMerge(candidate, symbols);
+                            Clause merged = existing.tryMerge(candidate, symbols);
                             if (merged != null) {
                                 if (merged.isTrue()) {
                                     return TRUE;
@@ -1726,10 +1426,10 @@ final class Domain {
             if (other == TRUE) {
                 return FALSE;
             }
-            List<ConstraintClause> remaining = new ArrayList<>(clauses);
-            for (ConstraintClause right : other.clauses) {
-                List<ConstraintClause> next = new ArrayList<>();
-                for (ConstraintClause left : remaining) {
+            List<Clause> remaining = new ArrayList<>(clauses);
+            for (Clause right : other.clauses) {
+                List<Clause> next = new ArrayList<>();
+                for (Clause left : remaining) {
                     next.addAll(left.subtract(right, symbols));
                 }
                 remaining = next;
@@ -1745,7 +1445,7 @@ final class Domain {
                 return Expression.FALSE;
             }
             Expression expr = Expression.FALSE;
-            for (ConstraintClause clause : clauses) {
+            for (Clause clause : clauses) {
                 expr = expr.or(clause.toExpression(keyResolver, symbols));
             }
             return expr;
@@ -1761,17 +1461,17 @@ final class Domain {
             return clauses.hashCode();
         }
 
-        boolean subsetOf(Decision other) {
+        boolean subsetOf(Decision other, Symbol.Table symbols) {
             if (equals(other) || isFalse() || other == TRUE) {
                 return true;
             }
             if (other.isFalse()) {
                 return false;
             }
-            for (ConstraintClause left : clauses) {
+            for (Clause left : clauses) {
                 boolean covered = false;
-                for (ConstraintClause right : other.clauses) {
-                    if (left.subsetOf(right)) {
+                for (Clause right : other.clauses) {
+                    if (left.subsetOf(right, symbols)) {
                         covered = true;
                         break;
                     }
@@ -1784,95 +1484,68 @@ final class Domain {
         }
     }
 
-    private static final class ConstraintClause {
-        private static final int[] NO_SYMBOL_IDS = new int[0];
-        private static final ScalarConstraint[] NO_SCALAR_CONSTRAINTS = new ScalarConstraint[0];
-        private static final MembershipConstraint[] NO_MEMBERSHIP_CONSTRAINTS = new MembershipConstraint[0];
+    private static final class Clause {
+        private static final int[] EMPTY_IDS = new int[0];
+        private static final long[] EMPTY_MASKS = new long[0];
 
-        private final int[] scalarIds;
-        private final ScalarConstraint[] scalarConstraints;
-        private final int[] membershipIds;
-        private final MembershipConstraint[] membershipConstraints;
+        private final int[] ids;
+        private final long[] masks;
         private final int hashCode;
 
-        ConstraintClause() {
-            this(NO_SYMBOL_IDS, NO_SCALAR_CONSTRAINTS, NO_SYMBOL_IDS, NO_MEMBERSHIP_CONSTRAINTS);
+        Clause() {
+            this(EMPTY_IDS, EMPTY_MASKS);
         }
 
-        ConstraintClause(int symbolId, ScalarConstraint scalarConstraint) {
-            this(new int[] {symbolId}, new ScalarConstraint[] {scalarConstraint}, NO_SYMBOL_IDS, NO_MEMBERSHIP_CONSTRAINTS);
+        Clause(int id, long mask0) {
+            this(new int[]{id}, new long[]{mask0, 0L});
         }
 
-        ConstraintClause(int symbolId, MembershipConstraint membershipConstraint) {
-            this(NO_SYMBOL_IDS, NO_SCALAR_CONSTRAINTS, new int[] {symbolId}, new MembershipConstraint[] {membershipConstraint});
+        Clause(int symbolId, long mask0, long mask1) {
+            this(new int[] {symbolId}, new long[] {mask0, mask1});
         }
 
-        ConstraintClause(int[] scalarIds,
-                         ScalarConstraint[] scalarConstraints,
-                         int[] membershipIds,
-                         MembershipConstraint[] membershipConstraints) {
-            this.scalarIds = scalarIds;
-            this.scalarConstraints = scalarConstraints;
-            this.membershipIds = membershipIds;
-            this.membershipConstraints = membershipConstraints;
-            this.hashCode = 31 * entriesHash(scalarIds, scalarConstraints)
-                    + entriesHash(membershipIds, membershipConstraints);
+        Clause(int[] ids, long[] masks) {
+            this.ids = ids;
+            this.masks = masks;
+            this.hashCode = entriesHash(ids, masks);
         }
 
         boolean isTrue() {
-            return scalarConstraints.length == 0 && membershipConstraints.length == 0;
+            return ids.length == 0;
         }
 
-        ConstraintClause normalized(Symbol.Table symbols) {
-            int nextScalarCount = scalarConstraints.length;
-            int nextMembershipCount = membershipConstraints.length;
+        Clause normalized(Symbol.Table symbols) {
+            int nextCount = ids.length;
             boolean changed = false;
-            for (int i = 0; i < scalarConstraints.length; i++) {
-                if (scalarConstraints[i].isFull(symbols.symbol(scalarIds[i]))) {
+            for (int i = 0; i < ids.length; i++) {
+                Symbol symbol = symbols.symbol(ids[i]);
+                long mask0 = mask0(i);
+                if (symbol.scalar ? mask0 == symbol.mask : mask0 == 0L && mask1(i) == 0L) {
                     changed = true;
-                    nextScalarCount--;
-                }
-            }
-            for (MembershipConstraint membershipConstraint : membershipConstraints) {
-                if (membershipConstraint.isEmpty()) {
-                    changed = true;
-                    nextMembershipCount--;
+                    nextCount--;
                 }
             }
             if (!changed) {
                 return this;
             }
-            if (nextScalarCount == 0 && nextMembershipCount == 0) {
-                return new ConstraintClause();
+            if (nextCount == 0) {
+                return new Clause();
             }
-            int[] nextScalarIds = nextScalarCount == 0 ? NO_SYMBOL_IDS : new int[nextScalarCount];
-            ScalarConstraint[] nextScalarConstraints = nextScalarCount == 0
-                    ? NO_SCALAR_CONSTRAINTS
-                    : new ScalarConstraint[nextScalarCount];
-            int scalarIndex = 0;
-            for (int i = 0; i < scalarConstraints.length; i++) {
-                if (!scalarConstraints[i].isFull(symbols.symbol(scalarIds[i]))) {
-                    nextScalarIds[scalarIndex] = scalarIds[i];
-                    nextScalarConstraints[scalarIndex] = scalarConstraints[i];
-                    scalarIndex++;
+            int[] nextSymbolIds = new int[nextCount];
+            long[] nextMasks = new long[nextCount * 2];
+            int nextIndex = 0;
+            for (int i = 0; i < ids.length; i++) {
+                Symbol symbol = symbols.symbol(ids[i]);
+                long mask0 = mask0(i);
+                if (symbol.scalar ? mask0 != symbol.mask : mask0 != 0L || mask1(i) != 0L) {
+                    copyEntry(i, nextSymbolIds, nextMasks, nextIndex);
+                    nextIndex++;
                 }
             }
-            int[] nextMembershipIds = nextMembershipCount == 0 ? NO_SYMBOL_IDS : new int[nextMembershipCount];
-            MembershipConstraint[] nextMembershipConstraints = nextMembershipCount == 0
-                    ? NO_MEMBERSHIP_CONSTRAINTS
-                    : new MembershipConstraint[nextMembershipCount];
-            int membershipIndex = 0;
-            for (int i = 0; i < membershipConstraints.length; i++) {
-                if (!membershipConstraints[i].isEmpty()) {
-                    nextMembershipIds[membershipIndex] = membershipIds[i];
-                    nextMembershipConstraints[membershipIndex] = membershipConstraints[i];
-                    membershipIndex++;
-                }
-            }
-            return new ConstraintClause(nextScalarIds, nextScalarConstraints, nextMembershipIds, nextMembershipConstraints);
+            return new Clause(nextSymbolIds, nextMasks);
         }
 
-        ConstraintClause intersect(ConstraintClause other, Symbol.Table symbols) {
+        Clause intersect(Clause other, Symbol.Table symbols) {
             if (this == other) {
                 return this;
             }
@@ -1882,442 +1555,430 @@ final class Domain {
             if (other.isTrue()) {
                 return this;
             }
-            int scalarCount = 0;
-            int leftScalar = 0;
-            int rightScalar = 0;
-            while (leftScalar < scalarConstraints.length || rightScalar < other.scalarConstraints.length) {
-                if (rightScalar == other.scalarConstraints.length
-                        || leftScalar < scalarConstraints.length
-                           && scalarIds[leftScalar] < other.scalarIds[rightScalar]) {
-                    scalarCount++;
-                    leftScalar++;
-                } else if (leftScalar == scalarConstraints.length
-                        || other.scalarIds[rightScalar] < scalarIds[leftScalar]) {
-                    scalarCount++;
-                    rightScalar++;
-                } else {
-                    ScalarConstraint intersection = scalarConstraints[leftScalar].intersect(other.scalarConstraints[rightScalar]);
-                    if (intersection == null) {
+            int[] nextSymbolIds = new int[ids.length + other.ids.length];
+            long[] nextMasks = new long[(ids.length + other.ids.length) * 2];
+            int left = 0;
+            int right = 0;
+            int nextIndex = 0;
+            while (left < ids.length || right < other.ids.length) {
+                if (right == other.ids.length || left < ids.length && ids[left] < other.ids[right]) {
+                    copyEntry(left, nextSymbolIds, nextMasks, nextIndex);
+                    left++;
+                    nextIndex++;
+                    continue;
+                }
+                if (left == ids.length || other.ids[right] < ids[left]) {
+                    other.copyEntry(right, nextSymbolIds, nextMasks, nextIndex);
+                    right++;
+                    nextIndex++;
+                    continue;
+                }
+                int symbolId = ids[left];
+                Symbol symbol = symbols.symbol(symbolId);
+                long nextMask0;
+                long nextMask1;
+                if (symbol.scalar) {
+                    nextMask0 = mask0(left) & other.mask0(right);
+                    if (nextMask0 == 0L) {
                         return null;
                     }
-                    scalarCount++;
-                    leftScalar++;
-                    rightScalar++;
-                }
-            }
-            int membershipCount = 0;
-            int leftMembership = 0;
-            int rightMembership = 0;
-            while (leftMembership < membershipConstraints.length || rightMembership < other.membershipConstraints.length) {
-                if (rightMembership == other.membershipConstraints.length
-                        || leftMembership < membershipConstraints.length
-                           && membershipIds[leftMembership] < other.membershipIds[rightMembership]) {
-                    membershipCount++;
-                    leftMembership++;
-                } else if (leftMembership == membershipConstraints.length
-                        || other.membershipIds[rightMembership] < membershipIds[leftMembership]) {
-                    membershipCount++;
-                    rightMembership++;
+                    nextMask1 = 0L;
                 } else {
-                    int symbolId = membershipIds[leftMembership];
-                    MembershipConstraint intersection = membershipConstraints[leftMembership]
-                            .intersect(other.membershipConstraints[rightMembership], symbols.symbol(symbolId));
-                    if (intersection == null) {
+                    long leftRequired = mask0(left);
+                    long leftForbidden = mask1(left);
+                    long rightRequired = other.mask0(right);
+                    long rightForbidden = other.mask1(right);
+                    if ((leftRequired & rightForbidden) != 0L || (leftForbidden & rightRequired) != 0L) {
                         return null;
                     }
-                    membershipCount++;
-                    leftMembership++;
-                    rightMembership++;
+                    nextMask0 = leftRequired | rightRequired;
+                    nextMask1 = leftForbidden | rightForbidden;
                 }
+                writeEntry(nextSymbolIds, nextMasks, nextIndex, symbolId, nextMask0, nextMask1);
+                left++;
+                right++;
+                nextIndex++;
             }
-            int[] nextScalarIds = scalarCount == 0 ? NO_SYMBOL_IDS : new int[scalarCount];
-            ScalarConstraint[] nextScalarConstraints = scalarCount == 0
-                    ? NO_SCALAR_CONSTRAINTS
-                    : new ScalarConstraint[scalarCount];
-            leftScalar = 0;
-            rightScalar = 0;
-            int scalarIndex = 0;
-            while (leftScalar < scalarConstraints.length || rightScalar < other.scalarConstraints.length) {
-                if (rightScalar == other.scalarConstraints.length
-                        || leftScalar < scalarConstraints.length
-                           && scalarIds[leftScalar] < other.scalarIds[rightScalar]) {
-                    nextScalarIds[scalarIndex] = scalarIds[leftScalar];
-                    nextScalarConstraints[scalarIndex] = scalarConstraints[leftScalar];
-                    leftScalar++;
-                } else if (leftScalar == scalarConstraints.length
-                        || other.scalarIds[rightScalar] < scalarIds[leftScalar]) {
-                    nextScalarIds[scalarIndex] = other.scalarIds[rightScalar];
-                    nextScalarConstraints[scalarIndex] = other.scalarConstraints[rightScalar];
-                    rightScalar++;
-                } else {
-                    nextScalarIds[scalarIndex] = scalarIds[leftScalar];
-                    nextScalarConstraints[scalarIndex] = scalarConstraints[leftScalar]
-                            .intersect(other.scalarConstraints[rightScalar]);
-                    leftScalar++;
-                    rightScalar++;
-                }
-                scalarIndex++;
-            }
-            int[] nextMembershipIds = membershipCount == 0 ? NO_SYMBOL_IDS : new int[membershipCount];
-            MembershipConstraint[] nextMembershipConstraints = membershipCount == 0
-                    ? NO_MEMBERSHIP_CONSTRAINTS
-                    : new MembershipConstraint[membershipCount];
-            leftMembership = 0;
-            rightMembership = 0;
-            int membershipIndex = 0;
-            while (leftMembership < membershipConstraints.length || rightMembership < other.membershipConstraints.length) {
-                if (rightMembership == other.membershipConstraints.length
-                        || leftMembership < membershipConstraints.length
-                           && membershipIds[leftMembership] < other.membershipIds[rightMembership]) {
-                    nextMembershipIds[membershipIndex] = membershipIds[leftMembership];
-                    nextMembershipConstraints[membershipIndex] = membershipConstraints[leftMembership];
-                    leftMembership++;
-                } else if (leftMembership == membershipConstraints.length
-                        || other.membershipIds[rightMembership] < membershipIds[leftMembership]) {
-                    nextMembershipIds[membershipIndex] = other.membershipIds[rightMembership];
-                    nextMembershipConstraints[membershipIndex] = other.membershipConstraints[rightMembership];
-                    rightMembership++;
-                } else {
-                    int symbolId = membershipIds[leftMembership];
-                    nextMembershipIds[membershipIndex] = symbolId;
-                    nextMembershipConstraints[membershipIndex] = membershipConstraints[leftMembership]
-                            .intersect(other.membershipConstraints[rightMembership], symbols.symbol(symbolId));
-                    leftMembership++;
-                    rightMembership++;
-                }
-                membershipIndex++;
-            }
-            return new ConstraintClause(nextScalarIds, nextScalarConstraints, nextMembershipIds, nextMembershipConstraints);
+            return sizedClause(nextSymbolIds, nextMasks, nextIndex);
         }
 
-        boolean subsetOf(ConstraintClause other) {
+        boolean subsetOf(Clause other, Symbol.Table symbols) {
             if (this == other) {
                 return true;
             }
-            if (scalarConstraints.length < other.scalarConstraints.length
-                || membershipConstraints.length < other.membershipConstraints.length) {
+            if (ids.length < other.ids.length) {
                 return false;
             }
-            int leftScalar = 0;
-            for (int rightScalar = 0; rightScalar < other.scalarConstraints.length; rightScalar++) {
-                int symbolId = other.scalarIds[rightScalar];
-                while (leftScalar < scalarConstraints.length && scalarIds[leftScalar] < symbolId) {
-                    leftScalar++;
+            int left = 0;
+            for (int right = 0; right < other.ids.length; right++) {
+                int symbolId = other.ids[right];
+                while (left < ids.length && ids[left] < symbolId) {
+                    left++;
                 }
-                if (leftScalar == scalarConstraints.length
-                    || scalarIds[leftScalar] != symbolId
-                    || !scalarConstraints[leftScalar].subsetOf(other.scalarConstraints[rightScalar])) {
+                if (left == ids.length || ids[left] != symbolId) {
                     return false;
                 }
-            }
-            int leftMembership = 0;
-            for (int rightMembership = 0; rightMembership < other.membershipConstraints.length; rightMembership++) {
-                int symbolId = other.membershipIds[rightMembership];
-                while (leftMembership < membershipConstraints.length && membershipIds[leftMembership] < symbolId) {
-                    leftMembership++;
-                }
-                if (leftMembership == membershipConstraints.length || membershipIds[leftMembership] != symbolId) {
-                    return false;
-                }
-                if (!membershipConstraints[leftMembership].subsetOf(other.membershipConstraints[rightMembership])) {
+                Symbol symbol = symbols.symbol(symbolId);
+                if (symbol.scalar) {
+                    if ((mask0(left) & ~other.mask0(right)) != 0L) {
+                        return false;
+                    }
+                } else if ((other.mask0(right) & ~mask0(left)) != 0L || (other.mask1(right) & ~mask1(left)) != 0L) {
                     return false;
                 }
             }
             return true;
         }
 
-        ConstraintClause tryMerge(ConstraintClause other, Symbol.Table symbols) {
-            if (!Arrays.equals(membershipIds, other.membershipIds)
-                    || !Arrays.equals(membershipConstraints, other.membershipConstraints)) {
-                return null;
-            }
-            if (Math.abs(scalarConstraints.length - other.scalarConstraints.length) > 1) {
-                return null;
-            }
+        Clause tryMerge(Clause other, Symbol.Table symbols) {
             Integer diffSymbolId = null;
-            int scalarCount = 0;
-            int leftScalar = 0;
-            int rightScalar = 0;
-            while (leftScalar < scalarConstraints.length || rightScalar < other.scalarConstraints.length) {
+            int[] nextSymbolIds = new int[ids.length + other.ids.length];
+            long[] nextMasks = new long[(ids.length + other.ids.length) * 2];
+            int left = 0;
+            int right = 0;
+            int nextIndex = 0;
+            while (left < ids.length || right < other.ids.length) {
                 int symbolId;
-                ScalarConstraint leftConstraint;
-                ScalarConstraint rightConstraint;
-                if (rightScalar == other.scalarConstraints.length
-                        || leftScalar < scalarConstraints.length
-                           && scalarIds[leftScalar] < other.scalarIds[rightScalar]) {
-                    symbolId = scalarIds[leftScalar];
-                    leftConstraint = scalarConstraints[leftScalar];
-                    rightConstraint = null;
-                    leftScalar++;
-                } else if (leftScalar == scalarConstraints.length
-                        || other.scalarIds[rightScalar] < scalarIds[leftScalar]) {
-                    symbolId = other.scalarIds[rightScalar];
-                    leftConstraint = null;
-                    rightConstraint = other.scalarConstraints[rightScalar];
-                    rightScalar++;
+                long leftMask;
+                long rightMask;
+                long nextMask0;
+                long nextMask1;
+                if (right == other.ids.length || left < ids.length && ids[left] < other.ids[right]) {
+                    symbolId = ids[left];
+                    Symbol symbol = symbols.symbol(symbolId);
+                    if (!symbol.scalar) {
+                        return null;
+                    }
+                    leftMask = mask0(left);
+                    rightMask = symbol.mask;
+                    left++;
+                } else if (left == ids.length || other.ids[right] < ids[left]) {
+                    symbolId = other.ids[right];
+                    Symbol symbol = symbols.symbol(symbolId);
+                    if (!symbol.scalar) {
+                        return null;
+                    }
+                    leftMask = symbol.mask;
+                    rightMask = other.mask0(right);
+                    right++;
                 } else {
-                    symbolId = scalarIds[leftScalar];
-                    leftConstraint = scalarConstraints[leftScalar];
-                    rightConstraint = other.scalarConstraints[rightScalar];
-                    leftScalar++;
-                    rightScalar++;
+                    symbolId = ids[left];
+                    Symbol symbol = symbols.symbol(symbolId);
+                    if (!symbol.scalar) {
+                        if (mask0(left) != other.mask0(right) || mask1(left) != other.mask1(right)) {
+                            return null;
+                        }
+                        nextMask0 = mask0(left);
+                        nextMask1 = mask1(left);
+                        left++;
+                        right++;
+                        writeEntry(nextSymbolIds, nextMasks, nextIndex, symbolId, nextMask0, nextMask1);
+                        nextIndex++;
+                        continue;
+                    }
+                    leftMask = mask0(left);
+                    rightMask = other.mask0(right);
+                    left++;
+                    right++;
                 }
-                Symbol symbol = symbols.symbol(symbolId);
-                long fullMask = symbol.mask;
-                long leftMask = leftConstraint == null ? fullMask : leftConstraint.allowedMask;
-                long rightMask = rightConstraint == null ? fullMask : rightConstraint.allowedMask;
+                long fullMask = symbols.symbol(symbolId).mask;
                 if (leftMask != rightMask) {
                     if (diffSymbolId != null) {
                         return null;
                     }
                     diffSymbolId = symbolId;
-                    if ((leftMask | rightMask) != fullMask) {
-                        scalarCount++;
-                    }
-                } else if (leftMask != fullMask) {
-                    scalarCount++;
-                }
-            }
-            if (diffSymbolId == null) {
-                return null;
-            }
-            int[] nextScalarIds = scalarCount == 0 ? NO_SYMBOL_IDS : new int[scalarCount];
-            ScalarConstraint[] nextScalarConstraints = scalarCount == 0
-                    ? NO_SCALAR_CONSTRAINTS
-                    : new ScalarConstraint[scalarCount];
-            leftScalar = 0;
-            rightScalar = 0;
-            int scalarIndex = 0;
-            while (leftScalar < scalarConstraints.length || rightScalar < other.scalarConstraints.length) {
-                int symbolId;
-                ScalarConstraint leftConstraint;
-                ScalarConstraint rightConstraint;
-                if (rightScalar == other.scalarConstraints.length
-                        || leftScalar < scalarConstraints.length
-                           && scalarIds[leftScalar] < other.scalarIds[rightScalar]) {
-                    symbolId = scalarIds[leftScalar];
-                    leftConstraint = scalarConstraints[leftScalar];
-                    rightConstraint = null;
-                    leftScalar++;
-                } else if (leftScalar == scalarConstraints.length
-                        || other.scalarIds[rightScalar] < scalarIds[leftScalar]) {
-                    symbolId = other.scalarIds[rightScalar];
-                    leftConstraint = null;
-                    rightConstraint = other.scalarConstraints[rightScalar];
-                    rightScalar++;
-                } else {
-                    symbolId = scalarIds[leftScalar];
-                    leftConstraint = scalarConstraints[leftScalar];
-                    rightConstraint = other.scalarConstraints[rightScalar];
-                    leftScalar++;
-                    rightScalar++;
-                }
-                Symbol symbol = symbols.symbol(symbolId);
-                long fullMask = symbol.mask;
-                long leftMask = leftConstraint == null ? fullMask : leftConstraint.allowedMask;
-                long rightMask = rightConstraint == null ? fullMask : rightConstraint.allowedMask;
-                if (leftMask != rightMask) {
                     long unionMask = leftMask | rightMask;
                     if (unionMask != fullMask) {
-                        nextScalarIds[scalarIndex] = symbolId;
-                        nextScalarConstraints[scalarIndex] = new ScalarConstraint(unionMask);
-                        scalarIndex++;
+                        writeEntry(nextSymbolIds, nextMasks, nextIndex, symbolId, unionMask, 0L);
+                        nextIndex++;
                     }
                 } else if (leftMask != fullMask) {
-                    nextScalarIds[scalarIndex] = symbolId;
-                    nextScalarConstraints[scalarIndex] = leftConstraint == null ? rightConstraint : leftConstraint;
-                    scalarIndex++;
+                    writeEntry(nextSymbolIds, nextMasks, nextIndex, symbolId, leftMask, 0L);
+                    nextIndex++;
                 }
             }
-            return new ConstraintClause(nextScalarIds, nextScalarConstraints, membershipIds, membershipConstraints);
+            return diffSymbolId == null ? null : sizedClause(nextSymbolIds, nextMasks, nextIndex);
         }
 
-        List<ConstraintClause> subtract(ConstraintClause other, Symbol.Table symbols) {
-            ConstraintClause intersection = intersect(other, symbols);
+        List<Clause> subtract(Clause other, Symbol.Table symbols) {
+            Clause intersection = intersect(other, symbols);
             if (intersection == null) {
                 return List.of(this);
             }
-            if (subsetOf(other)) {
+            if (subsetOf(other, symbols)) {
                 return List.of();
             }
-            ClausePartition partition = splitAgainst(other, symbols);
-            if (partition == null) {
-                return List.of(this);
+            for (int i = 0; i < other.ids.length; i++) {
+                int symbolId = other.ids[i];
+                Symbol symbol = symbols.symbol(symbolId);
+                if (!symbol.scalar) {
+                    continue;
+                }
+                int index = Arrays.binarySearch(ids, symbolId);
+                long leftMask = index >= 0 ? mask0(index) : symbol.mask;
+                long rightMask = other.mask0(i);
+                long outsideMask = leftMask & ~rightMask;
+                if (outsideMask != 0L) {
+                    long overlapMask = leftMask & rightMask;
+                    Clause outside = withScalar(symbolId, outsideMask, symbol);
+                    Clause overlap = withScalar(symbolId, overlapMask, symbol);
+                    List<Clause> result = new ArrayList<>();
+                    result.add(outside);
+                    result.addAll(overlap.subtract(other, symbols));
+                    return result;
+                }
             }
-            List<ConstraintClause> result = new ArrayList<>();
-            if (partition.outside != null) {
-                result.add(partition.outside);
+            for (int i = 0; i < other.ids.length; i++) {
+                int symbolId = other.ids[i];
+                Symbol symbol = symbols.symbol(symbolId);
+                if (symbol.scalar) {
+                    continue;
+                }
+                int index = Arrays.binarySearch(ids, symbolId);
+                long leftRequired = index >= 0 ? mask0(index) : 0L;
+                long leftForbidden = index >= 0 ? mask1(index) : 0L;
+                long known = leftRequired | leftForbidden;
+                long unresolvedRequired = other.mask0(i) & ~known;
+                if (unresolvedRequired != 0L) {
+                    String item = symbol.value(Long.numberOfTrailingZeros(unresolvedRequired));
+                    List<Clause> result = new ArrayList<>();
+                    result.add(withMembershipForbidden(symbolId, item, symbol));
+                    result.addAll(withMembershipRequired(symbolId, item, symbol).subtract(other, symbols));
+                    return result;
+                }
+                long unresolvedForbidden = other.mask1(i) & ~known;
+                if (unresolvedForbidden != 0L) {
+                    String item = symbol.value(Long.numberOfTrailingZeros(unresolvedForbidden));
+                    List<Clause> result = new ArrayList<>();
+                    result.add(withMembershipRequired(symbolId, item, symbol));
+                    result.addAll(withMembershipForbidden(symbolId, item, symbol).subtract(other, symbols));
+                    return result;
+                }
             }
-            if (partition.overlap == null) {
-                return result;
-            }
-            result.addAll(partition.overlap.subtract(other, symbols));
-            return result;
+            return List.of(this);
         }
 
-        Expression toExpression(IntFunction<String> keyResolver, Symbol.Table symbols) {
+        Expression toExpression(IntFunction<String> resolver, Symbol.Table symbols) {
             Expression expr = Expression.TRUE;
-            for (int i = 0; i < scalarConstraints.length; i++) {
-                Symbol symbol = symbols.symbol(scalarIds[i]);
-                expr = expr.and(scalarConstraints[i].toExpression(keyResolver.apply(scalarIds[i]), symbol));
-            }
-            for (int i = 0; i < membershipConstraints.length; i++) {
-                Symbol symbol = symbols.symbol(membershipIds[i]);
-                expr = expr.and(membershipConstraints[i].toExpression(keyResolver.apply(membershipIds[i]), symbol));
+            for (int i = 0; i < ids.length; i++) {
+                Symbol symbol = symbols.symbol(ids[i]);
+                expr = symbol.scalar
+                        ? expr.and(expression(resolver.apply(ids[i]), mask0(i), symbol))
+                        : expr.and(expression(resolver.apply(ids[i]), mask0(i), mask1(i), symbol));
             }
             return expr;
         }
 
         String literal(Symbol.Table symbols) {
-            StringBuilder builder = new StringBuilder();
-            builder.append('{');
-            for (int i = 0; i < scalarConstraints.length; i++) {
-                if (i > 0) {
-                    builder.append(',');
+            StringBuilder sb = new StringBuilder();
+            sb.append('{');
+            boolean first = true;
+            for (int i = 0; i < ids.length; i++) {
+                Symbol symbol = symbols.symbol(ids[i]);
+                if (!symbol.scalar) {
+                    continue;
                 }
-                builder.append(scalarIds[i]).append(':');
-                scalarConstraints[i].appendLiteral(builder, symbols.symbol(scalarIds[i]));
-            }
-            builder.append("}|{");
-            for (int i = 0; i < membershipConstraints.length; i++) {
-                if (i > 0) {
-                    builder.append(',');
+                if (!first) {
+                    sb.append(',');
                 }
-                builder.append(membershipIds[i]).append(':');
-                membershipConstraints[i].appendLiteral(builder, symbols.symbol(membershipIds[i]));
+                sb.append(ids[i]).append(':');
+                appendSymbol(sb, mask0(i), symbol);
+                first = false;
             }
-            builder.append('}');
-            return builder.toString();
+            sb.append("}|{");
+            first = true;
+            for (int i = 0; i < ids.length; i++) {
+                Symbol symbol = symbols.symbol(ids[i]);
+                if (symbol.scalar) {
+                    continue;
+                }
+                if (!first) {
+                    sb.append(',');
+                }
+                sb.append(ids[i]).append(':');
+                appendSymbol(sb, mask0(i), symbol);
+                sb.append('/');
+                appendSymbol(sb, mask1(i), symbol);
+                first = false;
+            }
+            sb.append('}');
+            return sb.toString();
         }
 
-        ClausePartition splitAgainst(ConstraintClause other, Symbol.Table symbols) {
-            int leftScalar = 0;
-            for (int rightScalar = 0; rightScalar < other.scalarConstraints.length; rightScalar++) {
-                int symbolId = other.scalarIds[rightScalar];
-                while (leftScalar < scalarConstraints.length && scalarIds[leftScalar] < symbolId) {
-                    leftScalar++;
-                }
-                Symbol symbol = symbols.symbol(symbolId);
-                long leftMask = leftScalar < scalarConstraints.length && scalarIds[leftScalar] == symbolId
-                        ? scalarConstraints[leftScalar].allowedMask
-                        : symbol.mask;
-                long rightMask = other.scalarConstraints[rightScalar].allowedMask;
-                long outsideMask = leftMask & ~rightMask;
-                if (outsideMask != 0L) {
-                    long overlapMask = leftMask & rightMask;
-                    return new ClausePartition(
-                            withScalar(symbolId, new ScalarConstraint(outsideMask), symbol),
-                            withScalar(symbolId, new ScalarConstraint(overlapMask), symbol));
-                }
-            }
-            int leftMembership = 0;
-            for (int rightMembership = 0; rightMembership < other.membershipConstraints.length; rightMembership++) {
-                int symbolId = other.membershipIds[rightMembership];
-                while (leftMembership < membershipConstraints.length && membershipIds[leftMembership] < symbolId) {
-                    leftMembership++;
-                }
-                Symbol symbol = symbols.symbol(symbolId);
-                MembershipConstraint left = leftMembership < membershipConstraints.length && membershipIds[leftMembership] == symbolId
-                        ? membershipConstraints[leftMembership]
-                        : MembershipConstraint.EMPTY;
-                MembershipConstraint right = other.membershipConstraints[rightMembership];
-                long knownMask = left.requiredMask | left.forbiddenMask;
-                long unresolvedRequiredMask = right.requiredMask & ~knownMask;
-                if (unresolvedRequiredMask != 0L) {
-                    String item = symbol.membershipItem(Long.numberOfTrailingZeros(unresolvedRequiredMask));
-                    return new ClausePartition(
-                            withMembershipForbidden(symbolId, item, symbol),
-                            withMembershipRequired(symbolId, item, symbol));
-                }
-                long unresolvedForbiddenMask = right.forbiddenMask & ~knownMask;
-                if (unresolvedForbiddenMask != 0L) {
-                    String item = symbol.membershipItem(Long.numberOfTrailingZeros(unresolvedForbiddenMask));
-                    return new ClausePartition(
-                            withMembershipRequired(symbolId, item, symbol),
-                            withMembershipForbidden(symbolId, item, symbol));
-                }
-            }
-            return null;
-        }
-
-        ConstraintClause withScalar(int symbolId, ScalarConstraint nextConstraint, Symbol symbol) {
-            if (nextConstraint.isFull(symbol)) {
-                int index = Arrays.binarySearch(scalarIds, symbolId);
+        Clause withScalar(int id, long nextMask, Symbol symbol) {
+            if (nextMask == symbol.mask) {
+                int index = Arrays.binarySearch(ids, id);
                 if (index < 0) {
                     return this;
                 }
-                if (scalarConstraints.length == 1) {
-                    return new ConstraintClause(NO_SYMBOL_IDS, NO_SCALAR_CONSTRAINTS, membershipIds, membershipConstraints);
-                }
-                return new ConstraintClause(
-                        removeIndex(scalarIds, index),
-                        removeIndex(scalarConstraints, index),
-                        membershipIds,
-                        membershipConstraints);
+                return removeEntry(index);
             }
-            int index = Arrays.binarySearch(scalarIds, symbolId);
+            int index = Arrays.binarySearch(ids, id);
             if (index >= 0) {
-                if (scalarConstraints[index].equals(nextConstraint)) {
+                if (mask0(index) == nextMask && mask1(index) == 0L) {
                     return this;
                 }
-                ScalarConstraint[] nextScalars = Arrays.copyOf(scalarConstraints, scalarConstraints.length);
-                nextScalars[index] = nextConstraint;
-                return new ConstraintClause(scalarIds, nextScalars, membershipIds, membershipConstraints);
+                return updateEntry(index, nextMask, 0L);
             }
-            int insertion = -index - 1;
-            int[] nextScalarIds = insert(scalarIds, insertion, symbolId);
-            ScalarConstraint[] nextScalars = insert(scalarConstraints, insertion, nextConstraint);
-            return new ConstraintClause(nextScalarIds, nextScalars, membershipIds, membershipConstraints);
+            return insertEntry(-index - 1, id, nextMask, 0L);
         }
 
-        ConstraintClause withMembershipRequired(int symbolId, String item, Symbol symbol) {
-            int index = Arrays.binarySearch(membershipIds, symbolId);
-            MembershipConstraint current = index < 0 ? MembershipConstraint.EMPTY : membershipConstraints[index];
-            MembershipConstraint nextConstraint = current.withRequired(item, symbol);
-            if (nextConstraint.equals(current)) {
+        Clause withMembershipRequired(int id, String value, Symbol symbol) {
+            int index = Arrays.binarySearch(ids, id);
+            long required = index < 0 ? 0L : mask0(index);
+            long forbidden = index < 0 ? 0L : mask1(index);
+            long mask = symbol.mask(value);
+            if ((required & mask) != 0L) {
                 return this;
             }
-            return withMembership(index, symbolId, nextConstraint);
+            return withMembership(index, id, required | mask, forbidden);
         }
 
-        ConstraintClause withMembershipForbidden(int symbolId, String item, Symbol symbol) {
-            int index = Arrays.binarySearch(membershipIds, symbolId);
-            MembershipConstraint current = index < 0 ? MembershipConstraint.EMPTY : membershipConstraints[index];
-            MembershipConstraint nextConstraint = current.withForbidden(item, symbol);
-            if (nextConstraint.equals(current)) {
+        Clause withMembershipForbidden(int id, String value, Symbol symbol) {
+            int index = Arrays.binarySearch(ids, id);
+            long required = index < 0 ? 0L : mask0(index);
+            long forbidden = index < 0 ? 0L : mask1(index);
+            long mask = symbol.mask(value);
+            if ((forbidden & mask) != 0L) {
                 return this;
             }
-            return withMembership(index, symbolId, nextConstraint);
+            return withMembership(index, id, required, forbidden | mask);
         }
 
-        ConstraintClause withMembership(int index, int symbolId, MembershipConstraint nextConstraint) {
-            if (nextConstraint.isEmpty()) {
+        Clause withMembership(int index, int id, long nextRequired, long nextForbidden) {
+            if (nextRequired == 0L && nextForbidden == 0L) {
                 if (index < 0) {
                     return this;
                 }
-                if (membershipConstraints.length == 1) {
-                    return new ConstraintClause(scalarIds, scalarConstraints, NO_SYMBOL_IDS, NO_MEMBERSHIP_CONSTRAINTS);
-                }
-                int[] ids = removeIndex(membershipIds, index);
-                MembershipConstraint[] constraints = removeIndex(membershipConstraints, index);
-                return new ConstraintClause(scalarIds, scalarConstraints, ids, constraints);
+                return removeEntry(index);
             }
             if (index >= 0) {
-                MembershipConstraint[] constraints = Arrays.copyOf(membershipConstraints, membershipConstraints.length);
-                constraints[index] = nextConstraint;
-                return new ConstraintClause(scalarIds, scalarConstraints, membershipIds, constraints);
+                if (mask0(index) == nextRequired && mask1(index) == nextForbidden) {
+                    return this;
+                }
+                return updateEntry(index, nextRequired, nextForbidden);
             }
-            int insertion = -index - 1;
-            int[] ids = insert(membershipIds, insertion, symbolId);
-            MembershipConstraint[] constraints = insert(membershipConstraints, insertion, nextConstraint);
-            return new ConstraintClause(scalarIds, scalarConstraints, ids, constraints);
+            return insertEntry(-index - 1, id, nextRequired, nextForbidden);
         }
 
-        static int entriesHash(int[] symbolIds, Object[] values) {
+        long mask0(int index) {
+            return masks[index * 2];
+        }
+
+        long mask1(int index) {
+            return masks[index * 2 + 1];
+        }
+
+        void copyEntry(int sourceIndex, int[] nextIds, long[] nextMasks, int nextIndex) {
+            writeEntry(nextIds, nextMasks, nextIndex, ids[sourceIndex], mask0(sourceIndex), mask1(sourceIndex));
+        }
+
+        Clause updateEntry(int index, long nextMask0, long nextMask1) {
+            long[] nextMasks = Arrays.copyOf(masks, masks.length);
+            int offset = index * 2;
+            nextMasks[offset] = nextMask0;
+            nextMasks[offset + 1] = nextMask1;
+            return new Clause(ids, nextMasks);
+        }
+
+        Clause removeEntry(int index) {
+            if (ids.length == 1) {
+                return new Clause();
+            }
+            return new Clause(removeIndex(ids, index), removeEntryMasks(masks, index));
+        }
+
+        Clause insertEntry(int insertion, int symbolId, long mask0, long mask1) {
+            return new Clause(insert(ids, insertion, symbolId), insertEntryMasks(masks, insertion, mask0, mask1));
+        }
+
+        static Clause sizedClause(int[] ids, long[] masks, int size) {
+            if (size == 0) {
+                return new Clause();
+            }
+            return new Clause(size == ids.length ? ids : Arrays.copyOf(ids, size),
+                    size * 2 == masks.length ? masks : Arrays.copyOf(masks, size * 2));
+        }
+
+        static void writeEntry(int[] symbolIds, long[] masks, int index, int symbolId, long mask0, long mask1) {
+            int offset = index * 2;
+            symbolIds[index] = symbolId;
+            masks[offset] = mask0;
+            masks[offset + 1] = mask1;
+        }
+
+        private static Expression expression(String key, long allowed, Symbol symbol) {
+            Spec domain = symbol.domain();
+            if (domain.subKind() == Spec.SubKind.BOOLEAN) {
+                if (allowed == symbol.mask("true")) {
+                    return Expression.create("${" + key + "}");
+                }
+                if (allowed == symbol.mask("false")) {
+                    return Expression.create("!${" + key + "}");
+                }
+            }
+            if (allowed == symbol.mask) {
+                return Expression.TRUE;
+            }
+            long excluded = symbol.mask & ~allowed;
+            if (Long.bitCount(excluded) == 1) {
+                int ordinal = Long.numberOfTrailingZeros(excluded);
+                String str = symbol.value(ordinal);
+                return Expression.create("${" + key + "} != '" + str + "'");
+            }
+            Expression expr = Expression.FALSE;
+            long remaining = allowed;
+            while (remaining != 0L) {
+                int ordinal = Long.numberOfTrailingZeros(remaining);
+                String str = symbol.value(ordinal);
+                expr = expr.or(Expression.create("${" + key + "} == '" + str + "'"));
+                remaining &= remaining - 1L;
+            }
+            return expr;
+        }
+
+        private static Expression expression(String key, long required, long forbidden, Symbol symbol) {
+            Expression expr = Expression.TRUE;
+            long remaining = required;
+            while (remaining != 0L) {
+                int ordinal = Long.numberOfTrailingZeros(remaining);
+                String str = symbol.value(ordinal);
+                expr = expr.and(Expression.create("${" + key + "} contains '" + str + "'"));
+                remaining &= remaining - 1L;
+            }
+            remaining = forbidden;
+            while (remaining != 0L) {
+                int ordinal = Long.numberOfTrailingZeros(remaining);
+                String str = symbol.value(ordinal);
+                expr = expr.and(Expression.create("!(${" + key + "} contains '" + str + "')"));
+                remaining &= remaining - 1L;
+            }
+            return expr;
+        }
+
+        private static void appendSymbol(StringBuilder sb, long mask, Symbol symbol) {
+            sb.append('[');
+            boolean first = true;
+            long remaining = mask;
+            while (remaining != 0L) {
+                if (!first) {
+                    sb.append(", ");
+                }
+                int ordinal = Long.numberOfTrailingZeros(remaining);
+                sb.append(symbol.value(ordinal));
+                remaining &= remaining - 1L;
+                first = false;
+            }
+            sb.append(']');
+        }
+
+        static int entriesHash(int[] symbolIds, long[] masks) {
             int result = 1;
             for (int i = 0; i < symbolIds.length; i++) {
+                int offset = i * 2;
                 result = 31 * result + Integer.hashCode(symbolIds[i]);
-                result = 31 * result + values[i].hashCode();
+                result = 31 * result + Long.hashCode(masks[offset]);
+                result = 31 * result + Long.hashCode(masks[offset + 1]);
             }
             return result;
         }
@@ -2329,9 +1990,11 @@ final class Domain {
             return next;
         }
 
-        static <T> T[] removeIndex(T[] values, int index) {
-            T[] next = Arrays.copyOf(values, values.length - 1);
-            System.arraycopy(values, index + 1, next, index, values.length - index - 1);
+        static long[] removeEntryMasks(long[] values, int index) {
+            int offset = index * 2;
+            long[] next = new long[values.length - 2];
+            System.arraycopy(values, 0, next, 0, offset);
+            System.arraycopy(values, offset + 2, next, offset, values.length - offset - 2);
             return next;
         }
 
@@ -2343,10 +2006,13 @@ final class Domain {
             return next;
         }
 
-        static <T> T[] insert(T[] values, int insertion, T value) {
-            T[] next = Arrays.copyOf(values, values.length + 1);
-            System.arraycopy(next, insertion, next, insertion + 1, values.length - insertion);
-            next[insertion] = value;
+        static long[] insertEntryMasks(long[] values, int insertion, long mask0, long mask1) {
+            int offset = insertion * 2;
+            long[] next = new long[values.length + 2];
+            System.arraycopy(values, 0, next, 0, offset);
+            next[offset] = mask0;
+            next[offset + 1] = mask1;
+            System.arraycopy(values, offset, next, offset + 2, values.length - offset);
             return next;
         }
 
@@ -2355,15 +2021,11 @@ final class Domain {
             if (this == o) {
                 return true;
             }
-            if (!(o instanceof ConstraintClause)) {
+            if (!(o instanceof Clause)) {
                 return false;
             }
-            ConstraintClause other = (ConstraintClause) o;
-            return hashCode == other.hashCode
-                    && Arrays.equals(scalarIds, other.scalarIds)
-                    && Arrays.equals(scalarConstraints, other.scalarConstraints)
-                    && Arrays.equals(membershipIds, other.membershipIds)
-                    && Arrays.equals(membershipConstraints, other.membershipConstraints);
+            Clause other = (Clause) o;
+            return hashCode == other.hashCode && Arrays.equals(ids, other.ids) && Arrays.equals(masks, other.masks);
         }
 
         @Override
@@ -2372,246 +2034,253 @@ final class Domain {
         }
     }
 
-    private static final class ScalarConstraint {
-        private final long allowedMask;
+    static final class Fact {
+        private final Guard guard;
+        private final LatticeValue value;
+        private final List<ExactCase> exactCases;
 
-        ScalarConstraint(long allowedMask) {
-            this.allowedMask = allowedMask;
+        Fact(Guard guard, LatticeValue value) {
+            this(guard, value, List.of());
         }
 
-        ScalarConstraint intersect(ScalarConstraint other) {
-            if (this == other || equals(other)) {
-                return this;
-            }
-            long intersectionMask = allowedMask & other.allowedMask;
-            if (intersectionMask == 0L) {
-                return null;
-            }
-            if (intersectionMask == allowedMask) {
-                return this;
-            }
-            if (intersectionMask == other.allowedMask) {
-                return other;
-            }
-            return new ScalarConstraint(intersectionMask);
+        Fact(Guard guard, LatticeValue value, List<ExactCase> exactCases) {
+            this.guard = guard;
+            this.value = value;
+            this.exactCases = exactCases;
         }
 
-        boolean subsetOf(ScalarConstraint other) {
-            return this == other || (allowedMask & ~other.allowedMask) == 0L;
+        Guard definedUnder() {
+            return guard;
         }
 
-        boolean isFull(Symbol symbol) {
+        LatticeValue value() {
+            return value;
+        }
+
+        List<ExactCase> exactCases() {
+            return exactCases;
+        }
+
+        Guard exactDefined(Guards guards) {
+            Guard result = Guard.FALSE;
+            for (ExactCase exactCase : exactCases) {
+                result = guards.or(result, exactCase.guard);
+            }
+            return result;
+        }
+
+        Guard supportedExactDefined(Symbol symbol, Guards guards) {
+            Guard result = Guard.FALSE;
+            for (ExactCase exactCase : exactCases) {
+                if (exactCase.supportedExact(symbol.domain())) {
+                    result = guards.or(result, exactCase.guard);
+                }
+            }
+            return result;
+        }
+
+        Guard match(Symbol symbol, Value<?> candidate, Guards guards) {
+            Guard result = Guard.FALSE;
+            for (ExactCase exactCase : exactCases) {
+                if (exactCase.matches(symbol.domain(), candidate)) {
+                    result = guards.or(result, exactCase.guard);
+                }
+            }
+            return result;
+        }
+
+        Guard scalarAny(Symbol symbol, Set<String> values, Guards guards) {
             if (!symbol.scalar) {
-                throw new IllegalStateException("Scalar constraint maskability mismatch");
+                return Guard.FALSE;
             }
-            return allowedMask == symbol.mask;
-        }
-
-        Expression toExpression(String key, Symbol symbol) {
-            if (symbol.domain().booleanLike()) {
-                if (isSingleton(symbol, "true")) {
-                    return Expression.create("${" + key + "}");
-                }
-                if (isSingleton(symbol, "false")) {
-                    return Expression.create("!${" + key + "}");
+            long allowedMask = 0L;
+            for (String value : values) {
+                Integer ordinal = symbol.ordinals.get(value);
+                if (ordinal != null) {
+                    allowedMask |= 1L << ordinal;
                 }
             }
-            if (isFull(symbol)) {
-                return Expression.TRUE;
+            if (allowedMask == 0L) {
+                return Guard.FALSE;
             }
-            long excludedMask = symbol.mask & ~allowedMask;
-            if (Long.bitCount(excludedMask) == 1) {
-                String excluded = symbol.scalarValue(Long.numberOfTrailingZeros(excludedMask));
-                return Expression.create("${" + key + "} != '" + excluded + "'");
-            }
-            Expression expr = Expression.FALSE;
-            long remaining = allowedMask;
-            while (remaining != 0L) {
-                int ordinal = Long.numberOfTrailingZeros(remaining);
-                String str = symbol.scalarValue(ordinal);
-                expr = expr.or(Expression.create("${" + key + "} == '" + str + "'"));
-                remaining &= remaining - 1L;
-            }
-            return expr;
-        }
-
-        private boolean isSingleton(Symbol symbol, String value) {
-            return allowedMask == symbol.scalarMask(value);
-        }
-
-        void appendLiteral(StringBuilder builder, Symbol symbol) {
-            builder.append('[');
-            boolean first = true;
-            long remaining = allowedMask;
-            while (remaining != 0L) {
-                if (!first) {
-                    builder.append(", ");
+            Guard result = Guard.FALSE;
+            for (ExactCase exactCase : exactCases) {
+                if ((exactCase.scalarMask & allowedMask) != 0L) {
+                    result = guards.or(result, exactCase.guard);
                 }
-                int ordinal = Long.numberOfTrailingZeros(remaining);
-                builder.append(symbol.scalarValue(ordinal));
-                remaining &= remaining - 1L;
-                first = false;
             }
-            builder.append(']');
+            return result;
+        }
+
+        Guard listContains(Symbol symbol, Set<String> values, Guards guards) {
+            if (!symbol.member) {
+                return Guard.FALSE;
+            }
+            if (values.isEmpty()) {
+                return exactDefined(guards);
+            }
+            Spec domain = symbol.domain();
+            if (!domain.values().containsAll(values)) {
+                return Guard.FALSE;
+            }
+            long required = symbol.mask(values);
+            Guard result = Guard.FALSE;
+            for (ExactCase exactCase : exactCases) {
+                if (exactCase.containsAll(required)) {
+                    result = guards.or(result, exactCase.guard);
+                }
+            }
+            return result;
+        }
+
+        static Fact exact(Guard guard, Spec spec, LatticeValue value, Value<?> exactValue) {
+            if (exactValue == null || !exactValue.isPresent()) {
+                return new Fact(guard, value);
+            }
+            return new Fact(guard, value, List.of(new ExactCase(exactValue, guard, spec)));
+        }
+
+        static Fact merge(Fact left, Fact right, Guards guards) {
+            Guard definedUnder = guards.or(left.guard, right.guard);
+            LatticeValue value = LatticeValue.join(left.value, right.value);
+            if (left.exactCases.isEmpty()) {
+                return right.exactCases.isEmpty()
+                        ? new Fact(definedUnder, value)
+                        : new Fact(definedUnder, value, right.exactCases);
+            }
+            if (right.exactCases.isEmpty()) {
+                return new Fact(definedUnder, value, left.exactCases);
+            }
+            List<ExactCase> merged = new ArrayList<>();
+            for (ExactCase exactCase : left.exactCases) {
+                mergeExactCase(merged, exactCase, guards);
+            }
+            for (ExactCase exactCase : right.exactCases) {
+                mergeExactCase(merged, exactCase, guards);
+            }
+            return new Fact(definedUnder, value, merged);
+        }
+
+        private static void mergeExactCase(List<ExactCase> merged, ExactCase next, Guards guards) {
+            for (int i = 0; i < merged.size(); i++) {
+                ExactCase current = merged.get(i);
+                if (current.sameValue(next)) {
+                    merged.set(i, current.withGuard(guards.or(current.guard, next.guard)));
+                    return;
+                }
+            }
+            merged.add(next);
         }
 
         @Override
         public boolean equals(Object o) {
-            return o instanceof ScalarConstraint && allowedMask == ((ScalarConstraint) o).allowedMask;
-        }
-
-        @Override
-        public int hashCode() {
-            return Long.hashCode(allowedMask);
-        }
-    }
-
-    private static final class MembershipConstraint {
-        private static final MembershipConstraint EMPTY = new MembershipConstraint(0L, 0L);
-        private final long requiredMask;
-        private final long forbiddenMask;
-
-        private MembershipConstraint(long requiredMask, long forbiddenMask) {
-            this.requiredMask = requiredMask;
-            this.forbiddenMask = forbiddenMask;
-        }
-
-        MembershipConstraint(Symbol symbol, long requiredMask, long forbiddenMask) {
-            if (!symbol.member) {
-                throw new IllegalArgumentException("Masked membership constraint requires a maskable symbol");
-            }
-            long fullMask = symbol.mask;
-            if ((requiredMask & ~fullMask) != 0L || (forbiddenMask & ~fullMask) != 0L) {
-                throw new IllegalArgumentException("Membership mask must stay within the symbol domain");
-            }
-            if ((requiredMask & forbiddenMask) != 0L) {
-                throw new IllegalArgumentException("Membership required and forbidden items must be disjoint");
-            }
-            this.requiredMask = requiredMask;
-            this.forbiddenMask = forbiddenMask;
-        }
-
-        static MembershipConstraint required(Symbol symbol, Set<String> items) {
-            return items.isEmpty() ? EMPTY : new MembershipConstraint(symbol, symbol.membershipMask(items), 0L);
-        }
-
-        boolean isEmpty() {
-            return requiredMask == 0L && forbiddenMask == 0L;
-        }
-
-        MembershipConstraint intersect(MembershipConstraint other, Symbol symbol) {
-            if (isEmpty()) {
-                return other;
-            }
-            if (other.isEmpty()) {
-                return this;
-            }
-            if (equals(other)) {
-                return this;
-            }
-            if ((requiredMask & other.forbiddenMask) != 0L || (forbiddenMask & other.requiredMask) != 0L) {
-                return null;
-            }
-            long nextRequiredMask = requiredMask | other.requiredMask;
-            long nextForbiddenMask = forbiddenMask | other.forbiddenMask;
-            if (nextRequiredMask == requiredMask && nextForbiddenMask == forbiddenMask) {
-                return this;
-            }
-            if (nextRequiredMask == other.requiredMask && nextForbiddenMask == other.forbiddenMask) {
-                return other;
-            }
-            return new MembershipConstraint(symbol, nextRequiredMask, nextForbiddenMask);
-        }
-
-        boolean subsetOf(MembershipConstraint other) {
-            if (this == other || equals(other) || other.isEmpty()) {
+            if (this == o) {
                 return true;
             }
-            if (isEmpty()) {
+            if (!(o instanceof Fact)) {
                 return false;
             }
-            return (other.requiredMask & ~requiredMask) == 0L && (other.forbiddenMask & ~forbiddenMask) == 0L;
-        }
-
-        MembershipConstraint withRequired(String item, Symbol symbol) {
-            long itemMask = symbol.membershipMask(item);
-            if ((requiredMask & itemMask) != 0L) {
-                return this;
-            }
-            return new MembershipConstraint(symbol, requiredMask | itemMask, forbiddenMask);
-        }
-
-        MembershipConstraint withForbidden(String item, Symbol symbol) {
-            long itemMask = symbol.membershipMask(item);
-            if ((forbiddenMask & itemMask) != 0L) {
-                return this;
-            }
-            return new MembershipConstraint(symbol, requiredMask, forbiddenMask | itemMask);
-        }
-
-        Expression toExpression(String key, Symbol symbol) {
-            Expression expr = Expression.TRUE;
-            long remaining = requiredMask;
-            while (remaining != 0L) {
-                int ordinal = Long.numberOfTrailingZeros(remaining);
-                String str = symbol.membershipItem(ordinal);
-                expr = expr.and(Expression.create("${" + key + "} contains '" + str + "'"));
-                remaining &= remaining - 1L;
-            }
-            remaining = forbiddenMask;
-            while (remaining != 0L) {
-                int ordinal = Long.numberOfTrailingZeros(remaining);
-                String str = symbol.membershipItem(ordinal);
-                expr = expr.and(Expression.create("!(${" + key + "} contains '" + str + "')"));
-                remaining &= remaining - 1L;
-            }
-            return expr;
-        }
-
-        void appendLiteral(StringBuilder builder, Symbol symbol) {
-            appendItems(builder, symbol, requiredMask);
-            builder.append('/');
-            appendItems(builder, symbol, forbiddenMask);
-        }
-
-        private static void appendItems(StringBuilder builder, Symbol symbol, long mask) {
-            builder.append('[');
-            long remaining = mask;
-            boolean first = true;
-            while (remaining != 0L) {
-                if (!first) {
-                    builder.append(", ");
-                }
-                int ordinal = Long.numberOfTrailingZeros(remaining);
-                builder.append(symbol.membershipItem(ordinal));
-                remaining &= remaining - 1L;
-                first = false;
-            }
-            builder.append(']');
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (!(o instanceof MembershipConstraint)) {
-                return false;
-            }
-            MembershipConstraint other = (MembershipConstraint) o;
-            return requiredMask == other.requiredMask && forbiddenMask == other.forbiddenMask;
+            Fact other = (Fact) o;
+            return (guard == other.guard || guard.equals(other.guard))
+                   && value.equals(other.value)
+                   && (exactCases == other.exactCases || exactCases.equals(other.exactCases));
         }
 
         @Override
         public int hashCode() {
-            return 31 * Long.hashCode(requiredMask) + Long.hashCode(forbiddenMask);
+            int result = guard.hashCode();
+            result = 31 * result + value.hashCode();
+            return 31 * result + exactCases.hashCode();
         }
-    }
 
-    private static final class ClausePartition {
-        private final ConstraintClause outside;
-        private final ConstraintClause overlap;
+        static final class ExactCase {
+            private final Value<?> value;
+            private final Guard guard;
+            private final long scalarMask;
+            private final long listMask;
 
-        ClausePartition(ConstraintClause outside, ConstraintClause overlap) {
-            this.outside = outside;
-            this.overlap = overlap;
+            ExactCase(Value<?> value, Guard guard, Spec spec) {
+                this(value, guard, exactScalarMask(spec, value), exactListMask(spec, value));
+            }
+
+            private ExactCase(Value<?> value, Guard guard, long scalarMask, long listMask) {
+                this.value = value;
+                this.guard = guard;
+                this.scalarMask = scalarMask;
+                this.listMask = listMask;
+            }
+
+            Value<?> value() {
+                return value;
+            }
+
+            Guard guard() {
+                return guard;
+            }
+
+            long scalarMask() {
+                return scalarMask;
+            }
+
+            long listMask() {
+                return listMask;
+            }
+
+            ExactCase withGuard(Guard nextGuard) {
+                return guard.equals(nextGuard) ? this : new ExactCase(value, nextGuard, scalarMask, listMask);
+            }
+
+            boolean matches(Spec spec, Value<?> candidate) {
+                return exactValueEquals(spec, value, candidate, scalarMask, listMask);
+            }
+
+            boolean sameValue(ExactCase other) {
+                if (scalarMask != 0L || other.scalarMask != 0L) {
+                    return scalarMask != 0L && scalarMask == other.scalarMask;
+                }
+                if (listMask != 0L || other.listMask != 0L) {
+                    return listMask != 0L && listMask == other.listMask;
+                }
+                return Value.isEqual(value, other.value);
+            }
+
+            boolean containsAll(long requiredMask) {
+                return requiredMask == 0L ? value.type() == Value.Type.LIST : listMask != 0L && (requiredMask & ~listMask) == 0L;
+            }
+
+            boolean supportedExact(Spec spec) {
+                switch (spec.kind()) {
+                    case FINITE_SCALAR:
+                        return scalarMask != 0L;
+                    case FINITE_MEMBERSHIP:
+                        return value.type() == Value.Type.LIST && (listMask != 0L || value.getList().isEmpty());
+                    case OPEN_TEXT:
+                    default:
+                        return true;
+                }
+            }
+
+            String scalarLiteral() {
+                return Value.scalarLiteral(value);
+            }
+
+            @Override
+            public boolean equals(Object o) {
+                if (this == o) {
+                    return true;
+                }
+                if (!(o instanceof ExactCase)) {
+                    return false;
+                }
+                ExactCase other = (ExactCase) o;
+                return sameValue(other)
+                       && (guard == other.guard || guard.equals(other.guard));
+            }
+
+            @Override
+            public int hashCode() {
+                return 31 * exactValueHash(value, scalarMask, listMask) + guard.hashCode();
+            }
         }
     }
 }

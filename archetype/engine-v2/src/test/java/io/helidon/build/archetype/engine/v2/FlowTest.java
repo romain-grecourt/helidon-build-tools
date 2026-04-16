@@ -46,7 +46,7 @@ class FlowTest {
         Node setup = findStep(script, "setup");
         Node pom = findFile(script, "pom.xml");
 
-        assertThat(enabled.domain().booleanLike(), is(true));
+        assertThat(enabled.domain().subKind(), is(Domain.Spec.SubKind.BOOLEAN));
         assertThat(flavor.domain().kind(), is(Domain.Spec.Kind.FINITE_SCALAR));
         assertThat(flavor.domain().values(), is(Set.of("mp", "se")));
         assertThat(features.domain().kind(), is(Domain.Spec.Kind.FINITE_MEMBERSHIP));
@@ -90,7 +90,7 @@ class FlowTest {
         Domain.Symbol enabled = symbol(flow, "enabled");
         Domain.Symbol flavor = symbol(flow, "flavor");
         Flow.State before = flow.before(findStep(script, "Observe"));
-        Domain.Symbol.Fact fact = before.env().get(flavor.id());
+        Domain.Fact fact = before.env().get(flavor.id());
         Map<String, Domain.Guard> exactByValue = exactGuards(fact);
 
         assertThat(flow.guards().equivalent(before.path(), TRUE), is(true));
@@ -114,7 +114,7 @@ class FlowTest {
         Domain.Symbol secondary = symbol(flow, "secondary");
         Domain.Symbol flavor = symbol(flow, "flavor");
         Flow.State before = flow.before(findStep(script, "Observe"));
-        Domain.Symbol.Fact fact = before.env().get(flavor.id());
+        Domain.Fact fact = before.env().get(flavor.id());
         Map<String, Domain.Guard> exactByValue = exactGuards(fact);
 
         assertThat(flow.guards().equivalent(before.path(), TRUE), is(true));
@@ -143,7 +143,7 @@ class FlowTest {
         flow.process(script);
 
         Domain.Symbol flag = symbol(flow, "flag");
-        Domain.Symbol.Fact fact = flow.before(findStep(script, "Observe")).env().get(flag.id());
+        Domain.Fact fact = flow.before(findStep(script, "Observe")).env().get(flag.id());
 
         assertThat(fact.exactCases().size(), is(1));
         assertThat(fact.exactCases().get(0).scalarLiteral(), is("true"));
@@ -161,7 +161,7 @@ class FlowTest {
         Node condition = findCondition(script, "${enabled} && ${flag}");
         Flow.State before = flow.before(condition);
         Domain.Symbol flag = symbol(flow, "flag");
-        Domain.Symbol.Fact fact = before.env().get(flag.id());
+        Domain.Fact fact = before.env().get(flag.id());
         Set<String> names = before.env().keySet().stream().map(flow::symbol).map(Domain.Symbol::name).collect(Collectors.toSet());
 
         assertThat(names, is(Set.of("enabled", "flag")));
@@ -368,8 +368,8 @@ class FlowTest {
         return info.symbol();
     }
 
-    static Map<String, Domain.Guard> exactGuards(Domain.Symbol.Fact fact) {
+    static Map<String, Domain.Guard> exactGuards(Domain.Fact fact) {
         return fact.exactCases().stream()
-                .collect(Collectors.toMap(Domain.Symbol.Fact.ExactCase::scalarLiteral, Domain.Symbol.Fact.ExactCase::guard));
+                .collect(Collectors.toMap(Domain.Fact.ExactCase::scalarLiteral, Domain.Fact.ExactCase::guard));
     }
 }

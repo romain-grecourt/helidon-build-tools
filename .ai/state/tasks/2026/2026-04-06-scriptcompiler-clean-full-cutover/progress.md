@@ -1,5 +1,59 @@
 # Progress
 
+- 2026-04-16: Inlined the private `Clause.offset(int)` helper after the
+  single-buffer clause compaction. `mask0(...)`, `mask1(...)`, and
+  `updateEntry(...)` now compute `index * 2` directly, and the helper
+  is gone. This is a pure mechanical cleanup; behavior is unchanged.
+  Focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`222` tests, `BUILD SUCCESS`, total time `4.759 s`), and
+  `git diff --check` is clean.
+- 2026-04-16: Inlined the private `Spec.booleanLike()` helper and
+  removed it. `Domain`, `Flow`, `ScriptCompiler`, and the one affected
+  `FlowTest` assertion now check `subKind() == BOOLEAN` directly
+  instead of routing through the trivial helper. This is a mechanical
+  internal cleanup on top of the clause compaction work; behavior is
+  unchanged. Focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`222` tests, `BUILD SUCCESS`, total time `4.893 s`), and
+  `git diff --check` is clean.
+- 2026-04-16: Condensed the private finite-guard clause storage in
+  `Domain` and shortened the internal naming. `ConstraintClause` is now
+  `Clause`, `Decision` now works in terms of `Clause` throughout, and
+  each clause now stores a single sorted `int[] symbolIds` table plus a
+  single interleaved `long[] masks` buffer instead of separate scalar /
+  membership arrays. Scalar entries use the first slot as the allowed
+  mask and keep the second slot `0`; membership entries use the first
+  slot as the required mask and the second slot as the forbidden mask.
+  The clause algebra (`normalized`, `intersect`, `subsetOf`,
+  `tryMerge`, `subtract`, `toExpression`, `literal`) now branches on
+  symbol kind from `Symbol.Table` while preserving the prior guard
+  behavior. Focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`222` tests, `BUILD SUCCESS`, total time `4.726 s`), and
+  `git diff --check` is clean.
+- 2026-04-16: Finished the aggressive private-carrier flattening pass
+  that was staged in `Domain` and left half-done in `Flow`.
+  `Flow.Ir` is now the only internal flow-model boundary:
+  `Lowerer` builds raw array-backed control, block, terminator, and op
+  tables directly, `Analyzer` consumes those same arrays directly, and
+  the deleted private carrier types (`Block`, `Op`, `Terminator`,
+  `Control`, `BranchInfo`) are gone. `Projector` now reads the same
+  frozen tables end-to-end, so the internal flow implementation is
+  substantially more procedural and compact while keeping
+  `Flow.State`, `Flow.SymbolInfo`, `Domain.Symbol.Fact`, and
+  `Fact.ExactCase` intact. Focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`222` tests, `BUILD SUCCESS`, total time `4.798 s`), and
+  `git diff --check` is clean.
 - 2026-04-16: Finished the internal naming cleanup that followed the
   finite-mask cutover in `Domain` and `Flow`. `Domain` now uses
   `ConstraintClause`, `ScalarConstraint`, `MembershipConstraint`, and

@@ -34,8 +34,9 @@ import io.helidon.build.archetype.engine.v2.Domain.Guards;
 import io.helidon.build.archetype.engine.v2.Domain.LatticeValue;
 import io.helidon.build.archetype.engine.v2.Domain.Spec;
 import io.helidon.build.archetype.engine.v2.Domain.Symbol;
-import io.helidon.build.archetype.engine.v2.Domain.Symbol.Fact;
+import io.helidon.build.archetype.engine.v2.Domain.Fact;
 import io.helidon.build.archetype.engine.v2.Domain.Symbol.Table;
+import io.helidon.build.archetype.engine.v2.Expression.Operator;
 import io.helidon.build.archetype.engine.v2.Expression.Token;
 import io.helidon.build.archetype.engine.v2.Node.Kind;
 
@@ -231,7 +232,7 @@ final class Flow {
     private static Value.Type valueType(SymbolInfo info) {
         switch (info.symbol.domain().kind()) {
             case FINITE_SCALAR:
-                return info.symbol.domain().booleanLike() ? Value.Type.BOOLEAN : Value.Type.STRING;
+                return info.symbol.domain().subKind() == Spec.SubKind.BOOLEAN ? Value.Type.BOOLEAN : Value.Type.STRING;
             case FINITE_MEMBERSHIP:
                 return Value.Type.LIST;
             case OPEN_TEXT:
@@ -289,7 +290,7 @@ final class Flow {
 
     private static Guard directBooleanGuard(Table symbols, Guards guards, String key) {
         Symbol symbol = symbols.symbol(requireSymbolId(symbols, key));
-        if (!symbol.guardable() || symbol.tainted() || !symbol.domain().booleanLike()) {
+        if (!symbol.guardable() || symbol.tainted() || symbol.domain().subKind() != Spec.SubKind.BOOLEAN) {
             return Guard.TRUE;
         }
         return guards.eq(symbol.id(), "true");
@@ -362,113 +363,86 @@ final class Flow {
         }
     }
 
-    private static final class Ir {
-        private final Block[] blocks;
-        private final Table symbols;
-        private final Op[] ops;
-        private final Guards guards;
-        private final Control[] controls;
+    private static final int OP_DECLARE_INPUT = 0;
+    private static final int OP_DECLARE_OPTION = 1;
+    private static final int OP_DEFINE_VALUE = 2;
+    private static final int OP_EMIT = 3;
 
-        Ir(List<Block> blocks, Table symbols, List<Op> ops, Guards guards, List<Control> controls) {
-            if (controls.isEmpty()) {
+    private static final int TERM_NONE = -1;
+    private static final int TERM_GOTO = 0;
+    private static final int TERM_BRANCH = 1;
+    private static final int TERM_RETURN = 2;
+    private static final int TERM_UNREACHABLE = 3;
+
+    private static final class Ir {
+        private final int[] blockControlIds;
+        private final int[][] blockOpIds;
+        private final int[] terminatorKinds;
+        private final Node[] terminatorSources;
+        private final int[] terminatorTargetIds;
+        private final int[] terminatorTrueIds;
+        private final int[] terminatorFalseIds;
+        private final Table symbols;
+        private final int[] opKinds;
+        private final int[] opBlockIds;
+        private final Node[] opSources;
+        private final int[] opSymbolIds;
+        private final Expression[] opExpressions;
+        private final Guards guards;
+        private final int[] controlParentIds;
+        private final Guard[] controlEdgeGuards;
+
+        Ir(List<Integer> blockControlIds,
+           List<List<Integer>> blockOpIds,
+           List<Integer> terminatorKinds,
+           List<Node> terminatorSources,
+           List<Integer> terminatorTargetIds,
+           List<Integer> terminatorTrueIds,
+           List<Integer> terminatorFalseIds,
+           Table symbols,
+           List<Integer> opKinds,
+           List<Integer> opBlockIds,
+           List<Node> opSources,
+           List<Integer> opSymbolIds,
+           List<Expression> opExpressions,
+           Guards guards,
+           List<Integer> controlParentIds,
+           List<Guard> controlEdgeGuards) {
+            if (controlParentIds.isEmpty()) {
                 throw new IllegalArgumentException("controls is empty");
             }
-            this.blocks = blocks.toArray(Block[]::new);
+            this.blockControlIds = ints(blockControlIds);
+            this.blockOpIds = nestedInts(blockOpIds);
+            this.terminatorKinds = ints(terminatorKinds);
+            this.terminatorSources = terminatorSources.toArray(Node[]::new);
+            this.terminatorTargetIds = ints(terminatorTargetIds);
+            this.terminatorTrueIds = ints(terminatorTrueIds);
+            this.terminatorFalseIds = ints(terminatorFalseIds);
             this.symbols = symbols;
-            this.ops = ops.toArray(Op[]::new);
+            this.opKinds = ints(opKinds);
+            this.opBlockIds = ints(opBlockIds);
+            this.opSources = opSources.toArray(Node[]::new);
+            this.opSymbolIds = ints(opSymbolIds);
+            this.opExpressions = opExpressions.toArray(Expression[]::new);
             this.guards = guards;
-            this.controls = controls.toArray(Control[]::new);
-        }
-    }
-
-    private static final class Block {
-        private final int id;
-        private final List<Integer> ops = new ArrayList<>();
-        private Terminator terminator;
-
-        Block(int id) {
-            this.id = id;
-        }
-    }
-
-    private static final class Op {
-        enum Kind {
-            DECLARE_INPUT,
-            DECLARE_OPTION,
-            DEFINE_VALUE,
-            EMIT
+            this.controlParentIds = ints(controlParentIds);
+            this.controlEdgeGuards = controlEdgeGuards.toArray(Guard[]::new);
         }
 
-        private final int id;
-        private final int blockId;
-        private final Node source;
-        private final Kind kind;
-        private final int symbolId;
-        private final Expression expression;
-
-        Op(int id, int blockId, Node source, Kind kind, int symbolId, Expression expression) {
-            this.id = id;
-            this.blockId = blockId;
-            this.source = source;
-            this.kind = kind;
-            this.symbolId = symbolId;
-            this.expression = expression;
+        private static int[] ints(List<Integer> values) {
+            int[] result = new int[values.size()];
+            for (int i = 0; i < values.size(); i++) {
+                result[i] = values.get(i);
+            }
+            return result;
         }
 
-        static Op declareInput(int id, int blockId, Node source, int symbolId) {
-            return new Op(id, blockId, source, Kind.DECLARE_INPUT, symbolId, null);
-        }
-
-        static Op declareOption(int id, int blockId, Node source, int symbolId) {
-            return new Op(id, blockId, source, Kind.DECLARE_OPTION, symbolId, null);
-        }
-
-        static Op defineValue(int id, int blockId, Node source, int symbolId, Expression expression) {
-            return new Op(id, blockId, source, Kind.DEFINE_VALUE, symbolId, expression);
-        }
-
-        static Op emit(int id, int blockId, Node source) {
-            return new Op(id, blockId, source, Kind.EMIT, -1, null);
-        }
-
-    }
-
-    private static final class Terminator {
-        enum Kind {
-            GOTO,
-            BRANCH,
-            RETURN,
-            UNREACHABLE
-        }
-
-        private final Kind kind;
-        private final Node source;
-        private final int targetId;
-        private final int trueId;
-        private final int falseId;
-
-        Terminator(Kind kind, Node source, int targetId, int trueId, int falseId) {
-            this.kind = kind;
-            this.source = source;
-            this.targetId = targetId;
-            this.trueId = trueId;
-            this.falseId = falseId;
-        }
-
-        static Terminator jump(Node source, int targetId) {
-            return new Terminator(Kind.GOTO, source, targetId, -1, -1);
-        }
-
-        static Terminator branch(Node source, int trueId, int falseId) {
-            return new Terminator(Kind.BRANCH, source, -1, trueId, falseId);
-        }
-
-        static Terminator ret(Node source) {
-            return new Terminator(Kind.RETURN, source, -1, -1, -1);
-        }
-
-        static Terminator unreachable(Node source) {
-            return new Terminator(Kind.UNREACHABLE, source, -1, -1, -1);
+        private static int[][] nestedInts(List<List<Integer>> values) {
+            int[][] result = new int[values.size()][];
+            for (int i = 0; i < values.size(); i++) {
+                result[i] = ints(values.get(i));
+            }
+            return result;
         }
     }
 
@@ -493,7 +467,8 @@ final class Flow {
         private final Scope scope;
         private final Guards guards;
         private final Map<Node, List<Integer>> ops = new IdentityHashMap<>();
-        private final Map<Node, BranchInfo> branches = new IdentityHashMap<>();
+        private final Map<Node, Integer> branchTrueIds = new IdentityHashMap<>();
+        private final Map<Node, Integer> branchJoinIds = new IdentityHashMap<>();
         private final Map<Node, NodeFacts> nodeFacts = new IdentityHashMap<>();
         private final SymbolInfo[] symbolInfos;
 
@@ -517,50 +492,50 @@ final class Flow {
         }
 
         void indexAnchors() {
-            for (Op op : ir.ops) {
-                ops.computeIfAbsent(op.source, key -> new ArrayList<>()).add(op.id);
+            for (int opId = 0; opId < ir.opKinds.length; opId++) {
+                ops.computeIfAbsent(ir.opSources[opId], key -> new ArrayList<>()).add(opId);
             }
-            for (Block block : ir.blocks) {
-                Terminator terminator = block.terminator;
-                if (terminator.kind != Terminator.Kind.BRANCH) {
+            for (int blockId = 0; blockId < ir.blockControlIds.length; blockId++) {
+                if (ir.terminatorKinds[blockId] != TERM_BRANCH) {
                     continue;
                 }
-                int joinId = terminator.falseId;
-                Terminator falseTerminator = ir.blocks[terminator.falseId].terminator;
-                if (falseTerminator.kind == Terminator.Kind.GOTO) {
-                    joinId = falseTerminator.targetId;
+                int joinId = ir.terminatorFalseIds[blockId];
+                if (ir.terminatorKinds[joinId] == TERM_GOTO) {
+                    joinId = ir.terminatorTargetIds[joinId];
                 }
-                branches.put(terminator.source, new BranchInfo(terminator.trueId, joinId));
+                Node source = ir.terminatorSources[blockId];
+                branchTrueIds.put(source, ir.terminatorTrueIds[blockId]);
+                branchJoinIds.put(source, joinId);
             }
         }
 
         void scanSymbols() {
-            for (Op op : ir.ops) {
-                State before = analyzer.beforeStates[op.id];
-                switch (op.kind) {
-                    case DECLARE_INPUT: {
-                        SymbolInfo info = symbolInfos[op.symbolId];
+            for (int opId = 0; opId < ir.opKinds.length; opId++) {
+                State before = analyzer.beforeStates[opId];
+                switch (ir.opKinds[opId]) {
+                    case OP_DECLARE_INPUT: {
+                        SymbolInfo info = symbolInfos[ir.opSymbolIds[opId]];
                         info.addDefinition(before.path, guards);
-                        if (info.symbol.domain().booleanLike()) {
+                        if (info.symbol.domain().subKind() == Spec.SubKind.BOOLEAN) {
                             info.addAvailability("true", before.path, guards);
                             info.addAvailability("false", before.path, guards);
                         }
                         break;
                     }
-                    case DECLARE_OPTION: {
-                        SymbolInfo info = symbolInfos[op.symbolId];
-                        info.addAvailability(op.source.value().getString(), before.path, guards);
+                    case OP_DECLARE_OPTION: {
+                        SymbolInfo info = symbolInfos[ir.opSymbolIds[opId]];
+                        info.addAvailability(ir.opSources[opId].value().getString(), before.path, guards);
                         break;
                     }
-                    case DEFINE_VALUE: {
-                        SymbolInfo info = symbolInfos[op.symbolId];
+                    case OP_DEFINE_VALUE: {
+                        SymbolInfo info = symbolInfos[ir.opSymbolIds[opId]];
                         if (before.path.equals(Guard.FALSE)) {
                             break;
                         }
-                        Map<Integer, Fact> env = analyzer.afterStates[op.id].env;
-                        Fact fact = env.get(op.symbolId);
+                        Map<Integer, Fact> env = analyzer.afterStates[opId].env;
+                        Fact fact = env.get(ir.opSymbolIds[opId]);
                         if (fact == null) {
-                            throw new IllegalStateException("Missing flow fact after op for key: " + op.id);
+                            throw new IllegalStateException("Missing flow fact after op for key: " + opId);
                         }
                         info.addDefinition(fact.definedUnder(), guards);
                         recordAvailability(info, fact);
@@ -597,7 +572,7 @@ final class Flow {
                     long scalarMask = exactCase.scalarMask();
                     while (scalarMask != 0L) {
                         int ordinal = Long.numberOfTrailingZeros(scalarMask);
-                        info.addAvailability(info.symbol.scalarValue(ordinal), exactCase.guard(), guards);
+                        info.addAvailability(info.symbol.value(ordinal), exactCase.guard(), guards);
                         scalarMask &= scalarMask - 1L;
                     }
                     break;
@@ -605,7 +580,7 @@ final class Flow {
                     long listMask = exactCase.listMask();
                     while (listMask != 0L) {
                         int ordinal = Long.numberOfTrailingZeros(listMask);
-                        info.addAvailability(info.symbol.membershipItem(ordinal), exactCase.guard(), guards);
+                        info.addAvailability(info.symbol.value(ordinal), exactCase.guard(), guards);
                         listMask &= listMask - 1L;
                     }
                     break;
@@ -629,24 +604,25 @@ final class Flow {
             Scope nodeScope = node.kind().isInput() ? childScope : scope;
             State branchEntry;
             Guard activeGuard;
-            BranchInfo branch = branches.get(node);
-            if (branch == null) {
+            Integer branchTrueId = branchTrueIds.get(node);
+            Integer branchJoinId = branchJoinIds.get(node);
+            if (branchTrueId == null || branchJoinId == null) {
                 branchEntry = null;
                 activeGuard = activeGuard(node, nodeScope, afterOps);
             } else {
-                branchEntry = constrainPath(analyzer.entryStates[branch.trueId], current.path);
+                branchEntry = constrainPath(analyzer.entryStates[branchTrueId], current.path);
                 activeGuard = activeGuard(node, nodeScope, branchEntry);
             }
             String nodeKey = nodeKey(node, scope, childScope);
             nodeFacts.put(node, new NodeFacts(before, nodeKey, before.path, activeGuard));
 
             Scope descendantScope = node.kind().isInput() ? childScope : scope;
-            if (branch != null) {
+            if (branchTrueId != null && branchJoinId != null) {
                 State cursor = constrainPath(branchEntry, activeGuard);
                 for (Node child : node.children()) {
                     cursor = projectNode(child, descendantScope, cursor);
                 }
-                return constrainPath(analyzer.entryStates[branch.joinId], current.path);
+                return constrainPath(analyzer.entryStates[branchJoinId], current.path);
             }
 
             State cursor = afterOps;
@@ -719,115 +695,145 @@ final class Flow {
         }
 
         Guard translatedCondition0(Expression expression, Scope scope, State state) {
-            Deque<ProjectedTerm> stack = new ArrayDeque<>();
+            int capacity = expression.tokens().size();
+            Guard[] guardStack = new Guard[capacity];
+            String[] refStack = new String[capacity];
+            Value<?>[] literalStack = new Value<?>[capacity];
+            int size = 0;
             for (Token token : expression.tokens()) {
                 if (token.isVariable()) {
-                    stack.push(ProjectedTerm.ref(scope.key(token.variable())));
+                    guardStack[size] = null;
+                    refStack[size] = scope.key(token.variable());
+                    literalStack[size] = null;
+                    size++;
                     continue;
                 }
                 if (token.isOperand()) {
-                    stack.push(ProjectedTerm.value(token.operand()));
+                    guardStack[size] = null;
+                    refStack[size] = null;
+                    literalStack[size] = token.operand();
+                    size++;
                     continue;
                 }
                 switch (token.operator()) {
-                    case NOT:
-                        Guard negated = booleanGuard(stack.pop(), state);
+                    case NOT: {
+                        int index = size - 1;
+                        Guard negated = booleanGuard(guardStack[index], refStack[index], literalStack[index], state);
                         if (negated == null) {
                             return null;
                         }
-                        stack.push(ProjectedTerm.guard(guards.not(negated)));
+                        guardStack[index] = guards.not(negated);
+                        refStack[index] = null;
+                        literalStack[index] = null;
                         break;
+                    }
                     case AND: {
-                        Guard right = booleanGuard(stack.pop(), state);
-                        Guard left = booleanGuard(stack.pop(), state);
-                        if (left == null || right == null) {
+                        int right = --size;
+                        Guard rightGuard = booleanGuard(guardStack[right], refStack[right], literalStack[right], state);
+                        int left = --size;
+                        Guard leftGuard = booleanGuard(guardStack[left], refStack[left], literalStack[left], state);
+                        if (leftGuard == null || rightGuard == null) {
                             return null;
                         }
-                        stack.push(ProjectedTerm.guard(guards.and(left, right)));
+                        guardStack[left] = guards.and(leftGuard, rightGuard);
+                        refStack[left] = null;
+                        literalStack[left] = null;
+                        size = left + 1;
                         break;
                     }
                     case OR: {
-                        Guard right = booleanGuard(stack.pop(), state);
-                        Guard left = booleanGuard(stack.pop(), state);
-                        if (left == null || right == null) {
+                        int right = --size;
+                        Guard rightGuard = booleanGuard(guardStack[right], refStack[right], literalStack[right], state);
+                        int left = --size;
+                        Guard leftGuard = booleanGuard(guardStack[left], refStack[left], literalStack[left], state);
+                        if (leftGuard == null || rightGuard == null) {
                             return null;
                         }
-                        stack.push(ProjectedTerm.guard(guards.or(left, right)));
+                        guardStack[left] = guards.or(leftGuard, rightGuard);
+                        refStack[left] = null;
+                        literalStack[left] = null;
+                        size = left + 1;
                         break;
                     }
                     case EQUAL:
                     case NOT_EQUAL: {
-                        ProjectedTerm right = stack.pop();
-                        ProjectedTerm left = stack.pop();
-                        Guard equality = equalityGuard(left, right, state);
+                        int right = --size;
+                        int left = --size;
+                        Guard equality = equalityGuard(refStack[left], literalStack[left], refStack[right],
+                                literalStack[right], state);
                         if (equality == null) {
                             return null;
                         }
-                        stack.push(ProjectedTerm.guard(token.operator() == Expression.Operator.EQUAL
-                                ? equality
-                                : guards.not(equality)));
+                        guardStack[left] = token.operator() == Operator.EQUAL ? equality : guards.not(equality);
+                        refStack[left] = null;
+                        literalStack[left] = null;
+                        size = left + 1;
                         break;
                     }
                     case CONTAINS: {
-                        ProjectedTerm right = stack.pop();
-                        ProjectedTerm left = stack.pop();
-                        Guard contains = containsGuard(left, right, state);
+                        int right = --size;
+                        int left = --size;
+                        Guard contains = containsGuard(refStack[left], literalStack[left], refStack[right],
+                                literalStack[right], state);
                         if (contains == null) {
                             return null;
                         }
-                        stack.push(ProjectedTerm.guard(contains));
+                        guardStack[left] = contains;
+                        refStack[left] = null;
+                        literalStack[left] = null;
+                        size = left + 1;
                         break;
                     }
                     default:
                         return null;
                 }
             }
-            return stack.size() == 1 ? booleanGuard(stack.pop(), state) : null;
+            return size == 1 ? booleanGuard(guardStack[0], refStack[0], literalStack[0], state) : null;
         }
 
-        Guard booleanGuard(ProjectedTerm term, State state) {
-            if (term.guard != null) {
-                return term.guard;
+        Guard booleanGuard(Guard guard, String ref, Value<?> literal, State state) {
+            if (guard != null) {
+                return guard;
             }
-            if (term.ref != null) {
-                SymbolInfo info = symbolInfo(term.ref);
-                if (info == null || !info.symbol.domain().booleanLike()) {
+            if (ref != null) {
+                SymbolInfo info = symbolInfo(ref);
+                if (info == null || info.symbol.domain().subKind() != Spec.SubKind.BOOLEAN) {
                     return null;
                 }
-                return translatedEquality(term.ref, Value.TRUE, state);
+                return translatedEquality(ref, Value.TRUE, state);
             }
-            if (term.literal != null && term.literal.type() == Value.Type.BOOLEAN) {
-                return term.literal.getBoolean() ? Guard.TRUE : Guard.FALSE;
-            }
-            return null;
-        }
-
-        Guard equalityGuard(ProjectedTerm left, ProjectedTerm right, State state) {
-            if (left.literal != null && right.literal != null) {
-                return Value.isEqual(left.literal, right.literal) ? Guard.TRUE : Guard.FALSE;
-            }
-            if (left.ref != null && right.literal != null) {
-                return translatedEquality(left.ref, right.literal, state);
-            }
-            if (left.literal != null && right.ref != null) {
-                return translatedEquality(right.ref, left.literal, state);
+            if (literal != null && literal.type() == Value.Type.BOOLEAN) {
+                return literal.getBoolean() ? Guard.TRUE : Guard.FALSE;
             }
             return null;
         }
 
-        Guard containsGuard(ProjectedTerm left, ProjectedTerm right, State state) {
-            if (left.ref != null && right.literal != null) {
-                return translatedListContains(left.ref, right.literal, state);
+        Guard equalityGuard(String leftRef, Value<?> leftLiteral, String rightRef, Value<?> rightLiteral, State state) {
+            if (leftLiteral != null && rightLiteral != null) {
+                return Value.isEqual(leftLiteral, rightLiteral) ? Guard.TRUE : Guard.FALSE;
             }
-            if (left.literal != null && right.ref != null && left.literal.type() == Value.Type.LIST) {
-                return translatedScalarAny(right.ref, new TreeSet<>(left.literal.getList()), state);
+            if (leftRef != null && rightLiteral != null) {
+                return translatedEquality(leftRef, rightLiteral, state);
             }
-            if (left.literal != null && right.literal != null && left.literal.type() == Value.Type.LIST) {
-                Set<String> required = containsValues(right.literal);
+            if (leftLiteral != null && rightRef != null) {
+                return translatedEquality(rightRef, leftLiteral, state);
+            }
+            return null;
+        }
+
+        Guard containsGuard(String leftRef, Value<?> leftLiteral, String rightRef, Value<?> rightLiteral, State state) {
+            if (leftRef != null && rightLiteral != null) {
+                return translatedListContains(leftRef, rightLiteral, state);
+            }
+            if (leftLiteral != null && rightRef != null && leftLiteral.type() == Value.Type.LIST) {
+                return translatedScalarAny(rightRef, new TreeSet<>(leftLiteral.getList()), state);
+            }
+            if (leftLiteral != null && rightLiteral != null && leftLiteral.type() == Value.Type.LIST) {
+                Set<String> required = containsValues(rightLiteral);
                 if (required == null) {
                     return null;
                 }
-                return new TreeSet<>(left.literal.getList()).containsAll(required)
+                return new TreeSet<>(leftLiteral.getList()).containsAll(required)
                         ? Guard.TRUE
                         : Guard.FALSE;
             }
@@ -984,54 +990,32 @@ final class Flow {
         }
     }
 
-    private static final class ProjectedTerm {
-        private final Guard guard;
-        private final String ref;
-        private final Value<?> literal;
-
-        ProjectedTerm(Guard guard, String ref, Value<?> literal) {
-            this.guard = guard;
-            this.ref = ref;
-            this.literal = literal;
-        }
-
-        static ProjectedTerm guard(Guard guard) {
-            return new ProjectedTerm(guard, null, null);
-        }
-
-        static ProjectedTerm ref(String ref) {
-            return new ProjectedTerm(null, ref, null);
-        }
-
-        static ProjectedTerm value(Value<?> literal) {
-            return new ProjectedTerm(null, null, literal);
-        }
-    }
-
-    private static final class BranchInfo {
-        private final int trueId;
-        private final int joinId;
-
-        BranchInfo(int trueId, int joinId) {
-            this.trueId = trueId;
-            this.joinId = joinId;
-        }
-    }
-
     private static final class Lowerer {
         private final Scope scope;
         private final Table.Builder symbolsBuilder = Table.builder();
         private final Map<String, SymbolSeed> symbolSeeds = new LinkedHashMap<>();
         private final Map<String, SymbolSeed> declaredInputSymbols = new LinkedHashMap<>();
-        private final List<Control> controls = new ArrayList<>();
-        private final List<Block> blocks = new ArrayList<>();
-        private final List<Op> ops = new ArrayList<>();
+        private final List<Integer> controlParentIds = new ArrayList<>();
+        private final List<Guard> controlEdgeGuards = new ArrayList<>();
+        private final List<Integer> blockControlIds = new ArrayList<>();
+        private final List<List<Integer>> blockOpIds = new ArrayList<>();
+        private final List<Integer> terminatorKinds = new ArrayList<>();
+        private final List<Node> terminatorSources = new ArrayList<>();
+        private final List<Integer> terminatorTargetIds = new ArrayList<>();
+        private final List<Integer> terminatorTrueIds = new ArrayList<>();
+        private final List<Integer> terminatorFalseIds = new ArrayList<>();
+        private final List<Integer> opKinds = new ArrayList<>();
+        private final List<Integer> opBlockIds = new ArrayList<>();
+        private final List<Node> opSources = new ArrayList<>();
+        private final List<Integer> opSymbolIds = new ArrayList<>();
+        private final List<Expression> opExpressions = new ArrayList<>();
         private Table symbols;
         private Guards guards;
 
         Lowerer(Scope scope) {
             this.scope = scope;
-            this.controls.add(Control.ROOT);
+            controlParentIds.add(-1);
+            controlEdgeGuards.add(null);
         }
 
         Ir lower(Node root) {
@@ -1045,14 +1029,29 @@ final class Flow {
 
             int entryBlock = newBlock(0);
             int exitBlock = lowerChildren(root.children(), entryBlock, 0, scope);
-            terminateIfMissing(exitBlock, Terminator.ret(root));
+            terminateIfMissing(exitBlock, TERM_RETURN, root, -1);
 
-            for (Block block : blocks) {
-                if (block.terminator == null) {
-                    block.terminator = Terminator.unreachable(root);
+            for (int blockId = 0; blockId < blockControlIds.size(); blockId++) {
+                if (terminatorKinds.get(blockId) == TERM_NONE) {
+                    setTerminator(blockId, TERM_UNREACHABLE, root, -1, -1, -1);
                 }
             }
-            return new Ir(blocks, symbols, ops, guards, controls);
+            return new Ir(blockControlIds,
+                    blockOpIds,
+                    terminatorKinds,
+                    terminatorSources,
+                    terminatorTargetIds,
+                    terminatorTrueIds,
+                    terminatorFalseIds,
+                    symbols,
+                    opKinds,
+                    opBlockIds,
+                    opSources,
+                    opSymbolIds,
+                    opExpressions,
+                    guards,
+                    controlParentIds,
+                    controlEdgeGuards);
         }
 
         void collectDeclaredInputs(Node root, Scope scope) {
@@ -1166,7 +1165,7 @@ final class Flow {
                 case STEP:
                 case FILE:
                 case MODEL:
-                    append(blockId, Op.emit(nextOpId(), blockId, node));
+                    append(blockId, OP_EMIT, node, -1, null);
                     return lowerChildren(node.children(), blockId, controlId, scope);
                 case INPUT_OPTION:
                     return lowerOption(node, blockId, controlId, scope);
@@ -1178,8 +1177,7 @@ final class Flow {
         int lowerInput(Node node, int blockId, int controlId, Scope scope) {
             Scope inputScope = scope.getOrCreate(node);
             int symbolId = requireSymbolId(symbols, inputScope.key());
-            Op op = Op.declareInput(nextOpId(), blockId, node, symbolId);
-            append(blockId, op);
+            append(blockId, OP_DECLARE_INPUT, node, symbolId, null);
             switch (node.kind()) {
                 case INPUT_BOOLEAN: {
                     Guard guard = directBooleanGuard(symbols, guards, inputScope.key());
@@ -1199,8 +1197,7 @@ final class Flow {
             if (symbolId < 0) {
                 throw new IllegalStateException("Missing option symbol for scope: " + scope.key());
             }
-            Op op = Op.declareOption(nextOpId(), blockId, node, symbolId);
-            append(blockId, op);
+            append(blockId, OP_DECLARE_OPTION, node, symbolId, null);
             Guard guard = optionGuard(input, node, scope);
             return lowerGuardedChildren(node, blockId, controlId, guard, node.children(), scope);
         }
@@ -1209,8 +1206,7 @@ final class Flow {
             int symbolId = symbols.findId(definitionId(scope, node));
             if (symbolId >= 0) {
                 Expression expr = new Expression(List.of(Token.of(node.value())), true);
-                Op op = Op.defineValue(nextOpId(), blockId, node, symbolId, expr);
-                append(blockId, op);
+                append(blockId, OP_DEFINE_VALUE, node, symbolId, expr);
             }
             return lowerChildren(node.children(), blockId, controlId, scope);
         }
@@ -1233,10 +1229,10 @@ final class Flow {
             int trueBlock = newBlock(trueId);
             int falseBlock = newBlock(falseId);
             int joinBlock = newBlock(controlId);
-            terminate(blockId, Terminator.branch(node, trueBlock, falseBlock));
+            terminate(blockId, node, trueBlock, falseBlock);
             int trueExit = lowerChildren(children, trueBlock, trueId, scope);
-            terminateIfMissing(trueExit, Terminator.jump(node, joinBlock));
-            terminateIfMissing(falseBlock, Terminator.jump(node, joinBlock));
+            terminateIfMissing(trueExit, TERM_GOTO, node, joinBlock);
+            terminateIfMissing(falseBlock, TERM_GOTO, node, joinBlock);
             return joinBlock;
         }
 
@@ -1244,9 +1240,13 @@ final class Flow {
             return new ConditionLowerer(symbols, guards, scope).lower(expression);
         }
 
-        void append(int blockId, Op op) {
-            block(blockId).ops.add(op.id);
-            ops.add(op);
+        void append(int blockId, int kind, Node source, int symbolId, Expression expression) {
+            blockOps(blockId).add(opKinds.size());
+            opKinds.add(kind);
+            opBlockIds.add(blockId);
+            opSources.add(source);
+            opSymbolIds.add(symbolId);
+            opExpressions.add(expression);
         }
 
         void addSymbol(String name, Spec spec, boolean guardable, boolean tainted) {
@@ -1295,43 +1295,51 @@ final class Flow {
             return literal;
         }
 
-        void terminate(int blockId, Terminator terminator) {
-            Block block = block(blockId);
-            if (block.terminator != null) {
-                throw new IllegalStateException(String.format(
-                        "Block %d already terminated",
-                        blockId));
+        void terminate(int blockId, Node source, int trueId, int falseId) {
+            if (terminatorKinds.get(blockId) != TERM_NONE) {
+                throw new IllegalStateException(String.format("Block %d already terminated", blockId));
             }
-            block.terminator = terminator;
+            setTerminator(blockId, Flow.TERM_BRANCH, source, -1, trueId, falseId);
         }
 
-        void terminateIfMissing(int blockId, Terminator terminator) {
-            Block block = block(blockId);
-            if (block.terminator == null) {
-                block.terminator = terminator;
+        void terminateIfMissing(int blockId, int kind, Node source, int targetId) {
+            if (terminatorKinds.get(blockId) == TERM_NONE) {
+                setTerminator(blockId, kind, source, targetId, -1, -1);
             }
         }
 
         int newBlock(int controlId) {
-            blocks.add(new Block(controlId));
-            return blocks.size() - 1;
+            blockControlIds.add(controlId);
+            blockOpIds.add(new ArrayList<>());
+            terminatorKinds.add(TERM_NONE);
+            terminatorSources.add(null);
+            terminatorTargetIds.add(-1);
+            terminatorTrueIds.add(-1);
+            terminatorFalseIds.add(-1);
+            return blockControlIds.size() - 1;
         }
 
         int nextControl(int parentId, Guard edgeGuard) {
-            int id = controls.size();
-            controls.add(new Control(parentId, edgeGuard));
+            int id = controlParentIds.size();
+            controlParentIds.add(parentId);
+            controlEdgeGuards.add(edgeGuard);
             return id;
         }
 
-        int nextOpId() {
-            return ops.size();
-        }
-
-        Block block(int blockId) {
-            if (blockId < 0 || blockId >= blocks.size()) {
+        List<Integer> blockOps(int blockId) {
+            if (blockId < 0 || blockId >= blockOpIds.size()) {
                 throw new IllegalStateException("Unknown lowered block id: " + blockId);
             }
-            return blocks.get(blockId);
+            return blockOpIds.get(blockId);
+        }
+
+        void setTerminator(int blockId, int kind, Node source, int targetId, int trueId, int falseId) {
+            blockOps(blockId);
+            terminatorKinds.set(blockId, kind);
+            terminatorSources.set(blockId, source);
+            terminatorTargetIds.set(blockId, targetId);
+            terminatorTrueIds.set(blockId, trueId);
+            terminatorFalseIds.set(blockId, falseId);
         }
 
         static Set<String> optionValues(Node input) {
@@ -1412,18 +1420,6 @@ final class Flow {
         }
     }
 
-    private static final class Control {
-        static final Control ROOT = new Control(-1, null);
-
-        private final int parentId;
-        private final Guard edgeGuard;
-
-        Control(int parentId, Guard edgeGuard) {
-            this.parentId = parentId;
-            this.edgeGuard = edgeGuard;
-        }
-    }
-
     private static final class ConditionLowerer {
         private final Table symbols;
         private final Guards guards;
@@ -1442,140 +1438,160 @@ final class Flow {
             if (expression == Expression.FALSE) {
                 return Guard.FALSE;
             }
-            Deque<ConditionValue> stack = new ArrayDeque<>();
+            int capacity = expression.tokens().size();
+            Guard[] guardStack = new Guard[capacity];
+            Symbol[] symbolStack = new Symbol[capacity];
+            Value<?>[] literalStack = new Value<?>[capacity];
+            int size = 0;
             for (Token token : expression.tokens()) {
                 if (token.isVariable()) {
-                    String key = scope.key(token.variable());
-                    stack.push(ConditionValue.variable(findSymbol(key)));
+                    guardStack[size] = null;
+                    symbolStack[size] = findSymbol(scope.key(token.variable()));
+                    literalStack[size] = null;
+                    size++;
                     continue;
                 }
                 if (token.isOperand()) {
-                    stack.push(ConditionValue.literal(token.operand()));
+                    guardStack[size] = null;
+                    symbolStack[size] = null;
+                    literalStack[size] = token.operand();
+                    size++;
                     continue;
                 }
-                ConditionValue value;
                 switch (token.operator()) {
-                    case NOT:
-                        value = not(stack.pop());
+                    case NOT: {
+                        int index = size - 1;
+                        Guard direct = asGuard(guardStack[index], symbolStack[index], literalStack[index]);
+                        if (direct == null) {
+                            return residual(expression);
+                        }
+                        guardStack[index] = guards.not(direct);
+                        symbolStack[index] = null;
+                        literalStack[index] = null;
                         break;
+                    }
                     case AND:
-                        value = and(stack.pop(), stack.pop());
+                    case OR: {
+                        int right = --size;
+                        Guard rightGuard = asGuard(guardStack[right], symbolStack[right], literalStack[right]);
+                        int left = --size;
+                        Guard leftGuard = asGuard(guardStack[left], symbolStack[left], literalStack[left]);
+                        if (leftGuard == null || rightGuard == null) {
+                            return residual(expression);
+                        }
+                        if (token.operator() == Operator.OR) {
+                            guardStack[left] = guards.or(leftGuard, rightGuard);
+                        } else {
+                            guardStack[left] = guards.and(leftGuard, rightGuard);
+                        }
+                        symbolStack[left] = null;
+                        literalStack[left] = null;
+                        size = left + 1;
                         break;
-                    case OR:
-                        value = or(stack.pop(), stack.pop());
-                        break;
+                    }
                     case EQUAL:
-                        value = compare(true, stack.pop(), stack.pop());
+                    case NOT_EQUAL: {
+                        int right = --size;
+                        int left = --size;
+                        Guard direct = compare(symbolStack[left], literalStack[left], symbolStack[right],
+                                literalStack[right], token.operator() == Operator.EQUAL);
+                        if (direct == null) {
+                            return residual(expression);
+                        }
+                        guardStack[left] = direct;
+                        symbolStack[left] = null;
+                        literalStack[left] = null;
+                        size = left + 1;
                         break;
-                    case NOT_EQUAL:
-                        value = compare(false, stack.pop(), stack.pop());
+                    }
+                    case CONTAINS: {
+                        int right = --size;
+                        int left = --size;
+                        Guard direct = contains(symbolStack[left], literalStack[left], symbolStack[right],
+                                literalStack[right]);
+                        if (direct == null) {
+                            return residual(expression);
+                        }
+                        guardStack[left] = direct;
+                        symbolStack[left] = null;
+                        literalStack[left] = null;
+                        size = left + 1;
                         break;
-                    case CONTAINS:
-                        value = contains(stack.pop(), stack.pop());
-                        break;
+                    }
                     default:
                         return residual(expression);
                 }
-                if (value == null) {
-                    return residual(expression);
-                }
-                stack.push(value);
             }
-            if (stack.size() != 1) {
-                throw new IllegalStateException("Unexpected expression stack size: " + stack.size());
+            if (size != 1) {
+                throw new IllegalStateException("Unexpected expression stack size: " + size);
             }
-            ConditionValue value = stack.pop();
-            Guard guard = value.asGuard(guards);
+            Guard guard = asGuard(guardStack[0], symbolStack[0], literalStack[0]);
             return guard != null ? guard : residual(expression);
         }
 
-        ConditionValue not(ConditionValue value) {
-            Guard guard = value.asGuard(guards);
-            return guard == null ? null : ConditionValue.guard(guards.not(guard));
-        }
-
-        ConditionValue and(ConditionValue right, ConditionValue left) {
-            Guard leftGuard = left.asGuard(guards);
-            Guard rightGuard = right.asGuard(guards);
-            return leftGuard != null && rightGuard != null
-                    ? ConditionValue.guard(guards.and(leftGuard, rightGuard))
-                    : null;
-        }
-
-        ConditionValue or(ConditionValue right, ConditionValue left) {
-            Guard leftGuard = left.asGuard(guards);
-            Guard rightGuard = right.asGuard(guards);
-            return leftGuard != null && rightGuard != null
-                    ? ConditionValue.guard(guards.or(leftGuard, rightGuard))
-                    : null;
-        }
-
-        ConditionValue compare(boolean equal, ConditionValue right, ConditionValue left) {
-            Guard direct = compareGuard(left, right);
+        Guard compare(Symbol leftSymbol, Value<?> leftLiteral, Symbol rightSymbol, Value<?> rightLiteral, boolean equal) {
+            Guard direct = compareGuard(leftSymbol, rightLiteral);
             if (direct == null) {
-                direct = compareGuard(right, left);
+                direct = compareGuard(rightSymbol, leftLiteral);
             }
-            return direct == null ? null : ConditionValue.guard(equal ? direct : guards.not(direct));
+            return direct == null ? null : equal ? direct : guards.not(direct);
         }
 
-        Guard compareGuard(ConditionValue symbolValue, ConditionValue literalValue) {
-            if (symbolValue.symbol == null || literalValue.literal == null) {
+        Guard compareGuard(Symbol symbol, Value<?> literal) {
+            if (symbol == null || literal == null) {
                 return null;
             }
-            Symbol symbol = symbolValue.symbol;
             if (!symbol.guardable() || symbol.tainted()) {
                 return null;
             }
             if (symbol.domain().kind() != Spec.Kind.FINITE_SCALAR) {
                 return null;
             }
-            if (literalValue.literal.type() == Value.Type.BOOLEAN) {
-                if (symbol.domain().booleanLike()) {
-                    String value = String.valueOf(literalValue.literal.getBoolean());
+            if (literal.type() == Value.Type.BOOLEAN) {
+                if (symbol.domain().subKind() == Spec.SubKind.BOOLEAN) {
+                    String value = String.valueOf(literal.getBoolean());
                     return guards.eq(symbol.id(), value);
                 }
                 return null;
             }
-            if (literalValue.literal.type() == Value.Type.STRING) {
-                String literal = literalValue.literal.getString();
-                if (symbol.domain().values().contains(literal)) {
-                    return guards.eq(symbol.id(), literal);
+            if (literal.type() == Value.Type.STRING) {
+                String scalar = literal.getString();
+                if (symbol.domain().values().contains(scalar)) {
+                    return guards.eq(symbol.id(), scalar);
                 }
                 return null;
             }
             return null;
         }
 
-        ConditionValue contains(ConditionValue right, ConditionValue left) {
-            Guard direct = containsGuard(left, right);
+        Guard contains(Symbol leftSymbol, Value<?> leftLiteral, Symbol rightSymbol, Value<?> rightLiteral) {
+            Guard direct = containsGuard(leftSymbol, rightLiteral);
             if (direct == null) {
-                direct = scalarAnyGuard(right, left);
+                direct = scalarAnyGuard(rightSymbol, leftLiteral);
             }
-            return direct == null ? null : ConditionValue.guard(direct);
+            return direct;
         }
 
-        Guard containsGuard(ConditionValue symbolValue, ConditionValue literalValue) {
-            if (symbolValue.symbol == null || literalValue.literal == null) {
+        Guard containsGuard(Symbol symbol, Value<?> literal) {
+            if (symbol == null || literal == null) {
                 return null;
             }
-            Symbol symbol = symbolValue.symbol;
             if (symbol.domain().kind() != Spec.Kind.FINITE_MEMBERSHIP || !symbol.guardable() || symbol.tainted()) {
                 return null;
             }
-            if (literalValue.literal.type() == Value.Type.STRING) {
-                return guards.contains(symbol.id(), literalValue.literal.getString());
+            if (literal.type() == Value.Type.STRING) {
+                return guards.contains(symbol.id(), literal.getString());
             }
-            if (literalValue.literal.type() == Value.Type.LIST) {
-                return guards.containsAll(symbol.id(), new TreeSet<>(literalValue.literal.getList()));
+            if (literal.type() == Value.Type.LIST) {
+                return guards.containsAll(symbol.id(), new TreeSet<>(literal.getList()));
             }
             return null;
         }
 
-        Guard scalarAnyGuard(ConditionValue symbolValue, ConditionValue literalValue) {
-            if (symbolValue.symbol == null || literalValue.literal == null || literalValue.literal.type() != Value.Type.LIST) {
+        Guard scalarAnyGuard(Symbol symbol, Value<?> literal) {
+            if (symbol == null || literal == null || literal.type() != Value.Type.LIST) {
                 return null;
             }
-            Symbol symbol = symbolValue.symbol;
             if (!symbol.guardable() || symbol.tainted()) {
                 return null;
             }
@@ -1583,10 +1599,26 @@ final class Flow {
                 return null;
             }
             Guard result = Guard.FALSE;
-            for (String item : literalValue.literal.getList()) {
+            for (String item : literal.getList()) {
                 result = guards.or(result, guards.eq(symbol.id(), item));
             }
             return result;
+        }
+
+        Guard asGuard(Guard guard, Symbol symbol, Value<?> literal) {
+            if (guard != null) {
+                return guard;
+            }
+            if (symbol != null
+                && symbol.guardable()
+                && !symbol.tainted()
+                && symbol.domain().subKind() == Spec.SubKind.BOOLEAN) {
+                return guards.eq(symbol.id(), "true");
+            }
+            if (literal != null && literal.type() == Value.Type.BOOLEAN) {
+                return literal.getBoolean() ? Guard.TRUE : Guard.FALSE;
+            }
+            return null;
         }
 
         Guard residual(Expression expression) {
@@ -1596,43 +1628,6 @@ final class Flow {
         Symbol findSymbol(String name) {
             int id = symbols.findId(name);
             return id < 0 ? null : symbols.symbol(id);
-        }
-    }
-
-    private static final class ConditionValue {
-        private final Guard guard;
-        private final Symbol symbol;
-        private final Value<?> literal;
-
-        ConditionValue(Guard guard, Symbol symbol, Value<?> literal) {
-            this.guard = guard;
-            this.symbol = symbol;
-            this.literal = literal;
-        }
-
-        static ConditionValue guard(Guard guard) {
-            return new ConditionValue(guard, null, null);
-        }
-
-        static ConditionValue variable(Symbol symbol) {
-            return new ConditionValue(null, symbol, null);
-        }
-
-        static ConditionValue literal(Value<?> literal) {
-            return new ConditionValue(null, null, literal);
-        }
-
-        Guard asGuard(Guards guards) {
-            if (guard != null) {
-                return guard;
-            }
-            if (symbol != null && symbol.guardable() && !symbol.tainted() && symbol.domain().booleanLike()) {
-                return guards.eq(symbol.id(), "true");
-            }
-            if (literal != null && literal.type() == Value.Type.BOOLEAN) {
-                return literal.getBoolean() ? Guard.TRUE : Guard.FALSE;
-            }
-            return null;
         }
     }
 
@@ -1658,15 +1653,15 @@ final class Flow {
         Analyzer(Ir ir) {
             this.ir = ir;
             this.guards = ir.guards;
-            this.coverages = new Coverage[ir.blocks.length];
-            this.entryGuards = new Guard[ir.blocks.length];
-            this.beforeGuards = new Guard[ir.ops.length];
-            this.entryFacts = new Map[ir.blocks.length];
-            this.beforeFacts = new Map[ir.ops.length];
-            this.afterFacts = new Map[ir.ops.length];
-            this.entryStates = new State[ir.blocks.length];
-            this.beforeStates = new State[ir.ops.length];
-            this.afterStates = new State[ir.ops.length];
+            this.coverages = new Coverage[ir.blockControlIds.length];
+            this.entryGuards = new Guard[ir.blockControlIds.length];
+            this.beforeGuards = new Guard[ir.opKinds.length];
+            this.entryFacts = new Map[ir.blockControlIds.length];
+            this.beforeFacts = new Map[ir.opKinds.length];
+            this.afterFacts = new Map[ir.opKinds.length];
+            this.entryStates = new State[ir.blockControlIds.length];
+            this.beforeStates = new State[ir.opKinds.length];
+            this.afterStates = new State[ir.opKinds.length];
             Arrays.fill(entryGuards, Guard.FALSE);
             Arrays.fill(beforeGuards, Guard.FALSE);
         }
@@ -1680,24 +1675,23 @@ final class Flow {
         }
 
         void analyzeControl() {
-            int blockCount = ir.blocks.length;
+            int blockCount = ir.blockControlIds.length;
             Deque<Integer> stack = new ArrayDeque<>();
             boolean[] reachable = new boolean[blockCount];
             reachable[0] = true;
             stack.add(0);
             while (!stack.isEmpty()) {
                 int blockId = stack.removeFirst();
-                Terminator terminator = ir.blocks[blockId].terminator;
-                switch (terminator.kind) {
-                    case GOTO:
-                        enqueueControl(terminator.targetId, reachable, stack);
+                switch (ir.terminatorKinds[blockId]) {
+                    case TERM_GOTO:
+                        enqueueControl(ir.terminatorTargetIds[blockId], reachable, stack);
                         break;
-                    case BRANCH:
-                        enqueueControl(terminator.trueId, reachable, stack);
-                        enqueueControl(terminator.falseId, reachable, stack);
+                    case TERM_BRANCH:
+                        enqueueControl(ir.terminatorTrueIds[blockId], reachable, stack);
+                        enqueueControl(ir.terminatorFalseIds[blockId], reachable, stack);
                         break;
-                    case RETURN:
-                    case UNREACHABLE:
+                    case TERM_RETURN:
+                    case TERM_UNREACHABLE:
                     default:
                         break;
                 }
@@ -1711,8 +1705,7 @@ final class Flow {
                     continue;
                 }
                 Guard entry = entryGuards[blockId];
-                Block block = ir.blocks[blockId];
-                for (int opId : block.ops) {
+                for (int opId : ir.blockOpIds[blockId]) {
                     beforeGuards[opId] = entry;
                 }
             }
@@ -1726,17 +1719,17 @@ final class Flow {
         }
 
         void computeControlEntryGuards(boolean[] reachable) {
-            Guard[] controlGuards = new Guard[ir.controls.length];
+            Guard[] controlGuards = new Guard[ir.controlParentIds.length];
             controlGuards[0] = Guard.TRUE;
-            for (int id = 0; id < reachable.length; id++) {
-                if (!reachable[id]) {
+            for (int blockId = 0; blockId < reachable.length; blockId++) {
+                if (!reachable[blockId]) {
                     continue;
                 }
-                int ctrlId = ir.blocks[id].id;
-                if (ctrlId < 0) {
-                    throw new IllegalStateException("Missing structured control path for block " + id);
+                int controlId = ir.blockControlIds[blockId];
+                if (controlId < 0) {
+                    throw new IllegalStateException("Missing structured control path for block " + blockId);
                 }
-                entryGuards[id] = computeControlGuard(ctrlId, controlGuards);
+                entryGuards[blockId] = computeControlGuard(controlId, controlGuards);
             }
         }
 
@@ -1745,12 +1738,12 @@ final class Flow {
             if (cached != null) {
                 return cached;
             }
-            Control control = ir.controls[controlId];
-            if (control.parentId < 0) {
+            int parentId = ir.controlParentIds[controlId];
+            if (parentId < 0) {
                 controlGuards[controlId] = Guard.TRUE;
                 return Guard.TRUE;
             }
-            Guard materialized = guards.and(computeControlGuard(control.parentId, controlGuards), control.edgeGuard);
+            Guard materialized = guards.and(computeControlGuard(parentId, controlGuards), ir.controlEdgeGuards[controlId]);
             controlGuards[controlId] = materialized;
             return materialized;
         }
@@ -1769,49 +1762,49 @@ final class Flow {
                     continue;
                 }
                 Map<Integer, FactState> current = state;
-                Block block = ir.blocks[blockId];
-                for (int opId : block.ops) {
-                    Op op = ir.ops[opId];
+                for (int opId : ir.blockOpIds[blockId]) {
                     Guard currentGuard = beforeGuards[opId];
                     beforeFacts[opId] = current;
-                    current = transfer(op, currentGuard, current);
+                    current = transfer(opId, currentGuard, current);
                     afterFacts[opId] = current;
                 }
-                propagateFacts(block.terminator, current, stack);
+                propagateFacts(blockId, current, stack);
             }
         }
 
-        Map<Integer, FactState> transfer(Op op, Guard currentGuard, Map<Integer, FactState> state) {
-            switch (op.kind) {
-                case DECLARE_INPUT: {
+        Map<Integer, FactState> transfer(int opId, Guard currentGuard, Map<Integer, FactState> state) {
+            switch (ir.opKinds[opId]) {
+                case OP_DECLARE_INPUT: {
+                    int symbolId = ir.opSymbolIds[opId];
                     FactState declared = new FactState(
-                            coverage(op.blockId),
-                            LatticeValue.top(ir.symbols.symbol(op.symbolId).domain()));
-                    FactState existing = state.get(op.symbolId);
-                    return define(state, op.symbolId,
-                            existing == null ? declared : mergeFact(op.symbolId, existing, declared));
+                            coverage(ir.opBlockIds[opId]),
+                            LatticeValue.top(ir.symbols.symbol(symbolId).domain()));
+                    FactState existing = state.get(symbolId);
+                    return define(state, symbolId, existing == null ? declared : mergeFact(symbolId, existing, declared));
                 }
-                case DEFINE_VALUE:
-                    Symbol symbol = ir.symbols.symbol(op.symbolId);
-                    FactState fact = evaluateFact(op, currentGuard, symbol, state);
-                    return define(state, op.symbolId, fact);
-                case EMIT:
+                case OP_DEFINE_VALUE: {
+                    int symbolId = ir.opSymbolIds[opId];
+                    Symbol symbol = ir.symbols.symbol(symbolId);
+                    FactState fact = evaluateFact(opId, currentGuard, symbol, state);
+                    return define(state, symbolId, fact);
+                }
+                case OP_EMIT:
                 default:
                     return state;
             }
         }
 
-        void propagateFacts(Terminator terminator, Map<Integer, FactState> current, Deque<Integer> stack) {
-            switch (terminator.kind) {
-                case GOTO:
-                    enqueueFacts(terminator.targetId, current, stack);
+        void propagateFacts(int blockId, Map<Integer, FactState> current, Deque<Integer> stack) {
+            switch (ir.terminatorKinds[blockId]) {
+                case TERM_GOTO:
+                    enqueueFacts(ir.terminatorTargetIds[blockId], current, stack);
                     break;
-                case BRANCH:
-                    enqueueFacts(terminator.trueId, current, stack);
-                    enqueueFacts(terminator.falseId, current, stack);
+                case TERM_BRANCH:
+                    enqueueFacts(ir.terminatorTrueIds[blockId], current, stack);
+                    enqueueFacts(ir.terminatorFalseIds[blockId], current, stack);
                     break;
-                case RETURN:
-                case UNREACHABLE:
+                case TERM_RETURN:
+                case TERM_UNREACHABLE:
                 default:
                     break;
             }
@@ -1868,12 +1861,13 @@ final class Flow {
             return env;
         }
 
-        FactState evaluateFact(Op op, Guard currentGuard, Symbol symbol, Map<Integer, FactState> state) {
-            LatticeValue value = evaluateValue(op.expression, symbol, state);
-            Value<?> exactValue = exactValue(op.expression, currentGuard, state);
+        FactState evaluateFact(int opId, Guard currentGuard, Symbol symbol, Map<Integer, FactState> state) {
+            Expression expression = ir.opExpressions[opId];
+            LatticeValue value = evaluateValue(expression, symbol, state);
+            Value<?> exactValue = exactValue(expression, currentGuard, state);
             return exactValue == null
-                    ? new FactState(coverage(op.blockId), value)
-                    : FactState.exact(op.blockId, value, exactValue);
+                    ? new FactState(coverage(ir.opBlockIds[opId]), value)
+                    : FactState.exact(ir.opBlockIds[opId], value, exactValue);
         }
 
         LatticeValue evaluateValue(Expression expression, Symbol symbol, Map<Integer, FactState> state) {
@@ -1947,7 +1941,7 @@ final class Flow {
                 if (scalar == null) {
                     return null;
                 }
-                return spec.booleanLike() ? Value.of(Boolean.parseBoolean(scalar)) : Value.of(scalar);
+                return spec.subKind() == Spec.SubKind.BOOLEAN ? Value.of(Boolean.parseBoolean(scalar)) : Value.of(scalar);
             }
             if (fact.value.kind() == LatticeValue.Kind.OPEN_TEXT && fact.value.sample() != null) {
                 return Value.of(fact.value.sample());
