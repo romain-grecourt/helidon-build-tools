@@ -833,20 +833,20 @@ final class Domain {
         private final int symbolId;
         private final long mask;
         private final String value;
-        private final Expression expression;
+        private final Expression expr;
         private final List<Residual> children;
 
-        Residual(Kind kind, int symbolId, long mask, String value, Expression expression, List<Residual> children) {
+        Residual(Kind kind, int symbolId, long mask, String value, Expression expr, List<Residual> children) {
             this.kind = kind;
             this.symbolId = symbolId;
             this.mask = mask;
             this.value = value;
-            this.expression = expression;
+            this.expr = expr;
             this.children = children;
         }
 
-        static Residual opaque(Expression expression) {
-            Expression folded = expression.fold();
+        static Residual opaque(Expression expr) {
+            Expression folded = expr.fold();
             if (folded == Expression.TRUE) {
                 return TRUE;
             }
@@ -922,7 +922,7 @@ final class Domain {
         Residual fold() {
             switch (kind) {
                 case OPAQUE:
-                    return opaque(expression);
+                    return opaque(expr);
                 case NOT:
                     return not(onlyChild().fold());
                 case AND:
@@ -947,7 +947,7 @@ final class Domain {
                 case TRUE:
                     return Expression.TRUE;
                 case OPAQUE:
-                    return expression;
+                    return expr;
                 case DEFINED:
                     return Expression.create("${" + keyResolver.apply(symbolId) + "}");
                 case SCALAR_EQ: {
@@ -1020,13 +1020,13 @@ final class Domain {
                     && symbolId == other.symbolId
                     && mask == other.mask
                     && Objects.equals(value, other.value)
-                    && Objects.equals(expression, other.expression)
+                    && Objects.equals(expr, other.expr)
                     && children.equals(other.children);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(kind, symbolId, mask, value, expression, children);
+            return Objects.hash(kind, symbolId, mask, value, expr, children);
         }
 
         private Residual onlyChild() {
@@ -1036,14 +1036,14 @@ final class Domain {
             return children.get(0);
         }
 
-        private static Expression negate(Expression expression) {
-            if (expression == Expression.TRUE) {
+        private static Expression negate(Expression expr) {
+            if (expr == Expression.TRUE) {
                 return Expression.FALSE;
             }
-            if (expression == Expression.FALSE) {
+            if (expr == Expression.FALSE) {
                 return Expression.TRUE;
             }
-            return Expression.create("!(" + expression.literal() + ")");
+            return Expression.create("!(" + expr.literal() + ")");
         }
     }
 
@@ -1239,12 +1239,12 @@ final class Domain {
             return new Guard(id, normalizedResidual);
         }
 
-        Guard residualGuard(Expression expression) {
-            return guard(Decision.TRUE, residual(expression));
+        Guard residualGuard(Expression expr) {
+            return guard(Decision.TRUE, residual(expr));
         }
 
-        private Residual residual(Expression expression) {
-            Expression normalized = expression.fold();
+        private Residual residual(Expression expr) {
+            Expression normalized = expr.fold();
             if (normalized == Expression.TRUE) {
                 return Residual.TRUE;
             }
@@ -1290,19 +1290,19 @@ final class Domain {
         }
 
         private ResidualValue not(ResidualValue value) {
-            return ResidualValue.of(Residual.not(value.residual), negate(value.expression));
+            return ResidualValue.of(Residual.not(value.residual), negate(value.expr));
         }
 
         private ResidualValue and(ResidualValue right, ResidualValue left) {
             return ResidualValue.of(Residual.and(
                     List.of(left.residual, right.residual)),
-                    left.expression.and(right.expression));
+                    left.expr.and(right.expr));
         }
 
         private ResidualValue or(ResidualValue right, ResidualValue left) {
             return ResidualValue.of(Residual.or(
                     List.of(left.residual, right.residual)),
-                    left.expression.or(right.expression));
+                    left.expr.or(right.expr));
         }
 
         private ResidualValue compare(boolean equal, ResidualValue right, ResidualValue left) {
@@ -1310,11 +1310,11 @@ final class Domain {
             if (direct == null) {
                 direct = compareResidual(right, left);
             }
-            Expression expression = combine(left.expression, equal ? "==" : "!=", right.expression);
+            Expression expr = combine(left.expr, equal ? "==" : "!=", right.expr);
             if (direct == null) {
-                return ResidualValue.of(Residual.opaque(expression), expression);
+                return ResidualValue.of(Residual.opaque(expr), expr);
             }
-            return ResidualValue.of(equal ? direct : Residual.not(direct), expression);
+            return ResidualValue.of(equal ? direct : Residual.not(direct), expr);
         }
 
         private Residual compareResidual(ResidualValue symbolValue, ResidualValue literalValue) {
@@ -1344,11 +1344,11 @@ final class Domain {
             if (direct == null) {
                 direct = scalarInResidual(right, left);
             }
-            Expression expression = combine(left.expression, "contains", right.expression);
+            Expression expr = combine(left.expr, "contains", right.expr);
             if (direct == null) {
-                return ResidualValue.of(Residual.opaque(expression), expression);
+                return ResidualValue.of(Residual.opaque(expr), expr);
             }
-            return ResidualValue.of(direct, expression);
+            return ResidualValue.of(direct, expr);
         }
 
         private Residual containsResidual(ResidualValue symbolValue, ResidualValue literalValue) {
@@ -1457,14 +1457,14 @@ final class Domain {
             return toExpression(supported, residual);
         }
 
-        private static Expression negate(Expression expression) {
-            if (expression == Expression.TRUE) {
+        private static Expression negate(Expression expr) {
+            if (expr == Expression.TRUE) {
                 return Expression.FALSE;
             }
-            if (expression == Expression.FALSE) {
+            if (expr == Expression.FALSE) {
                 return Expression.TRUE;
             }
-            return Expression.create("!(" + expression.literal() + ")");
+            return Expression.create("!(" + expr.literal() + ")");
         }
 
         private static Expression combine(Expression left, String operator, Expression right) {
@@ -1499,27 +1499,27 @@ final class Domain {
             private final Residual residual;
             private final int symbolId;
             private final Value<?> literal;
-            private final Expression expression;
+            private final Expression expr;
 
-            private ResidualValue(Residual residual, int symbolId, Value<?> literal, Expression expression) {
+            private ResidualValue(Residual residual, int symbolId, Value<?> literal, Expression expr) {
                 this.residual = residual;
                 this.symbolId = symbolId;
                 this.literal = literal;
-                this.expression = expression;
+                this.expr = expr;
             }
 
-            static ResidualValue of(Residual residual, Expression expression) {
-                return new ResidualValue(residual, -1, null, expression);
+            static ResidualValue of(Residual residual, Expression expr) {
+                return new ResidualValue(residual, -1, null, expr);
             }
 
             static ResidualValue variable(String name, int symbolId) {
-                Expression expression = Expression.create("${" + name + "}");
-                return new ResidualValue(Residual.opaque(expression), symbolId, null, expression);
+                Expression expr = Expression.create("${" + name + "}");
+                return new ResidualValue(Residual.opaque(expr), symbolId, null, expr);
             }
 
             static ResidualValue literal(Value<?> literal) {
-                Expression expression = new Expression(List.of(Token.of(literal)), true);
-                return new ResidualValue(Residual.opaque(expression), -1, literal, expression);
+                Expression expr = new Expression(List.of(Token.of(literal)), true);
+                return new ResidualValue(Residual.opaque(expr), -1, literal, expr);
             }
         }
     }
@@ -1741,11 +1741,11 @@ final class Domain {
             if (isFalse()) {
                 return Expression.FALSE;
             }
-            Expression expression = Expression.FALSE;
+            Expression expr = Expression.FALSE;
             for (DecisionShape shape : shapes) {
-                expression = expression.or(shape.toExpression(keyResolver, symbols));
+                expr = expr.or(shape.toExpression(keyResolver, symbols));
             }
-            return expression;
+            return expr;
         }
 
         @Override
@@ -2018,11 +2018,12 @@ final class Domain {
                     nextScalars.add(symbolId, leftShape == null ? rightShape : leftShape);
                 }
             }
-            return diffSymbolId == null ? null : new DecisionShape(
-                    trim(nextScalars.symbolIds, nextScalars.size),
-                    trim(nextScalars.shapes, nextScalars.size, NO_SCALARS),
-                    membershipIds,
-                    membershipShapes);
+            if (diffSymbolId != null) {
+                int[] ids = trim(nextScalars.symbolIds, nextScalars.size);
+                ScalarShape[] shapes = trim(nextScalars.shapes, nextScalars.size, NO_SCALARS);
+                return new DecisionShape(ids, shapes, membershipIds, membershipShapes);
+            }
+            return null;
         }
 
         List<DecisionShape> subtract(DecisionShape other, Symbol.Table symbols) {
@@ -2049,16 +2050,16 @@ final class Domain {
         }
 
         Expression toExpression(IntFunction<String> keyResolver, Symbol.Table symbols) {
-            Expression expression = Expression.TRUE;
+            Expression expr = Expression.TRUE;
             for (int i = 0; i < scalarShapes.length; i++) {
                 Symbol symbol = symbols.symbol(scalarIds[i]);
-                expression = expression.and(scalarShapes[i].toExpression(keyResolver.apply(scalarIds[i]), symbol));
+                expr = expr.and(scalarShapes[i].toExpression(keyResolver.apply(scalarIds[i]), symbol));
             }
             for (int i = 0; i < membershipShapes.length; i++) {
                 Symbol symbol = symbols.symbol(membershipIds[i]);
-                expression = expression.and(membershipShapes[i].toExpression(keyResolver.apply(membershipIds[i]), symbol));
+                expr = expr.and(membershipShapes[i].toExpression(keyResolver.apply(membershipIds[i]), symbol));
             }
-            return expression;
+            return expr;
         }
 
         String literal(Symbol.Table symbols) {
@@ -2369,14 +2370,14 @@ final class Domain {
                 String excluded = symbol.scalarValue(Long.numberOfTrailingZeros(excludedMask));
                 return Expression.create("${" + key + "} != '" + excluded + "'");
             }
-            Expression expression = Expression.FALSE;
+            Expression expr = Expression.FALSE;
             long remaining = allowedMask;
             while (remaining != 0L) {
                 int ordinal = Long.numberOfTrailingZeros(remaining);
-                expression = expression.or(Expression.create("${" + key + "} == '" + symbol.scalarValue(ordinal) + "'"));
+                expr = expr.or(Expression.create("${" + key + "} == '" + symbol.scalarValue(ordinal) + "'"));
                 remaining &= remaining - 1L;
             }
-            return expression;
+            return expr;
         }
 
         private boolean isSingleton(Symbol symbol, String value) {

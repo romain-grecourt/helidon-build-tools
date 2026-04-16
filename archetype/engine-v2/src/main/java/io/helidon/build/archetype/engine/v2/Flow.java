@@ -695,7 +695,7 @@ final class Flow {
                 case CONDITION:
                     return translatedCondition(node.expression(), nodeScope, state);
                 case INPUT_BOOLEAN:
-                    return Flow.directBooleanGuard(ir.symbols, guards, nodeScope.key());
+                    return directBooleanGuard(ir.symbols, guards, nodeScope.key());
                 case INPUT_OPTION:
                     Node input = node.ancestor(Kind::isInput).orElse(null);
                     if (input == null) {
@@ -704,7 +704,7 @@ final class Flow {
                     switch (input.kind()) {
                         case INPUT_ENUM:
                         case INPUT_LIST:
-                            return Flow.directOptionGuard(ir.symbols, guards, nodeScope.key(), input, node);
+                            return directOptionGuard(ir.symbols, guards, nodeScope.key(), input, node);
                         default:
                             return null;
                     }
@@ -790,7 +790,7 @@ final class Flow {
                 return term.guard;
             }
             if (term.ref != null) {
-                Flow.SymbolInfo info = symbolInfo(term.ref);
+                SymbolInfo info = symbolInfo(term.ref);
                 if (info == null || !info.symbol.domain().booleanLike()) {
                     return null;
                 }
@@ -836,7 +836,7 @@ final class Flow {
 
         Guard translatedEquality(String key, Value<?> value, State state) {
             Fact fact = factFor(state, key);
-            Flow.SymbolInfo info = symbolInfo(key);
+            SymbolInfo info = symbolInfo(key);
             Guard bound = fact == null || info == null ? Guard.FALSE : fact.match(info.symbol, value, guards);
             Guard direct = directEquality(key, value);
             return combine(key, fact, bound, direct);
@@ -844,7 +844,7 @@ final class Flow {
 
         Guard translatedScalarAny(String key, Set<String> values, State state) {
             Fact fact = factFor(state, key);
-            Flow.SymbolInfo info = symbolInfo(key);
+            SymbolInfo info = symbolInfo(key);
             Guard bound = fact == null || info == null ? Guard.FALSE : fact.scalarAny(info.symbol, values, guards);
             Guard direct = directScalarAny(key, values);
             return combine(key, fact, bound, direct);
@@ -856,14 +856,14 @@ final class Flow {
                 return null;
             }
             Fact fact = factFor(state, key);
-            Flow.SymbolInfo info = symbolInfo(key);
+            SymbolInfo info = symbolInfo(key);
             Guard bound = fact == null || info == null ? Guard.FALSE : fact.listContains(info.symbol, required, guards);
             Guard direct = directListContains(symbolInfo(key), required);
             return combine(key, fact, bound, direct);
         }
 
         Guard combine(String key, Fact fact, Guard bound, Guard direct) {
-            Flow.SymbolInfo info = symbolInfo(key);
+            SymbolInfo info = symbolInfo(key);
             Symbol symbol = info == null ? null : info.symbol;
             Guard defined = definitionFor(key, fact);
             if (fact == null) {
@@ -896,7 +896,7 @@ final class Flow {
             if (fact != null) {
                 return fact.definedUnder();
             }
-            Flow.SymbolInfo info = symbolInfo(key);
+            SymbolInfo info = symbolInfo(key);
             return info == null ? null : info.definition;
         }
 
@@ -944,7 +944,7 @@ final class Flow {
             return null;
         }
 
-        Guard directListContains(Flow.SymbolInfo info, Set<String> required) {
+        Guard directListContains(SymbolInfo info, Set<String> required) {
             if (info != null) {
                 Symbol symbol = info.symbol;
                 if (symbol.guardable() && !symbol.tainted() && symbol.domain().kind() == Spec.Kind.FINITE_MEMBERSHIP) {
@@ -966,7 +966,7 @@ final class Flow {
             return null;
         }
 
-        Guard available(Flow.SymbolInfo info, String value, Guard direct) {
+        Guard available(SymbolInfo info, String value, Guard direct) {
             Guard availability = info.availability(value);
             return availability == null ? Guard.FALSE : guards.and(availability, direct);
         }
@@ -1060,14 +1060,14 @@ final class Flow {
                 Scope childScope = childScope(nodeScope, node);
                 switch (node.kind()) {
                     case INPUT_BOOLEAN:
-                        rememberDeclaredInput(childScope.key(), Spec.booleanSpec(), true, false);
+                        addDeclaredInput(childScope.key(), Spec.booleanSpec(), true, false);
                         break;
                     case INPUT_ENUM:
                     case INPUT_LIST:
-                        rememberDeclaredInput(childScope.key(), inputSpec(node), !optionValues(node).isEmpty(), false);
+                        addDeclaredInput(childScope.key(), inputSpec(node), !optionValues(node).isEmpty(), false);
                         break;
                     case INPUT_TEXT:
-                        rememberDeclaredInput(childScope.key(), Spec.OPEN_TEXT, false, true);
+                        addDeclaredInput(childScope.key(), Spec.OPEN_TEXT, false, true);
                         break;
                     default:
                         break;
@@ -1132,28 +1132,26 @@ final class Flow {
             }
         }
 
-        void rememberDeclaredInput(String name, Spec spec, boolean guardable, boolean tainted) {
-            declaredInputSymbols.merge(
-                    name,
-                    new SymbolSeed(name, spec, guardable, tainted),
-                    SymbolSeed::merge);
+        void addDeclaredInput(String name, Spec spec, boolean guardable, boolean tainted) {
+            SymbolSeed seed = new SymbolSeed(name, spec, guardable, tainted);
+            declaredInputSymbols.merge(name, seed, SymbolSeed::merge);
         }
 
-        int lowerChildren(List<Node> nodes, int blockId, int controlPathId, Scope scope) {
+        int lowerChildren(List<Node> nodes, int blockId, int controlId, Scope scope) {
             int current = blockId;
             for (Node node : nodes) {
-                current = lower(node, current, controlPathId, scope);
+                current = lower(node, current, controlId, scope);
             }
             return current;
         }
 
-        int lower(Node node, int blockId, int controlPathId, Scope scope) {
+        int lower(Node node, int blockId, int controlId, Scope scope) {
             switch (node.kind()) {
                 case INPUT_BOOLEAN:
                 case INPUT_ENUM:
                 case INPUT_LIST:
                 case INPUT_TEXT:
-                    return lowerInput(node, blockId, controlPathId, scope);
+                    return lowerInput(node, blockId, controlId, scope);
                 case PRESET_BOOLEAN:
                 case PRESET_ENUM:
                 case PRESET_LIST:
@@ -1162,92 +1160,81 @@ final class Flow {
                 case VARIABLE_ENUM:
                 case VARIABLE_LIST:
                 case VARIABLE_TEXT:
-                    return lowerDefinition(node, blockId, controlPathId, scope);
+                    return lowerDefinition(node, blockId, controlId, scope);
                 case CONDITION:
-                    return lowerCondition(node, blockId, controlPathId, scope);
+                    return lowerCondition(node, blockId, controlId, scope);
                 case STEP:
                 case FILE:
                 case MODEL:
                     append(blockId, Op.emit(nextOpId(), blockId, node));
-                    return lowerChildren(node.children(), blockId, controlPathId, scope);
+                    return lowerChildren(node.children(), blockId, controlId, scope);
                 case INPUT_OPTION:
-                    return lowerOption(node, blockId, controlPathId, scope);
+                    return lowerOption(node, blockId, controlId, scope);
                 default:
-                    return lowerChildren(node.children(), blockId, controlPathId, scope);
+                    return lowerChildren(node.children(), blockId, controlId, scope);
             }
         }
 
-        int lowerInput(Node node, int blockId, int controlPathId, Scope scope) {
+        int lowerInput(Node node, int blockId, int controlId, Scope scope) {
             Scope inputScope = scope.getOrCreate(node);
             int symbolId = requireSymbolId(symbols, inputScope.key());
-            append(blockId, Op.declareInput(nextOpId(), blockId, node, symbolId));
+            Op op = Op.declareInput(nextOpId(), blockId, node, symbolId);
+            append(blockId, op);
             switch (node.kind()) {
-                case INPUT_BOOLEAN:
-                    return lowerGuardedChildren(node,
-                            blockId,
-                            controlPathId,
-                            Flow.directBooleanGuard(symbols, guards, inputScope.key()),
-                            node.children(),
-                            inputScope);
+                case INPUT_BOOLEAN: {
+                    Guard guard = directBooleanGuard(symbols, guards, inputScope.key());
+                    return lowerGuardedChildren(node, blockId, controlId, guard, node.children(), inputScope);
+                }
                 case INPUT_ENUM:
                 case INPUT_LIST:
                 default:
-                    return lowerChildren(node.children(), blockId, controlPathId, inputScope);
+                    return lowerChildren(node.children(), blockId, controlId, inputScope);
             }
         }
 
-        int lowerOption(Node node, int blockId, int controlPathId, Scope scope) {
+        int lowerOption(Node node, int blockId, int controlId, Scope scope) {
             Node input = node.ancestor(Kind::isInput).orElseThrow(() ->
                     new IllegalStateException("Option without input parent: " + node));
             int symbolId = symbols.findId(scope.key());
             if (symbolId < 0) {
                 throw new IllegalStateException("Missing option symbol for scope: " + scope.key());
             }
-            append(blockId, Op.declareOption(nextOpId(), blockId, node, symbolId));
-            return lowerGuardedChildren(node,
-                    blockId,
-                    controlPathId,
-                    optionGuard(input, node, scope),
-                    node.children(),
-                    scope);
+            Op op = Op.declareOption(nextOpId(), blockId, node, symbolId);
+            append(blockId, op);
+            Guard guard = optionGuard(input, node, scope);
+            return lowerGuardedChildren(node, blockId, controlId, guard, node.children(), scope);
         }
 
-        int lowerDefinition(Node node, int blockId, int controlPathId, Scope scope) {
+        int lowerDefinition(Node node, int blockId, int controlId, Scope scope) {
             int symbolId = symbols.findId(definitionId(scope, node));
             if (symbolId >= 0) {
-                append(blockId, Op.defineValue(nextOpId(),
-                        blockId,
-                        node,
-                        symbolId,
-                        new Expression(List.of(Token.of(node.value())), true)));
+                Expression expr = new Expression(List.of(Token.of(node.value())), true);
+                Op op = Op.defineValue(nextOpId(), blockId, node, symbolId, expr);
+                append(blockId, op);
             }
-            return lowerChildren(node.children(), blockId, controlPathId, scope);
+            return lowerChildren(node.children(), blockId, controlId, scope);
         }
 
-        int lowerCondition(Node node, int blockId, int controlPathId, Scope scope) {
-            return lowerGuardedChildren(node,
-                    blockId,
-                    controlPathId,
-                    guard(node.expression(), scope),
-                    node.children(),
-                    scope);
+        int lowerCondition(Node node, int blockId, int controlId, Scope scope) {
+            Guard guard = guard(node.expression(), scope);
+            return lowerGuardedChildren(node, blockId, controlId, guard, node.children(), scope);
         }
 
         Guard optionGuard(Node input, Node option, Scope scope) {
-            return Flow.directOptionGuard(symbols, guards, scope.key(), input, option);
+            return directOptionGuard(symbols, guards, scope.key(), input, option);
         }
 
         int lowerGuardedChildren(Node node, int blockId, int controlId, Guard guard, List<Node> children, Scope scope) {
             if (children.isEmpty()) {
                 return blockId;
             }
-            int truePathId = nextControl(controlId, guard);
-            int falsePathId = nextControl(controlId, guards.not(guard));
-            int trueBlock = newBlock(truePathId);
-            int falseBlock = newBlock(falsePathId);
+            int trueId = nextControl(controlId, guard);
+            int falseId = nextControl(controlId, guards.not(guard));
+            int trueBlock = newBlock(trueId);
+            int falseBlock = newBlock(falseId);
             int joinBlock = newBlock(controlId);
             terminate(blockId, Terminator.branch(node, trueBlock, falseBlock));
-            int trueExit = lowerChildren(children, trueBlock, truePathId, scope);
+            int trueExit = lowerChildren(children, trueBlock, trueId, scope);
             terminateIfMissing(trueExit, Terminator.jump(node, joinBlock));
             terminateIfMissing(falseBlock, Terminator.jump(node, joinBlock));
             return joinBlock;
@@ -1325,14 +1312,14 @@ final class Flow {
             }
         }
 
-        int newBlock(int controlPathId) {
-            blocks.add(new Block(controlPathId));
+        int newBlock(int controlId) {
+            blocks.add(new Block(controlId));
             return blocks.size() - 1;
         }
 
-        int nextControl(int parentPathId, Guard edgeGuard) {
+        int nextControl(int parentId, Guard edgeGuard) {
             int id = controls.size();
-            controls.add(new Control(parentPathId, edgeGuard));
+            controls.add(new Control(parentId, edgeGuard));
             return id;
         }
 
