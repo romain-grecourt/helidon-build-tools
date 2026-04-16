@@ -34,8 +34,6 @@ import io.helidon.build.archetype.engine.v2.Context.Scope;
 import io.helidon.build.archetype.engine.v2.Expression.Token;
 import io.helidon.build.common.Lists;
 
-import static java.util.Objects.requireNonNull;
-
 final class Domain {
 
     private Domain() {
@@ -66,8 +64,8 @@ final class Domain {
         private final long mask;
 
         private Spec(Kind kind, SubKind subKind, Map<String, Integer> ordinals, String[] values, long mask) {
-            this.kind = requireNonNull(kind, "kind is null");
-            this.subKind = requireNonNull(subKind, "subKind is null");
+            this.kind = kind;
+            this.subKind = subKind;
             this.ordinals = ordinals;
             this.values = values;
             this.mask = mask;
@@ -86,7 +84,6 @@ final class Domain {
         }
 
         static Spec finiteScalar(SubKind subKind, Set<String> values) {
-            requireNonNull(subKind, "subKind is null");
             if (subKind != SubKind.BOOLEAN && subKind != SubKind.CHOICE && subKind != SubKind.FINITE_TEXT) {
                 throw new IllegalArgumentException("Invalid finite scalar subKind: " + subKind);
             }
@@ -139,7 +136,6 @@ final class Domain {
         }
 
         long mask(Set<String> values) {
-            requireNonNull(values, "values is null");
             long mask = 0L;
             for (String value : values) {
                 mask |= mask(value);
@@ -155,7 +151,6 @@ final class Domain {
         }
 
         private static Map<String, Integer> stringOrdinals(Set<String> values, String label) {
-            requireNonNull(values, "values is null");
             if (values.isEmpty()) {
                 throw new IllegalArgumentException(label + " requires at least one value");
             }
@@ -167,7 +162,7 @@ final class Domain {
             for (String value : new TreeSet<>(values)) {
                 ordinals.put(value, ordinal++);
             }
-            return Map.copyOf(ordinals);
+            return ordinals;
         }
 
         private static String[] values(Map<String, Integer> ordinals) {
@@ -212,18 +207,18 @@ final class Domain {
         private final boolean scalar;
         private final boolean member;
         private final Map<String, Integer> ordinals;
-        private final long fullMask;
+        private final long mask;
 
         Symbol(int id, String name, Spec domain, boolean guardable, boolean tainted) {
             this.id = id;
-            this.name = requireNonNull(name, "name is null");
-            this.domain = requireNonNull(domain, "domain is null");
+            this.name = name;
+            this.domain = domain;
             this.guardable = guardable;
             this.tainted = tainted;
             this.scalar = domain.kind() == Spec.Kind.FINITE_SCALAR;
             this.member = domain.kind() == Spec.Kind.FINITE_MEMBERSHIP;
             this.ordinals = scalar || member ? domain.ordinals : null;
-            this.fullMask = scalar || member ? domain.mask : 0L;
+            this.mask = scalar || member ? domain.mask : 0L;
         }
 
         int id() {
@@ -318,9 +313,9 @@ final class Domain {
             }
 
             Fact(Guard definedUnder, LatticeValue value, List<ExactCase> exactCases) {
-                this.definedUnder = requireNonNull(definedUnder, "definedUnder is null");
-                this.value = requireNonNull(value, "value is null");
-                this.exactCases = requireNonNull(exactCases, "exactCases is null");
+                this.definedUnder = definedUnder;
+                this.value = value;
+                this.exactCases = exactCases;
             }
 
             Guard definedUnder() {
@@ -480,8 +475,8 @@ final class Domain {
                 }
 
                 private ExactCase(Value<?> value, Guard guard, long scalarMask, long listMask) {
-                    this.value = requireNonNull(value, "value is null");
-                    this.guard = requireNonNull(guard, "guard is null");
+                    this.value = value;
+                    this.guard = guard;
                     this.scalarMask = scalarMask;
                     this.listMask = listMask;
                 }
@@ -562,11 +557,11 @@ final class Domain {
 
         static final class Table {
             private final List<Symbol> symbols;
-            private final Map<String, Integer> idsByName;
+            private final Map<String, Integer> ids;
 
-            private Table(List<Symbol> symbols, Map<String, Integer> idsByName) {
+            private Table(List<Symbol> symbols, Map<String, Integer> ids) {
                 this.symbols = symbols;
-                this.idsByName = idsByName;
+                this.ids = ids;
             }
 
             static Builder builder() {
@@ -574,11 +569,14 @@ final class Domain {
             }
 
             Symbol symbol(int symbolId) {
+                if (symbolId < 0 || symbolId >= symbols.size()) {
+                    throw new IllegalArgumentException("Unknown symbol id: " + symbolId);
+                }
                 return symbols.get(symbolId);
             }
 
             int findId(String name) {
-                return idsByName.getOrDefault(name, -1);
+                return ids.getOrDefault(name, -1);
             }
 
             List<Symbol> symbols() {
@@ -633,7 +631,7 @@ final class Domain {
         private final long possibleMask;
 
         private LatticeValue(Kind kind, String sample, long scalarMask, long requiredMask, long possibleMask) {
-            this.kind = requireNonNull(kind, "kind is null");
+            this.kind = kind;
             this.sample = sample;
             this.scalarMask = scalarMask;
             this.requiredMask = requiredMask;
@@ -672,8 +670,6 @@ final class Domain {
         }
 
         static LatticeValue join(LatticeValue left, LatticeValue right) {
-            requireNonNull(left, "left is null");
-            requireNonNull(right, "right is null");
             if (left.equals(right)) {
                 return left;
             }
@@ -779,7 +775,7 @@ final class Domain {
 
         Guard(int id, Residual residual) {
             this.id = id;
-            this.residual = requireNonNull(residual, "residual is null");
+            this.residual = residual;
         }
 
         int id() {
@@ -841,7 +837,7 @@ final class Domain {
         private final List<Residual> children;
 
         Residual(Kind kind, int symbolId, long mask, String value, Expression expression, List<Residual> children) {
-            this.kind = requireNonNull(kind, "kind is null");
+            this.kind = kind;
             this.symbolId = symbolId;
             this.mask = mask;
             this.value = value;
@@ -850,7 +846,7 @@ final class Domain {
         }
 
         static Residual opaque(Expression expression) {
-            Expression folded = requireNonNull(expression, "expression is null").fold();
+            Expression folded = expression.fold();
             if (folded == Expression.TRUE) {
                 return TRUE;
             }
@@ -861,7 +857,7 @@ final class Domain {
         }
 
         static Residual scalarEq(int symbolId, String value) {
-            return new Residual(Kind.SCALAR_EQ, symbolId, 0L, requireNonNull(value, "value is null"), null, List.of());
+            return new Residual(Kind.SCALAR_EQ, symbolId, 0L, value, null, List.of());
         }
 
         static Residual scalarIn(int symbolId, long mask) {
@@ -879,7 +875,6 @@ final class Domain {
         }
 
         static Residual not(Residual child) {
-            requireNonNull(child, "child is null");
             if (child == TRUE) {
                 return FALSE;
             }
@@ -887,7 +882,7 @@ final class Domain {
                 return TRUE;
             }
             if (child.kind == Kind.NOT) {
-                return child.children.get(0);
+                return child.onlyChild();
             }
             return new Residual(Kind.NOT, -1, 0L, null, null, List.of(child));
         }
@@ -921,7 +916,7 @@ final class Domain {
             if (normalized.size() == 1) {
                 return normalized.iterator().next();
             }
-            return new Residual(kind, -1, 0L, null, null, List.copyOf(normalized));
+            return new Residual(kind, -1, 0L, null, null, new ArrayList<>(normalized));
         }
 
         Residual fold() {
@@ -929,7 +924,7 @@ final class Domain {
                 case OPAQUE:
                     return opaque(expression);
                 case NOT:
-                    return not(children.get(0).fold());
+                    return not(onlyChild().fold());
                 case AND:
                     return and(Lists.map(children, Residual::fold));
                 case OR:
@@ -971,14 +966,14 @@ final class Domain {
                 case SCALAR_IN: {
                     Symbol symbol = symbols.symbol(symbolId);
                     String key = keyResolver.apply(symbolId);
-                    if (mask == symbol.fullMask) {
+                    if (mask == symbol.mask) {
                         return Expression.TRUE;
                     }
                     if (symbol.domain().booleanLike() && Long.bitCount(mask) == 1) {
                         String value = symbol.scalarValue(Long.numberOfTrailingZeros(mask));
                         return "true".equals(value) ? Expression.create("${" + key + "}") : Expression.create("!${" + key + "}");
                     }
-                    long excludedMask = symbol.fullMask & ~mask;
+                    long excludedMask = symbol.mask & ~mask;
                     if (Long.bitCount(excludedMask) == 1) {
                         return Expression.create("${" + key + "} != '" + symbol.scalarValue(Long.numberOfTrailingZeros(excludedMask)) + "'");
                     }
@@ -1004,7 +999,7 @@ final class Domain {
                     return Expression.TRUE.and(terms);
                 }
                 case NOT:
-                    return negate(children.get(0).toExpression(keyResolver, symbols));
+                    return negate(onlyChild().toExpression(keyResolver, symbols));
                 case AND:
                     return Expression.TRUE.and(Lists.map(children, child -> child.toExpression(keyResolver, symbols)));
                 case OR:
@@ -1034,6 +1029,13 @@ final class Domain {
             return Objects.hash(kind, symbolId, mask, value, expression, children);
         }
 
+        private Residual onlyChild() {
+            if (children.size() != 1) {
+                throw new IllegalStateException(kind + " residual requires exactly one child");
+            }
+            return children.get(0);
+        }
+
         private static Expression negate(Expression expression) {
             if (expression == Expression.TRUE) {
                 return Expression.FALSE;
@@ -1055,7 +1057,7 @@ final class Domain {
         private final Map<Long, Boolean> subsetCache = new HashMap<>();
 
         Guards(Symbol.Table symbols) {
-            this.symbols = requireNonNull(symbols, "symbols is null");
+            this.symbols = symbols;
             register(Decision.FALSE);
             register(Decision.TRUE);
         }
@@ -1113,7 +1115,7 @@ final class Domain {
                 result = residualGuard(rawExpression(left).or(rawExpression(right)));
             }
             if (cacheable && cacheable(result)) {
-                rememberOr(left, right, result);
+                cacheOr(left, right, result);
             }
             return result;
         }
@@ -1167,11 +1169,10 @@ final class Domain {
 
         Guard eq(int symbolId, String value) {
             Symbol symbol = guardableScalar(symbolId);
-            String literal = requireNonNull(value, "value is null");
-            if (!symbol.domain().values().contains(literal)) {
+            if (!symbol.domain().values().contains(value)) {
                 return Guard.FALSE;
             }
-            DecisionShape shape = new DecisionShape(symbolId, new ScalarShape(symbol, symbol.scalarMask(literal)));
+            DecisionShape shape = new DecisionShape(symbolId, new ScalarShape(symbol, symbol.scalarMask(value)));
             return guard(Decision.of(List.of(shape), symbols), Residual.TRUE);
         }
 
@@ -1184,19 +1185,21 @@ final class Domain {
             if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Spec.Kind.FINITE_MEMBERSHIP) {
                 return Guard.FALSE;
             }
-            Set<String> required = requireNonNull(values, "values is null");
-            if (!symbol.domain().values().containsAll(required)) {
+            if (!symbol.domain().values().containsAll(values)) {
                 return Guard.FALSE;
             }
-            MembershipShape membership = MembershipShape.required(symbol, required);
+            MembershipShape membership = MembershipShape.required(symbol, values);
             DecisionShape shape = new DecisionShape(symbolId, membership);
             return guard(Decision.of(List.of(shape), symbols), Residual.TRUE);
         }
 
         Expression toExpression(Guard guard, Scope scope) {
-            requireNonNull(scope, "scope is null");
             Expression supported = decision(guard).toExpression(symbolId -> scope.key(symbols.symbol(symbolId).name()), symbols);
             Expression residual = guard.residual().toExpression(symbolId -> scope.key(symbols.symbol(symbolId).name()), symbols);
+            return toExpression(supported, residual);
+        }
+
+        private Expression toExpression(Expression supported, Expression residual) {
             if (supported == Expression.FALSE || residual == Expression.FALSE) {
                 return Expression.FALSE;
             }
@@ -1241,7 +1244,7 @@ final class Domain {
         }
 
         private Residual residual(Expression expression) {
-            Expression normalized = requireNonNull(expression, "expression is null").fold();
+            Expression normalized = expression.fold();
             if (normalized == Expression.TRUE) {
                 return Residual.TRUE;
             }
@@ -1291,11 +1294,15 @@ final class Domain {
         }
 
         private ResidualValue and(ResidualValue right, ResidualValue left) {
-            return ResidualValue.of(Residual.and(List.of(left.residual, right.residual)), left.expression.and(right.expression));
+            return ResidualValue.of(Residual.and(
+                    List.of(left.residual, right.residual)),
+                    left.expression.and(right.expression));
         }
 
         private ResidualValue or(ResidualValue right, ResidualValue left) {
-            return ResidualValue.of(Residual.or(List.of(left.residual, right.residual)), left.expression.or(right.expression));
+            return ResidualValue.of(Residual.or(
+                    List.of(left.residual, right.residual)),
+                    left.expression.or(right.expression));
         }
 
         private ResidualValue compare(boolean equal, ResidualValue right, ResidualValue left) {
@@ -1315,15 +1322,19 @@ final class Domain {
                 return null;
             }
             Symbol symbol = symbols.symbol(symbolValue.symbolId);
-            if (symbol.domain().kind() != Spec.Kind.FINITE_SCALAR && symbol.domain().kind() != Spec.Kind.OPEN_TEXT) {
+            Spec domain = symbol.domain();
+            if (domain.kind() != Spec.Kind.FINITE_SCALAR && domain.kind() != Spec.Kind.OPEN_TEXT) {
                 return null;
             }
             String scalar = literalScalar(literalValue.literal);
             if (scalar == null) {
                 return null;
             }
-            if (symbol.domain().kind() == Spec.Kind.FINITE_SCALAR) {
-                return symbol.domain().values().contains(scalar) ? Residual.scalarEq(symbol.id(), scalar) : Residual.FALSE;
+            if (domain.kind() == Spec.Kind.FINITE_SCALAR) {
+                if (domain.values().contains(scalar)) {
+                    return Residual.scalarEq(symbol.id(), scalar);
+                }
+                return Residual.FALSE;
             }
             return Residual.scalarEq(symbol.id(), scalar);
         }
@@ -1334,27 +1345,32 @@ final class Domain {
                 direct = scalarInResidual(right, left);
             }
             Expression expression = combine(left.expression, "contains", right.expression);
-            return direct == null ? ResidualValue.of(Residual.opaque(expression), expression) : ResidualValue.of(direct, expression);
+            if (direct == null) {
+                return ResidualValue.of(Residual.opaque(expression), expression);
+            }
+            return ResidualValue.of(direct, expression);
         }
 
         private Residual containsResidual(ResidualValue symbolValue, ResidualValue literalValue) {
-            if (symbolValue.symbolId < 0 || literalValue.literal == null) {
+            Value<?> literal = literalValue.literal;
+            if (symbolValue.symbolId < 0 || literal == null) {
                 return null;
             }
             Symbol symbol = symbols.symbol(symbolValue.symbolId);
-            if (symbol.domain().kind() != Spec.Kind.FINITE_MEMBERSHIP) {
+            Spec domain = symbol.domain();
+            if (domain.kind() != Spec.Kind.FINITE_MEMBERSHIP) {
                 return null;
             }
-            if (literalValue.literal.type() == Value.Type.STRING) {
-                String item = literalValue.literal.getString();
-                return symbol.domain().values().contains(item)
-                        ? Residual.membershipContainsAll(symbol.id(), symbol.domain().mask(item))
+            if (literal.type() == Value.Type.STRING) {
+                String item = literal.getString();
+                return domain.values().contains(item)
+                        ? Residual.membershipContainsAll(symbol.id(), domain.mask(item))
                         : Residual.FALSE;
             }
-            if (literalValue.literal.type() == Value.Type.LIST) {
-                Set<String> required = new TreeSet<>(literalValue.literal.getList());
-                return symbol.domain().values().containsAll(required)
-                        ? Residual.membershipContainsAll(symbol.id(), symbol.domain().mask(required))
+            if (literal.type() == Value.Type.LIST) {
+                Set<String> required = new TreeSet<>(literal.getList());
+                return domain.values().containsAll(required)
+                        ? Residual.membershipContainsAll(symbol.id(), domain.mask(required))
                         : Residual.FALSE;
             }
             return null;
@@ -1391,7 +1407,7 @@ final class Domain {
             return cached == null ? null : cached.get(left);
         }
 
-        private void rememberOr(Guard left, Guard right, Guard result) {
+        private void cacheOr(Guard left, Guard right, Guard result) {
             orCache.computeIfAbsent(left, k -> new HashMap<>()).put(right, result);
             orCache.computeIfAbsent(right, k -> new HashMap<>()).put(left, result);
         }
@@ -1408,7 +1424,14 @@ final class Domain {
         }
 
         private Decision decision(Guard guard) {
-            return decisions.get(guard.id());
+            return decision(guard.id());
+        }
+
+        private Decision decision(int guardId) {
+            if (guardId < 0 || guardId >= decisions.size()) {
+                throw new IllegalArgumentException("Unknown guard id: " + guardId);
+            }
+            return decisions.get(guardId);
         }
 
         private boolean subsetOf(int leftId, int rightId) {
@@ -1423,7 +1446,7 @@ final class Domain {
             if (cached != null) {
                 return cached;
             }
-            boolean result = decisions.get(leftId).subsetOf(decisions.get(rightId));
+            boolean result = decision(leftId).subsetOf(decision(rightId));
             subsetCache.put(key, result);
             return result;
         }
@@ -1431,16 +1454,7 @@ final class Domain {
         private Expression rawExpression(Guard guard) {
             Expression supported = decision(guard).toExpression(symbolId -> symbols.symbol(symbolId).name(), symbols);
             Expression residual = guard.residual().toExpression(symbolId -> symbols.symbol(symbolId).name(), symbols);
-            if (supported == Expression.FALSE || residual == Expression.FALSE) {
-                return Expression.FALSE;
-            }
-            if (supported == Expression.TRUE) {
-                return residual;
-            }
-            if (residual == Expression.TRUE) {
-                return supported;
-            }
-            return supported.and(residual);
+            return toExpression(supported, residual);
         }
 
         private static Expression negate(Expression expression) {
@@ -1488,10 +1502,10 @@ final class Domain {
             private final Expression expression;
 
             private ResidualValue(Residual residual, int symbolId, Value<?> literal, Expression expression) {
-                this.residual = requireNonNull(residual, "residual is null");
+                this.residual = residual;
                 this.symbolId = symbolId;
                 this.literal = literal;
-                this.expression = requireNonNull(expression, "expression is null");
+                this.expression = expression;
             }
 
             static ResidualValue of(Residual residual, Expression expression) {
@@ -1988,7 +2002,7 @@ final class Domain {
                     rightScalar++;
                 }
                 Symbol symbol = symbols.symbol(symbolId);
-                long fullMask = symbol.fullMask;
+                long fullMask = symbol.mask;
                 long leftMask = leftShape == null ? fullMask : leftShape.allowedMask;
                 long rightMask = rightShape == null ? fullMask : rightShape.allowedMask;
                 if (leftMask != rightMask) {
@@ -2079,7 +2093,7 @@ final class Domain {
                 Symbol symbol = symbols.symbol(symbolId);
                 long leftMask = leftScalar < scalarShapes.length && scalarIds[leftScalar] == symbolId
                         ? scalarShapes[leftScalar].allowedMask
-                        : symbol.fullMask;
+                        : symbol.mask;
                 long rightMask = other.scalarShapes[rightScalar].allowedMask;
                 long outsideMask = leftMask & ~rightMask;
                 if (outsideMask != 0L) {
@@ -2098,7 +2112,7 @@ final class Domain {
                 Symbol symbol = symbols.symbol(symbolId);
                 MembershipShape left = leftMembership < membershipShapes.length && membershipIds[leftMembership] == symbolId
                         ? membershipShapes[leftMembership]
-                        : MembershipShape.empty();
+                        : MembershipShape.EMPTY;
                 MembershipShape right = other.membershipShapes[rightMembership];
                 long knownMask = left.requiredMask | left.forbiddenMask;
                 long unresolvedRequiredMask = right.requiredMask & ~knownMask;
@@ -2151,7 +2165,7 @@ final class Domain {
 
         DecisionShape withMembershipRequired(int symbolId, String item, Symbol symbol) {
             int index = Arrays.binarySearch(membershipIds, symbolId);
-            MembershipShape current = index < 0 ? MembershipShape.empty() : membershipShapes[index];
+            MembershipShape current = index < 0 ? MembershipShape.EMPTY : membershipShapes[index];
             MembershipShape nextShape = current.withRequired(item, symbol);
             if (nextShape.equals(current)) {
                 return this;
@@ -2161,7 +2175,7 @@ final class Domain {
 
         DecisionShape withMembershipForbidden(int symbolId, String item, Symbol symbol) {
             int index = Arrays.binarySearch(membershipIds, symbolId);
-            MembershipShape current = index < 0 ? MembershipShape.empty() : membershipShapes[index];
+            MembershipShape current = index < 0 ? MembershipShape.EMPTY : membershipShapes[index];
             MembershipShape nextShape = current.withForbidden(item, symbol);
             if (nextShape.equals(current)) {
                 return this;
@@ -2304,7 +2318,7 @@ final class Domain {
             if (!symbol.scalar) {
                 throw new IllegalArgumentException("Masked scalar constraint requires a maskable symbol");
             }
-            if (allowedMask == 0L || (allowedMask & ~symbol.fullMask) != 0L) {
+            if (allowedMask == 0L || (allowedMask & ~symbol.mask) != 0L) {
                 throw new IllegalArgumentException("Scalar mask must be non-empty and within the symbol domain");
             }
             this.allowedMask = allowedMask;
@@ -2335,7 +2349,7 @@ final class Domain {
             if (!symbol.scalar) {
                 throw new IllegalStateException("Scalar shape maskability mismatch");
             }
-            return allowedMask == symbol.fullMask;
+            return allowedMask == symbol.mask;
         }
 
         Expression toExpression(String key, Symbol symbol) {
@@ -2350,7 +2364,7 @@ final class Domain {
             if (isFull(symbol)) {
                 return Expression.TRUE;
             }
-            long excludedMask = symbol.fullMask & ~allowedMask;
+            long excludedMask = symbol.mask & ~allowedMask;
             if (Long.bitCount(excludedMask) == 1) {
                 String excluded = symbol.scalarValue(Long.numberOfTrailingZeros(excludedMask));
                 return Expression.create("${" + key + "} != '" + excluded + "'");
@@ -2409,7 +2423,7 @@ final class Domain {
             if (!symbol.member) {
                 throw new IllegalArgumentException("Masked membership constraint requires a maskable symbol");
             }
-            long fullMask = symbol.fullMask;
+            long fullMask = symbol.mask;
             if ((requiredMask & ~fullMask) != 0L || (forbiddenMask & ~fullMask) != 0L) {
                 throw new IllegalArgumentException("Membership mask must stay within the symbol domain");
             }
@@ -2418,10 +2432,6 @@ final class Domain {
             }
             this.requiredMask = requiredMask;
             this.forbiddenMask = forbiddenMask;
-        }
-
-        static MembershipShape empty() {
-            return EMPTY;
         }
 
         static MembershipShape required(Symbol symbol, Set<String> items) {

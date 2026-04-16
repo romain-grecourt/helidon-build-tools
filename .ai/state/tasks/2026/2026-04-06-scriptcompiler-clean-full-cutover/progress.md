@@ -1,5 +1,44 @@
 # Progress
 
+- 2026-04-15: Removed the remaining private-path defensive null checks
+  and freeze copies in `Flow` / `Domain`. Internal constructors and
+  helpers now trust their callers instead of repeating
+  `requireNonNull(...)` on known-good values, including `Flow.Ir`,
+  `Flow.Op`, `Flow.Terminator`, `Flow.SymbolSeed`,
+  `Flow.ConditionLowerer`, `Flow.ConditionValue`, `Domain.Spec`,
+  `Domain.Symbol`, `Domain.Symbol.Fact`, `Domain.LatticeValue`,
+  `Domain.Guard`, `Domain.Residual`, `Domain.Guards`, and
+  `Domain.Guards.ResidualValue`. The private `Domain.Spec` ordinal map
+  now keeps direct ownership instead of `Map.copyOf(...)`, and
+  `Domain.Residual.combine(...)` now stores a directly owned
+  `ArrayList` instead of `List.copyOf(...)`. External/facade and
+  semantic invariant checks stayed in place, including detached-node
+  rejection, unknown symbol / guard ids, and finite-domain validation.
+  Focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`222` tests, `BUILD SUCCESS`, total time `5.013 s`), and
+  `git diff --check` is clean.
+- 2026-04-15: Hardened the remaining invariant internal lookups in
+  `Domain` and `Flow`. `Domain.Symbol.Table.symbol(int)` now rejects
+  unknown ids, `Domain.Guards` validates guard ids before
+  dereferencing decisions, and `Domain.Residual` now checks its unary
+  child shape explicitly. `Flow` now routes invariant symbol-info,
+  block, op, control, state, and analyzed-fact lookups through checked
+  helpers so missing entries fail with explicit exceptions instead of
+  raw `null` dereferences or index failures, while intentionally
+  optional probes such as `findId(...)`, availability lookups, caches,
+  and unreachable `DEFINE_VALUE` facts remain nullable. Added
+  `DomainTest.testSymbolTableRejectsUnknownSymbolId`,
+  `DomainTest.testGuardsRejectUnknownGuardId`, and
+  `FlowTest.testFlowRejectsUnknownSymbolId`. Focused validation reran
+  green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`222` tests, `BUILD SUCCESS`, total time `4.797 s`), and
+  `git diff --check` is clean.
 - 2026-04-15: Replaced the remaining trivial private-inner accessors in
   `Flow` with direct field reads. `Ir`, `Block`, and `Op` no longer
   expose the one-line `blocks()` / `symbols()` / `ops()` / `guards()`,

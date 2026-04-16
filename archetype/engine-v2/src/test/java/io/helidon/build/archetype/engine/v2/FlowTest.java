@@ -68,6 +68,18 @@ class FlowTest {
     }
 
     @Test
+    void testFlowRejectsUnknownSymbolId() {
+        Context.Scope scope = new Context().scope();
+        Node script = load("flow/ir-lowering.xml");
+
+        Flow flow = new Flow(scope);
+        flow.process(script);
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> flow.symbol(99));
+        assertThat(ex.getMessage(), containsString("Unknown symbol id"));
+    }
+
+    @Test
     void testAnalyzeMergesBranchValuesAndUseGuards() {
         Context.Scope scope = new Context().scope();
         Node script = load("flow/branch-value-merge.xml");

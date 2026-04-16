@@ -27,9 +27,11 @@ import org.junit.jupiter.api.Test;
 import static io.helidon.build.archetype.engine.v2.Domain.Guard.TRUE;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.allOf;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class DomainTest {
 
@@ -195,6 +197,32 @@ class DomainTest {
 
         assertThat(mergedMembership.exactCases().size(), is(1));
         assertThat(mergedMembership.listContains(featuresSymbol, Set.of("grpc", "rest"), guards), is(TRUE));
+    }
+
+    @Test
+    void testSymbolTableRejectsUnknownSymbolId() {
+        Domain.Symbol.Table.Builder builder = Domain.Symbol.Table.builder();
+        builder.define("enabled", Domain.Spec.booleanSpec(), true, false);
+        Domain.Symbol.Table symbols = builder.build();
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> symbols.symbol(99));
+
+        assertThat(ex.getMessage(), containsString("Unknown symbol id"));
+    }
+
+    @Test
+    void testGuardsRejectUnknownGuardId() {
+        Domain.Symbol.Table.Builder builder = Domain.Symbol.Table.builder();
+        int enabled = builder.define("enabled", Domain.Spec.booleanSpec(), true, false);
+        Domain.Symbol.Table symbols = builder.build();
+        Domain.Guards guards = new Domain.Guards(symbols);
+        Domain.Guard valid = guards.eq(enabled, "true");
+        Domain.Guard invalid = new Domain.Guard(99, valid.residual());
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> guards.toExpression(invalid, new Context().scope()));
+
+        assertThat(ex.getMessage(), containsString("Unknown guard id"));
     }
 
     @SafeVarargs

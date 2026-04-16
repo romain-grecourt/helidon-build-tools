@@ -60,7 +60,7 @@ final class Flow {
         analyzer.analyze();
         Projector projector = new Projector(ir, analyzer, root, scope);
         projector.project();
-        rootEntry = analyzer.entryStates.get(0);
+        rootEntry = analyzer.entryState(0);
         nodeFacts = projector.nodeFacts;
         symbolInfos = projector.symbolInfos;
     }
@@ -98,7 +98,7 @@ final class Flow {
 
     SymbolInfo symbol(String name) {
         int symbolId = ir.symbols.findId(name);
-        return symbolId < 0 ? null : symbolInfos.get(symbolId);
+        return symbolId < 0 ? null : symbolInfo(symbolId);
     }
 
     Symbol symbol(int symbolId) {
@@ -194,6 +194,36 @@ final class Flow {
             }
         }
         throw new IllegalArgumentException("Node is not part of this flow model: " + node);
+    }
+
+    private SymbolInfo symbolInfo(int symbolId) {
+        return requireElement(symbolInfos, symbolId, "flow symbol info");
+    }
+
+    private static <T> T requireElement(List<T> values, int index, String label) {
+        if (index < 0 || index >= values.size()) {
+            throw new IllegalStateException("Unknown " + label + " id: " + index);
+        }
+        T value = values.get(index);
+        if (value == null) {
+            throw new IllegalStateException("Missing " + label + " for id: " + index);
+        }
+        return value;
+    }
+
+    private static <T> T element(List<T> values, int index, String label) {
+        if (index < 0 || index >= values.size()) {
+            throw new IllegalStateException("Unknown " + label + " id: " + index);
+        }
+        return values.get(index);
+    }
+
+    private static <K, V> V requireEntry(Map<K, V> values, K key, String label) {
+        V value = values.get(key);
+        if (value == null) {
+            throw new IllegalStateException("Missing " + label + " for key: " + key);
+        }
+        return value;
     }
 
     private Fact fact(Node node, String key) {
@@ -324,7 +354,7 @@ final class Flow {
         private final Map<String, Guard> availability = new LinkedHashMap<>();
 
         SymbolInfo(Symbol symbol) {
-            this.symbol = requireNonNull(symbol, "symbol is null");
+            this.symbol = symbol;
         }
 
         Symbol symbol() {
@@ -375,23 +405,23 @@ final class Flow {
 
         Ir(List<Block> blocks, Table symbols, List<Op> ops, Guards guards, List<Control> controls) {
             this.blocks = blocks;
-            this.symbols = requireNonNull(symbols, "symbols is null");
+            this.symbols = symbols;
             this.ops = ops;
-            this.guards = requireNonNull(guards, "guards is null");
-            this.controls = requireNonNull(controls, "controlPaths is null");
+            this.guards = guards;
+            this.controls = controls;
             if (this.controls.isEmpty()) {
-                throw new IllegalArgumentException("controlPaths is empty");
+                throw new IllegalArgumentException("controls is empty");
             }
         }
     }
 
     private static final class Block {
-        private final int controlId;
+        private final int id;
         private final List<Integer> ops = new ArrayList<>();
         private Terminator terminator;
 
-        Block(int controlId) {
-            this.controlId = controlId;
+        Block(int id) {
+            this.id = id;
         }
     }
 
@@ -413,8 +443,8 @@ final class Flow {
         Op(int id, int blockId, Node source, Kind kind, int symbolId, Expression expression) {
             this.id = id;
             this.blockId = blockId;
-            this.source = requireNonNull(source, "source is null");
-            this.kind = requireNonNull(kind, "kind is null");
+            this.source = source;
+            this.kind = kind;
             this.symbolId = symbolId;
             this.expression = expression;
         }
@@ -428,7 +458,7 @@ final class Flow {
         }
 
         static Op defineValue(int id, int blockId, Node source, int symbolId, Expression expression) {
-            return new Op(id, blockId, source, Kind.DEFINE_VALUE, symbolId, requireNonNull(expression, "expression is null"));
+            return new Op(id, blockId, source, Kind.DEFINE_VALUE, symbolId, expression);
         }
 
         static Op emit(int id, int blockId, Node source) {
@@ -452,8 +482,8 @@ final class Flow {
         private final int falseId;
 
         Terminator(Kind kind, Node source, int targetId, int trueId, int falseId) {
-            this.kind = requireNonNull(kind, "kind is null");
-            this.source = requireNonNull(source, "source is null");
+            this.kind = kind;
+            this.source = source;
             this.targetId = targetId;
             this.trueId = trueId;
             this.falseId = falseId;
@@ -515,7 +545,7 @@ final class Flow {
         void project() {
             indexAnchors();
             scanSymbols();
-            projectNode(node, scope, analyzer.entryStates.get(0));
+            projectNode(node, scope, analyzer.entryState(0));
         }
 
         void indexAnchors() {
@@ -528,7 +558,7 @@ final class Flow {
                     continue;
                 }
                 int joinId = terminator.falseId;
-                Terminator falseTerminator = ir.blocks.get(terminator.falseId).terminator;
+                Terminator falseTerminator = block(terminator.falseId).terminator;
                 if (falseTerminator.kind == Terminator.Kind.GOTO) {
                     joinId = falseTerminator.targetId;
                 }
@@ -538,10 +568,10 @@ final class Flow {
 
         void scanSymbols() {
             for (Op op : ir.ops) {
-                State before = analyzer.beforeStates.get(op.id);
+                State before = analyzer.beforeState(op.id);
                 switch (op.kind) {
                     case DECLARE_INPUT: {
-                        SymbolInfo info = symbolInfos.get(op.symbolId);
+                        SymbolInfo info = symbolInfo(op.symbolId);
                         info.addDefinition(before.path, guards);
                         if (info.symbol.domain().booleanLike()) {
                             info.addAvailability("true", before.path, guards);
@@ -550,17 +580,18 @@ final class Flow {
                         break;
                     }
                     case DECLARE_OPTION: {
-                        SymbolInfo info = symbolInfos.get(op.symbolId);
+                        SymbolInfo info = symbolInfo(op.symbolId);
                         info.addAvailability(op.source.value().getString(), before.path, guards);
                         break;
                     }
                     case DEFINE_VALUE: {
-                        SymbolInfo info = symbolInfos.get(op.symbolId);
-                        Fact fact = analyzer.afterStates.get(op.id).env.get(op.symbolId);
-                        if (fact != null) {
-                            info.addDefinition(fact.definedUnder(), guards);
-                            recordAvailability(info, fact);
+                        SymbolInfo info = symbolInfo(op.symbolId);
+                        if (before.path.equals(Guard.FALSE)) {
+                            break;
                         }
+                        Fact fact = requireEntry(analyzer.afterState(op.id).env, op.symbolId, "flow fact after op " + op.id);
+                        info.addDefinition(fact.definedUnder(), guards);
+                        recordAvailability(info, fact);
                         break;
                     }
                     default:
@@ -615,11 +646,11 @@ final class Flow {
             Scope childScope = childScope(scope, node);
             Scope nodeScope = node.kind().isInput() ? childScope : scope;
             List<Integer> opIds = ops.getOrDefault(node, List.of());
-            State before = opIds.isEmpty() ? current : constrainPath(analyzer.beforeStates.get(opIds.get(0)), current.path);
-            State afterOps = opIds.isEmpty() ? before : constrainPath(analyzer.afterStates.get(opIds.get(opIds.size() - 1)),
+            State before = opIds.isEmpty() ? current : constrainPath(analyzer.beforeState(opIds.get(0)), current.path);
+            State afterOps = opIds.isEmpty() ? before : constrainPath(analyzer.afterState(opIds.get(opIds.size() - 1)),
                     current.path);
             BranchInfo branch = branches.get(node);
-            State branchEntry = branch == null ? null : constrainPath(analyzer.entryStates.get(branch.trueId), current.path);
+            State branchEntry = branch == null ? null : constrainPath(analyzer.entryState(branch.trueId), current.path);
             Guard activeGuard = branch != null
                     ? activeGuard(node, nodeScope, branchEntry)
                     : activeGuard(node, nodeScope, afterOps);
@@ -631,7 +662,7 @@ final class Flow {
                 for (Node child : node.children()) {
                     cursor = projectNode(child, descendantScope, cursor);
                 }
-                return constrainPath(analyzer.entryStates.get(branch.joinId), current.path);
+                return constrainPath(analyzer.entryState(branch.joinId), current.path);
             }
 
             State cursor = afterOps;
@@ -887,7 +918,7 @@ final class Flow {
 
         SymbolInfo symbolInfo(String key) {
             int symbolId = ir.symbols.findId(key);
-            return symbolId < 0 ? null : symbolInfos.get(symbolId);
+            return symbolId < 0 ? null : symbolInfo(symbolId);
         }
 
         SymbolInfo scalarSymbolInfo(String key) {
@@ -939,7 +970,7 @@ final class Flow {
                     }
                     Guard available = Guard.TRUE;
                     for (String value : required) {
-                        Guard availability = info.availability.get(value);
+                        Guard availability = info.availability(value);
                         if (availability == null) {
                             return Guard.FALSE;
                         }
@@ -952,8 +983,16 @@ final class Flow {
         }
 
         Guard available(Flow.SymbolInfo info, String value, Guard direct) {
-            Guard availability = info.availability.get(value);
+            Guard availability = info.availability(value);
             return availability == null ? Guard.FALSE : guards.and(availability, direct);
+        }
+
+        private SymbolInfo symbolInfo(int symbolId) {
+            return Flow.requireElement(symbolInfos, symbolId, "projected symbol");
+        }
+
+        private Block block(int blockId) {
+            return Flow.requireElement(ir.blocks, blockId, "flow block");
         }
 
         Set<String> containsValues(Value<?> value) {
@@ -1222,20 +1261,15 @@ final class Flow {
             return Flow.directOptionGuard(symbols, guards, scope.key(), input, option);
         }
 
-        int lowerGuardedChildren(Node node,
-                                 int blockId,
-                                 int controlPathId,
-                                 Guard guard,
-                                 List<Node> children,
-                                 Scope scope) {
+        int lowerGuardedChildren(Node node, int blockId, int controlId, Guard guard, List<Node> children, Scope scope) {
             if (children.isEmpty()) {
                 return blockId;
             }
-            int truePathId = nextControlPath(controlPathId, guard);
-            int falsePathId = nextControlPath(controlPathId, guards.not(guard));
+            int truePathId = nextControl(controlId, guard);
+            int falsePathId = nextControl(controlId, guards.not(guard));
             int trueBlock = newBlock(truePathId);
             int falseBlock = newBlock(falsePathId);
-            int joinBlock = newBlock(controlPathId);
+            int joinBlock = newBlock(controlId);
             terminate(blockId, Terminator.branch(node, trueBlock, falseBlock));
             int trueExit = lowerChildren(children, trueBlock, truePathId, scope);
             terminateIfMissing(trueExit, Terminator.jump(node, joinBlock));
@@ -1244,7 +1278,7 @@ final class Flow {
         }
 
         Guard guard(Expression expression, Scope scope) {
-            return new ConditionLowerer(symbols, guards, scope).lower(requireNonNull(expression, "expression is null"));
+            return new ConditionLowerer(symbols, guards, scope).lower(expression);
         }
 
         void append(int blockId, Op op) {
@@ -1253,9 +1287,8 @@ final class Flow {
         }
 
         void rememberSymbol(String name, Spec spec, boolean guardable, boolean tainted) {
-            symbolSeeds.merge(name,
-                    new SymbolSeed(name, spec, guardable, tainted),
-                    SymbolSeed::merge);
+            SymbolSeed seed = new SymbolSeed(name, spec, guardable, tainted);
+            symbolSeeds.merge(name, seed, SymbolSeed::merge);
         }
 
         void rememberDefinitionSymbol(Scope scope, Node node) {
@@ -1302,7 +1335,9 @@ final class Flow {
         void terminate(int blockId, Terminator terminator) {
             Block block = block(blockId);
             if (block.terminator != null) {
-                throw new IllegalStateException("Block " + blockId + " already terminated");
+                throw new IllegalStateException(String.format(
+                        "Block %d already terminated",
+                        blockId));
             }
             block.terminator = terminator;
         }
@@ -1319,9 +1354,9 @@ final class Flow {
             return blocks.size() - 1;
         }
 
-        int nextControlPath(int parentPathId, Guard edgeGuard) {
+        int nextControl(int parentPathId, Guard edgeGuard) {
             int id = controls.size();
-            controls.add(new Control(parentPathId, requireNonNull(edgeGuard, "edgeGuard is null")));
+            controls.add(new Control(parentPathId, edgeGuard));
             return id;
         }
 
@@ -1330,7 +1365,7 @@ final class Flow {
         }
 
         Block block(int blockId) {
-            return blocks.get(blockId);
+            return Flow.requireElement(blocks, blockId, "lowered block");
         }
 
         static Set<String> optionValues(Node input) {
@@ -1366,8 +1401,8 @@ final class Flow {
         private final boolean tainted;
 
         SymbolSeed(String name, Spec spec, boolean guardable, boolean tainted) {
-            this.name = requireNonNull(name, "name is null");
-            this.spec = requireNonNull(spec, "spec is null");
+            this.name = name;
+            this.spec = spec;
             this.guardable = guardable;
             this.tainted = tainted;
         }
@@ -1431,11 +1466,11 @@ final class Flow {
         ConditionLowerer(Table symbols, Guards guards, Scope scope) {
             this.symbols = symbols;
             this.guards = guards;
-            this.scope = requireNonNull(scope, "scope is null");
+            this.scope = scope;
         }
 
         Guard lower(Expression expression) {
-            Expression original = requireNonNull(expression, "expression is null");
+            Expression original = expression;
             if (original == Expression.TRUE) {
                 return Guard.TRUE;
             }
@@ -1530,13 +1565,18 @@ final class Flow {
                 return null;
             }
             if (literalValue.literal.type() == Value.Type.BOOLEAN) {
-                return symbol.domain().booleanLike()
-                        ? guards.eq(symbol.id(), String.valueOf(literalValue.literal.getBoolean()))
-                        : null;
+                if (symbol.domain().booleanLike()) {
+                    String value = String.valueOf(literalValue.literal.getBoolean());
+                    return guards.eq(symbol.id(), value);
+                }
+                return null;
             }
             if (literalValue.literal.type() == Value.Type.STRING) {
                 String literal = literalValue.literal.getString();
-                return symbol.domain().values().contains(literal) ? guards.eq(symbol.id(), literal) : null;
+                if (symbol.domain().values().contains(literal)) {
+                    return guards.eq(symbol.id(), literal);
+                }
+                return null;
             }
             return null;
         }
@@ -1606,7 +1646,7 @@ final class Flow {
         }
 
         static ConditionValue guard(Guard guard) {
-            return new ConditionValue(requireNonNull(guard, "guard is null"), null, null);
+            return new ConditionValue(guard, null, null);
         }
 
         static ConditionValue variable(Symbol symbol) {
@@ -1671,7 +1711,7 @@ final class Flow {
             stack.add(0);
             while (!stack.isEmpty()) {
                 int blockId = stack.removeFirst();
-                Terminator terminator = ir.blocks.get(blockId).terminator;
+                Terminator terminator = block(blockId).terminator;
                 switch (terminator.kind) {
                     case GOTO:
                         enqueueControl(terminator.targetId, reachable);
@@ -1695,7 +1735,7 @@ final class Flow {
                     continue;
                 }
                 Guard entry = entries.get(blockId);
-                Block block = ir.blocks.get(blockId);
+                Block block = block(blockId);
                 for (int opId : block.ops) {
                     beforeByOp.set(opId, entry);
                 }
@@ -1720,7 +1760,7 @@ final class Flow {
                     result.add(Guard.FALSE);
                     continue;
                 }
-                int ctrlId = ir.blocks.get(id).controlId;
+                int ctrlId = block(id).id;
                 if (ctrlId < 0) {
                     throw new IllegalStateException("Missing structured control path for block " + id);
                 }
@@ -1734,7 +1774,7 @@ final class Flow {
             if (cached != null) {
                 return cached;
             }
-            Control control = ir.controls.get(controlId);
+            Control control = control(controlId);
             if (control.parentId < 0) {
                 controlGuards[controlId] = Guard.TRUE;
                 return Guard.TRUE;
@@ -1752,18 +1792,18 @@ final class Flow {
             stack.add(0);
             while (!stack.isEmpty()) {
                 int blockId = stack.removeFirst();
-                if (entryGuards.get(blockId).equals(Guard.FALSE)) {
+                if (entryGuard(blockId).equals(Guard.FALSE)) {
                     continue;
                 }
-                Map<Integer, FactState> state = entries.get(blockId);
+                Map<Integer, FactState> state = element(entries, blockId, "analyzer entry facts");
                 if (state == null) {
                     continue;
                 }
                 Map<Integer, FactState> current = state;
-                Block block = ir.blocks.get(blockId);
+                Block block = block(blockId);
                 for (int opId : block.ops) {
-                    Op op = ir.ops.get(opId);
-                    Guard currentGuard = beforeGuards.get(opId);
+                    Op op = op(opId);
+                    Guard currentGuard = beforeGuard(opId);
                     beforeByOp.set(opId, current);
                     current = transfer(op, currentGuard, current);
                     afterByOp.set(opId, current);
@@ -1812,8 +1852,8 @@ final class Flow {
         }
 
         void enqueueFacts(int blockId, Map<Integer, FactState> incoming, List<Map<Integer, FactState>> entries) {
-            if (!entryGuards.get(blockId).equals(Guard.FALSE)) {
-                Map<Integer, FactState> current = entries.get(blockId);
+            if (!entryGuard(blockId).equals(Guard.FALSE)) {
+                Map<Integer, FactState> current = element(entries, blockId, "analyzer entry facts");
                 Map<Integer, FactState> merged = mergeEnv(current, incoming);
                 if (merged != current) {
                     entries.set(blockId, merged);
@@ -2065,12 +2105,44 @@ final class Flow {
             if (provenance.blockIds.length == 0) {
                 return Guard.FALSE;
             }
-            Guard materialized = entryGuards.get(provenance.blockIds[0]);
+            Guard materialized = entryGuard(provenance.blockIds[0]);
             for (int i = 1; i < provenance.blockIds.length; i++) {
-                materialized = guards.or(materialized, entryGuards.get(provenance.blockIds[i]));
+                materialized = guards.or(materialized, entryGuard(provenance.blockIds[i]));
             }
             provenance.materializedGuard = materialized;
             return materialized;
+        }
+
+        State entryState(int blockId) {
+            return Flow.requireElement(entryStates, blockId, "analyzer entry state");
+        }
+
+        State beforeState(int opId) {
+            return Flow.requireElement(beforeStates, opId, "analyzer before state");
+        }
+
+        State afterState(int opId) {
+            return Flow.requireElement(afterStates, opId, "analyzer after state");
+        }
+
+        private Block block(int blockId) {
+            return Flow.requireElement(ir.blocks, blockId, "flow block");
+        }
+
+        private Control control(int controlId) {
+            return Flow.requireElement(ir.controls, controlId, "flow control");
+        }
+
+        private Op op(int opId) {
+            return Flow.requireElement(ir.ops, opId, "flow op");
+        }
+
+        private Guard entryGuard(int blockId) {
+            return Flow.requireElement(entryGuards, blockId, "analyzer entry guard");
+        }
+
+        private Guard beforeGuard(int opId) {
+            return Flow.requireElement(beforeGuards, opId, "analyzer before guard");
         }
 
         private static final class FactState {
