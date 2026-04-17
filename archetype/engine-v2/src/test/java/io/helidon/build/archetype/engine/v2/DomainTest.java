@@ -235,10 +235,8 @@ class DomainTest {
     @Test
     void testGuardsRejectUnknownGuardId() {
         Table symbols = table(symbol(0, "enabled", Spec.BOOLEAN, true, false));
-        int enabled = symbols.findId("enabled");
         Guards guards = new Guards(symbols);
-        Guard valid = guards.eq(enabled, "true");
-        Guard invalid = new Guard(99, valid.residual());
+        Guard invalid = new Guard(99, null);
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> guards.expression(invalid, new Context().scope()));

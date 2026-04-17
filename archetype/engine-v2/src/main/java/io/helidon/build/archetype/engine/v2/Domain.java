@@ -1417,9 +1417,7 @@ final class Domain {
     }
 
     private static final class Clause {
-        private static final int[] EMPTY_IDS = new int[0];
-        private static final long[] EMPTY_MASKS = new long[0];
-        private static final Clause EMPTY = new Clause(EMPTY_IDS, EMPTY_MASKS);
+        private static final Clause EMPTY = new Clause(new int[0], new long[0]);
 
         private final int[] ids;
         private final long[] masks;
@@ -1470,11 +1468,11 @@ final class Domain {
             int nextIndex = 0;
             for (int i = 0; i < ids.length; i++) {
                 Symbol sym = table.symbol(ids[i]);
-                long fullMask = sym.domain.mask();
                 int offset = i * 2;
                 long mask = masks[offset];
-                if (sym.domain.scalar ? mask != fullMask : mask != 0L || masks[offset + 1] != 0L) {
-                    writeEntry(nextIds, nextMasks, nextIndex, ids[i], mask, masks[offset + 1]);
+                if (sym.domain.scalar && mask != sym.domain.mask
+                    || !sym.domain.scalar && (mask != 0L || masks[offset + 1] != 0L)) {
+                    set(nextIds, nextMasks, nextIndex, ids[i], mask, masks[offset + 1]);
                     nextIndex++;
                 }
             }
@@ -1493,37 +1491,35 @@ final class Domain {
             }
             int[] nextIds = new int[ids.length + other.ids.length];
             long[] nextMasks = new long[(ids.length + other.ids.length) * 2];
-            int left = 0;
-            int right = 0;
-            int nextIndex = 0;
-            while (left < ids.length || right < other.ids.length) {
-                if (right == other.ids.length || left < ids.length && ids[left] < other.ids[right]) {
-                    int lo = left * 2;
-                    writeEntry(nextIds, nextMasks, nextIndex, ids[left], masks[lo], masks[lo + 1]);
-                    left++;
-                    nextIndex++;
+            int n = 0;
+            for (int l = 0, r = 0; l < ids.length || r < other.ids.length; ) {
+                if (r == other.ids.length || l < ids.length && ids[l] < other.ids[r]) {
+                    int lo = l * 2;
+                    set(nextIds, nextMasks, n, ids[l], masks[lo], masks[lo + 1]);
+                    l++;
+                    n++;
                     continue;
                 }
-                if (left == ids.length || other.ids[right] < ids[left]) {
-                    int ro = right * 2;
-                    writeEntry(nextIds, nextMasks, nextIndex, other.ids[right], other.masks[ro], other.masks[ro + 1]);
-                    right++;
-                    nextIndex++;
+                if (l == ids.length || other.ids[r] < ids[l]) {
+                    int ro = r * 2;
+                    set(nextIds, nextMasks, n, other.ids[r], other.masks[ro], other.masks[ro + 1]);
+                    r++;
+                    n++;
                     continue;
                 }
-                int id = ids[left];
+                int id = ids[l];
                 Symbol sym = table.symbol(id);
                 long nextMask0;
                 long nextMask1;
                 if (sym.domain.scalar) {
-                    nextMask0 = masks[left * 2] & other.masks[right * 2];
+                    nextMask0 = masks[l * 2] & other.masks[r * 2];
                     if (nextMask0 == 0L) {
                         return null;
                     }
                     nextMask1 = 0L;
                 } else {
-                    int lo = left * 2;
-                    int ro = right * 2;
+                    int lo = l * 2;
+                    int ro = r * 2;
                     long out0 = masks[lo];
                     long out1 = masks[lo + 1];
                     long over0 = other.masks[ro];
@@ -1534,12 +1530,12 @@ final class Domain {
                     nextMask0 = out0 | over0;
                     nextMask1 = out1 | over1;
                 }
-                writeEntry(nextIds, nextMasks, nextIndex, id, nextMask0, nextMask1);
-                left++;
-                right++;
-                nextIndex++;
+                set(nextIds, nextMasks, n, id, nextMask0, nextMask1);
+                l++;
+                r++;
+                n++;
             }
-            return create(nextIds, nextMasks, nextIndex);
+            return n == 0 ? EMPTY : create(nextIds, nextMasks, n);
         }
 
         boolean subsetOf(Clause other, Table table) {
@@ -1549,24 +1545,20 @@ final class Domain {
             if (ids.length < other.ids.length) {
                 return false;
             }
-            int left = 0;
-            for (int right = 0; right < other.ids.length; right++) {
-                int id = other.ids[right];
-                while (left < ids.length && ids[left] < id) {
-                    left++;
+            for (int l = 0, r = 0; r < other.ids.length; r++) {
+                int id = other.ids[r];
+                while (l < ids.length && ids[l] < id) {
+                    l++;
                 }
-                if (left == ids.length || ids[left] != id) {
+                if (l == ids.length || ids[l] != id) {
                     return false;
                 }
                 Symbol sym = table.symbol(id);
-                int lo = left * 2;
-                int ro = right * 2;
-                if (sym.domain.scalar) {
-                    if ((masks[lo] & ~other.masks[ro]) != 0L) {
-                        return false;
-                    }
-                } else if ((other.masks[ro] & ~masks[lo]) != 0L
-                           || (other.masks[ro + 1] & ~masks[lo + 1]) != 0L) {
+                int lo = l * 2;
+                int ro = r * 2;
+                if (sym.domain.scalar && (masks[lo] & ~other.masks[ro]) != 0L
+                    || !sym.domain.scalar && (other.masks[ro] & ~masks[lo]) != 0L
+                    || !sym.domain.scalar && (other.masks[ro + 1] & ~masks[lo + 1]) != 0L) {
                     return false;
                 }
             }
@@ -1577,56 +1569,50 @@ final class Domain {
             boolean diff = false;
             int[] nextIds = new int[ids.length + other.ids.length];
             long[] nextMasks = new long[(ids.length + other.ids.length) * 2];
-            int left = 0;
-            int right = 0;
-            int nextIndex = 0;
-            while (left < ids.length || right < other.ids.length) {
+            int n = 0;
+            for (int l = 0, r = 0; l < ids.length || r < other.ids.length; ) {
                 int id;
                 long leftMask;
                 long rightMask;
-                long nextMask0;
-                long nextMask1;
-                if (right == other.ids.length || left < ids.length && ids[left] < other.ids[right]) {
-                    id = ids[left];
+                if (r == other.ids.length || l < ids.length && ids[l] < other.ids[r]) {
+                    id = ids[l];
                     Symbol sym = table.symbol(id);
                     if (!sym.domain.scalar) {
                         return null;
                     }
-                    leftMask = masks[left * 2];
-                    rightMask = sym.domain.mask();
-                    left++;
-                } else if (left == ids.length || other.ids[right] < ids[left]) {
-                    id = other.ids[right];
+                    leftMask = masks[l * 2];
+                    rightMask = sym.domain.mask;
+                    l++;
+                } else if (l == ids.length || other.ids[r] < ids[l]) {
+                    id = other.ids[r];
                     Symbol sym = table.symbol(id);
                     if (!sym.domain.scalar) {
                         return null;
                     }
-                    leftMask = sym.domain.mask();
-                    rightMask = other.masks[right * 2];
-                    right++;
+                    leftMask = sym.domain.mask;
+                    rightMask = other.masks[r * 2];
+                    r++;
                 } else {
-                    id = ids[left];
-                    int lo = left * 2;
-                    int ro = right * 2;
+                    id = ids[l];
+                    int lo = l * 2;
+                    int ro = r * 2;
                     Symbol sym = table.symbol(id);
                     if (!sym.domain.scalar) {
-                        if (masks[lo] != other.masks[ro] || masks[lo + 1] != other.masks[ro + 1]) {
-                            return null;
+                        if (masks[lo] == other.masks[ro] && masks[lo + 1] == other.masks[ro + 1]) {
+                            set(nextIds, nextMasks, n, id, masks[lo], masks[lo + 1]);
+                            l++;
+                            r++;
+                            n++;
+                            continue;
                         }
-                        nextMask0 = masks[lo];
-                        nextMask1 = masks[lo + 1];
-                        left++;
-                        right++;
-                        writeEntry(nextIds, nextMasks, nextIndex, id, nextMask0, nextMask1);
-                        nextIndex++;
-                        continue;
+                        return null;
                     }
                     leftMask = masks[lo];
                     rightMask = other.masks[ro];
-                    left++;
-                    right++;
+                    l++;
+                    r++;
                 }
-                long fullMask = table.symbol(id).domain.mask();
+                long fullMask = table.symbol(id).domain.mask;
                 if (leftMask != rightMask) {
                     if (diff) {
                         return null;
@@ -1634,15 +1620,15 @@ final class Domain {
                     diff = true;
                     long unionMask = leftMask | rightMask;
                     if (unionMask != fullMask) {
-                        writeEntry(nextIds, nextMasks, nextIndex, id, unionMask, 0L);
-                        nextIndex++;
+                        set(nextIds, nextMasks, n, id, unionMask, 0L);
+                        n++;
                     }
                 } else if (leftMask != fullMask) {
-                    writeEntry(nextIds, nextMasks, nextIndex, id, leftMask, 0L);
-                    nextIndex++;
+                    set(nextIds, nextMasks, n, id, leftMask, 0L);
+                    n++;
                 }
             }
-            return diff ? create(nextIds, nextMasks, nextIndex) : null;
+            return diff ? n == 0 ? EMPTY : create(nextIds, nextMasks, n) : null;
         }
 
         List<Clause> subtract(Clause other, Table table) {
@@ -1660,7 +1646,7 @@ final class Domain {
                     continue;
                 }
                 int index = Arrays.binarySearch(ids, id);
-                long mask = sym.domain.mask();
+                long mask = sym.domain.mask;
                 long left = index >= 0 ? masks[index * 2] : mask;
                 long right = other.masks[i * 2];
                 long out = left & ~right;
@@ -1731,21 +1717,21 @@ final class Domain {
             return result;
         }
 
-        Clause withEntry(int index, int id, long nextMask0, long nextMask1) {
-            if (nextMask0 == 0L && nextMask1 == 0L) {
-                return index < 0 ? this : removeEntry(index);
+        Clause withEntry(int index, int id, long mask0, long mask1) {
+            if (mask0 == 0L && mask1 == 0L) {
+                return index < 0 ? this : ids.length == 1 ? EMPTY : remove(index);
             }
             if (index >= 0) {
                 int offset = index * 2;
-                if (masks[offset] == nextMask0 && masks[offset + 1] == nextMask1) {
+                if (masks[offset] == mask0 && masks[offset + 1] == mask1) {
                     return this;
                 }
-                return updateEntry(index, nextMask0, nextMask1);
+                return update(index, mask0, mask1);
             }
-            return insertEntry(-index - 1, id, nextMask0, nextMask1);
+            return insert(-index - 1, id, mask0, mask1);
         }
 
-        Clause updateEntry(int index, long mask0, long mask1) {
+        Clause update(int index, long mask0, long mask1) {
             long[] nextMasks = Arrays.copyOf(masks, masks.length);
             int offset = index * 2;
             nextMasks[offset] = mask0;
@@ -1753,10 +1739,7 @@ final class Domain {
             return new Clause(ids, nextMasks);
         }
 
-        Clause removeEntry(int index) {
-            if (ids.length == 1) {
-                return EMPTY;
-            }
+        Clause remove(int index) {
             int[] nextIds = new int[ids.length - 1];
             System.arraycopy(ids, 0, nextIds, 0, index);
             System.arraycopy(ids, index + 1, nextIds, index, ids.length - index - 1);
@@ -1767,17 +1750,17 @@ final class Domain {
             return new Clause(nextIds, nextMasks);
         }
 
-        Clause insertEntry(int insertion, int id, long mask0, long mask1) {
+        Clause insert(int offset, int id, long mask0, long mask1) {
             int[] nextIds = new int[ids.length + 1];
-            System.arraycopy(ids, 0, nextIds, 0, insertion);
-            nextIds[insertion] = id;
-            System.arraycopy(ids, insertion, nextIds, insertion + 1, ids.length - insertion);
-            int offset = insertion * 2;
+            System.arraycopy(ids, 0, nextIds, 0, offset);
+            nextIds[offset] = id;
+            System.arraycopy(ids, offset, nextIds, offset + 1, ids.length - offset);
+            int maskOffset = offset * 2;
             long[] nextMasks = new long[masks.length + 2];
-            System.arraycopy(masks, 0, nextMasks, 0, offset);
-            nextMasks[offset] = mask0;
-            nextMasks[offset + 1] = mask1;
-            System.arraycopy(masks, offset, nextMasks, offset + 2, masks.length - offset);
+            System.arraycopy(masks, 0, nextMasks, 0, maskOffset);
+            nextMasks[maskOffset] = mask0;
+            nextMasks[maskOffset + 1] = mask1;
+            System.arraycopy(masks, maskOffset, nextMasks, maskOffset + 2, masks.length - maskOffset);
             return new Clause(nextIds, nextMasks);
         }
 
@@ -1787,15 +1770,12 @@ final class Domain {
         }
 
         static Clause create(int[] ids, long[] masks, int size) {
-            if (size == 0) {
-                return EMPTY;
-            }
             int[] nextIds = size == ids.length ? ids : Arrays.copyOf(ids, size);
             long[] nextMasks = size * 2 == masks.length ? masks : Arrays.copyOf(masks, size * 2);
             return new Clause(nextIds, nextMasks);
         }
 
-        static void writeEntry(int[] ids, long[] masks, int index, int id, long mask0, long mask1) {
+        static void set(int[] ids, long[] masks, int index, int id, long mask0, long mask1) {
             int offset = index * 2;
             ids[index] = id;
             masks[offset] = mask0;
