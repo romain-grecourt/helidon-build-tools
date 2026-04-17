@@ -290,7 +290,7 @@ final class Flow {
                 if (!sym.guardable() || sym.tainted()) {
                     return Guard.TRUE;
                 }
-                return sym.domain().kind().isScalar() ? guards.eq(sym.id(), value) : Guard.TRUE;
+                return sym.domain().scalar() ? guards.eq(sym.id(), value) : Guard.TRUE;
             case INPUT_LIST:
                 if (!sym.guardable() || sym.tainted() || sym.domain().kind() != Spec.Kind.MEMBERSHIP) {
                     return Guard.TRUE;
@@ -901,7 +901,7 @@ final class Flow {
             if (!symbol.guardable() || symbol.tainted()) {
                 return null;
             }
-            return symbol.domain().kind().isScalar() ? info : null;
+            return symbol.domain().scalar() ? info : null;
         }
 
         Guard directEquality(String key, Value<?> value) {
@@ -1488,7 +1488,7 @@ final class Flow {
                 }
                 return null;
             }
-            if (!sym.domain().kind().isScalar()) {
+            if (!sym.domain().scalar()) {
                 return null;
             }
             if (literal.type() == Value.Type.STRING) {
@@ -1532,7 +1532,7 @@ final class Flow {
             if (!sym.guardable() || sym.tainted()) {
                 return null;
             }
-            if (!sym.domain().kind().isScalar()) {
+            if (!sym.domain().scalar()) {
                 return null;
             }
             Guard result = Guard.FALSE;
@@ -2149,13 +2149,13 @@ final class Flow {
             switch (literal.type()) {
                 case BOOLEAN: {
                     String scalar = String.valueOf(literal.getBoolean());
-                    if (spec.kind().isScalar() && spec.contains(scalar)) {
+                    if (spec.scalar() && spec.contains(scalar)) {
                         return LatticeValue.finiteScalar(spec.mask(scalar));
                     }
                     return spec.kind() == Spec.Kind.OPEN_TEXT ? LatticeValue.openText(scalar) : LatticeValue.top(spec);
                 }
                 case STRING:
-                    if (spec.kind().isScalar() && spec.contains(literal.getString())) {
+                    if (spec.scalar() && spec.contains(literal.getString())) {
                         return LatticeValue.finiteScalar(spec.mask(literal.getString()));
                     }
                     return LatticeValue.openText(literal.getString());

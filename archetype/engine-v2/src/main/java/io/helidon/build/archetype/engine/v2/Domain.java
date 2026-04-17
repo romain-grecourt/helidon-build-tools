@@ -54,8 +54,6 @@ final class Domain {
                     case CHOICE:
                     case FINITE_TEXT:
                         return true;
-                    case OPEN_TEXT:
-                    case MEMBERSHIP:
                     default:
                         return false;
                 }
@@ -65,6 +63,7 @@ final class Domain {
         private final Kind kind;
         private final String[] values;
         private final long mask;
+        private final boolean scalar;
 
         Spec(Kind kind, String... values) {
             if (values.length > Long.SIZE) {
@@ -72,6 +71,7 @@ final class Domain {
             }
             this.kind = kind;
             this.values = values;
+            this.scalar = kind.isScalar();
             if (kind == Kind.OPEN_TEXT) {
                 this.mask = 0L;
             } else if (values.length == Long.SIZE) {
@@ -83,6 +83,10 @@ final class Domain {
 
         Kind kind() {
             return kind;
+        }
+
+        boolean scalar() {
+            return scalar;
         }
 
         String[] values() {
@@ -1012,7 +1016,7 @@ final class Domain {
                 return null;
             }
             Symbol sym = table.symbol(id);
-            if (!sym.domain.kind.isScalar()) {
+            if (!sym.domain.scalar) {
                 return null;
             }
             Set<String> allowed = new TreeSet<>(literal.getList());
@@ -1149,7 +1153,7 @@ final class Domain {
         }
 
         Guard scalarAny(Symbol sym, Set<String> values, Guards guards) {
-            if (!sym.domain.kind.isScalar()) {
+            if (!sym.domain.scalar) {
                 return Guard.FALSE;
             }
             long allowedMask = 0L;
@@ -1447,10 +1451,10 @@ final class Domain {
             boolean changed = false;
             for (int i = 0; i < ids.length; i++) {
                 Symbol sym = table.symbol(ids[i]);
-                long fullMask = sym.domain.mask();
                 int offset = i * 2;
-                long mask0 = masks[offset];
-                if (sym.domain.kind.isScalar() ? mask0 == fullMask : mask0 == 0L && masks[offset + 1] == 0L) {
+                long mask = masks[offset];
+                if (sym.domain.scalar && mask == sym.domain.mask
+                    || !sym.domain.scalar && mask == 0L && masks[offset + 1] == 0L) {
                     changed = true;
                     nextCount--;
                 }
@@ -1468,9 +1472,9 @@ final class Domain {
                 Symbol sym = table.symbol(ids[i]);
                 long fullMask = sym.domain.mask();
                 int offset = i * 2;
-                long mask0 = masks[offset];
-                if (sym.domain.kind.isScalar() ? mask0 != fullMask : mask0 != 0L || masks[offset + 1] != 0L) {
-                    writeEntry(nextIds, nextMasks, nextIndex, ids[i], mask0, masks[offset + 1]);
+                long mask = masks[offset];
+                if (sym.domain.scalar ? mask != fullMask : mask != 0L || masks[offset + 1] != 0L) {
+                    writeEntry(nextIds, nextMasks, nextIndex, ids[i], mask, masks[offset + 1]);
                     nextIndex++;
                 }
             }
@@ -1511,7 +1515,7 @@ final class Domain {
                 Symbol sym = table.symbol(id);
                 long nextMask0;
                 long nextMask1;
-                if (sym.domain.kind.isScalar()) {
+                if (sym.domain.scalar) {
                     nextMask0 = masks[left * 2] & other.masks[right * 2];
                     if (nextMask0 == 0L) {
                         return null;
@@ -1557,7 +1561,7 @@ final class Domain {
                 Symbol sym = table.symbol(id);
                 int lo = left * 2;
                 int ro = right * 2;
-                if (sym.domain.kind.isScalar()) {
+                if (sym.domain.scalar) {
                     if ((masks[lo] & ~other.masks[ro]) != 0L) {
                         return false;
                     }
@@ -1585,7 +1589,7 @@ final class Domain {
                 if (right == other.ids.length || left < ids.length && ids[left] < other.ids[right]) {
                     id = ids[left];
                     Symbol sym = table.symbol(id);
-                    if (!sym.domain.kind.isScalar()) {
+                    if (!sym.domain.scalar) {
                         return null;
                     }
                     leftMask = masks[left * 2];
@@ -1594,7 +1598,7 @@ final class Domain {
                 } else if (left == ids.length || other.ids[right] < ids[left]) {
                     id = other.ids[right];
                     Symbol sym = table.symbol(id);
-                    if (!sym.domain.kind.isScalar()) {
+                    if (!sym.domain.scalar) {
                         return null;
                     }
                     leftMask = sym.domain.mask();
@@ -1605,7 +1609,7 @@ final class Domain {
                     int lo = left * 2;
                     int ro = right * 2;
                     Symbol sym = table.symbol(id);
-                    if (!sym.domain.kind.isScalar()) {
+                    if (!sym.domain.scalar) {
                         if (masks[lo] != other.masks[ro] || masks[lo + 1] != other.masks[ro + 1]) {
                             return null;
                         }
@@ -1652,7 +1656,7 @@ final class Domain {
             for (int i = 0; i < other.ids.length; i++) {
                 int id = other.ids[i];
                 Symbol sym = table.symbol(id);
-                if (!sym.domain.kind.isScalar()) {
+                if (!sym.domain.scalar) {
                     continue;
                 }
                 int index = Arrays.binarySearch(ids, id);
@@ -1668,7 +1672,7 @@ final class Domain {
             for (int i = 0; i < other.ids.length; i++) {
                 int id = other.ids[i];
                 Symbol sym = table.symbol(id);
-                if (sym.domain.kind.isScalar()) {
+                if (sym.domain.scalar) {
                     continue;
                 }
                 int index = Arrays.binarySearch(ids, id);

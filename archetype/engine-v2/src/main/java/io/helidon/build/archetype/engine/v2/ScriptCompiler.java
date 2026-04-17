@@ -1617,7 +1617,7 @@ public class ScriptCompiler {
             }
             Domain.Symbol symbol = info.symbol();
             if (symbol.guardable() && !symbol.tainted()) {
-                if (symbol.domain().kind().isScalar()) {
+                if (symbol.domain().scalar()) {
                     return symbol.domain().contains(scalarValue)
                             ? available(info, scalarValue, flow.guards().eq(symbol.id(), scalarValue))
                             : FALSE;
@@ -1634,7 +1634,7 @@ public class ScriptCompiler {
             Domain.Symbol symbol = info.symbol();
             Set<String> allowed = new TreeSet<>(values);
             if (symbol.guardable() && !symbol.tainted()) {
-                if (symbol.domain().kind().isScalar()) {
+                if (symbol.domain().scalar()) {
                     allowed.removeIf(value -> !symbol.domain().contains(value));
                 } else {
                     allowed.clear();
