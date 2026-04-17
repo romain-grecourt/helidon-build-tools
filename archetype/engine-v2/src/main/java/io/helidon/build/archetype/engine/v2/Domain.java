@@ -880,20 +880,11 @@ final class Domain {
         Expression expression(Guard guard, Scope scope) {
             Expression supported = decision(guard).expression(id -> scope.key(table.symbol(id).name()), table);
             Expression residual = guard.residual().expression(id -> scope.key(table.symbol(id).name()), table);
-            return expression(supported, residual);
+            return supported.and(residual);
         }
 
-        private Expression expression(Expression supported, Expression residual) {
-            if (supported == Expression.FALSE || residual == Expression.FALSE) {
-                return Expression.FALSE;
-            }
-            if (supported == Expression.TRUE) {
-                return residual;
-            }
-            if (residual == Expression.TRUE) {
-                return supported;
-            }
-            return supported.and(residual);
+        Guard residualGuard(Expression expr) {
+            return guard(Decision.TRUE, residual(expr), true);
         }
 
         private Guard guard(Decision decision, Residual residual, boolean foldConstants) {
@@ -906,10 +897,6 @@ final class Domain {
             }
             int id = register(decision);
             return new Guard(id, normalizedResidual);
-        }
-
-        Guard residualGuard(Expression expr) {
-            return guard(Decision.TRUE, residual(expr), true);
         }
 
         private Residual residual(Expression expr) {
@@ -1125,7 +1112,7 @@ final class Domain {
         private Expression expression(Guard guard) {
             Expression supported = decision(guard).expression(id -> table.symbol(id).name(), table);
             Expression residual = guard.residual().expression(id -> table.symbol(id).name(), table);
-            return expression(supported, residual);
+            return supported.and(residual);
         }
 
         private boolean cacheable(Guard guard) {
