@@ -55,7 +55,7 @@ class DomainTest {
         assertThat(choiceTop.scalarValues(choiceSpec), is(Set.of("mp", "se")));
 
         assertThat(membershipTop.kind(), is(LatticeValue.Kind.MEMBERSHIP));
-        assertThat(membershipTop.possibleValues(membershipSpec), is(Set.of("grpc", "rest")));
+        assertThat(membershipTop, is(LatticeValue.membership(0L, membershipSpec.mask())));
 
         assertThat(openTextTop.kind(), is(LatticeValue.Kind.OPEN_TEXT));
         assertThat(openTextTop.sample(), is(nullValue()));

@@ -446,27 +446,19 @@ final class Domain {
         }
 
         Set<String> scalarValues(Spec spec) {
-            return values(spec, scalarMask);
-        }
-
-        String singletonScalar(Spec spec) {
-            int ordinal = Long.numberOfTrailingZeros(scalarMask);
-            return spec.values[ordinal];
-        }
-
-        Set<String> possibleValues(Spec spec) {
-            return values(spec, possibleMask);
-        }
-
-        private static Set<String> values(Spec spec, long mask) {
             Set<String> values = new TreeSet<>();
-            long remaining = mask;
+            long remaining = scalarMask;
             while (remaining != 0L) {
                 int ordinal = Long.numberOfTrailingZeros(remaining);
                 values.add(spec.values[ordinal]);
                 remaining &= remaining - 1L;
             }
             return values;
+        }
+
+        String singletonScalar(Spec spec) {
+            int ordinal = Long.numberOfTrailingZeros(scalarMask);
+            return spec.values[ordinal];
         }
 
         @Override

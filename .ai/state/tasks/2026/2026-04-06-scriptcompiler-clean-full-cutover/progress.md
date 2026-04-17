@@ -1,5 +1,16 @@
 # Progress
 
+- 2026-04-16: Removed the test-only `LatticeValue.possibleValues(...)`
+  accessor and deleted the private shared `values(...)` helper it only
+  existed to support. `scalarValues(...)` now decodes `scalarMask`
+  directly, and `DomainTest` now checks membership-top state through
+  `LatticeValue.equals(...)` against `LatticeValue.membership(...)`
+  instead of routing through a one-off string-set accessor. Focused
+  validation reran green with `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=ExpressionTest,DomainTest,FlowTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`227` tests, `BUILD SUCCESS`, total time `4.841 s`).
 - 2026-04-16: Extracted the shared non-boolean finite-scalar rendering
   path into `Domain.finiteScalarExpression(...)`. The `Residual.SCALAR_IN`
   branch and the scalar `Clause.expression(...)` overload now both
