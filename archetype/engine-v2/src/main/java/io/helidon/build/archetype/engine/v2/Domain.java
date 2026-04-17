@@ -1777,13 +1777,14 @@ final class Domain {
                     continue;
                 }
                 int index = Arrays.binarySearch(ids, id);
-                long leftMask = index >= 0 ? masks[index * 2] : sym.domain.mask();
+                long fullMask = sym.domain.mask();
+                long leftMask = index >= 0 ? masks[index * 2] : fullMask;
                 long rightMask = other.masks[i * 2];
                 long outsideMask = leftMask & ~rightMask;
                 if (outsideMask != 0L) {
                     long overlapMask = leftMask & rightMask;
-                    Clause outside = withScalar(id, outsideMask, sym);
-                    Clause overlap = withScalar(id, overlapMask, sym);
+                    Clause outside = withEntry(index, id, outsideMask == fullMask ? 0L : outsideMask, 0L);
+                    Clause overlap = withEntry(index, id, overlapMask == fullMask ? 0L : overlapMask, 0L);
                     List<Clause> result = new ArrayList<>();
                     result.add(outside);
                     result.addAll(overlap.subtract(other, table));
@@ -1807,10 +1808,15 @@ final class Domain {
                         continue;
                     }
                     List<Clause> result = new ArrayList<>();
-                    int ordinal = Long.numberOfTrailingZeros(unresolved);
-                    String value = sym.value(ordinal);
-                    result.add(withMembership(id, value, sym, !parity));
-                    result.addAll(withMembership(id, value, sym, parity).subtract(other, table));
+                    long mask = 1L << Long.numberOfTrailingZeros(unresolved);
+                    Clause outside = parity
+                            ? withEntry(index, id, leftRequired, leftForbidden | mask)
+                            : withEntry(index, id, leftRequired | mask, leftForbidden);
+                    Clause overlap = parity
+                            ? withEntry(index, id, leftRequired | mask, leftForbidden)
+                            : withEntry(index, id, leftRequired, leftForbidden | mask);
+                    result.add(outside);
+                    result.addAll(overlap.subtract(other, table));
                     return result;
                 }
             }
@@ -1829,41 +1835,8 @@ final class Domain {
             return expr;
         }
 
-        Clause withScalar(int id, long nextMask, Symbol sym) {
-            if (nextMask == sym.domain.mask()) {
-                int index = Arrays.binarySearch(ids, id);
-                if (index < 0) {
-                    return this;
-                }
-                return removeEntry(index);
-            }
-            int index = Arrays.binarySearch(ids, id);
-            if (index >= 0) {
-                int offset = index * 2;
-                if (masks[offset] == nextMask && masks[offset + 1] == 0L) {
-                    return this;
-                }
-                return updateEntry(index, nextMask, 0L);
-            }
-            return insertEntry(-index - 1, id, nextMask, 0L);
-        }
-
-        Clause withMembership(int id, String value, Symbol sym, boolean parity) {
-            int index = Arrays.binarySearch(ids, id);
-            long required = index < 0 ? 0L : masks[index * 2];
-            long forbidden = index < 0 ? 0L : masks[index * 2 + 1];
-            long mask = sym.domain.mask(value);
-            if ((forbidden & mask) != 0L) {
-                return this;
-            }
-            if (parity) {
-                return withMembership(index, id, required | mask, forbidden);
-            }
-            return withMembership(index, id, required, forbidden | mask);
-        }
-
-        Clause withMembership(int index, int id, long nextRequired, long nextForbidden) {
-            if (nextRequired == 0L && nextForbidden == 0L) {
+        Clause withEntry(int index, int id, long nextMask0, long nextMask1) {
+            if (nextMask0 == 0L && nextMask1 == 0L) {
                 if (index < 0) {
                     return this;
                 }
@@ -1871,12 +1844,12 @@ final class Domain {
             }
             if (index >= 0) {
                 int offset = index * 2;
-                if (masks[offset] == nextRequired && masks[offset + 1] == nextForbidden) {
+                if (masks[offset] == nextMask0 && masks[offset + 1] == nextMask1) {
                     return this;
                 }
-                return updateEntry(index, nextRequired, nextForbidden);
+                return updateEntry(index, nextMask0, nextMask1);
             }
-            return insertEntry(-index - 1, id, nextRequired, nextForbidden);
+            return insertEntry(-index - 1, id, nextMask0, nextMask1);
         }
 
         Clause updateEntry(int index, long mask0, long mask1) {

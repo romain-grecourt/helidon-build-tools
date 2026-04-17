@@ -1,5 +1,16 @@
 # Progress
 
+- 2026-04-16: Fused the last specialized `Domain.Clause` entry
+  mutators into one primitive `withEntry(...)` path. The scalar split
+  in `subtract(...)` now computes the next mask directly and routes
+  through `withEntry(...)`, and the membership split now updates the
+  required / forbidden bitmasks inline instead of bouncing through the
+  old `withMembership(...)` wrappers. Focused validation reran green
+  with `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`227` tests, `BUILD SUCCESS`, total time `6.266 s`).
 - 2026-04-16: Simplified `Domain.Spec.toString()` by removing the
   special `OPEN_TEXT` formatting branch. `Spec` now always renders as
   `kind + Arrays.toString(values)`, so `Spec.OPEN_TEXT` prints as
