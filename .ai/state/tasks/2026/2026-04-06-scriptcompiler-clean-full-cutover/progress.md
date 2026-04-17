@@ -1,5 +1,16 @@
 # Progress
 
+- 2026-04-16: Extracted the duplicated `Domain.Clause.subtract(...)`
+  split-and-recurse path into a private `split(...)` helper and
+  shortened the surrounding scalar split locals to `full`, `left`,
+  `right`, `outside`, and `overlap`. The membership split now also
+  routes through that helper and uses `bit` for the chosen unresolved
+  branch instead of another `*Mask` local. Focused validation reran
+  green with `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`227` tests, `BUILD SUCCESS`, total time `5.269 s`).
 - 2026-04-16: Fused the last specialized `Domain.Clause` entry
   mutators into one primitive `withEntry(...)` path. The scalar split
   in `subtract(...)` now computes the next mask directly and routes

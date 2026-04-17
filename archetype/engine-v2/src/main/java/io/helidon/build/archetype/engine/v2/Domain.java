@@ -1777,18 +1777,13 @@ final class Domain {
                     continue;
                 }
                 int index = Arrays.binarySearch(ids, id);
-                long fullMask = sym.domain.mask();
-                long leftMask = index >= 0 ? masks[index * 2] : fullMask;
-                long rightMask = other.masks[i * 2];
-                long outsideMask = leftMask & ~rightMask;
-                if (outsideMask != 0L) {
-                    long overlapMask = leftMask & rightMask;
-                    Clause outside = withEntry(index, id, outsideMask == fullMask ? 0L : outsideMask, 0L);
-                    Clause overlap = withEntry(index, id, overlapMask == fullMask ? 0L : overlapMask, 0L);
-                    List<Clause> result = new ArrayList<>();
-                    result.add(outside);
-                    result.addAll(overlap.subtract(other, table));
-                    return result;
+                long full = sym.domain.mask();
+                long left = index >= 0 ? masks[index * 2] : full;
+                long right = other.masks[i * 2];
+                long out = left & ~right;
+                if (out != 0L) {
+                    long over = left & right;
+                    return split(index, id, out == full ? 0L : out, 0L, over == full ? 0L : over, 0L, other, table);
                 }
             }
             for (int i = 0; i < other.ids.length; i++) {
@@ -1798,26 +1793,20 @@ final class Domain {
                     continue;
                 }
                 int index = Arrays.binarySearch(ids, id);
-                long leftRequired = index >= 0 ? masks[index * 2] : 0L;
-                long leftForbidden = index >= 0 ? masks[index * 2 + 1] : 0L;
-                long known = leftRequired | leftForbidden;
+                long out = index >= 0 ? masks[index * 2] : 0L;
+                long over = index >= 0 ? masks[index * 2 + 1] : 0L;
+                long known = out | over;
                 for (int y = 0; y < 2; y++) {
                     boolean parity = y == 0;
                     long unresolved = other.masks[i * 2 + y] & ~known;
                     if (unresolved == 0L) {
                         continue;
                     }
-                    List<Clause> result = new ArrayList<>();
-                    long mask = 1L << Long.numberOfTrailingZeros(unresolved);
-                    Clause outside = parity
-                            ? withEntry(index, id, leftRequired, leftForbidden | mask)
-                            : withEntry(index, id, leftRequired | mask, leftForbidden);
-                    Clause overlap = parity
-                            ? withEntry(index, id, leftRequired | mask, leftForbidden)
-                            : withEntry(index, id, leftRequired, leftForbidden | mask);
-                    result.add(outside);
-                    result.addAll(overlap.subtract(other, table));
-                    return result;
+                    long bit = 1L << Long.numberOfTrailingZeros(unresolved);
+                    if (parity) {
+                        return split(index, id, out, over | bit, out | bit, over, other, table);
+                    }
+                    return split(index, id, out | bit, over, out, over | bit, other, table);
                 }
             }
             return List.of(this);
@@ -1833,6 +1822,15 @@ final class Domain {
                         : expr.and(expression(resolver.apply(ids[i]), masks[offset], masks[offset + 1], sym));
             }
             return expr;
+        }
+
+        List<Clause> split(int index, int id, long out0, long out1, long over0, long over1, Clause other, Table table) {
+            Clause outside = withEntry(index, id, out0, out1);
+            Clause overlap = withEntry(index, id, over0, over1);
+            List<Clause> result = new ArrayList<>();
+            result.add(outside);
+            result.addAll(overlap.subtract(other, table));
+            return result;
         }
 
         Clause withEntry(int index, int id, long nextMask0, long nextMask1) {
@@ -1908,7 +1906,7 @@ final class Domain {
             masks[offset + 1] = mask1;
         }
 
-        private static Expression expression(String key, long allowed, Symbol sym) {
+        static Expression expression(String key, long allowed, Symbol sym) {
             Spec domain = sym.domain();
             if (domain.kind() == Spec.Kind.BOOLEAN) {
                 if (allowed == domain.mask("true")) {
