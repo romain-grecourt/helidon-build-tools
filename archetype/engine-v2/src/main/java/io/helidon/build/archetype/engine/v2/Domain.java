@@ -179,22 +179,6 @@ final class Domain {
         }
 
         @Override
-        public boolean equals(Object o) {
-            if (!(o instanceof Spec)) {
-                return false;
-            }
-            Spec other = (Spec) o;
-            return kind == other.kind
-                   && mask == other.mask
-                   && Arrays.equals(values, other.values);
-        }
-
-        @Override
-        public int hashCode() {
-            return 31 * Objects.hash(kind, mask) + Arrays.hashCode(values);
-        }
-
-        @Override
         public String toString() {
             return kind + Arrays.toString(values);
         }
@@ -240,24 +224,6 @@ final class Domain {
         }
 
         @Override
-        public boolean equals(Object o) {
-            if (!(o instanceof Symbol)) {
-                return false;
-            }
-            Symbol other = (Symbol) o;
-            return id == other.id
-                   && guardable == other.guardable
-                   && tainted == other.tainted
-                   && name.equals(other.name)
-                   && domain.equals(other.domain);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(id, name, domain, guardable, tainted);
-        }
-
-        @Override
         public String toString() {
             return name + "#" + id + ":" + domain;
         }
@@ -295,16 +261,20 @@ final class Domain {
             private final Map<String, Symbol> symbolsByName = new LinkedHashMap<>();
 
             int define(String name, Spec domain, boolean guardable, boolean tainted) {
-                Symbol existing = symbolsByName.get(name);
-                if (existing != null) {
-                    Symbol expected = new Symbol(existing.id(), name, domain, guardable, tainted);
-                    if (!existing.equals(expected)) {
+                Symbol sym = symbolsByName.get(name);
+                if (sym != null) {
+                    if (!sym.name.equals(name)
+                            || sym.guardable != guardable
+                            || sym.tainted != tainted
+                            || sym.domain.kind != domain.kind
+                            || sym.domain.mask != domain.mask
+                            || !Arrays.equals(sym.domain.values, domain.values())) {
                         throw new IllegalArgumentException("Conflicting symbol definition: " + name);
                     }
-                    return existing.id();
+                    return sym.id();
                 }
                 int id = symbolsByName.size();
-                Symbol sym = new Symbol(id, name, domain, guardable, tainted);
+                sym = new Symbol(id, name, domain, guardable, tainted);
                 symbolsByName.put(name, sym);
                 return id;
             }

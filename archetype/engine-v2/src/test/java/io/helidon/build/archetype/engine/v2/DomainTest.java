@@ -230,6 +230,20 @@ class DomainTest {
     }
 
     @Test
+    void testSymbolTableRejectsConflictingDefinition() {
+        Table.Builder builder = Table.builder();
+
+        int id = builder.define("enabled", Spec.BOOLEAN, true, false);
+
+        assertThat(builder.define("enabled", Spec.BOOLEAN, true, false), is(id));
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> builder.define("enabled", Spec.BOOLEAN, false, false));
+
+        assertThat(ex.getMessage(), containsString("Conflicting symbol definition: enabled"));
+    }
+
+    @Test
     void testGuardsRejectUnknownGuardId() {
         Table.Builder builder = Table.builder();
         int enabled = builder.define("enabled", Spec.BOOLEAN, true, false);

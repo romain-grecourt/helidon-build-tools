@@ -1,5 +1,16 @@
 # Progress
 
+- 2026-04-16: Removed `Domain.Spec.equals(...)` /
+  `hashCode()` and `Domain.Symbol.equals(...)` / `hashCode()`.
+  `Table.Builder.define(...)` now performs direct structural
+  comparison of the existing symbol definition instead of building an
+  expected `Symbol` and relying on object equality, and `DomainTest`
+  now pins both the idempotent redefinition case and the
+  `"Conflicting symbol definition: enabled"` failure path. Focused
+  validation reran green with `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=ExpressionTest,DomainTest,FlowTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`.
 - 2026-04-16: Simplified the private `Domain.Residual` carrier by
   removing the dead `DEFINED` kind and replacing list-backed children
   with compact unary/array storage: `NOT` now uses a single `child`
