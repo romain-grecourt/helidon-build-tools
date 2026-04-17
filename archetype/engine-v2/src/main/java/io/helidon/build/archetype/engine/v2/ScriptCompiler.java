@@ -2627,7 +2627,7 @@ public class ScriptCompiler {
             Expression definitionExpr = flow.expression(definition, scope);
             Guard translated = new ExpressionAnalyzer(scope, facts, false, false).analyze(definitionExpr).reach;
             if (translated == null) {
-                return Expression.TRUE;
+                return null;
             }
             return Expression.create("!(" + definitionExpr.literal() + ")").reduce(flow.expression(base));
         }

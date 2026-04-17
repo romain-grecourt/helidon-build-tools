@@ -1,5 +1,21 @@
 # Progress
 
+- 2026-04-16: Committed the in-flight `Domain` / `Expression` /
+  `Flow` expression-assembly cleanup as `b4bbba676`
+  (`Archetype: rework Domain expression assembly`). The follow-up
+  dirty pass then fixed the `unsupported-block-pruning` regression by
+  changing `ScriptCompiler.definitionComplementStubExpression(...)` to
+  return `null` instead of `Expression.TRUE` when the reconstructed
+  definition guard cannot be re-analyzed, so stub rendering falls back
+  to the exact residual guard rather than emitting an unconditional
+  `~app-type` stub. In the same pass,
+  `ExpressionTest.testProgrammaticNegate()` was updated to match the
+  current canonical `!=` literal form. Focused validation reran green
+  with `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`228` tests, `BUILD SUCCESS`, total time `5.604 s`).
 - 2026-04-16: Removed `Domain.Spec.equals(...)` /
   `hashCode()` and `Domain.Symbol.equals(...)` / `hashCode()`.
   `Table.Builder.define(...)` now performs direct structural

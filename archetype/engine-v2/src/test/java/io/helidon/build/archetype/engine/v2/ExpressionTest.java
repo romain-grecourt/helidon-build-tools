@@ -760,7 +760,7 @@ class ExpressionTest {
     void testProgrammaticNegate() {
         assertThat(Expression.TRUE.negate(), is(Expression.FALSE));
         assertThat(Expression.FALSE.negate(), is(Expression.TRUE));
-        assertThat(expr("${a} == 'x'").negate().literal(), is("!(${a} == 'x')"));
+        assertThat(expr("${a} == 'x'").negate().literal(), is("${a} != 'x'"));
     }
 
     @Test

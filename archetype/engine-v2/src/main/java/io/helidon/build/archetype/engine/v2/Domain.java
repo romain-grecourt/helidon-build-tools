@@ -649,8 +649,11 @@ final class Domain {
                     Symbol sym = table.symbol(id);
                     String key = resolver.apply(id);
                     if (sym.domain.kind == Spec.Kind.BOOLEAN) {
-                        if ("true".equals(value) || "false".equals(value)) {
+                        if ("true".equals(value)) {
                             return Expression.variable(key);
+                        }
+                        if ("false".equals(value)) {
+                            return Expression.variable(key).negate();
                         }
                     }
                     return Expression.equal(key, value);
