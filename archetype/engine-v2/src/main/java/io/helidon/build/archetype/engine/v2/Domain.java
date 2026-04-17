@@ -155,6 +155,12 @@ final class Domain {
             }
         }
 
+        boolean sameValue(Value<?> left, Value<?> right) {
+            long leftMask = mask(left);
+            long rightMask = mask(right);
+            return leftMask != 0L || rightMask != 0L ? leftMask != 0L && leftMask == rightMask : Value.isEqual(left, right);
+        }
+
         @Override
         public String toString() {
             return kind + Arrays.toString(values);
@@ -426,16 +432,14 @@ final class Domain {
             Set<String> values = new TreeSet<>();
             long remaining = scalarMask;
             while (remaining != 0L) {
-                int ordinal = Long.numberOfTrailingZeros(remaining);
-                values.add(spec.values[ordinal]);
+                values.add(spec.values[Long.numberOfTrailingZeros(remaining)]);
                 remaining &= remaining - 1L;
             }
             return values;
         }
 
         String singletonScalar(Spec spec) {
-            int ordinal = Long.numberOfTrailingZeros(scalarMask);
-            return spec.values[ordinal];
+            return spec.values[Long.numberOfTrailingZeros(scalarMask)];
         }
 
         @Override
@@ -821,7 +825,12 @@ final class Domain {
         }
 
         boolean implies(Guard left, Guard right) {
-            if (implies0(left, right)) {
+            if (left.equals(right) || left.isFalse() || right.equals(Guard.TRUE)) {
+                return true;
+            }
+            if (left.residual().equals(right.residual())
+                && subsetOf(left.id(), right.id())
+                || right.isPure() && subsetOf(left.id(), right.id())) {
                 return true;
             }
             Decision leftDecision = decision(left);
@@ -830,14 +839,6 @@ final class Domain {
                 return leftDecision.subtract(rightDecision, table).isFalse();
             }
             return expression(left).equivalent(expression(right));
-        }
-
-        private boolean implies0(Guard left, Guard right) {
-            if (left.equals(right) || left.isFalse() || right.equals(Guard.TRUE)) {
-                return true;
-            }
-            return left.residual().equals(right.residual()) && subsetOf(left.id(), right.id())
-                   || right.isPure() && subsetOf(left.id(), right.id());
         }
 
         boolean equivalent(Guard left, Guard right) {
@@ -1125,15 +1126,6 @@ final class Domain {
         }
     }
 
-    static boolean sameExactValue(Spec spec, Value<?> left, Value<?> right) {
-        return exactValueEquals(spec, left, right, spec.mask(left));
-    }
-
-    private static boolean exactValueEquals(Spec spec, Value<?> left, Value<?> right, long leftMask) {
-        long rightMask = spec.mask(right);
-        return leftMask != 0L || rightMask != 0L ? leftMask != 0L && leftMask == rightMask : Value.isEqual(left, right);
-    }
-
     static final class Fact {
         private final Guard guard;
         private final LatticeValue value;
@@ -1194,7 +1186,7 @@ final class Domain {
         Guard match(Symbol sym, Value<?> candidate, Guards guards) {
             Guard result = Guard.FALSE;
             for (GuardedValue guardedValue : guardedValues) {
-                if (exactValueEquals(sym.domain, guardedValue.value, candidate, guardedValue.mask)) {
+                if (sym.domain.sameValue(guardedValue.value, candidate)) {
                     result = guards.or(result, guardedValue.guard);
                 }
             }
@@ -1412,13 +1404,10 @@ final class Domain {
         }
 
         static Decision of(List<Clause> clauses, Table table) {
-            if (clauses.isEmpty()) {
-                return FALSE;
-            }
-            return normalize(clauses, table);
+            return clauses.isEmpty() ? FALSE : normalize(clauses, table);
         }
 
-        private static Decision normalize(List<Clause> clauses, Table table) {
+        static Decision normalize(List<Clause> clauses, Table table) {
             Set<Clause> unique = new LinkedHashSet<>();
             for (Clause clause : clauses) {
                 Clause next = clause.normalized(table);

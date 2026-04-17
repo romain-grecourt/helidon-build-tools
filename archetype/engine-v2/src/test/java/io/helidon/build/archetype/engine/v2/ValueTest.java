@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.sameInstance;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -157,5 +158,16 @@ class ValueTest {
         assertThat(Value.empty().asString().orElse(null), is(nullValue()));
         assertThat(Value.empty().asInt().orElse(0), is(0));
         assertThat(Value.empty().asList().orElse(List.of()), is(List.of()));
+    }
+
+    @Test
+    void testTypedEmptyType() {
+        assertThrows(IllegalArgumentException.class, () -> Value.typed(Value.Type.EMPTY));
+
+        Value<?> value = Value.of("foo");
+        assertThat(Value.typed(value, Value.Type.EMPTY), sameInstance(value));
+
+        Value<?> empty = Value.empty();
+        assertThat(Value.typed(empty, Value.Type.EMPTY), sameInstance(empty));
     }
 }

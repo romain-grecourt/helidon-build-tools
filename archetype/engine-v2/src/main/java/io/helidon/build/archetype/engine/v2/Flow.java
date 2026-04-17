@@ -132,7 +132,27 @@ final class Flow {
         if (info == null && !key.startsWith("~")) {
             info = symbol("~" + key);
         }
-        Value.Type type = info == null ? Value.Type.EMPTY : valueType(info);
+        Value.Type type;
+        if (info == null) {
+            type = Value.Type.EMPTY;
+        } else {
+            switch (info.sym.domain().kind()) {
+                case BOOLEAN:
+                    type = Value.Type.BOOLEAN;
+                    break;
+                case CHOICE:
+                case FINITE_TEXT:
+                case OPEN_TEXT:
+                    type = Value.Type.STRING;
+                    break;
+                case MEMBERSHIP:
+                    type = Value.Type.LIST;
+                    break;
+                default:
+                    type = Value.Type.EMPTY;
+                    break;
+            }
+        }
         Value<?> exact = exactValue(fact, required, type);
         return exact != null ? exact : info == null ? Value.empty() : singletonValue(fact.value(), info.sym.domain(), type);
     }
@@ -215,7 +235,7 @@ final class Flow {
                 if (overlap.equals(Guard.FALSE)) {
                     continue;
                 }
-                Value<?> candidate = coerceExactValue(guardedValue.value(), type);
+                Value<?> candidate = coerceValue(guardedValue.value(), type);
                 if (exact == null) {
                     exact = candidate;
                 } else if (!Value.isEqual(exact, candidate)) {
@@ -230,37 +250,11 @@ final class Flow {
         return null;
     }
 
-    private static Value.Type valueType(SymbolInfo info) {
-        switch (info.sym.domain().kind()) {
-            case BOOLEAN:
-                return Value.Type.BOOLEAN;
-            case CHOICE:
-            case FINITE_TEXT:
-            case OPEN_TEXT:
-                return Value.Type.STRING;
-            case MEMBERSHIP:
-                return Value.Type.LIST;
-            default:
-                return Value.Type.EMPTY;
-        }
-    }
-
     private static Scope childScope(Scope scope, Node node) {
-        switch (node.kind()) {
-            case INPUT_BOOLEAN:
-            case INPUT_ENUM:
-            case INPUT_LIST:
-            case INPUT_TEXT:
-                return scope.getOrCreate(node);
-            default:
-                return scope;
-        }
+        return node.kind().isInput() ? scope.getOrCreate(node) : scope;
     }
 
-    private static Value<?> coerceExactValue(Value<?> value, Value.Type type) {
-        if (type == Value.Type.EMPTY) {
-            return value;
-        }
+    private static Value<?> coerceValue(Value<?> value, Value.Type type) {
         try {
             Value<?> coerced = Value.typed(value, type);
             return coerced.isPresent() ? coerced : value;
@@ -277,10 +271,7 @@ final class Flow {
             }
             return type == Value.Type.BOOLEAN ? Value.of(Boolean.parseBoolean(scalar)) : Value.of(scalar);
         }
-        if (value.kind() == LatticeValue.Kind.OPEN_TEXT) {
-            return value.sample() == null ? Value.empty() : Value.of(value.sample());
-        }
-        return Value.empty();
+        return Value.of(value.sample());
     }
 
     private static Guard directBooleanGuard(Table table, Guards guards, String key) {
@@ -1971,7 +1962,7 @@ final class Flow {
         boolean mergeExactCase(Symbol sym, List<ExactCaseState> merged, ExactCaseState next) {
             for (int i = 0; i < merged.size(); i++) {
                 ExactCaseState current = merged.get(i);
-                if (Domain.sameExactValue(sym.domain(), current.value, next.value)) {
+                if (sym.domain().sameValue(current.value, next.value)) {
                     Coverage coverage = Coverage.merge(current.coverage, next.coverage, COVERAGE_MAX);
                     if (coverage == null) {
                         return false;

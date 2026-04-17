@@ -1,5 +1,28 @@
 # Progress
 
+- 2026-04-16: Inlined the last single-use `Flow.valueType(...)`
+  helper into `Flow.declaredValue(...)` and deleted the helper. The
+  `Spec.Kind -> Value.Type` switch now sits directly at the only use
+  site, matching the current compacting pass. Validation reran green
+  with `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=FlowTest -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`15` tests, `BUILD SUCCESS`, total time `2.860 s`).
+- 2026-04-16: Tightened the latest `Value` / `Flow` coercion cleanup
+  around `Type.EMPTY`. `Value.typed(Value<?>, Type.EMPTY)` now keeps
+  the original value identity, but `Value.typed(Type.EMPTY)` remains
+  unsupported so validation still treats missing ref types as an
+  evaluation error path. `Flow.coerceExactValue(...)` also restores the
+  `isPresent()` fallback after `Value.typed(...)`, because dynamic
+  invalid coercions produce empty-with-error sentinels rather than
+  throwing; without that fallback, `preset-type-mismatch.xml` stopped
+  reporting `EXPR_EVAL_ERROR`. `ValueTest` now pins both the strict
+  `typed(Type.EMPTY)` behavior and the value-preserving overload.
+  Focused validation reran green with `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=ValueTest,DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`236` tests, `BUILD SUCCESS`, total time `5.422 s`).
 - 2026-04-16: Committed the in-flight `Domain` / `Expression` /
   `Flow` expression-assembly cleanup as `b4bbba676`
   (`Archetype: rework Domain expression assembly`). The follow-up

@@ -320,6 +320,8 @@ public interface Value<T> {
      */
     static Value<?> typed(Value<?> value, Type type) {
         switch (type) {
+            case EMPTY:
+                return value;
             case LIST:
                 return value.asList();
             case BOOLEAN:
