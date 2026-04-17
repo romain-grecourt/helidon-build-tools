@@ -61,7 +61,7 @@ final class Flow {
         analyzer.analyze();
         Projector projector = new Projector(ir, analyzer, root, scope);
         projector.project();
-        rootEntry = analyzer.entryStates[0];
+        rootEntry = analyzer.blocks[0].entryState;
         nodeFacts = projector.nodeFacts;
         symbolInfos = projector.symbolInfos;
     }
@@ -349,86 +349,85 @@ final class Flow {
         }
     }
 
-    private static final int OP_DECLARE_INPUT = 0;
-    private static final int OP_DECLARE_OPTION = 1;
-    private static final int OP_DEFINE_VALUE = 2;
-    private static final int OP_EMIT = 3;
+    private static final class Op {
+        private final Kind kind;
+        private final int blockId;
+        private final Node source;
+        private final int symbolId;
+        private final Expression expression;
 
-    private static final int TERM_NONE = -1;
-    private static final int TERM_GOTO = 0;
-    private static final int TERM_BRANCH = 1;
-    private static final int TERM_RETURN = 2;
-    private static final int TERM_UNREACHABLE = 3;
+        Op(Kind kind, int blockId, Node source, int symbolId, Expression expression) {
+            this.kind = kind;
+            this.blockId = blockId;
+            this.source = source;
+            this.symbolId = symbolId;
+            this.expression = expression;
+        }
+
+        enum Kind {DECLARE_INPUT, DECLARE_OPTION, DEFINE_VALUE, EMIT}
+    }
+
+    private static final class Terminator {
+
+        private static final Terminator NONE = new Terminator(Kind.NONE, null, -1, -1, -1);
+
+        private final Kind kind;
+        private final Node source;
+        private final int targetId;
+        private final int trueId;
+        private final int falseId;
+
+        Terminator(Kind kind, Node source, int targetId, int trueId, int falseId) {
+            this.kind = kind;
+            this.source = source;
+            this.targetId = targetId;
+            this.trueId = trueId;
+            this.falseId = falseId;
+        }
+
+        enum Kind {NONE, GOTO, BRANCH, RETURN, UNREACHABLE}
+    }
+
+    private static final class Control {
+        private final int parentId;
+        private final Guard edgeGuard;
+
+        Control(int parentId, Guard edgeGuard) {
+            this.parentId = parentId;
+            this.edgeGuard = edgeGuard;
+        }
+    }
+
+    private static final class Block {
+        private final int controlId;
+        private final List<Integer> opIds = new ArrayList<>();
+        private Terminator term = Terminator.NONE;
+
+        Block(int controlId) {
+            this.controlId = controlId;
+        }
+    }
 
     private static final class Ir {
-        private final int[] blockControlIds;
-        private final int[][] blockOpIds;
-        private final int[] terminatorKinds;
-        private final Node[] terminatorSources;
-        private final int[] terminatorTargetIds;
-        private final int[] terminatorTrueIds;
-        private final int[] terminatorFalseIds;
+        private final Block[] blocks;
         private final Table table;
-        private final int[] opKinds;
-        private final int[] opBlockIds;
-        private final Node[] opSources;
-        private final int[] opSymbolIds;
-        private final Expression[] opExpressions;
+        private final Op[] ops;
         private final Guards guards;
-        private final int[] controlParentIds;
-        private final Guard[] controlEdgeGuards;
+        private final Control[] controls;
 
-        Ir(List<Integer> blockControlIds,
-           List<List<Integer>> blockOpIds,
-           List<Integer> terminatorKinds,
-           List<Node> terminatorSources,
-           List<Integer> terminatorTargetIds,
-           List<Integer> terminatorTrueIds,
-           List<Integer> terminatorFalseIds,
+        Ir(List<Block> blocks,
            Table table,
-           List<Integer> opKinds,
-           List<Integer> opBlockIds,
-           List<Node> opSources,
-           List<Integer> opSymbolIds,
-           List<Expression> opExpressions,
+           List<Op> ops,
            Guards guards,
-           List<Integer> controlParentIds,
-           List<Guard> controlEdgeGuards) {
-            if (controlParentIds.isEmpty()) {
+           List<Control> controls) {
+            if (controls.isEmpty()) {
                 throw new IllegalArgumentException("controls is empty");
             }
-            this.blockControlIds = ints(blockControlIds);
-            this.blockOpIds = nestedInts(blockOpIds);
-            this.terminatorKinds = ints(terminatorKinds);
-            this.terminatorSources = terminatorSources.toArray(Node[]::new);
-            this.terminatorTargetIds = ints(terminatorTargetIds);
-            this.terminatorTrueIds = ints(terminatorTrueIds);
-            this.terminatorFalseIds = ints(terminatorFalseIds);
+            this.blocks = blocks.toArray(Block[]::new);
             this.table = table;
-            this.opKinds = ints(opKinds);
-            this.opBlockIds = ints(opBlockIds);
-            this.opSources = opSources.toArray(Node[]::new);
-            this.opSymbolIds = ints(opSymbolIds);
-            this.opExpressions = opExpressions.toArray(Expression[]::new);
+            this.ops = ops.toArray(Op[]::new);
             this.guards = guards;
-            this.controlParentIds = ints(controlParentIds);
-            this.controlEdgeGuards = controlEdgeGuards.toArray(Guard[]::new);
-        }
-
-        private static int[] ints(List<Integer> values) {
-            int[] result = new int[values.size()];
-            for (int i = 0; i < values.size(); i++) {
-                result[i] = values.get(i);
-            }
-            return result;
-        }
-
-        private static int[][] nestedInts(List<List<Integer>> values) {
-            int[][] result = new int[values.size()][];
-            for (int i = 0; i < values.size(); i++) {
-                result[i] = ints(values.get(i));
-            }
-            return result;
+            this.controls = controls.toArray(Control[]::new);
         }
     }
 
@@ -474,33 +473,35 @@ final class Flow {
         void project() {
             indexAnchors();
             scanSymbols();
-            projectNode(node, scope, analyzer.entryStates[0]);
+            projectNode(node, scope, analyzer.blocks[0].entryState);
         }
 
         void indexAnchors() {
-            for (int opId = 0; opId < ir.opKinds.length; opId++) {
-                ops.computeIfAbsent(ir.opSources[opId], key -> new ArrayList<>()).add(opId);
+            for (int opId = 0; opId < ir.ops.length; opId++) {
+                ops.computeIfAbsent(ir.ops[opId].source, key -> new ArrayList<>()).add(opId);
             }
-            for (int blockId = 0; blockId < ir.blockControlIds.length; blockId++) {
-                if (ir.terminatorKinds[blockId] != TERM_BRANCH) {
+            for (int blockId = 0; blockId < ir.blocks.length; blockId++) {
+                Terminator term = ir.blocks[blockId].term;
+                if (term.kind != Terminator.Kind.BRANCH) {
                     continue;
                 }
-                int joinId = ir.terminatorFalseIds[blockId];
-                if (ir.terminatorKinds[joinId] == TERM_GOTO) {
-                    joinId = ir.terminatorTargetIds[joinId];
+                int joinId = term.falseId;
+                if (ir.blocks[joinId].term.kind == Terminator.Kind.GOTO) {
+                    joinId = ir.blocks[joinId].term.targetId;
                 }
-                Node source = ir.terminatorSources[blockId];
-                branchTrueIds.put(source, ir.terminatorTrueIds[blockId]);
+                Node source = term.source;
+                branchTrueIds.put(source, term.trueId);
                 branchJoinIds.put(source, joinId);
             }
         }
 
         void scanSymbols() {
-            for (int opId = 0; opId < ir.opKinds.length; opId++) {
-                State before = analyzer.beforeStates[opId];
-                switch (ir.opKinds[opId]) {
-                    case OP_DECLARE_INPUT: {
-                        SymbolInfo info = symbolInfos[ir.opSymbolIds[opId]];
+            for (int opId = 0; opId < ir.ops.length; opId++) {
+                State before = analyzer.ops[opId].beforeState;
+                Op op = ir.ops[opId];
+                switch (op.kind) {
+                    case DECLARE_INPUT: {
+                        SymbolInfo info = symbolInfos[op.symbolId];
                         info.addDefinition(before.path, guards);
                         if (info.sym.domain().kind() == Spec.Kind.BOOLEAN) {
                             info.addAvailability("true", before.path, guards);
@@ -508,18 +509,18 @@ final class Flow {
                         }
                         break;
                     }
-                    case OP_DECLARE_OPTION: {
-                        SymbolInfo info = symbolInfos[ir.opSymbolIds[opId]];
-                        info.addAvailability(ir.opSources[opId].value().getString(), before.path, guards);
+                    case DECLARE_OPTION: {
+                        SymbolInfo info = symbolInfos[op.symbolId];
+                        info.addAvailability(op.source.value().getString(), before.path, guards);
                         break;
                     }
-                    case OP_DEFINE_VALUE: {
-                        SymbolInfo info = symbolInfos[ir.opSymbolIds[opId]];
+                    case DEFINE_VALUE: {
+                        SymbolInfo info = symbolInfos[op.symbolId];
                         if (before.path.equals(Guard.FALSE)) {
                             break;
                         }
-                        Map<Integer, Fact> env = analyzer.afterStates[opId].env;
-                        Fact fact = env.get(ir.opSymbolIds[opId]);
+                        Map<Integer, Fact> env = analyzer.ops[opId].afterState.env;
+                        Fact fact = env.get(op.symbolId);
                         if (fact == null) {
                             throw new IllegalStateException("Missing flow fact after op for key: " + opId);
                         }
@@ -585,8 +586,8 @@ final class Flow {
                 before = current;
                 afterOps = before;
             } else {
-                before = constrainPath(analyzer.beforeStates[opIds.get(0)], current.path);
-                afterOps = constrainPath(analyzer.afterStates[opIds.get(opIds.size() - 1)], current.path);
+                before = constrainPath(analyzer.ops[opIds.get(0)].beforeState, current.path);
+                afterOps = constrainPath(analyzer.ops[opIds.get(opIds.size() - 1)].afterState, current.path);
             }
             Scope childScope = childScope(scope, node);
             Scope nodeScope = node.kind().isInput() ? childScope : scope;
@@ -598,7 +599,7 @@ final class Flow {
                 branchEntry = null;
                 activeGuard = activeGuard(node, nodeScope, afterOps);
             } else {
-                branchEntry = constrainPath(analyzer.entryStates[branchTrueId], current.path);
+                branchEntry = constrainPath(analyzer.blocks[branchTrueId].entryState, current.path);
                 activeGuard = activeGuard(node, nodeScope, branchEntry);
             }
             String nodeKey = nodeKey(node, scope, childScope);
@@ -610,7 +611,7 @@ final class Flow {
                 for (Node child : node.children()) {
                     cursor = projectNode(child, descendantScope, cursor);
                 }
-                return constrainPath(analyzer.entryStates[branchJoinId], current.path);
+                return constrainPath(analyzer.blocks[branchJoinId].entryState, current.path);
             }
 
             State cursor = afterOps;
@@ -679,7 +680,10 @@ final class Flow {
 
         Guard translatedCondition(Expression expression, Scope scope, State state) {
             Guard translated = translatedCondition0(expression, scope, state);
-            return translated != null ? translated : new ConditionLowerer(ir.table, guards, scope).lower(expression);
+            if (translated == null) {
+                translated = new ConditionLowerer(ir.table, guards, scope).lower(expression);
+            }
+            return translated;
         }
 
         Guard translatedCondition0(Expression expression, Scope scope, State state) {
@@ -703,7 +707,8 @@ final class Flow {
                     size++;
                     continue;
                 }
-                switch (token.operator()) {
+                Operator op = token.operator();
+                switch (op) {
                     case NOT: {
                         int index = size - 1;
                         Guard negated = booleanGuard(guardStack[index], refStack[index], literalStack[index], state);
@@ -715,20 +720,7 @@ final class Flow {
                         literalStack[index] = null;
                         break;
                     }
-                    case AND: {
-                        int right = --size;
-                        Guard rightGuard = booleanGuard(guardStack[right], refStack[right], literalStack[right], state);
-                        int left = --size;
-                        Guard leftGuard = booleanGuard(guardStack[left], refStack[left], literalStack[left], state);
-                        if (leftGuard == null || rightGuard == null) {
-                            return null;
-                        }
-                        guardStack[left] = guards.and(leftGuard, rightGuard);
-                        refStack[left] = null;
-                        literalStack[left] = null;
-                        size = left + 1;
-                        break;
-                    }
+                    case AND:
                     case OR: {
                         int right = --size;
                         Guard rightGuard = booleanGuard(guardStack[right], refStack[right], literalStack[right], state);
@@ -737,7 +729,9 @@ final class Flow {
                         if (leftGuard == null || rightGuard == null) {
                             return null;
                         }
-                        guardStack[left] = guards.or(leftGuard, rightGuard);
+                        guardStack[left] = op == Operator.AND
+                                ? guards.and(leftGuard, rightGuard)
+                                : guards.or(leftGuard, rightGuard);
                         refStack[left] = null;
                         literalStack[left] = null;
                         size = left + 1;
@@ -752,7 +746,7 @@ final class Flow {
                         if (equality == null) {
                             return null;
                         }
-                        guardStack[left] = token.operator() == Operator.EQUAL ? equality : guards.not(equality);
+                        guardStack[left] = op == Operator.EQUAL ? equality : guards.not(equality);
                         refStack[left] = null;
                         literalStack[left] = null;
                         size = left + 1;
@@ -818,12 +812,11 @@ final class Flow {
             }
             if (leftLiteral != null && rightLiteral != null && leftLiteral.type() == Value.Type.LIST) {
                 Set<String> required = containsValues(rightLiteral);
-                if (required == null) {
-                    return null;
+                if (required != null) {
+                    return new TreeSet<>(leftLiteral.getList()).containsAll(required)
+                            ? Guard.TRUE
+                            : Guard.FALSE;
                 }
-                return new TreeSet<>(leftLiteral.getList()).containsAll(required)
-                        ? Guard.TRUE
-                        : Guard.FALSE;
             }
             return null;
         }
@@ -982,27 +975,15 @@ final class Flow {
         private final Scope scope;
         private final Map<String, SymbolSeed> symbolSeeds = new LinkedHashMap<>();
         private final Map<String, SymbolSeed> declaredInputSymbols = new LinkedHashMap<>();
-        private final List<Integer> controlParentIds = new ArrayList<>();
-        private final List<Guard> controlEdgeGuards = new ArrayList<>();
-        private final List<Integer> blockControlIds = new ArrayList<>();
-        private final List<List<Integer>> blockOpIds = new ArrayList<>();
-        private final List<Integer> terminatorKinds = new ArrayList<>();
-        private final List<Node> terminatorSources = new ArrayList<>();
-        private final List<Integer> terminatorTargetIds = new ArrayList<>();
-        private final List<Integer> terminatorTrueIds = new ArrayList<>();
-        private final List<Integer> terminatorFalseIds = new ArrayList<>();
-        private final List<Integer> opKinds = new ArrayList<>();
-        private final List<Integer> opBlockIds = new ArrayList<>();
-        private final List<Node> opSources = new ArrayList<>();
-        private final List<Integer> opSymbolIds = new ArrayList<>();
-        private final List<Expression> opExpressions = new ArrayList<>();
+        private final List<Control> controls = new ArrayList<>();
+        private final List<Block> blocks = new ArrayList<>();
+        private final List<Op> ops = new ArrayList<>();
         private Table table;
         private Guards guards;
 
         Lowerer(Scope scope) {
             this.scope = scope;
-            controlParentIds.add(-1);
-            controlEdgeGuards.add(null);
+            controls.add(new Control(-1, null));
         }
 
         Ir lower(Node root) {
@@ -1021,29 +1002,14 @@ final class Flow {
 
             int entryBlock = newBlock(0);
             int exitBlock = lowerChildren(root.children(), entryBlock, 0, scope);
-            terminateIfMissing(exitBlock, TERM_RETURN, root, -1);
+            terminateIfMissing(exitBlock, Terminator.Kind.RETURN, root, -1);
 
-            for (int blockId = 0; blockId < blockControlIds.size(); blockId++) {
-                if (terminatorKinds.get(blockId) == TERM_NONE) {
-                    setTerminator(blockId, TERM_UNREACHABLE, root, -1, -1, -1);
+            for (int blockId = 0; blockId < blocks.size(); blockId++) {
+                if (blocks.get(blockId).term.kind == Terminator.Kind.NONE) {
+                    setTerminator(blockId, Terminator.Kind.UNREACHABLE, root, -1, -1, -1);
                 }
             }
-            return new Ir(blockControlIds,
-                    blockOpIds,
-                    terminatorKinds,
-                    terminatorSources,
-                    terminatorTargetIds,
-                    terminatorTrueIds,
-                    terminatorFalseIds,
-                    table,
-                    opKinds,
-                    opBlockIds,
-                    opSources,
-                    opSymbolIds,
-                    opExpressions,
-                    guards,
-                    controlParentIds,
-                    controlEdgeGuards);
+            return new Ir(blocks, table, ops, guards, controls);
         }
 
         void collectDeclaredInputs(Node root, Scope scope) {
@@ -1157,7 +1123,7 @@ final class Flow {
                 case STEP:
                 case FILE:
                 case MODEL:
-                    append(blockId, OP_EMIT, node, -1, null);
+                    append(blockId, Op.Kind.EMIT, node, -1, null);
                     return lowerChildren(node.children(), blockId, controlId, scope);
                 case INPUT_OPTION:
                     return lowerOption(node, blockId, controlId, scope);
@@ -1169,7 +1135,7 @@ final class Flow {
         int lowerInput(Node node, int blockId, int controlId, Scope scope) {
             Scope inputScope = scope.getOrCreate(node);
             int id = table.findId(inputScope.key());
-            append(blockId, OP_DECLARE_INPUT, node, id, null);
+            append(blockId, Op.Kind.DECLARE_INPUT, node, id, null);
             switch (node.kind()) {
                 case INPUT_BOOLEAN: {
                     Guard guard = directBooleanGuard(table, guards, inputScope.key());
@@ -1189,7 +1155,7 @@ final class Flow {
             if (id < 0) {
                 throw new IllegalStateException("Missing option symbol for scope: " + scope.key());
             }
-            append(blockId, OP_DECLARE_OPTION, node, id, null);
+            append(blockId, Op.Kind.DECLARE_OPTION, node, id, null);
             Guard guard = optionGuard(input, node, scope);
             return lowerGuardedChildren(node, blockId, controlId, guard, node.children(), scope);
         }
@@ -1198,7 +1164,7 @@ final class Flow {
             int id = table.findId(definitionId(scope, node));
             if (id >= 0) {
                 Expression expr = new Expression(List.of(Token.of(node.value())), true);
-                append(blockId, OP_DEFINE_VALUE, node, id, expr);
+                append(blockId, Op.Kind.DEFINE_VALUE, node, id, expr);
             }
             return lowerChildren(node.children(), blockId, controlId, scope);
         }
@@ -1223,8 +1189,8 @@ final class Flow {
             int joinBlock = newBlock(controlId);
             terminate(blockId, node, trueBlock, falseBlock);
             int trueExit = lowerChildren(children, trueBlock, trueId, scope);
-            terminateIfMissing(trueExit, TERM_GOTO, node, joinBlock);
-            terminateIfMissing(falseBlock, TERM_GOTO, node, joinBlock);
+            terminateIfMissing(trueExit, Terminator.Kind.GOTO, node, joinBlock);
+            terminateIfMissing(falseBlock, Terminator.Kind.GOTO, node, joinBlock);
             return joinBlock;
         }
 
@@ -1232,13 +1198,9 @@ final class Flow {
             return new ConditionLowerer(table, guards, scope).lower(expression);
         }
 
-        void append(int blockId, int kind, Node source, int id, Expression expression) {
-            blockOps(blockId).add(opKinds.size());
-            opKinds.add(kind);
-            opBlockIds.add(blockId);
-            opSources.add(source);
-            opSymbolIds.add(id);
-            opExpressions.add(expression);
+        void append(int blockId, Op.Kind kind, Node source, int id, Expression expression) {
+            block(blockId).opIds.add(ops.size());
+            ops.add(new Op(kind, blockId, source, id, expression));
         }
 
         void addSymbol(String name, Spec spec, boolean guardable, boolean tainted) {
@@ -1288,50 +1250,38 @@ final class Flow {
         }
 
         void terminate(int blockId, Node source, int trueId, int falseId) {
-            if (terminatorKinds.get(blockId) != TERM_NONE) {
+            if (block(blockId).term.kind != Terminator.Kind.NONE) {
                 throw new IllegalStateException(String.format("Block %d already terminated", blockId));
             }
-            setTerminator(blockId, Flow.TERM_BRANCH, source, -1, trueId, falseId);
+            setTerminator(blockId, Terminator.Kind.BRANCH, source, -1, trueId, falseId);
         }
 
-        void terminateIfMissing(int blockId, int kind, Node source, int targetId) {
-            if (terminatorKinds.get(blockId) == TERM_NONE) {
+        void terminateIfMissing(int blockId, Terminator.Kind kind, Node source, int targetId) {
+            if (block(blockId).term.kind == Terminator.Kind.NONE) {
                 setTerminator(blockId, kind, source, targetId, -1, -1);
             }
         }
 
         int newBlock(int controlId) {
-            blockControlIds.add(controlId);
-            blockOpIds.add(new ArrayList<>());
-            terminatorKinds.add(TERM_NONE);
-            terminatorSources.add(null);
-            terminatorTargetIds.add(-1);
-            terminatorTrueIds.add(-1);
-            terminatorFalseIds.add(-1);
-            return blockControlIds.size() - 1;
+            blocks.add(new Block(controlId));
+            return blocks.size() - 1;
         }
 
         int nextControl(int parentId, Guard edgeGuard) {
-            int id = controlParentIds.size();
-            controlParentIds.add(parentId);
-            controlEdgeGuards.add(edgeGuard);
+            int id = controls.size();
+            controls.add(new Control(parentId, edgeGuard));
             return id;
         }
 
-        List<Integer> blockOps(int blockId) {
-            if (blockId < 0 || blockId >= blockOpIds.size()) {
+        Block block(int blockId) {
+            if (blockId < 0 || blockId >= blocks.size()) {
                 throw new IllegalStateException("Unknown lowered block id: " + blockId);
             }
-            return blockOpIds.get(blockId);
+            return blocks.get(blockId);
         }
 
-        void setTerminator(int blockId, int kind, Node source, int targetId, int trueId, int falseId) {
-            blockOps(blockId);
-            terminatorKinds.set(blockId, kind);
-            terminatorSources.set(blockId, source);
-            terminatorTargetIds.set(blockId, targetId);
-            terminatorTrueIds.set(blockId, trueId);
-            terminatorFalseIds.set(blockId, falseId);
+        void setTerminator(int blockId, Terminator.Kind kind, Node source, int targetId, int trueId, int falseId) {
+            block(blockId).term = new Terminator(kind, source, targetId, trueId, falseId);
         }
 
         static String[] optionValues(Node input) {
@@ -1623,59 +1573,53 @@ final class Flow {
         private final Guards guards;
         private final Map<Integer, Map<FactState, Fact>> facts = new LinkedHashMap<>();
         private final Map<Map<Integer, FactState>, Map<Integer, Fact>> envs = new IdentityHashMap<>();
-        private final Coverage[] coverages;
-        private final Guard[] entryGuards;
-        private final Guard[] beforeGuards;
-        private final Map<Integer, FactState>[] entryFacts;
-        private final Map<Integer, FactState>[] beforeFacts;
-        private final Map<Integer, FactState>[] afterFacts;
-        private final State[] entryStates;
-        private final State[] beforeStates;
-        private final State[] afterStates;
+        private final BlockAnalysis[] blocks;
+        private final OpAnalysis[] ops;
 
-        @SuppressWarnings("unchecked")
         Analyzer(Ir ir) {
             this.ir = ir;
             this.guards = ir.guards;
-            this.coverages = new Coverage[ir.blockControlIds.length];
-            this.entryGuards = new Guard[ir.blockControlIds.length];
-            this.beforeGuards = new Guard[ir.opKinds.length];
-            this.entryFacts = new Map[ir.blockControlIds.length];
-            this.beforeFacts = new Map[ir.opKinds.length];
-            this.afterFacts = new Map[ir.opKinds.length];
-            this.entryStates = new State[ir.blockControlIds.length];
-            this.beforeStates = new State[ir.opKinds.length];
-            this.afterStates = new State[ir.opKinds.length];
-            Arrays.fill(entryGuards, Guard.FALSE);
-            Arrays.fill(beforeGuards, Guard.FALSE);
+            this.blocks = new BlockAnalysis[ir.blocks.length];
+            for (int i = 0; i < blocks.length; i++) {
+                blocks[i] = new BlockAnalysis();
+            }
+            this.ops = new OpAnalysis[ir.ops.length];
+            for (int i = 0; i < ops.length; i++) {
+                ops[i] = new OpAnalysis();
+            }
         }
 
         void analyze() {
             analyzeControl();
             analyzeFacts();
-            materializeStates(entryGuards, entryFacts, entryStates);
-            materializeStates(beforeGuards, beforeFacts, beforeStates);
-            materializeStates(beforeGuards, afterFacts, afterStates);
+            for (BlockAnalysis e : blocks) {
+                e.entryState = new State(e.entryGuard, materializeEnv(e.entryFacts));
+            }
+            for (OpAnalysis e : ops) {
+                e.beforeState = new State(e.beforeGuard, materializeEnv(e.beforeFacts));
+                e.afterState = new State(e.beforeGuard, materializeEnv(e.afterFacts));
+            }
         }
 
         void analyzeControl() {
-            int blockCount = ir.blockControlIds.length;
+            int blockCount = ir.blocks.length;
             Deque<Integer> stack = new ArrayDeque<>();
             boolean[] reachable = new boolean[blockCount];
             reachable[0] = true;
             stack.add(0);
             while (!stack.isEmpty()) {
                 int blockId = stack.removeFirst();
-                switch (ir.terminatorKinds[blockId]) {
-                    case TERM_GOTO:
-                        enqueueControl(ir.terminatorTargetIds[blockId], reachable, stack);
+                Terminator term = ir.blocks[blockId].term;
+                switch (term.kind) {
+                    case GOTO:
+                        enqueueControl(term.targetId, reachable, stack);
                         break;
-                    case TERM_BRANCH:
-                        enqueueControl(ir.terminatorTrueIds[blockId], reachable, stack);
-                        enqueueControl(ir.terminatorFalseIds[blockId], reachable, stack);
+                    case BRANCH:
+                        enqueueControl(term.trueId, reachable, stack);
+                        enqueueControl(term.falseId, reachable, stack);
                         break;
-                    case TERM_RETURN:
-                    case TERM_UNREACHABLE:
+                    case RETURN:
+                    case UNREACHABLE:
                     default:
                         break;
                 }
@@ -1683,14 +1627,22 @@ final class Flow {
 
             // keep the forward control pass reachability-only
             // lowered blocks carry their structured path context
-            computeControlEntryGuards(reachable);
-            for (int blockId = 0; blockId < blockCount; blockId++) {
-                if (!reachable[blockId]) {
-                    continue;
+            Guard[] controlGuards = new Guard[ir.controls.length];
+            controlGuards[0] = Guard.TRUE;
+            for (int blockId = 0; blockId < reachable.length; blockId++) {
+                if (reachable[blockId]) {
+                    int controlId = ir.blocks[blockId].controlId;
+                    blocks[blockId].entryGuard = computeControlGuard(controlId, controlGuards);
                 }
-                Guard entry = entryGuards[blockId];
-                for (int opId : ir.blockOpIds[blockId]) {
-                    beforeGuards[opId] = entry;
+            }
+
+            // TODO add comment
+            for (int blockId = 0; blockId < blockCount; blockId++) {
+                if (reachable[blockId]) {
+                    Guard entry = blocks[blockId].entryGuard;
+                    for (int opId : ir.blocks[blockId].opIds) {
+                        ops[opId].beforeGuard = entry;
+                    }
                 }
             }
         }
@@ -1702,104 +1654,94 @@ final class Flow {
             }
         }
 
-        void computeControlEntryGuards(boolean[] reachable) {
-            Guard[] controlGuards = new Guard[ir.controlParentIds.length];
-            controlGuards[0] = Guard.TRUE;
-            for (int blockId = 0; blockId < reachable.length; blockId++) {
-                if (!reachable[blockId]) {
-                    continue;
-                }
-                int controlId = ir.blockControlIds[blockId];
-                if (controlId < 0) {
-                    throw new IllegalStateException("Missing structured control path for block " + blockId);
-                }
-                entryGuards[blockId] = computeControlGuard(controlId, controlGuards);
-            }
-        }
-
         Guard computeControlGuard(int controlId, Guard[] controlGuards) {
             Guard cached = controlGuards[controlId];
             if (cached != null) {
                 return cached;
             }
-            int parentId = ir.controlParentIds[controlId];
+            int parentId = ir.controls[controlId].parentId;
             if (parentId < 0) {
                 controlGuards[controlId] = Guard.TRUE;
                 return Guard.TRUE;
             }
-            Guard materialized = guards.and(computeControlGuard(parentId, controlGuards), ir.controlEdgeGuards[controlId]);
+            Guard guard = computeControlGuard(parentId, controlGuards);
+            Guard materialized = guards.and(guard, ir.controls[controlId].edgeGuard);
             controlGuards[controlId] = materialized;
             return materialized;
         }
 
         void analyzeFacts() {
             Deque<Integer> stack = new ArrayDeque<>();
-            entryFacts[0] = Map.of();
+            blocks[0].entryFacts = Map.of();
             stack.add(0);
             while (!stack.isEmpty()) {
                 int blockId = stack.removeFirst();
-                if (entryGuards[blockId].equals(Guard.FALSE)) {
-                    continue;
+                BlockAnalysis blockAnalysis = blocks[blockId];
+                if (!blockAnalysis.entryGuard.equals(Guard.FALSE)) {
+                    Map<Integer, FactState> state = blockAnalysis.entryFacts;
+                    if (state != null) {
+                        Map<Integer, FactState> current = state;
+                        for (int opId : ir.blocks[blockId].opIds) {
+                            OpAnalysis opAnalysis = ops[opId];
+                            Guard currentGuard = opAnalysis.beforeGuard;
+                            opAnalysis.beforeFacts = current;
+                            current = transfer(opId, currentGuard, current);
+                            opAnalysis.afterFacts = current;
+                        }
+                        propagateFacts(blockId, current, stack);
+                    }
                 }
-                Map<Integer, FactState> state = entryFacts[blockId];
-                if (state == null) {
-                    continue;
-                }
-                Map<Integer, FactState> current = state;
-                for (int opId : ir.blockOpIds[blockId]) {
-                    Guard currentGuard = beforeGuards[opId];
-                    beforeFacts[opId] = current;
-                    current = transfer(opId, currentGuard, current);
-                    afterFacts[opId] = current;
-                }
-                propagateFacts(blockId, current, stack);
             }
         }
 
         Map<Integer, FactState> transfer(int opId, Guard currentGuard, Map<Integer, FactState> state) {
-            switch (ir.opKinds[opId]) {
-                case OP_DECLARE_INPUT: {
-                    int id = ir.opSymbolIds[opId];
+            Op op = ir.ops[opId];
+            switch (op.kind) {
+                case DECLARE_INPUT: {
                     FactState declared = new FactState(
-                            coverage(ir.opBlockIds[opId]),
-                            LatticeValue.top(ir.table.symbol(id).domain()));
-                    FactState existing = state.get(id);
-                    return define(state, id, existing == null ? declared : mergeFact(id, existing, declared));
+                            coverage(op.blockId),
+                            LatticeValue.top(ir.table.symbol(op.symbolId).domain()));
+                    FactState existing = state.get(op.symbolId);
+                    if (existing == null) {
+                        return define(state, op.symbolId, declared);
+                    }
+                    FactState fact = mergeFact(op.symbolId, existing, declared);
+                    return define(state, op.symbolId, fact);
                 }
-                case OP_DEFINE_VALUE: {
-                    int id = ir.opSymbolIds[opId];
-                    Symbol sym = ir.table.symbol(id);
+                case DEFINE_VALUE: {
+                    Symbol sym = ir.table.symbol(op.symbolId);
                     FactState fact = evaluateFact(opId, currentGuard, sym, state);
-                    return define(state, id, fact);
+                    return define(state, op.symbolId, fact);
                 }
-                case OP_EMIT:
                 default:
                     return state;
             }
         }
 
         void propagateFacts(int blockId, Map<Integer, FactState> current, Deque<Integer> stack) {
-            switch (ir.terminatorKinds[blockId]) {
-                case TERM_GOTO:
-                    enqueueFacts(ir.terminatorTargetIds[blockId], current, stack);
+            Terminator term = ir.blocks[blockId].term;
+            switch (term.kind) {
+                case GOTO:
+                    enqueueFacts(term.targetId, current, stack);
                     break;
-                case TERM_BRANCH:
-                    enqueueFacts(ir.terminatorTrueIds[blockId], current, stack);
-                    enqueueFacts(ir.terminatorFalseIds[blockId], current, stack);
+                case BRANCH:
+                    enqueueFacts(term.trueId, current, stack);
+                    enqueueFacts(term.falseId, current, stack);
                     break;
-                case TERM_RETURN:
-                case TERM_UNREACHABLE:
+                case RETURN:
+                case UNREACHABLE:
                 default:
                     break;
             }
         }
 
         void enqueueFacts(int blockId, Map<Integer, FactState> incoming, Deque<Integer> stack) {
-            if (!entryGuards[blockId].equals(Guard.FALSE)) {
-                Map<Integer, FactState> current = entryFacts[blockId];
+            BlockAnalysis blockAnalysis = blocks[blockId];
+            if (!blockAnalysis.entryGuard.equals(Guard.FALSE)) {
+                Map<Integer, FactState> current = blockAnalysis.entryFacts;
                 Map<Integer, FactState> merged = mergeEnv(current, incoming);
                 if (merged != current) {
-                    entryFacts[blockId] = merged;
+                    blockAnalysis.entryFacts = merged;
                     stack.addLast(blockId);
                 }
             }
@@ -1846,12 +1788,13 @@ final class Flow {
         }
 
         FactState evaluateFact(int opId, Guard currentGuard, Symbol sym, Map<Integer, FactState> state) {
-            Expression expression = ir.opExpressions[opId];
+            Op op = ir.ops[opId];
+            Expression expression = op.expression;
             LatticeValue value = evaluateValue(expression, sym, state);
             Value<?> exactValue = exactValue(expression, currentGuard, state);
             return exactValue == null
-                    ? new FactState(coverage(ir.opBlockIds[opId]), value)
-                    : FactState.exact(ir.opBlockIds[opId], value, exactValue);
+                    ? new FactState(coverage(op.blockId), value)
+                    : FactState.exact(op.blockId, value, exactValue);
         }
 
         LatticeValue evaluateValue(Expression expression, Symbol sym, Map<Integer, FactState> state) {
@@ -1876,65 +1819,59 @@ final class Flow {
 
         Value<?> exactValue(Expression expression, Guard currentGuard, Map<Integer, FactState> state) {
             List<Token> tokens = expression.tokens();
-            if (tokens.size() != 1) {
-                return null;
-            }
-            Token token = tokens.get(0);
-            if (token.isOperand()) {
-                return token.operand();
-            }
-            if (token.isVariable()) {
-                int id = ir.table.findId(token.variable());
-                if (id < 0) {
-                    return null;
+            if (tokens.size() == 1) {
+                Token token = tokens.get(0);
+                if (token.isOperand()) {
+                    return token.operand();
                 }
-                Symbol sym = ir.table.symbol(id);
-                FactState fact = state.get(id);
-                if (fact == null) {
-                    return null;
-                }
-                Value<?> exactFromValue = exactFromValue(sym.domain(), fact, currentGuard);
-                if (exactFromValue != null) {
-                    return exactFromValue;
-                }
-                if (fact.exactCases.isEmpty() || !implies(currentGuard, fact.exactCoverage)) {
-                    return null;
-                }
-                Value<?> value = null;
-                for (ExactCaseState exactCase : fact.exactCases) {
-                    if (!overlaps(currentGuard, exactCase.coverage)) {
-                        continue;
-                    }
-                    if (value == null) {
-                        value = exactCase.value;
-                    } else if (!Value.isEqual(value, exactCase.value)) {
-                        return null;
+                if (token.isVariable()) {
+                    int id = ir.table.findId(token.variable());
+                    if (id >= 0) {
+                        Symbol sym = ir.table.symbol(id);
+                        FactState fact = state.get(id);
+                        if (fact != null) {
+                            Value<?> exactFromValue = exactFromValue(sym.domain(), fact, currentGuard);
+                            if (exactFromValue != null) {
+                                return exactFromValue;
+                            }
+                            if (!fact.exactCases.isEmpty() && implies(currentGuard, fact.exactCoverage)) {
+                                Value<?> value = null;
+                                for (ExactCaseState exactCase : fact.exactCases) {
+                                    if (overlaps(currentGuard, exactCase.coverage)) {
+                                        if (value == null) {
+                                            value = exactCase.value;
+                                        } else if (!Value.isEqual(value, exactCase.value)) {
+                                            return null;
+                                        }
+                                    }
+                                }
+                                return value;
+                            }
+                        }
                     }
                 }
-                return value;
             }
             return null;
         }
 
         Value<?> exactFromValue(Spec spec, FactState fact, Guard currentGuard) {
-            if (!implies(currentGuard, fact.definedUnder)) {
-                return null;
-            }
-            if (fact.value.kind() == LatticeValue.Kind.FINITE_SCALAR) {
-                String scalar = fact.value.singletonScalar(spec);
-                if (scalar == null) {
-                    return null;
+            if (implies(currentGuard, fact.coverage)) {
+                if (fact.value.kind() == LatticeValue.Kind.FINITE_SCALAR) {
+                    String scalar = fact.value.singletonScalar(spec);
+                    if (scalar == null) {
+                        return null;
+                    }
+                    return spec.kind() == Spec.Kind.BOOLEAN ? Value.of(Boolean.parseBoolean(scalar)) : Value.of(scalar);
                 }
-                return spec.kind() == Spec.Kind.BOOLEAN ? Value.of(Boolean.parseBoolean(scalar)) : Value.of(scalar);
-            }
-            if (fact.value.kind() == LatticeValue.Kind.OPEN_TEXT && fact.value.sample() != null) {
-                return Value.of(fact.value.sample());
+                if (fact.value.kind() == LatticeValue.Kind.OPEN_TEXT && fact.value.sample() != null) {
+                    return Value.of(fact.value.sample());
+                }
             }
             return null;
         }
 
         FactState mergeFact(int id, FactState left, FactState right) {
-            Coverage definedUnder = Coverage.merge(left.definedUnder, right.definedUnder, -1);
+            Coverage definedUnder = Coverage.merge(left.coverage, right.coverage, -1);
             LatticeValue value = LatticeValue.join(left.value, right.value);
             if (left.exactCases.isEmpty()) {
                 return right.exactCases.isEmpty()
@@ -1982,43 +1919,34 @@ final class Flow {
             return true;
         }
 
-        void materializeStates(Guard[] paths, Map<Integer, FactState>[] envs, State[] states) {
-            for (int i = 0; i < paths.length; i++) {
-                states[i] = new State(paths[i], materializeEnv(envs[i]));
-            }
-        }
-
         Map<Integer, Fact> materializeEnv(Map<Integer, FactState> env) {
             if (env == null || env.isEmpty()) {
                 return Map.of();
             }
-            Map<Integer, Fact> cached = envs.get(env);
-            if (cached != null) {
-                return cached;
+            Map<Integer, Fact> materialized = envs.get(env);
+            if (materialized == null) {
+                materialized = new LinkedHashMap<>();
+                for (Map.Entry<Integer, FactState> entry : env.entrySet()) {
+                    materialized.put(entry.getKey(), materializeFact(entry.getKey(), entry.getValue()));
+                }
+                envs.put(env, materialized);
             }
-            Map<Integer, Fact> materialized = new LinkedHashMap<>();
-            for (Map.Entry<Integer, FactState> entry : env.entrySet()) {
-                materialized.put(entry.getKey(), materializeFact(entry.getKey(), entry.getValue()));
-            }
-            envs.put(env, materialized);
             return materialized;
         }
 
         private Fact materializeFact(int id, FactState fact) {
             Map<FactState, Fact> cacheBySymbol = facts.computeIfAbsent(id, unused -> new IdentityHashMap<>());
-            Fact cached = cacheBySymbol.get(fact);
-            if (cached != null) {
-                return cached;
+            Fact materialized = cacheBySymbol.get(fact);
+            if (materialized == null) {
+                Symbol sym = ir.table.symbol(id);
+                List<GuardedValue> guardedValues = new ArrayList<>(fact.exactCases.size());
+                for (ExactCaseState exactCase : fact.exactCases) {
+                    Guard guard = materializeGuard(exactCase.coverage);
+                    guardedValues.add(new GuardedValue(exactCase.value, guard, sym.domain().mask(exactCase.value)));
+                }
+                materialized = new Fact(materializeGuard(fact.coverage), fact.value, guardedValues);
+                cacheBySymbol.put(fact, materialized);
             }
-            Symbol sym = ir.table.symbol(id);
-            List<GuardedValue> guardedValues = new ArrayList<>(fact.exactCases.size());
-            for (ExactCaseState exactCase : fact.exactCases) {
-                Guard guard = materializeGuard(exactCase.coverage);
-                Spec domain = sym.domain();
-                guardedValues.add(new GuardedValue(exactCase.value, guard, domain.mask(exactCase.value)));
-            }
-            Fact materialized = new Fact(materializeGuard(fact.definedUnder), fact.value, guardedValues);
-            cacheBySymbol.put(fact, materialized);
             return materialized;
         }
 
@@ -2031,46 +1959,59 @@ final class Flow {
         }
 
         Coverage coverage(int blockId) {
-            Coverage cached = coverages[blockId];
+            BlockAnalysis analysis = blocks[blockId];
+            Coverage cached = analysis.coverage;
             if (cached != null) {
                 return cached;
             }
             Coverage created = new Coverage(blockId);
-            coverages[blockId] = created;
+            analysis.coverage = created;
             return created;
         }
 
         Guard materializeGuard(Coverage coverage) {
-            Guard cached = coverage.materializedGuard;
+            Guard cached = coverage.guard;
             if (cached != null) {
                 return cached;
             }
             if (coverage.blockIds.length == 0) {
                 return Guard.FALSE;
             }
-            Guard materialized = entryGuards[coverage.blockIds[0]];
+            Guard materialized = blocks[coverage.blockIds[0]].entryGuard;
             for (int i = 1; i < coverage.blockIds.length; i++) {
-                materialized = guards.or(materialized, entryGuards[coverage.blockIds[i]]);
+                materialized = guards.or(materialized, blocks[coverage.blockIds[i]].entryGuard);
             }
-            coverage.materializedGuard = materialized;
+            coverage.guard = materialized;
             return materialized;
         }
 
+        private static final class BlockAnalysis {
+            private Coverage coverage;
+            private Guard entryGuard = Guard.FALSE;
+            private Map<Integer, FactState> entryFacts;
+            private State entryState;
+        }
+
+        private static final class OpAnalysis {
+            private Guard beforeGuard = Guard.FALSE;
+            private Map<Integer, FactState> beforeFacts;
+            private Map<Integer, FactState> afterFacts;
+            private State beforeState;
+            private State afterState;
+        }
+
         private static final class FactState {
-            private final Coverage definedUnder;
+            private final Coverage coverage;
             private final LatticeValue value;
             private final Coverage exactCoverage;
             private final List<ExactCaseState> exactCases;
 
-            FactState(Coverage definedUnder, LatticeValue value) {
-                this(definedUnder, value, Coverage.EMPTY, List.of());
+            FactState(Coverage coverage, LatticeValue value) {
+                this(coverage, value, Coverage.EMPTY, List.of());
             }
 
-            FactState(Coverage definedUnder,
-                      LatticeValue value,
-                      Coverage exactCoverage,
-                      List<ExactCaseState> exactCases) {
-                this.definedUnder = definedUnder;
+            FactState(Coverage coverage, LatticeValue value, Coverage exactCoverage, List<ExactCaseState> exactCases) {
+                this.coverage = coverage;
                 this.value = value;
                 this.exactCoverage = exactCoverage;
                 this.exactCases = exactCases;
@@ -2094,7 +2035,7 @@ final class Flow {
                     return false;
                 }
                 FactState other = (FactState) o;
-                return definedUnder.equals(other.definedUnder)
+                return coverage.equals(other.coverage)
                        && value.equals(other.value)
                        && exactCoverage.equals(other.exactCoverage)
                        && exactCases.equals(other.exactCases);
@@ -2127,7 +2068,7 @@ final class Flow {
             private static final Coverage EMPTY = new Coverage();
 
             private final int[] blockIds;
-            private Guard materializedGuard;
+            private Guard guard;
 
             Coverage(int... blockIds) {
                 this.blockIds = blockIds;

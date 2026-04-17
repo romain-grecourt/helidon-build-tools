@@ -1,5 +1,16 @@
 # Progress
 
+- 2026-04-17: Reintroduced passive `Flow.Op` and
+  `Flow.Terminator` carriers and now use them both in `Lowerer`
+  staging and the frozen `Ir`. The raw op and terminator parallel
+  field groups are gone; `blockControlIds`, `blockOpIds`, and the
+  control-path arrays stay raw, while `Projector` and `Analyzer` now
+  read `ir.ops[opId]` and `ir.terminators[blockId]` directly. Validation
+  reran green with `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=ValueTest,DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`235` tests, `BUILD SUCCESS`, total time `5.287 s`).
 - 2026-04-16: Removed `Domain.Table.Builder` and now build
   `Domain.Table` directly in `Flow.Lowerer.lower(...)` from the
   already-merged `symbolSeeds` map. `Table`'s constructor is now
@@ -2092,4 +2103,34 @@
   `mvn -pl archetype/engine-v2 -am
   -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest
   -Dsurefire.failIfNoSpecifiedTests=false test` passed with `226`
+  tests and `BUILD SUCCESS`.
+- 2026-04-17: Replaced the remaining raw `Flow` op and terminator tag
+  ints with nested enums on the carrier types themselves:
+  `Op.Kind` and `Terminator.Kind`. `Lowerer`, `Projector`, and
+  `Analyzer` now switch on the carrier enums directly, and the old
+  file-level `OP_*` / `TERM_*` constants are gone. Validation with
+  `git diff --check` and `mvn -pl archetype/engine-v2 -am
+  -Dtest=ValueTest,DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest
+  -Dsurefire.failIfNoSpecifiedTests=false test` passed with `235`
+  tests and `BUILD SUCCESS`.
+- 2026-04-17: Reintroduced small `Flow.Control` and `Flow.Block`
+  carriers so `Ir` no longer exposes raw parallel block/control tables.
+  `Block` now owns its `controlId`, `opIds`, and `terminator`, while
+  `Control` owns `parentId` and `edgeGuard`; `Lowerer`, `Projector`,
+  and `Analyzer` now work through those carriers directly. Validation
+  with `git diff --check` and `mvn -pl archetype/engine-v2 -am
+  -Dtest=ValueTest,DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest
+  -Dsurefire.failIfNoSpecifiedTests=false test` passed with `235`
+  tests and `BUILD SUCCESS`.
+- 2026-04-17: Collapsed the remaining durable analyzer parallel arrays
+  into `Flow.Analyzer.BlockAnalysis[]` and
+  `Flow.Analyzer.OpAnalysis[]`. Block analysis now owns cached
+  coverage, entry guard/facts, and materialized entry state; op
+  analysis now owns the before-path, before/after fact envs, and
+  materialized before/after states. `Flow.process()` and
+  `Projector` now read those carriers directly instead of raw
+  analyzer arrays. Validation with `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am
+  -Dtest=ValueTest,DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest
+  -Dsurefire.failIfNoSpecifiedTests=false test` passed with `235`
   tests and `BUILD SUCCESS`.

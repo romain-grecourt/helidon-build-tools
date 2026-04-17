@@ -369,7 +369,7 @@ public final class VariationEngine {
         void addMerged(Set<BitSet> merged, BitSet bits, String inputId) {
             if (merged.add(bits) && merged.size() > maxIntermediateVariations) {
                 throw new IllegalStateException(String.format(
-                        "Intermediate variation row count %d exceeds the configured limit of %d while joining input '%s'",
+                        "Intermediate variation row count %d exceeds %d while joining input '%s'",
                         merged.size(),
                         maxIntermediateVariations,
                         inputId));
