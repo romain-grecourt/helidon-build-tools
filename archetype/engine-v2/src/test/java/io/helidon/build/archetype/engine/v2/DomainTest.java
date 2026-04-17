@@ -16,7 +16,9 @@
 package io.helidon.build.archetype.engine.v2;
 
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import io.helidon.build.archetype.engine.v2.Domain.Fact;
@@ -78,11 +80,13 @@ class DomainTest {
 
     @Test
     void testGuardAlgebraRendersFiniteConditions() {
-        Table.Builder builder = Table.builder();
-        int enabled = builder.define("enabled", Spec.BOOLEAN, true, false);
-        int flavor = builder.define("flavor", new Spec(Spec.Kind.CHOICE, "mp", "se"), true, false);
-        int features = builder.define("features", new Spec(Spec.Kind.MEMBERSHIP, "grpc", "rest"), true, false);
-        Table symbols = builder.build();
+        Table symbols = table(
+                symbol(0, "enabled", Spec.BOOLEAN, true, false),
+                symbol(1, "flavor", new Spec(Spec.Kind.CHOICE, "mp", "se"), true, false),
+                symbol(2, "features", new Spec(Spec.Kind.MEMBERSHIP, "grpc", "rest"), true, false));
+        int enabled = symbols.findId("enabled");
+        int flavor = symbols.findId("flavor");
+        int features = symbols.findId("features");
         Guards guards = new Guards(symbols);
         Context.Scope scope = new Context().scope();
 
@@ -104,10 +108,11 @@ class DomainTest {
 
     @Test
     void testGuardImplicationKeepsBroaderPureDecision() {
-        Table.Builder builder = Table.builder();
-        int enabled = builder.define("enabled", Spec.BOOLEAN, true, false);
-        int flavor = builder.define("flavor", new Spec(Spec.Kind.CHOICE, "mp", "se"), true, false);
-        Table symbols = builder.build();
+        Table symbols = table(
+                symbol(0, "enabled", Spec.BOOLEAN, true, false),
+                symbol(1, "flavor", new Spec(Spec.Kind.CHOICE, "mp", "se"), true, false));
+        int enabled = symbols.findId("enabled");
+        int flavor = symbols.findId("flavor");
         Guards guards = new Guards(symbols);
 
         Guard enabledGuard = guards.eq(enabled, "true");
@@ -123,10 +128,11 @@ class DomainTest {
 
     @Test
     void testGuardOrMergesPureDecisionBranches() {
-        Table.Builder builder = Table.builder();
-        int enabled = builder.define("enabled", Spec.BOOLEAN, true, false);
-        int flavor = builder.define("flavor", new Spec(Spec.Kind.CHOICE, "mp", "se"), true, false);
-        Table symbols = builder.build();
+        Table symbols = table(
+                symbol(0, "enabled", Spec.BOOLEAN, true, false),
+                symbol(1, "flavor", new Spec(Spec.Kind.CHOICE, "mp", "se"), true, false));
+        int enabled = symbols.findId("enabled");
+        int flavor = symbols.findId("flavor");
         Guards guards = new Guards(symbols);
 
         Guard enabledGuard = guards.eq(enabled, "true");
@@ -140,9 +146,8 @@ class DomainTest {
 
     @Test
     void testGuardAndNarrowsMergedScalarChoice() {
-        Table.Builder builder = Table.builder();
-        int flavor = builder.define("flavor", new Spec(Spec.Kind.CHOICE, "mp", "nima", "se"), true, false);
-        Table symbols = builder.build();
+        Table symbols = table(symbol(0, "flavor", new Spec(Spec.Kind.CHOICE, "mp", "nima", "se"), true, false));
+        int flavor = symbols.findId("flavor");
         Guards guards = new Guards(symbols);
         Context.Scope scope = new Context().scope();
 
@@ -156,10 +161,9 @@ class DomainTest {
 
     @Test
     void testGuardContainsAllKeepsBroaderMembershipRequirement() {
-        Table.Builder builder = Table.builder();
-        int features = builder.define("features", new Spec(Spec.Kind.MEMBERSHIP, "grpc", "metrics", "rest"),
-                true, false);
-        Table symbols = builder.build();
+        Table symbols = table(symbol(0, "features", new Spec(Spec.Kind.MEMBERSHIP, "grpc", "metrics", "rest"),
+                true, false));
+        int features = symbols.findId("features");
         Guards guards = new Guards(symbols);
 
         Guard restGuard = guards.contains(features, "rest");
@@ -174,10 +178,11 @@ class DomainTest {
 
     @Test
     void testFactExactCasesUseFiniteMasksInsteadOfRawLiteralShape() {
-        Table.Builder builder = Table.builder();
-        int enabled = builder.define("enabled", Spec.BOOLEAN, true, false);
-        int features = builder.define("features", new Spec(Spec.Kind.MEMBERSHIP, "grpc", "rest"), true, false);
-        Table symbols = builder.build();
+        Table symbols = table(
+                symbol(0, "enabled", Spec.BOOLEAN, true, false),
+                symbol(1, "features", new Spec(Spec.Kind.MEMBERSHIP, "grpc", "rest"), true, false));
+        int enabled = symbols.findId("enabled");
+        int features = symbols.findId("features");
         Guards guards = new Guards(symbols);
         Symbol enabledSymbol = symbols.symbol(enabled);
         Symbol featuresSymbol = symbols.symbol(features);
@@ -220,9 +225,7 @@ class DomainTest {
 
     @Test
     void testSymbolTableRejectsUnknownSymbolId() {
-        Table.Builder builder = Table.builder();
-        builder.define("enabled", Spec.BOOLEAN, true, false);
-        Table symbols = builder.build();
+        Table symbols = table(symbol(0, "enabled", Spec.BOOLEAN, true, false));
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> symbols.symbol(99));
 
@@ -230,24 +233,9 @@ class DomainTest {
     }
 
     @Test
-    void testSymbolTableRejectsConflictingDefinition() {
-        Table.Builder builder = Table.builder();
-
-        int id = builder.define("enabled", Spec.BOOLEAN, true, false);
-
-        assertThat(builder.define("enabled", Spec.BOOLEAN, true, false), is(id));
-
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> builder.define("enabled", Spec.BOOLEAN, false, false));
-
-        assertThat(ex.getMessage(), containsString("Conflicting symbol definition: enabled"));
-    }
-
-    @Test
     void testGuardsRejectUnknownGuardId() {
-        Table.Builder builder = Table.builder();
-        int enabled = builder.define("enabled", Spec.BOOLEAN, true, false);
-        Table symbols = builder.build();
+        Table symbols = table(symbol(0, "enabled", Spec.BOOLEAN, true, false));
+        int enabled = symbols.findId("enabled");
         Guards guards = new Guards(symbols);
         Guard valid = guards.eq(enabled, "true");
         Guard invalid = new Guard(99, valid.residual());
@@ -256,5 +244,18 @@ class DomainTest {
                 () -> guards.expression(invalid, new Context().scope()));
 
         assertThat(ex.getMessage(), containsString("Unknown guard id"));
+    }
+
+    private static Table table(Symbol... symbols) {
+        List<Symbol> values = List.of(symbols);
+        Map<String, Integer> ids = new LinkedHashMap<>();
+        for (Symbol symbol : values) {
+            ids.put(symbol.name(), symbol.id());
+        }
+        return new Table(values, ids);
+    }
+
+    private static Symbol symbol(int id, String name, Spec spec, boolean guardable, boolean tainted) {
+        return new Symbol(id, name, spec, guardable, tainted);
     }
 }

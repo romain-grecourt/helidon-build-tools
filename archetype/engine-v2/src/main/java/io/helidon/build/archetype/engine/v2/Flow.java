@@ -1008,11 +1008,15 @@ final class Flow {
         Ir lower(Node root) {
             collectDeclaredInputs(root, scope);
             collectSymbols(root, scope);
-            Table.Builder symbolsBuilder = Table.builder();
+            List<Symbol> symbols = new ArrayList<>(symbolSeeds.size());
+            Map<String, Integer> ids = new LinkedHashMap<>();
+            int id = 0;
             for (SymbolSeed seed : symbolSeeds.values()) {
-                symbolsBuilder.define(seed.name, seed.spec, seed.guardable, seed.tainted);
+                symbols.add(new Symbol(id, seed.name, seed.spec, seed.guardable, seed.tainted));
+                ids.put(seed.name, id);
+                id++;
             }
-            table = symbolsBuilder.build();
+            table = new Table(symbols, ids);
             guards = new Guards(table);
 
             int entryBlock = newBlock(0);

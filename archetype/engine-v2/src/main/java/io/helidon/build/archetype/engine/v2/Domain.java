@@ -20,7 +20,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -247,13 +246,9 @@ final class Domain {
         private final List<Symbol> symbols;
         private final Map<String, Integer> ids;
 
-        private Table(List<Symbol> symbols, Map<String, Integer> ids) {
+        Table(List<Symbol> symbols, Map<String, Integer> ids) {
             this.symbols = symbols;
             this.ids = ids;
-        }
-
-        static Builder builder() {
-            return new Builder();
         }
 
         Symbol symbol(int id) {
@@ -269,38 +264,6 @@ final class Domain {
 
         List<Symbol> symbols() {
             return symbols;
-        }
-
-        static final class Builder {
-            private final Map<String, Symbol> symbolsByName = new LinkedHashMap<>();
-
-            int define(String name, Spec domain, boolean guardable, boolean tainted) {
-                Symbol sym = symbolsByName.get(name);
-                if (sym != null) {
-                    if (!sym.name.equals(name)
-                            || sym.guardable != guardable
-                            || sym.tainted != tainted
-                            || sym.domain.kind != domain.kind
-                            || sym.domain.mask != domain.mask
-                            || !Arrays.equals(sym.domain.values, domain.values())) {
-                        throw new IllegalArgumentException("Conflicting symbol definition: " + name);
-                    }
-                    return sym.id();
-                }
-                int id = symbolsByName.size();
-                sym = new Symbol(id, name, domain, guardable, tainted);
-                symbolsByName.put(name, sym);
-                return id;
-            }
-
-            Table build() {
-                List<Symbol> symbols = new ArrayList<>(symbolsByName.values());
-                Map<String, Integer> idsByName = new LinkedHashMap<>();
-                for (Symbol sym : symbols) {
-                    idsByName.put(sym.name(), sym.id());
-                }
-                return new Table(symbols, idsByName);
-            }
         }
     }
 
@@ -687,19 +650,13 @@ final class Domain {
                 }
                 case NOT:
                     return child.expression(resolver, table).negate();
-                case AND: {
-                    List<Expression> terms = new ArrayList<>(children.length);
-                    for (Residual child : children) {
-                        terms.add(child.expression(resolver, table));
-                    }
-                    return Expression.and(terms);
-                }
+                case AND:
                 case OR: {
                     List<Expression> terms = new ArrayList<>(children.length);
                     for (Residual child : children) {
                         terms.add(child.expression(resolver, table));
                     }
-                    return Expression.or(terms);
+                    return kind == Kind.AND ? Expression.and(terms) : Expression.or(terms);
                 }
                 default:
                     return Expression.FALSE;
@@ -889,15 +846,15 @@ final class Domain {
         }
 
         private Guard guard(Decision decision, Residual residual, boolean foldConstants) {
-            Residual normalizedResidual = foldConstants ? residual.fold() : residual;
-            if (decision.isFalse() || normalizedResidual.isFalse()) {
+            Residual normalized = foldConstants ? residual.fold() : residual;
+            if (decision.isFalse() || normalized.isFalse()) {
                 return Guard.FALSE;
             }
-            if (decision.equals(Decision.TRUE) && normalizedResidual.isTrue()) {
+            if (decision.equals(Decision.TRUE) && normalized.isTrue()) {
                 return Guard.TRUE;
             }
             int id = register(decision);
-            return new Guard(id, normalizedResidual);
+            return new Guard(id, normalized);
         }
 
         private Residual residual(Expression expr) {
@@ -909,29 +866,29 @@ final class Domain {
                 return Residual.FALSE;
             }
             int capacity = normalized.tokens().size();
-            Residual[] residualStack = new Residual[capacity];
-            int[] idStack = new int[capacity];
-            Value<?>[] literalStack = new Value<?>[capacity];
-            Expression[] exprStack = new Expression[capacity];
+            Residual[] residuals = new Residual[capacity];
+            int[] ids = new int[capacity];
+            Value<?>[] literals = new Value<?>[capacity];
+            Expression[] expressions = new Expression[capacity];
             int size = 0;
             for (Token token : normalized.tokens()) {
                 if (token.isVariable()) {
                     String variable = token.variable();
                     Expression termExpr = Expression.variable(variable);
-                    residualStack[size] = Residual.opaque(termExpr);
-                    idStack[size] = table.findId(variable);
-                    literalStack[size] = null;
-                    exprStack[size] = termExpr;
+                    residuals[size] = Residual.opaque(termExpr);
+                    ids[size] = table.findId(variable);
+                    literals[size] = null;
+                    expressions[size] = termExpr;
                     size++;
                     continue;
                 }
                 if (token.isOperand()) {
                     Value<?> literal = token.operand();
                     Expression termExpr = Expression.value(literal);
-                    residualStack[size] = Residual.opaque(termExpr);
-                    idStack[size] = -1;
-                    literalStack[size] = literal;
-                    exprStack[size] = termExpr;
+                    residuals[size] = Residual.opaque(termExpr);
+                    ids[size] = -1;
+                    literals[size] = literal;
+                    expressions[size] = termExpr;
                     size++;
                     continue;
                 }
@@ -939,29 +896,29 @@ final class Domain {
                 switch (op) {
                     case NOT: {
                         int index = size - 1;
-                        residualStack[index] = Residual.not(residualStack[index]);
-                        idStack[index] = -1;
-                        literalStack[index] = null;
-                        exprStack[index] = exprStack[index].negate();
+                        residuals[index] = Residual.not(residuals[index]);
+                        ids[index] = -1;
+                        literals[index] = null;
+                        expressions[index] = expressions[index].negate();
                         break;
                     }
                     case AND: {
                         int right = --size;
                         int left = --size;
-                        residualStack[left] = Residual.and(List.of(residualStack[left], residualStack[right]));
-                        idStack[left] = -1;
-                        literalStack[left] = null;
-                        exprStack[left] = exprStack[left].and(exprStack[right]);
+                        residuals[left] = Residual.and(List.of(residuals[left], residuals[right]));
+                        ids[left] = -1;
+                        literals[left] = null;
+                        expressions[left] = expressions[left].and(expressions[right]);
                         size = left + 1;
                         break;
                     }
                     case OR: {
                         int right = --size;
                         int left = --size;
-                        residualStack[left] = Residual.or(List.of(residualStack[left], residualStack[right]));
-                        idStack[left] = -1;
-                        literalStack[left] = null;
-                        exprStack[left] = exprStack[left].or(exprStack[right]);
+                        residuals[left] = Residual.or(List.of(residuals[left], residuals[right]));
+                        ids[left] = -1;
+                        literals[left] = null;
+                        expressions[left] = expressions[left].or(expressions[right]);
                         size = left + 1;
                         break;
                     }
@@ -969,32 +926,34 @@ final class Domain {
                     case NOT_EQUAL: {
                         int right = --size;
                         int left = --size;
-                        Residual direct = compareResidual(idStack[left], literalStack[right]);
+                        Residual direct = compareResidual(ids[left], literals[right]);
                         if (direct == null) {
-                            direct = compareResidual(idStack[right], literalStack[left]);
+                            direct = compareResidual(ids[right], literals[left]);
                         }
-                        Expression combined = Expression.create(exprStack[left], op, exprStack[right]);
-                        residualStack[left] = direct == null
-                                ? Residual.opaque(combined)
-                                : op == Operator.EQUAL ? direct : Residual.not(direct);
-                        idStack[left] = -1;
-                        literalStack[left] = null;
-                        exprStack[left] = combined;
+                        Expression combined = Expression.create(expressions[left], op, expressions[right]);
+                        if (direct == null) {
+                            residuals[left] = Residual.opaque(combined);
+                        } else {
+                            residuals[left] = op == Operator.EQUAL ? direct : Residual.not(direct);
+                        }
+                        ids[left] = -1;
+                        literals[left] = null;
+                        expressions[left] = combined;
                         size = left + 1;
                         break;
                     }
                     case CONTAINS: {
                         int right = --size;
                         int left = --size;
-                        Residual direct = containsResidual(idStack[left], literalStack[right]);
+                        Residual direct = containsResidual(ids[left], literals[right]);
                         if (direct == null) {
-                            direct = scalarInResidual(idStack[right], literalStack[left]);
+                            direct = scalarInResidual(ids[right], literals[left]);
                         }
-                        Expression combined = Expression.create(exprStack[left], Operator.CONTAINS, exprStack[right]);
-                        residualStack[left] = direct == null ? Residual.opaque(combined) : direct;
-                        idStack[left] = -1;
-                        literalStack[left] = null;
-                        exprStack[left] = combined;
+                        Expression combined = Expression.create(expressions[left], Operator.CONTAINS, expressions[right]);
+                        residuals[left] = direct == null ? Residual.opaque(combined) : direct;
+                        ids[left] = -1;
+                        literals[left] = null;
+                        expressions[left] = combined;
                         size = left + 1;
                         break;
                     }
@@ -1002,7 +961,7 @@ final class Domain {
                         return Residual.opaque(normalized);
                 }
             }
-            return size == 1 ? residualStack[0] : Residual.opaque(normalized);
+            return size == 1 ? residuals[0] : Residual.opaque(normalized);
         }
 
         private Residual compareResidual(int id, Value<?> literal) {

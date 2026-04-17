@@ -1,5 +1,17 @@
 # Progress
 
+- 2026-04-16: Removed `Domain.Table.Builder` and now build
+  `Domain.Table` directly in `Flow.Lowerer.lower(...)` from the
+  already-merged `symbolSeeds` map. `Table`'s constructor is now
+  package-private for that direct use, while `SymbolSeed`,
+  `collectDeclaredInputs(...)`, and `collectSymbols(...)` stay intact.
+  `DomainTest` now constructs tables directly through test helpers and
+  no longer exercises the deleted builder conflict API. Validation
+  reran green with `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=ValueTest,DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`235` tests, `BUILD SUCCESS`, total time `4.920 s`).
 - 2026-04-16: Inlined the last single-use `Flow.valueType(...)`
   helper into `Flow.declaredValue(...)` and deleted the helper. The
   `Spec.Kind -> Value.Type` switch now sits directly at the only use
