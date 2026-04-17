@@ -55,10 +55,10 @@ class FlowTest {
         Node setup = findStep(script, "setup");
         Node pom = findFile(script, "pom.xml");
 
-        assertThat(enabled.domain().subKind(), is(Spec.SubKind.BOOLEAN));
-        assertThat(flavor.domain().kind(), is(Spec.Kind.FINITE_SCALAR));
+        assertThat(enabled.domain().kind(), is(Spec.Kind.BOOLEAN));
+        assertThat(flavor.domain().kind(), is(Spec.Kind.CHOICE));
         assertThat(Arrays.asList(flavor.domain().values()), is(List.of("mp", "se")));
-        assertThat(features.domain().kind(), is(Spec.Kind.FINITE_MEMBERSHIP));
+        assertThat(features.domain().kind(), is(Spec.Kind.MEMBERSHIP));
         assertThat(Arrays.asList(features.domain().values()), is(List.of("rest")));
         assertThat(flow.guards().equivalent(flow.activeGuard(setup), flow.guards().eq(enabled.id(), "true")), is(true));
         assertThat(flow.guards().equivalent(flow.activeGuard(pom), flow.guards().contains(features.id(), "rest")), is(true));
@@ -228,8 +228,7 @@ class FlowTest {
         Symbol symbol = symbol(flow, "media.json-lib");
         Node impossible = findCondition(script, "${media} contains 'json' && ${media.json-lib} == 'jsonp'");
 
-        assertThat(symbol.domain().kind(), is(Spec.Kind.FINITE_SCALAR));
-        assertThat(symbol.domain().subKind(), is(Spec.SubKind.CHOICE));
+        assertThat(symbol.domain().kind(), is(Spec.Kind.CHOICE));
         assertThat(Arrays.asList(symbol.domain().values()), is(List.of("jackson", "jsonb")));
         assertThat(symbol.guardable(), is(true));
         assertThat(symbol.tainted(), is(false));
@@ -246,8 +245,7 @@ class FlowTest {
         Symbol symbol = symbol(flow, "json-lib");
         Node impossible = findCondition(script, "${json-lib} == 'jsonp'");
 
-        assertThat(symbol.domain().kind(), is(Spec.Kind.FINITE_SCALAR));
-        assertThat(symbol.domain().subKind(), is(Spec.SubKind.FINITE_TEXT));
+        assertThat(symbol.domain().kind(), is(Spec.Kind.FINITE_TEXT));
         assertThat(Arrays.asList(symbol.domain().values()), is(List.of("jackson", "jsonb")));
         assertThat(symbol.guardable(), is(true));
         assertThat(symbol.tainted(), is(false));

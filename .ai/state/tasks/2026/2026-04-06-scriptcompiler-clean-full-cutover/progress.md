@@ -1,5 +1,50 @@
 # Progress
 
+- 2026-04-16: Simplified `Domain.Spec.toString()` by removing the
+  special `OPEN_TEXT` formatting branch. `Spec` now always renders as
+  `kind + Arrays.toString(values)`, so `Spec.OPEN_TEXT` prints as
+  `OPEN_TEXT[]`, and `DomainTest` now pins that shape explicitly.
+  Focused validation reran green with `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`227` tests, `BUILD SUCCESS`, total time `4.821 s`).
+- 2026-04-16: Removed the remaining redundant `Domain.Symbol.mask`
+  cache and delegate helpers. `Symbol` now keeps only `id`, `name`,
+  `domain`, `guardable`, and `tainted`; the `Domain` guard/fact code
+  now uses `Spec.mask()`, `Spec.mask(String)`, and
+  `Spec.mask(Set<String>)` directly through the symbol domain, and
+  `DomainTest` follows the same path. Focused validation reran green
+  with `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`227` tests, `BUILD SUCCESS`, total time `4.648 s`).
+- 2026-04-16: Added `Domain.Spec.Kind.isScalar()` as the single
+  scalar-category helper and removed the redundant cached
+  `Domain.Symbol.scalar` / `member` flags. `Domain`, `Flow`, and
+  `ScriptCompiler` now route the generic finite-scalar checks through
+  `kind().isScalar()`, while boolean-only handling remains on
+  `kind() == BOOLEAN` and membership stays explicit. Added one focused
+  `DomainTest` for `Kind.isScalar()`. Focused validation reran green
+  with `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`227` tests, `BUILD SUCCESS`, total time `4.940 s`).
+- 2026-04-16: Fused `Domain.Spec.Kind` and `Domain.Spec.SubKind`
+  into one semantic `Spec.Kind` enum
+  (`OPEN_TEXT`, `BOOLEAN`, `CHOICE`, `FINITE_TEXT`, `MEMBERSHIP`).
+  `Domain`, `Flow`, `ScriptCompiler`, and the focused tests now switch
+  directly on that single enum, with grouped scalar behavior spelled
+  out at the call sites rather than routing through helper APIs.
+  Boolean handling still remains special only where the old
+  `subKind() == BOOLEAN` checks existed, while finite membership stays
+  distinct. Focused validation reran green with `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`226` tests, `BUILD SUCCESS`, total time `4.819 s`).
 - 2026-04-16: Flipped `Domain.Spec.values()` from a collection view to
   direct `String[]` exposure and updated the immediate `Flow` merge
   path plus the affected `DomainTest` / `FlowTest` assertions to use
@@ -15,9 +60,10 @@
   `Symbol` now keeps only the delegated `Spec` state (`domain`,
   `mask(...)`, `value(...)`), and the one remaining direct ordinal
   lookup in `Fact.scalarAny(...)` now filters unknown values through the
-  symbol domain and reuses `Symbol.mask(value)` for encoding. This keeps
-  the current forgiving behavior for unknown values while shrinking the
-  private `Symbol` carrier. Focused validation reran green with
+  symbol domain and reuses the delegated `Spec.mask(value)` encoding.
+  This keeps the current forgiving behavior for unknown values while
+  shrinking the private `Symbol` carrier. Focused validation reran
+  green with
   `mvn -pl archetype/engine-v2 -am \
   -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
   -Dsurefire.failIfNoSpecifiedTests=false test`

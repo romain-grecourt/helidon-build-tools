@@ -41,8 +41,8 @@ class DomainTest {
     @Test
     void testTopValuesFollowSpecs() {
         Spec booleanSpec = Spec.BOOLEAN;
-        Spec choiceSpec = new Spec(Spec.Kind.FINITE_SCALAR, Spec.SubKind.CHOICE, "mp", "se");
-        Spec membershipSpec = new Spec(Spec.Kind.FINITE_MEMBERSHIP, Spec.SubKind.MEMBERSHIP, "grpc", "rest");
+        Spec choiceSpec = new Spec(Spec.Kind.CHOICE, "mp", "se");
+        Spec membershipSpec = new Spec(Spec.Kind.MEMBERSHIP, "grpc", "rest");
         LatticeValue booleanTop = LatticeValue.top(booleanSpec);
         LatticeValue choiceTop = LatticeValue.top(choiceSpec);
         LatticeValue membershipTop = LatticeValue.top(membershipSpec);
@@ -62,18 +62,26 @@ class DomainTest {
     }
 
     @Test
+    void testSpecKindIsScalar() {
+        assertThat(Spec.Kind.OPEN_TEXT.isScalar(), is(false));
+        assertThat(Spec.Kind.BOOLEAN.isScalar(), is(true));
+        assertThat(Spec.Kind.CHOICE.isScalar(), is(true));
+        assertThat(Spec.Kind.FINITE_TEXT.isScalar(), is(true));
+        assertThat(Spec.Kind.MEMBERSHIP.isScalar(), is(false));
+    }
+
+    @Test
     void testOpenTextSpecUsesEmptyValuesArray() {
         assertThat(Arrays.asList(Spec.OPEN_TEXT.values()), is(List.of()));
+        assertThat(Spec.OPEN_TEXT.toString(), is("OPEN_TEXT[]"));
     }
 
     @Test
     void testGuardAlgebraRendersFiniteConditions() {
         Table.Builder builder = Table.builder();
         int enabled = builder.define("enabled", Spec.BOOLEAN, true, false);
-        int flavor = builder.define("flavor", new Spec(Spec.Kind.FINITE_SCALAR, Spec.SubKind.CHOICE, "mp", "se"),
-                true, false);
-        int features = builder.define("features", new Spec(Spec.Kind.FINITE_MEMBERSHIP, Spec.SubKind.MEMBERSHIP,
-                "grpc", "rest"), true, false);
+        int flavor = builder.define("flavor", new Spec(Spec.Kind.CHOICE, "mp", "se"), true, false);
+        int features = builder.define("features", new Spec(Spec.Kind.MEMBERSHIP, "grpc", "rest"), true, false);
         Table symbols = builder.build();
         Guards guards = new Guards(symbols);
         Context.Scope scope = new Context().scope();
@@ -98,8 +106,7 @@ class DomainTest {
     void testGuardImplicationKeepsBroaderPureDecision() {
         Table.Builder builder = Table.builder();
         int enabled = builder.define("enabled", Spec.BOOLEAN, true, false);
-        int flavor = builder.define("flavor", new Spec(Spec.Kind.FINITE_SCALAR, Spec.SubKind.CHOICE, "mp", "se"),
-                true, false);
+        int flavor = builder.define("flavor", new Spec(Spec.Kind.CHOICE, "mp", "se"), true, false);
         Table symbols = builder.build();
         Guards guards = new Guards(symbols);
 
@@ -118,8 +125,7 @@ class DomainTest {
     void testGuardOrMergesPureDecisionBranches() {
         Table.Builder builder = Table.builder();
         int enabled = builder.define("enabled", Spec.BOOLEAN, true, false);
-        int flavor = builder.define("flavor", new Spec(Spec.Kind.FINITE_SCALAR, Spec.SubKind.CHOICE, "mp", "se"),
-                true, false);
+        int flavor = builder.define("flavor", new Spec(Spec.Kind.CHOICE, "mp", "se"), true, false);
         Table symbols = builder.build();
         Guards guards = new Guards(symbols);
 
@@ -135,8 +141,7 @@ class DomainTest {
     @Test
     void testGuardAndNarrowsMergedScalarChoice() {
         Table.Builder builder = Table.builder();
-        int flavor = builder.define("flavor", new Spec(Spec.Kind.FINITE_SCALAR, Spec.SubKind.CHOICE,
-                "mp", "nima", "se"), true, false);
+        int flavor = builder.define("flavor", new Spec(Spec.Kind.CHOICE, "mp", "nima", "se"), true, false);
         Table symbols = builder.build();
         Guards guards = new Guards(symbols);
         Context.Scope scope = new Context().scope();
@@ -152,8 +157,8 @@ class DomainTest {
     @Test
     void testGuardContainsAllKeepsBroaderMembershipRequirement() {
         Table.Builder builder = Table.builder();
-        int features = builder.define("features", new Spec(Spec.Kind.FINITE_MEMBERSHIP, Spec.SubKind.MEMBERSHIP,
-                "grpc", "metrics", "rest"), true, false);
+        int features = builder.define("features", new Spec(Spec.Kind.MEMBERSHIP, "grpc", "metrics", "rest"),
+                true, false);
         Table symbols = builder.build();
         Guards guards = new Guards(symbols);
 
@@ -171,8 +176,7 @@ class DomainTest {
     void testFactExactCasesUseFiniteMasksInsteadOfRawLiteralShape() {
         Table.Builder builder = Table.builder();
         int enabled = builder.define("enabled", Spec.BOOLEAN, true, false);
-        int features = builder.define("features", new Spec(Spec.Kind.FINITE_MEMBERSHIP, Spec.SubKind.MEMBERSHIP,
-                "grpc", "rest"), true, false);
+        int features = builder.define("features", new Spec(Spec.Kind.MEMBERSHIP, "grpc", "rest"), true, false);
         Table symbols = builder.build();
         Guards guards = new Guards(symbols);
         Symbol enabledSymbol = symbols.symbol(enabled);
@@ -181,12 +185,12 @@ class DomainTest {
         Fact booleanTrue = Fact.exact(
                 TRUE,
                 enabledSymbol.domain(),
-                LatticeValue.finiteScalar(enabledSymbol.mask("true")),
+                LatticeValue.finiteScalar(enabledSymbol.domain().mask("true")),
                 Value.of(true));
         Fact stringTrue = Fact.exact(
                 TRUE,
                 enabledSymbol.domain(),
-                LatticeValue.finiteScalar(enabledSymbol.mask("true")),
+                LatticeValue.finiteScalar(enabledSymbol.domain().mask("true")),
                 Value.of("true"));
         Fact mergedBoolean = Fact.merge(booleanTrue, stringTrue, guards);
 
@@ -198,15 +202,15 @@ class DomainTest {
                 TRUE,
                 featuresSymbol.domain(),
                 LatticeValue.membership(
-                        featuresSymbol.mask(Set.of("grpc", "rest")),
-                        featuresSymbol.mask(Set.of("grpc", "rest"))),
+                        featuresSymbol.domain().mask(Set.of("grpc", "rest")),
+                        featuresSymbol.domain().mask(Set.of("grpc", "rest"))),
                 Value.of(List.of("grpc", "rest")));
         Fact restGrpc = Fact.exact(
                 TRUE,
                 featuresSymbol.domain(),
                 LatticeValue.membership(
-                        featuresSymbol.mask(Set.of("grpc", "rest")),
-                        featuresSymbol.mask(Set.of("grpc", "rest"))),
+                        featuresSymbol.domain().mask(Set.of("grpc", "rest")),
+                        featuresSymbol.domain().mask(Set.of("grpc", "rest"))),
                 Value.of(List.of("rest", "grpc")));
         Fact mergedMembership = Fact.merge(grpcRest, restGrpc, guards);
 

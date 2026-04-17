@@ -1395,7 +1395,7 @@ public class ScriptCompiler {
             if (term instanceof AnalysisRef) {
                 String key = ((AnalysisRef) term).key;
                 Flow.SymbolInfo info = symbolInfo(key);
-                if (info == null || info.symbol().domain().subKind() != Domain.Spec.SubKind.BOOLEAN) {
+                if (info == null || info.symbol().domain().kind() != Domain.Spec.Kind.BOOLEAN) {
                     return new AnalysisBoolean(null, null, term::collect);
                 }
                 return new AnalysisBoolean(translatedEquality(key, Value.TRUE),
@@ -1617,7 +1617,7 @@ public class ScriptCompiler {
             }
             Domain.Symbol symbol = info.symbol();
             if (symbol.guardable() && !symbol.tainted()) {
-                if (symbol.domain().kind() == Domain.Spec.Kind.FINITE_SCALAR) {
+                if (symbol.domain().kind().isScalar()) {
                     return symbol.domain().contains(scalarValue)
                             ? available(info, scalarValue, flow.guards().eq(symbol.id(), scalarValue))
                             : FALSE;
@@ -1634,7 +1634,7 @@ public class ScriptCompiler {
             Domain.Symbol symbol = info.symbol();
             Set<String> allowed = new TreeSet<>(values);
             if (symbol.guardable() && !symbol.tainted()) {
-                if (symbol.domain().kind() == Domain.Spec.Kind.FINITE_SCALAR) {
+                if (symbol.domain().kind().isScalar()) {
                     allowed.removeIf(value -> !symbol.domain().contains(value));
                 } else {
                     allowed.clear();
@@ -1661,7 +1661,7 @@ public class ScriptCompiler {
                 return null;
             }
             Domain.Symbol symbol = info.symbol();
-            if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Domain.Spec.Kind.FINITE_MEMBERSHIP) {
+            if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Domain.Spec.Kind.MEMBERSHIP) {
                 return null;
             }
             if (!symbol.domain().containsAll(required)) {
