@@ -795,11 +795,10 @@ class ExpressionTest {
     }
 
     @Test
-    void testVariableCountAtMost() {
+    void testVariableCount() {
         Expression actual = expr("${a} && ${a} && ${b} && ${c}");
 
-        assertThat(actual.variableCountAtMost(2), is(false));
-        assertThat(actual.variableCountAtMost(3), is(true));
+        assertThat(actual.variableCount(), is(3));
     }
 
     @Test

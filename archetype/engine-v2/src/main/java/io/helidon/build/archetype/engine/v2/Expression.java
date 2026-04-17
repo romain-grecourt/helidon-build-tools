@@ -125,18 +125,44 @@ public final class Expression implements Comparable<Expression> {
         return new Expression(Lists.addAll(left.tokens, right.tokens, Token.of(operator)), false);
     }
 
+    /**
+     * Create a membership-contains expression.
+     *
+     * @param key   input key
+     * @param value required value
+     * @return Expression
+     */
     public static Expression contains(String key, String value) {
         return new Expression(List.of(Token.of(key), Token.of(Value.of(value)), Token.of(Operator.CONTAINS)), true);
     }
 
+    /**
+     * Create a literal expression.
+     *
+     * @param value literal value
+     * @return Expression
+     */
     public static Expression value(Value<?> value) {
         return new Expression(List.of(Token.of(value)), true);
     }
 
+    /**
+     * Create a variable expression.
+     *
+     * @param key input key
+     * @return Expression
+     */
     public static Expression variable(String key) {
         return new Expression(List.of(Token.of(key)), true);
     }
 
+    /**
+     * Create an equality expression.
+     *
+     * @param key   input key
+     * @param value required value
+     * @return Expression
+     */
     public static Expression equal(String key, String value) {
         return new Expression(List.of(Token.of(key), Token.of(Value.of(value)), Token.of(Operator.EQUAL)), true);
     }
@@ -173,11 +199,6 @@ public final class Expression implements Comparable<Expression> {
             result = result.or(expression);
         }
         return result;
-    }
-
-    static List<Token> parseTokens(String expression) {
-        Expression cached = CACHE1.get(expression);
-        return cached != null ? cached.tokens : CACHE3.computeIfAbsent(expression, e -> unmodifiableList(parse(e)));
     }
 
     /**
@@ -333,26 +354,6 @@ public final class Expression implements Comparable<Expression> {
     }
 
     /**
-     * Reduce the expression under the given assumptions.
-     *
-     * @param truth assumptions that describe the reachable cases
-     * @return Expression
-     */
-    Expression reduce(Expression truth) {
-        if (truth == TRUE) {
-            return reduced ? this : reduced0.get();
-        } else if (truth == FALSE) {
-            return FALSE;
-        }
-        try {
-            return reduce1(truth);
-        } catch (QmcLimitException e) {
-            // preserve semantics by skipping QMC simplification when it exceeds the guard
-            return this;
-        }
-    }
-
-    /**
      * Fold constant subexpressions and collapse fully constant results.
      *
      * @return folded expression
@@ -441,6 +442,41 @@ public final class Expression implements Comparable<Expression> {
     }
 
     /**
+     * Reduce the expression under the given assumptions.
+     *
+     * @param truth assumptions that describe the reachable cases
+     * @return Expression
+     */
+    public Expression reduce(Expression truth) {
+        if (truth == TRUE) {
+            return reduced ? this : reduced0.get();
+        } else if (truth == FALSE) {
+            return FALSE;
+        }
+        try {
+            return reduce1(truth);
+        } catch (QmcLimitException e) {
+            // preserve semantics by skipping QMC simplification when it exceeds the guard
+            return this;
+        }
+    }
+
+    /**
+     * Get the number of variables.
+     *
+     * @return number of variables
+     */
+    int variableCount() {
+        Set<String> names = new HashSet<>();
+        for (Token token : tokens) {
+            if (token.isVariable()) {
+                names.add(token.variable);
+            }
+        }
+        return names.size();
+    }
+
+    /**
      * Get the expression literal.
      *
      * @return expression literal
@@ -487,19 +523,9 @@ public final class Expression implements Comparable<Expression> {
         return tokens.hashCode();
     }
 
-    boolean variableCountAtMost(int maxVariables) {
-        if (maxVariables < 0) {
-            return false;
-        }
-        Set<String> names = new HashSet<>();
-        for (Token token : tokens) {
-            if (token.isVariable()
-                && names.add(token.variable)
-                && names.size() > maxVariables) {
-                return false;
-            }
-        }
-        return true;
+    static List<Token> parseTokens(String expression) {
+        Expression cached = CACHE1.get(expression);
+        return cached != null ? cached.tokens : CACHE3.computeIfAbsent(expression, e -> unmodifiableList(parse(e)));
     }
 
     // QMC algorithm

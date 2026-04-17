@@ -1081,7 +1081,7 @@ final class Domain {
                 return true;
             }
             Expression expr = residual.expression(id -> table.symbol(id).name(), table);
-            return expr.tokens().size() <= COMPACT_MAX_TOKENS && expr.variableCountAtMost(COMPACT_MAX_VARIABLES);
+            return expr.tokens().size() <= COMPACT_MAX_TOKENS && expr.variableCount() <= COMPACT_MAX_VARIABLES;
         }
     }
 
