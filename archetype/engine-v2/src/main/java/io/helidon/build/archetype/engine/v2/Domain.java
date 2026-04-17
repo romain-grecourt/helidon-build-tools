@@ -442,10 +442,6 @@ final class Domain {
             return id;
         }
 
-        Residual residual() {
-            return residual;
-        }
-
         boolean isPure() {
             return residual.isTrue();
         }
@@ -704,8 +700,8 @@ final class Domain {
                 return Guard.FALSE;
             }
             Decision decision = decision(left).and(decision(right), table);
-            Residual leftResidual = left.residual();
-            Residual rightResidual = right.residual();
+            Residual leftResidual = left.residual;
+            Residual rightResidual = right.residual;
             Residual residual = leftResidual.equals(rightResidual)
                     ? leftResidual
                     : Residual.and(List.of(leftResidual, rightResidual));
@@ -735,7 +731,7 @@ final class Domain {
             Guard result;
             Decision leftDecision = decision(left);
             Decision rightDecision = decision(right);
-            if (left.residual().equals(right.residual())) {
+            if (left.residual.equals(right.residual)) {
                 if (subsetOf(left.id(), right.id())) {
                     return right;
                 }
@@ -743,9 +739,9 @@ final class Domain {
                     return left;
                 }
                 Decision decision = leftDecision.or(rightDecision, table);
-                result = guard(decision, left.residual(), true);
+                result = guard(decision, left.residual, true);
             } else if (leftDecision.equals(rightDecision)) {
-                result = guard(leftDecision, Residual.or(List.of(left.residual(), right.residual())), false);
+                result = guard(leftDecision, Residual.or(List.of(left.residual, right.residual)), false);
             } else if (right.isPure() && subsetOf(left.id(), right.id())) {
                 return right;
             } else if (left.isPure() && subsetOf(right.id(), left.id())) {
@@ -785,7 +781,7 @@ final class Domain {
             if (left.equals(right) || left.isFalse() || right.equals(Guard.TRUE)) {
                 return true;
             }
-            if (left.residual().equals(right.residual())
+            if (left.residual.equals(right.residual)
                 && subsetOf(left.id(), right.id())
                 || right.isPure() && subsetOf(left.id(), right.id())) {
                 return true;
@@ -837,7 +833,7 @@ final class Domain {
 
         Expression expression(Guard guard, Scope scope) {
             Expression supported = decision(guard).expression(id -> scope.key(table.symbol(id).name()), table);
-            Expression residual = guard.residual().expression(id -> scope.key(table.symbol(id).name()), table);
+            Expression residual = guard.residual.expression(id -> scope.key(table.symbol(id).name()), table);
             return supported.and(residual);
         }
 
@@ -1071,12 +1067,12 @@ final class Domain {
 
         private Expression expression(Guard guard) {
             Expression supported = decision(guard).expression(id -> table.symbol(id).name(), table);
-            Expression residual = guard.residual().expression(id -> table.symbol(id).name(), table);
+            Expression residual = guard.residual.expression(id -> table.symbol(id).name(), table);
             return supported.and(residual);
         }
 
         private boolean cacheable(Guard guard) {
-            Residual residual = guard.residual();
+            Residual residual = guard.residual;
             if (residual.isTrue() || residual.isFalse()) {
                 return true;
             }
