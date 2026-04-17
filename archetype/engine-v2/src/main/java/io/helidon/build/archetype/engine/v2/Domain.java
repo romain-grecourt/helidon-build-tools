@@ -32,33 +32,10 @@ import java.util.function.IntFunction;
 import io.helidon.build.archetype.engine.v2.Context.Scope;
 import io.helidon.build.archetype.engine.v2.Expression.Operator;
 import io.helidon.build.archetype.engine.v2.Expression.Token;
+
 final class Domain {
 
     private Domain() {
-    }
-
-    private static Expression finiteScalarExpression(String key, long allowed, Symbol sym) {
-        long mask = sym.domain.mask();
-        if (allowed == mask) {
-            return Expression.TRUE;
-        }
-        long excluded = mask & ~allowed;
-        if (Long.bitCount(excluded) == 1) {
-            int ordinal = Long.numberOfTrailingZeros(excluded);
-            String str = sym.value(ordinal);
-            List<Token> tokens = List.of(Token.of(key), Token.of(Value.of(str)), Token.of(Operator.NOT_EQUAL));
-            return new Expression(tokens, true);
-        }
-        List<Expression> terms = new ArrayList<>();
-        long remaining = allowed;
-        while (remaining != 0L) {
-            int ordinal = Long.numberOfTrailingZeros(remaining);
-            String str = sym.value(ordinal);
-            List<Token> tokens = List.of(Token.of(key), Token.of(Value.of(str)), Token.of(Operator.EQUAL));
-            terms.add(new Expression(tokens, true));
-            remaining &= remaining - 1L;
-        }
-        return Expression.or(terms);
     }
 
     static final class Spec {
@@ -226,6 +203,37 @@ final class Domain {
         @Override
         public String toString() {
             return name + "#" + id + ":" + domain;
+        }
+
+        private Expression expression(String key, long required, long forbidden) {
+            Expression expr = Expression.TRUE;
+            for (int y = 0; y < 2; y++) {
+                boolean negate = y != 0;
+                long remaining = negate ? forbidden : required;
+                while (remaining != 0L) {
+                    Expression expr0 = Expression.contains(key, value(Long.numberOfTrailingZeros(remaining)));
+                    expr = expr.and(negate ? expr0.negate() : expr0);
+                    remaining &= remaining - 1L;
+                }
+            }
+            return expr;
+        }
+
+        private Expression expression(String key, long allowed) {
+            if (allowed == domain.mask) {
+                return Expression.TRUE;
+            }
+            long excluded = domain.mask & ~allowed;
+            if (Long.bitCount(excluded) == 1) {
+                return Expression.equal(key, value(Long.numberOfTrailingZeros(excluded))).negate();
+            }
+            List<Expression> terms = new ArrayList<>();
+            long remaining = allowed;
+            while (remaining != 0L) {
+                terms.add(Expression.equal(key, value(Long.numberOfTrailingZeros(remaining))));
+                remaining &= remaining - 1L;
+            }
+            return Expression.or(terms);
         }
     }
 
@@ -639,31 +647,25 @@ final class Domain {
                     return expr;
                 case SCALAR_EQ: {
                     Symbol sym = table.symbol(id);
-                    Spec domain = sym.domain();
                     String key = resolver.apply(id);
-                    if (domain.kind == Spec.Kind.BOOLEAN) {
-                        if ("true".equals(value)) {
-                            return new Expression(List.of(Token.of(key)), true);
-                        }
-                        if ("false".equals(value)) {
-                            return new Expression(List.of(Token.of(key)), true);
+                    if (sym.domain.kind == Spec.Kind.BOOLEAN) {
+                        if ("true".equals(value) || "false".equals(value)) {
+                            return Expression.variable(key);
                         }
                     }
-                    List<Token> tokens = List.of(Token.of(key), Token.of(Value.of(value)), Token.of(Operator.EQUAL));
-                    return new Expression(tokens, true);
+                    return Expression.equal(key, value);
                 }
                 case SCALAR_IN: {
                     Symbol sym = table.symbol(id);
                     String key = resolver.apply(id);
                     if (sym.domain.kind == Spec.Kind.BOOLEAN && Long.bitCount(mask) == 1) {
-                        int ordinal = Long.numberOfTrailingZeros(mask);
-                        String value = sym.value(ordinal);
+                        String value = sym.value(Long.numberOfTrailingZeros(mask));
                         if ("true".equals(value)) {
-                            return new Expression(List.of(Token.of(key)), true);
+                            return Expression.variable(key);
                         }
-                        return new Expression(List.of(Token.of(key), Token.of(Operator.NOT)), true);
+                        return Expression.variable(key).negate();
                     }
-                    return finiteScalarExpression(key, mask, sym);
+                    return sym.expression(key, mask);
                 }
                 case MEMBERSHIP_CONTAINS_ALL: {
                     Symbol sym = table.symbol(id);
@@ -671,10 +673,7 @@ final class Domain {
                     List<Expression> terms = new ArrayList<>();
                     long remaining = mask;
                     while (remaining != 0L) {
-                        int ordinal = Long.numberOfTrailingZeros(remaining);
-                        String str = sym.value(ordinal);
-                        List<Token> tokens = List.of(Token.of(key), Token.of(Value.of(str)), Token.of(Operator.CONTAINS));
-                        terms.add(new Expression(tokens, true));
+                        terms.add(Expression.contains(key, sym.value(Long.numberOfTrailingZeros(remaining))));
                         remaining &= remaining - 1L;
                     }
                     return Expression.and(terms);
@@ -927,7 +926,7 @@ final class Domain {
             for (Token token : normalized.tokens()) {
                 if (token.isVariable()) {
                     String variable = token.variable();
-                    Expression termExpr = new Expression(List.of(Token.of(variable)), true);
+                    Expression termExpr = Expression.variable(variable);
                     residualStack[size] = Residual.opaque(termExpr);
                     idStack[size] = table.findId(variable);
                     literalStack[size] = null;
@@ -937,7 +936,7 @@ final class Domain {
                 }
                 if (token.isOperand()) {
                     Value<?> literal = token.operand();
-                    Expression termExpr = new Expression(List.of(Token.of(literal)), true);
+                    Expression termExpr = Expression.value(literal);
                     residualStack[size] = Residual.opaque(termExpr);
                     idStack[size] = -1;
                     literalStack[size] = literal;
@@ -1178,10 +1177,9 @@ final class Domain {
 
         Guard supportedExactGuard(Symbol sym, Guards guards) {
             Guard result = Guard.FALSE;
-            Spec domain = sym.domain;
             for (GuardedValue guardedValue : guardedValues) {
                 boolean supported;
-                switch (domain.kind) {
+                switch (sym.domain.kind) {
                     case BOOLEAN:
                     case CHOICE:
                     case FINITE_TEXT:
@@ -1205,9 +1203,8 @@ final class Domain {
 
         Guard match(Symbol sym, Value<?> candidate, Guards guards) {
             Guard result = Guard.FALSE;
-            Spec domain = sym.domain();
             for (GuardedValue guardedValue : guardedValues) {
-                if (exactValueEquals(domain, guardedValue.value, candidate, guardedValue.mask)) {
+                if (exactValueEquals(sym.domain, guardedValue.value, candidate, guardedValue.mask)) {
                     result = guards.or(result, guardedValue.guard);
                 }
             }
@@ -1243,11 +1240,10 @@ final class Domain {
             if (values.isEmpty()) {
                 return exactGuard(guards);
             }
-            Spec domain = sym.domain();
-            if (!domain.containsAll(values)) {
+            if (!sym.domain.containsAll(values)) {
                 return Guard.FALSE;
             }
-            long required = domain.mask(values);
+            long required = sym.domain.mask(values);
             Guard result = Guard.FALSE;
             for (GuardedValue guardedValue : guardedValues) {
                 if (required == 0L ? guardedValue.value.type() == Value.Type.LIST
@@ -1765,10 +1761,25 @@ final class Domain {
             Expression expr = Expression.TRUE;
             for (int i = 0; i < ids.length; i++) {
                 Symbol sym = table.symbol(ids[i]);
+                String key = resolver.apply(ids[i]);
                 int offset = i * 2;
-                expr = sym.domain.kind.isScalar()
-                        ? expr.and(expression(resolver.apply(ids[i]), masks[offset], sym))
-                        : expr.and(expression(resolver.apply(ids[i]), masks[offset], masks[offset + 1], sym));
+                long allowed = masks[offset];
+                switch (sym.domain.kind) {
+                    case BOOLEAN: {
+                        if (allowed == sym.domain.mask("true")) {
+                            expr = expr.and(Expression.variable(key));
+                        } else if (allowed == sym.domain.mask("false")) {
+                            expr = expr.and(Expression.variable(key).negate());
+                        }
+                        break;
+                    }
+                    case CHOICE:
+                    case FINITE_TEXT:
+                        expr = expr.and(sym.expression(key, allowed));
+                        break;
+                    default:
+                        expr = expr.and(sym.expression(key, allowed, masks[offset + 1]));
+                }
             }
             return expr;
         }
@@ -1851,35 +1862,6 @@ final class Domain {
             ids[index] = id;
             masks[offset] = mask0;
             masks[offset + 1] = mask1;
-        }
-
-        static Expression expression(String key, long allowed, Symbol sym) {
-            Spec domain = sym.domain();
-            if (domain.kind == Spec.Kind.BOOLEAN) {
-                if (allowed == domain.mask("true")) {
-                    return new Expression(List.of(Token.of(key)), true);
-                }
-                if (allowed == domain.mask("false")) {
-                    return new Expression(List.of(Token.of(key), Token.of(Operator.NOT)), true);
-                }
-            }
-            return finiteScalarExpression(key, allowed, sym);
-        }
-
-        static Expression expression(String key, long required, long forbidden, Symbol sym) {
-            Expression expr = Expression.TRUE;
-            for (int y = 0; y < 2; y++) {
-                boolean negate = y != 0;
-                long remaining = negate ? forbidden : required;
-                while (remaining != 0L) {
-                    int ordinal = Long.numberOfTrailingZeros(remaining);
-                    String str = sym.value(ordinal);
-                    List<Token> tokens = List.of(Token.of(key), Token.of(Value.of(str)), Token.of(Operator.CONTAINS));
-                    expr = expr.and(new Expression(negate ? Token.negate(tokens) : tokens, true));
-                    remaining &= remaining - 1L;
-                }
-            }
-            return expr;
         }
     }
 }

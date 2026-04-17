@@ -122,10 +122,57 @@ public final class Expression implements Comparable<Expression> {
      * @return Expression
      */
     public static Expression create(Expression left, Operator operator, Expression right) {
-        List<Token> tokens = new ArrayList<>(left.tokens);
-        tokens.addAll(right.tokens);
-        tokens.add(Token.of(operator));
-        return new Expression(tokens, false);
+        return new Expression(Lists.addAll(left.tokens, right.tokens, Token.of(operator)), false);
+    }
+
+    public static Expression contains(String key, String value) {
+        return new Expression(List.of(Token.of(key), Token.of(Value.of(value)), Token.of(Operator.CONTAINS)), true);
+    }
+
+    public static Expression value(Value<?> value) {
+        return new Expression(List.of(Token.of(value)), true);
+    }
+
+    public static Expression variable(String key) {
+        return new Expression(List.of(Token.of(key)), true);
+    }
+
+    public static Expression equal(String key, String value) {
+        return new Expression(List.of(Token.of(key), Token.of(Value.of(value)), Token.of(Operator.EQUAL)), true);
+    }
+
+    /**
+     * Combine the given expressions with the logical 'and' operator.
+     *
+     * @param expressions expressions, or {@code null}
+     * @return Expression
+     */
+    public static Expression and(List<Expression> expressions) {
+        if (expressions == null) {
+            return TRUE;
+        }
+        Expression result = TRUE;
+        for (Expression expression : expressions) {
+            result = result.and(expression);
+        }
+        return result;
+    }
+
+    /**
+     * Combine the given expressions with the logical 'or' operator.
+     *
+     * @param expressions expressions, or {@code null}
+     * @return Expression
+     */
+    public static Expression or(List<Expression> expressions) {
+        if (expressions == null) {
+            return FALSE;
+        }
+        Expression result = FALSE;
+        for (Expression expression : expressions) {
+            result = result.or(expression);
+        }
+        return result;
     }
 
     static List<Token> parseTokens(String expression) {
@@ -154,23 +201,6 @@ public final class Expression implements Comparable<Expression> {
     }
 
     /**
-     * Combine the given expressions with the logical 'and' operator.
-     *
-     * @param expressions expressions, or {@code null}
-     * @return Expression
-     */
-    public static Expression and(List<Expression> expressions) {
-        if (expressions == null) {
-            return TRUE;
-        }
-        Expression result = TRUE;
-        for (Expression expression : expressions) {
-            result = result.and(expression);
-        }
-        return result;
-    }
-
-    /**
      * Combine this expression and the given expression with the logical 'or' operator.
      *
      * @param expr expression
@@ -191,23 +221,6 @@ public final class Expression implements Comparable<Expression> {
     }
 
     /**
-     * Combine the given expressions with the logical 'or' operator.
-     *
-     * @param expressions expressions, or {@code null}
-     * @return Expression
-     */
-    public static Expression or(List<Expression> expressions) {
-        if (expressions == null) {
-            return FALSE;
-        }
-        Expression result = FALSE;
-        for (Expression expression : expressions) {
-            result = result.or(expression);
-        }
-        return result;
-    }
-
-    /**
      * Negate this expression.
      *
      * @return Expression
@@ -218,7 +231,7 @@ public final class Expression implements Comparable<Expression> {
         } else if (this == FALSE) {
             return TRUE;
         } else {
-            return create("!(" + literal() + ")");
+            return new Expression(Token.negate(tokens), false);
         }
     }
 

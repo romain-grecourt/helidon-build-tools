@@ -283,16 +283,8 @@ final class Flow {
         return Value.empty();
     }
 
-    private static int requireSymbolId(Table table, String key) {
-        int id = table.findId(key);
-        if (id < 0) {
-            throw new IllegalStateException("Missing symbol: " + key);
-        }
-        return id;
-    }
-
     private static Guard directBooleanGuard(Table table, Guards guards, String key) {
-        Symbol sym = table.symbol(requireSymbolId(table, key));
+        Symbol sym = table.symbol(table.findId(key));
         if (!sym.guardable() || sym.tainted() || sym.domain().kind() != Spec.Kind.BOOLEAN) {
             return Guard.TRUE;
         }
@@ -300,7 +292,7 @@ final class Flow {
     }
 
     private static Guard directOptionGuard(Table table, Guards guards, String key, Node input, Node option) {
-        Symbol sym = table.symbol(requireSymbolId(table, key));
+        Symbol sym = table.symbol(table.findId(key));
         String value = option.value().getString();
         switch (input.kind()) {
             case INPUT_ENUM:
@@ -899,8 +891,8 @@ final class Flow {
         }
 
         Fact factFor(State state, String key) {
-            int symbolId = ir.table.findId(key);
-            return symbolId < 0 ? null : state.env.get(symbolId);
+            int id = ir.table.findId(key);
+            return id < 0 ? null : state.env.get(id);
         }
 
         Guard definitionFor(String key, Fact fact) {
@@ -912,8 +904,8 @@ final class Flow {
         }
 
         SymbolInfo symbolInfo(String key) {
-            int symbolId = ir.table.findId(key);
-            return symbolId < 0 ? null : symbolInfos[symbolId];
+            int id = ir.table.findId(key);
+            return id < 0 ? null : symbolInfos[id];
         }
 
         SymbolInfo scalarSymbolInfo(String key) {
@@ -1181,8 +1173,8 @@ final class Flow {
 
         int lowerInput(Node node, int blockId, int controlId, Scope scope) {
             Scope inputScope = scope.getOrCreate(node);
-            int symbolId = requireSymbolId(table, inputScope.key());
-            append(blockId, OP_DECLARE_INPUT, node, symbolId, null);
+            int id = table.findId(inputScope.key());
+            append(blockId, OP_DECLARE_INPUT, node, id, null);
             switch (node.kind()) {
                 case INPUT_BOOLEAN: {
                     Guard guard = directBooleanGuard(table, guards, inputScope.key());
@@ -1198,20 +1190,20 @@ final class Flow {
         int lowerOption(Node node, int blockId, int controlId, Scope scope) {
             Node input = node.ancestor(Kind::isInput).orElseThrow(() ->
                     new IllegalStateException("Option without input parent: " + node));
-            int symbolId = table.findId(scope.key());
-            if (symbolId < 0) {
+            int id = table.findId(scope.key());
+            if (id < 0) {
                 throw new IllegalStateException("Missing option symbol for scope: " + scope.key());
             }
-            append(blockId, OP_DECLARE_OPTION, node, symbolId, null);
+            append(blockId, OP_DECLARE_OPTION, node, id, null);
             Guard guard = optionGuard(input, node, scope);
             return lowerGuardedChildren(node, blockId, controlId, guard, node.children(), scope);
         }
 
         int lowerDefinition(Node node, int blockId, int controlId, Scope scope) {
-            int symbolId = table.findId(definitionId(scope, node));
-            if (symbolId >= 0) {
+            int id = table.findId(definitionId(scope, node));
+            if (id >= 0) {
                 Expression expr = new Expression(List.of(Token.of(node.value())), true);
-                append(blockId, OP_DEFINE_VALUE, node, symbolId, expr);
+                append(blockId, OP_DEFINE_VALUE, node, id, expr);
             }
             return lowerChildren(node.children(), blockId, controlId, scope);
         }
@@ -1245,12 +1237,12 @@ final class Flow {
             return new ConditionLowerer(table, guards, scope).lower(expression);
         }
 
-        void append(int blockId, int kind, Node source, int symbolId, Expression expression) {
+        void append(int blockId, int kind, Node source, int id, Expression expression) {
             blockOps(blockId).add(opKinds.size());
             opKinds.add(kind);
             opBlockIds.add(blockId);
             opSources.add(source);
-            opSymbolIds.add(symbolId);
+            opSymbolIds.add(id);
             opExpressions.add(expression);
         }
 
@@ -1410,10 +1402,11 @@ final class Flow {
             }
             Set<String> choiceValues = new TreeSet<>(Arrays.asList(spec.values()));
             choiceValues.addAll(Arrays.asList(other.spec.values()));
+            String[] values = choiceValues.toArray(String[]::new);
             return new SymbolSeed(name,
                     spec.kind() == Spec.Kind.CHOICE || other.spec.kind() == Spec.Kind.CHOICE
-                            ? new Spec(Spec.Kind.CHOICE, choiceValues.toArray(String[]::new))
-                            : new Spec(Spec.Kind.FINITE_TEXT, choiceValues.toArray(String[]::new)),
+                            ? new Spec(Spec.Kind.CHOICE, values)
+                            : new Spec(Spec.Kind.FINITE_TEXT, values),
                     guardable && other.guardable,
                     tainted || other.tainted);
         }

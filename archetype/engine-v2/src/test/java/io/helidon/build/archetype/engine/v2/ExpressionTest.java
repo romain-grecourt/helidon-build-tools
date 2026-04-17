@@ -191,7 +191,7 @@ class ExpressionTest {
     }
 
     @Test
-    void testSizeOfOperator() {
+    void testSizeCreateOperator() {
         assertThat(expr("sizeof((list) ${v1}) == 0").eval(Map.of("v1", Value.dynamic("none"))::get), is(true));
         assertThat(expr("sizeof((list) ${v1}) == 1").eval(Map.of("v1", Value.dynamic("a"))::get), is(true));
         assertThat(expr("sizeof((list) ${v1}) == 2").eval(Map.of("v1", Value.dynamic("a,b"))::get), is(true));
