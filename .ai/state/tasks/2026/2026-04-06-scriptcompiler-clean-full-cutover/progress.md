@@ -1,5 +1,22 @@
 # Progress
 
+- 2026-04-16: Simplified the private `Domain.Residual` carrier by
+  removing the dead `DEFINED` kind and replacing list-backed children
+  with compact unary/array storage: `NOT` now uses a single `child`
+  slot, `AND` / `OR` use exact-size `Residual[]`, `combine(...)`
+  flattens and deduplicates in insertion order, and `fold()` /
+  `expression(...)` now iterate directly instead of routing through
+  `Lists.map(...)`. In the same pass, `Decision.of(...)` and
+  `Decision.or(...)` now share one `normalize(...)` path for clause
+  normalization, subset elimination, merge attempts, canonical
+  `TRUE` / `FALSE` handling, and clause sorting. Per user direction,
+  the earlier `GuardedValue` flattening plan was deferred and not
+  implemented in this checkpoint. Focused validation reran green with
+  `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=ExpressionTest,DomainTest,FlowTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`227` tests, `BUILD SUCCESS`, total time `4.907 s`).
 - 2026-04-16: Removed the test-only `LatticeValue.possibleValues(...)`
   accessor and deleted the private shared `values(...)` helper it only
   existed to support. `scalarValues(...)` now decodes `scalarMask`

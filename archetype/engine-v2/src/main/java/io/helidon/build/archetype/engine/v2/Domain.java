@@ -17,6 +17,7 @@ package io.helidon.build.archetype.engine.v2;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -31,8 +32,6 @@ import java.util.function.IntFunction;
 import io.helidon.build.archetype.engine.v2.Context.Scope;
 import io.helidon.build.archetype.engine.v2.Expression.Operator;
 import io.helidon.build.archetype.engine.v2.Expression.Token;
-import io.helidon.build.common.Lists;
-
 final class Domain {
 
     private Domain() {
@@ -529,14 +528,13 @@ final class Domain {
     }
 
     private static final class Residual {
-        static final Residual TRUE = new Residual(Kind.TRUE, -1, 0L, null, null, List.of());
-        static final Residual FALSE = new Residual(Kind.FALSE, -1, 0L, null, null, List.of());
+        static final Residual TRUE = new Residual(Kind.TRUE, -1, 0L, null, null, null, null);
+        static final Residual FALSE = new Residual(Kind.FALSE, -1, 0L, null, null, null, null);
 
         enum Kind {
             TRUE,
             FALSE,
             OPAQUE,
-            DEFINED,
             SCALAR_EQ,
             SCALAR_IN,
             MEMBERSHIP_CONTAINS_ALL,
@@ -550,14 +548,16 @@ final class Domain {
         private final long mask;
         private final String value;
         private final Expression expr;
-        private final List<Residual> children;
+        private final Residual child;
+        private final Residual[] children;
 
-        Residual(Kind kind, int id, long mask, String value, Expression expr, List<Residual> children) {
+        Residual(Kind kind, int id, long mask, String value, Expression expr, Residual child, Residual[] children) {
             this.kind = kind;
             this.id = id;
             this.mask = mask;
             this.value = value;
             this.expr = expr;
+            this.child = child;
             this.children = children;
         }
 
@@ -569,19 +569,19 @@ final class Domain {
             if (folded == Expression.FALSE) {
                 return FALSE;
             }
-            return new Residual(Kind.OPAQUE, -1, 0L, null, folded, List.of());
+            return new Residual(Kind.OPAQUE, -1, 0L, null, folded, null, null);
         }
 
         static Residual scalarEq(int id, String value) {
-            return new Residual(Kind.SCALAR_EQ, id, 0L, value, null, List.of());
+            return new Residual(Kind.SCALAR_EQ, id, 0L, value, null, null, null);
         }
 
         static Residual scalarIn(int id, long mask) {
-            return mask == 0L ? FALSE : new Residual(Kind.SCALAR_IN, id, mask, null, null, List.of());
+            return mask == 0L ? FALSE : new Residual(Kind.SCALAR_IN, id, mask, null, null, null, null);
         }
 
         static Residual membershipContainsAll(int id, long mask) {
-            return mask == 0L ? TRUE : new Residual(Kind.MEMBERSHIP_CONTAINS_ALL, id, mask, null, null, List.of());
+            return mask == 0L ? TRUE : new Residual(Kind.MEMBERSHIP_CONTAINS_ALL, id, mask, null, null, null, null);
         }
 
         static Residual not(Residual residual) {
@@ -592,9 +592,9 @@ final class Domain {
                 return TRUE;
             }
             if (residual.kind == Kind.NOT) {
-                return residual.children.get(0);
+                return residual.child;
             }
-            return new Residual(Kind.NOT, -1, 0L, null, null, List.of(residual));
+            return new Residual(Kind.NOT, -1, 0L, null, null, residual, null);
         }
 
         static Residual and(List<Residual> children) {
@@ -613,7 +613,7 @@ final class Domain {
                         return absorbing;
                     }
                     if (child.kind == kind) {
-                        normalized.addAll(child.children);
+                        Collections.addAll(normalized, child.children);
                     } else {
                         normalized.add(child);
                     }
@@ -625,7 +625,7 @@ final class Domain {
             if (normalized.size() == 1) {
                 return normalized.iterator().next();
             }
-            return new Residual(kind, -1, 0L, null, null, new ArrayList<>(normalized));
+            return new Residual(kind, -1, 0L, null, null, null, normalized.toArray(Residual[]::new));
         }
 
         Residual fold() {
@@ -633,11 +633,21 @@ final class Domain {
                 case OPAQUE:
                     return opaque(expr);
                 case NOT:
-                    return not(children.get(0).fold());
-                case AND:
-                    return and(Lists.map(children, Residual::fold));
-                case OR:
-                    return or(Lists.map(children, Residual::fold));
+                    return not(child.fold());
+                case AND: {
+                    List<Residual> normalized = new ArrayList<>(children.length);
+                    for (Residual child : children) {
+                        normalized.add(child.fold());
+                    }
+                    return and(normalized);
+                }
+                case OR: {
+                    List<Residual> normalized = new ArrayList<>(children.length);
+                    for (Residual child : children) {
+                        normalized.add(child.fold());
+                    }
+                    return or(normalized);
+                }
                 default:
                     return this;
             }
@@ -657,8 +667,6 @@ final class Domain {
                     return Expression.TRUE;
                 case OPAQUE:
                     return expr;
-                case DEFINED:
-                    return new Expression(List.of(Token.of(resolver.apply(id))), true);
                 case SCALAR_EQ: {
                     Symbol sym = table.symbol(id);
                     Spec domain = sym.domain();
@@ -701,14 +709,22 @@ final class Domain {
                     }
                     return Expression.and(terms);
                 }
-                case NOT: {
-                    Residual residual = children.get(0);
-                    return residual.expression(resolver, table).negate();
+                case NOT:
+                    return child.expression(resolver, table).negate();
+                case AND: {
+                    List<Expression> terms = new ArrayList<>(children.length);
+                    for (Residual child : children) {
+                        terms.add(child.expression(resolver, table));
+                    }
+                    return Expression.and(terms);
                 }
-                case AND:
-                    return Expression.and(Lists.map(children, it -> it.expression(resolver, table)));
-                case OR:
-                    return Expression.or(Lists.map(children, it -> it.expression(resolver, table)));
+                case OR: {
+                    List<Expression> terms = new ArrayList<>(children.length);
+                    for (Residual child : children) {
+                        terms.add(child.expression(resolver, table));
+                    }
+                    return Expression.or(terms);
+                }
                 default:
                     return Expression.FALSE;
             }
@@ -725,12 +741,13 @@ final class Domain {
                    && mask == other.mask
                    && Objects.equals(value, other.value)
                    && Objects.equals(expr, other.expr)
-                   && children.equals(other.children);
+                   && Objects.equals(child, other.child)
+                   && Arrays.equals(children, other.children);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(kind, id, mask, value, expr, children);
+            return 31 * Objects.hash(kind, id, mask, value, expr, child) + Arrays.hashCode(children);
         }
     }
 
@@ -1365,53 +1382,23 @@ final class Domain {
         }
 
         Decision or(Decision other, Table table) {
-            List<Clause> result = new ArrayList<>(clauses);
-            boolean changed = false;
-            for (Clause clause : other.clauses) {
-                Clause candidate = clause;
-                boolean restart;
-                do {
-                    restart = false;
-                    for (int i = 0; i < result.size(); i++) {
-                        Clause existing = result.get(i);
-                        if (candidate.subsetOf(existing, table)) {
-                            candidate = null;
-                            break;
-                        }
-                        if (existing.subsetOf(candidate, table)) {
-                            result.remove(i);
-                            changed = true;
-                            restart = true;
-                            break;
-                        }
-                        if (result.size() <= TRY_MERGE_MAX_CLAUSES) {
-                            Clause merged = existing.tryMerge(candidate, table);
-                            if (merged != null) {
-                                if (merged.ids.length == 0) {
-                                    return TRUE;
-                                }
-                                result.remove(i);
-                                candidate = merged;
-                                changed = true;
-                                restart = true;
-                                break;
-                            }
-                        }
-                    }
-                } while (restart);
-                if (candidate != null) {
-                    if (candidate.ids.length == 0) {
-                        return TRUE;
-                    }
-                    result.add(candidate);
-                    changed = true;
-                }
-            }
-            if (!changed) {
+            if (equals(other)) {
                 return this;
             }
-            result.sort(Clause::compare);
-            return new Decision(result);
+            if (isFalse()) {
+                return other;
+            }
+            if (other.isFalse()) {
+                return this;
+            }
+            if (this == TRUE || other == TRUE) {
+                return TRUE;
+            }
+            List<Clause> merged = new ArrayList<>(clauses.size() + other.clauses.size());
+            merged.addAll(clauses);
+            merged.addAll(other.clauses);
+            Decision normalized = normalize(merged, table);
+            return equals(normalized) ? this : normalized;
         }
 
         Decision subtract(Decision other, Table table) {
@@ -1472,6 +1459,10 @@ final class Domain {
             if (clauses.isEmpty()) {
                 return FALSE;
             }
+            return normalize(clauses, table);
+        }
+
+        private static Decision normalize(List<Clause> clauses, Table table) {
             Set<Clause> unique = new LinkedHashSet<>();
             for (Clause clause : clauses) {
                 Clause next = clause.normalized(table);
@@ -1501,6 +1492,9 @@ final class Domain {
                         if (normalized.size() <= TRY_MERGE_MAX_CLAUSES) {
                             Clause merged = left.tryMerge(right, table);
                             if (merged != null) {
+                                if (merged.ids.length == 0) {
+                                    return TRUE;
+                                }
                                 normalized.set(i, merged);
                                 normalized.remove(j);
                                 changed = true;
