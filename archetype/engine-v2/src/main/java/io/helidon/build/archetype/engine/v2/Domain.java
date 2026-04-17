@@ -1652,7 +1652,9 @@ final class Domain {
                 long out = left & ~right;
                 if (out != 0L) {
                     long over = left & right;
-                    return split(index, id, out == mask ? 0L : out, 0L, over == mask ? 0L : over, 0L, other, table);
+                    Clause outside = with(index, id, out == mask ? 0L : out, 0L);
+                    Clause overlap = with(index, id, over == mask ? 0L : over, 0L);
+                    return split(outside, overlap, other, table);
                 }
             }
             for (int i = 0; i < other.ids.length; i++) {
@@ -1673,9 +1675,13 @@ final class Domain {
                     }
                     long bit = 1L << Long.numberOfTrailingZeros(unresolved);
                     if (parity) {
-                        return split(index, id, out, over | bit, out | bit, over, other, table);
+                        Clause outside = with(index, id, out, over | bit);
+                        Clause overlap = with(index, id, out | bit, over);
+                        return split(outside, overlap, other, table);
                     }
-                    return split(index, id, out | bit, over, out, over | bit, other, table);
+                    Clause outside = with(index, id, out | bit, over);
+                    Clause overlap = with(index, id, out, over | bit);
+                    return split(outside, overlap, other, table);
                 }
             }
             return List.of(this);
@@ -1708,16 +1714,14 @@ final class Domain {
             return expr;
         }
 
-        List<Clause> split(int index, int id, long out0, long out1, long over0, long over1, Clause other, Table table) {
-            Clause outside = withEntry(index, id, out0, out1);
-            Clause overlap = withEntry(index, id, over0, over1);
+        List<Clause> split(Clause outside, Clause overlap, Clause other, Table table) {
             List<Clause> result = new ArrayList<>();
             result.add(outside);
             result.addAll(overlap.subtract(other, table));
             return result;
         }
 
-        Clause withEntry(int index, int id, long mask0, long mask1) {
+        Clause with(int index, int id, long mask0, long mask1) {
             if (mask0 == 0L && mask1 == 0L) {
                 return index < 0 ? this : ids.length == 1 ? EMPTY : remove(index);
             }
