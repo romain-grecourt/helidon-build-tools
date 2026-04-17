@@ -15,6 +15,8 @@
  */
 package io.helidon.build.archetype.engine.v2;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -55,9 +57,9 @@ class FlowTest {
 
         assertThat(enabled.domain().subKind(), is(Spec.SubKind.BOOLEAN));
         assertThat(flavor.domain().kind(), is(Spec.Kind.FINITE_SCALAR));
-        assertThat(flavor.domain().values(), is(Set.of("mp", "se")));
+        assertThat(Arrays.asList(flavor.domain().values()), is(List.of("mp", "se")));
         assertThat(features.domain().kind(), is(Spec.Kind.FINITE_MEMBERSHIP));
-        assertThat(features.domain().values(), is(Set.of("rest")));
+        assertThat(Arrays.asList(features.domain().values()), is(List.of("rest")));
         assertThat(flow.guards().equivalent(flow.activeGuard(setup), flow.guards().eq(enabled.id(), "true")), is(true));
         assertThat(flow.guards().equivalent(flow.activeGuard(pom), flow.guards().contains(features.id(), "rest")), is(true));
     }
@@ -228,7 +230,7 @@ class FlowTest {
 
         assertThat(symbol.domain().kind(), is(Spec.Kind.FINITE_SCALAR));
         assertThat(symbol.domain().subKind(), is(Spec.SubKind.CHOICE));
-        assertThat(symbol.domain().values(), is(Set.of("jackson", "jsonb")));
+        assertThat(Arrays.asList(symbol.domain().values()), is(List.of("jackson", "jsonb")));
         assertThat(symbol.guardable(), is(true));
         assertThat(symbol.tainted(), is(false));
         assertThat(flow.guards().equivalent(flow.activeGuard(impossible), FALSE), is(true));
@@ -246,7 +248,7 @@ class FlowTest {
 
         assertThat(symbol.domain().kind(), is(Spec.Kind.FINITE_SCALAR));
         assertThat(symbol.domain().subKind(), is(Spec.SubKind.FINITE_TEXT));
-        assertThat(symbol.domain().values(), is(Set.of("jackson", "jsonb")));
+        assertThat(Arrays.asList(symbol.domain().values()), is(List.of("jackson", "jsonb")));
         assertThat(symbol.guardable(), is(true));
         assertThat(symbol.tainted(), is(false));
         assertThat(flow.guards().equivalent(flow.activeGuard(impossible), FALSE), is(true));

@@ -1618,7 +1618,7 @@ public class ScriptCompiler {
             Domain.Symbol symbol = info.symbol();
             if (symbol.guardable() && !symbol.tainted()) {
                 if (symbol.domain().kind() == Domain.Spec.Kind.FINITE_SCALAR) {
-                    return symbol.domain().values().contains(scalarValue)
+                    return symbol.domain().contains(scalarValue)
                             ? available(info, scalarValue, flow.guards().eq(symbol.id(), scalarValue))
                             : FALSE;
                 }
@@ -1635,7 +1635,7 @@ public class ScriptCompiler {
             Set<String> allowed = new TreeSet<>(values);
             if (symbol.guardable() && !symbol.tainted()) {
                 if (symbol.domain().kind() == Domain.Spec.Kind.FINITE_SCALAR) {
-                    allowed.retainAll(symbol.domain().values());
+                    allowed.removeIf(value -> !symbol.domain().contains(value));
                 } else {
                     allowed.clear();
                 }
@@ -1664,8 +1664,7 @@ public class ScriptCompiler {
             if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() != Domain.Spec.Kind.FINITE_MEMBERSHIP) {
                 return null;
             }
-            Set<String> items = symbol.domain().values();
-            if (!items.containsAll(required)) {
+            if (!symbol.domain().containsAll(required)) {
                 return FALSE;
             }
             Guard raw = TRUE;

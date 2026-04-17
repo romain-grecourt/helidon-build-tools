@@ -39,8 +39,8 @@ final class Domain {
     }
 
     static final class Spec {
-        static final Spec OPEN_TEXT = new Spec(Kind.OPEN_TEXT, SubKind.OPEN_TEXT, null, null, 0L);
-        static final Spec BOOLEAN = finiteScalar(SubKind.BOOLEAN, Set.of("false", "true"));
+        static final Spec OPEN_TEXT = new Spec(Kind.OPEN_TEXT, SubKind.OPEN_TEXT);
+        static final Spec BOOLEAN = new Spec(Kind.FINITE_SCALAR, SubKind.BOOLEAN, "false", "true");
 
         enum Kind {
             OPEN_TEXT,
@@ -58,37 +58,26 @@ final class Domain {
 
         private final Kind kind;
         private final SubKind subKind;
-        private final Map<String, Integer> ordinals;
         private final String[] values;
         private final long mask;
 
-        private Spec(Kind kind, SubKind subKind, Map<String, Integer> ordinals, String[] values, long mask) {
+        Spec(Kind kind, SubKind subKind, String... values) {
+            if (values.length > Long.SIZE) {
+                throw new IllegalArgumentException(String.format(
+                        "Too many values: %d > %d",
+                        values.length,
+                        Long.SIZE));
+            }
             this.kind = kind;
             this.subKind = subKind;
-            this.ordinals = ordinals;
             this.values = values;
-            this.mask = mask;
-        }
-
-        static Spec choice(Set<String> values) {
-            return finiteScalar(SubKind.CHOICE, values);
-        }
-
-        static Spec finiteText(Set<String> values) {
-            return finiteScalar(SubKind.FINITE_TEXT, values);
-        }
-
-        static Spec finiteScalar(SubKind subKind, Set<String> values) {
-            if (subKind != SubKind.BOOLEAN && subKind != SubKind.CHOICE && subKind != SubKind.FINITE_TEXT) {
-                throw new IllegalArgumentException("Invalid finite scalar subKind: " + subKind);
+            if (kind == Kind.OPEN_TEXT) {
+                this.mask = 0L;
+            } else if (values.length == Long.SIZE) {
+                this.mask = -1L;
+            } else {
+                this.mask = (1L << values.length) - 1L;
             }
-            Map<String, Integer> ordinals = stringOrdinals(values, "Finite scalar");
-            return new Spec(Kind.FINITE_SCALAR, subKind, ordinals, values(ordinals), mask(ordinals.size()));
-        }
-
-        static Spec finiteMembership(Set<String> items) {
-            Map<String, Integer> ordinals = stringOrdinals(items, "Finite membership");
-            return new Spec(Kind.FINITE_MEMBERSHIP, SubKind.MEMBERSHIP, ordinals, values(ordinals), mask(ordinals.size()));
         }
 
         Kind kind() {
@@ -99,23 +88,34 @@ final class Domain {
             return subKind;
         }
 
-        Set<String> values() {
-            return ordinals == null ? Set.of() : ordinals.keySet();
+        String[] values() {
+            return values;
         }
 
         long mask() {
             return mask;
         }
 
+        boolean contains(String value) {
+            return ordinal(value) >= 0;
+        }
+
+        boolean containsAll(Set<String> values) {
+            for (String value : values) {
+                if (!contains(value)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         long mask(String value) {
-            if (ordinals == null) {
-                throw new IllegalStateException("Mask requested for non-finite spec: " + subKind);
-            }
-            Integer ordinal = ordinals.get(value);
-            if (ordinal == null) {
-                throw new IllegalArgumentException("Unknown value for " + subKind + " spec: " + value);
-            }
+            int ordinal = ordinal(value);
             return 1L << ordinal;
+        }
+
+        int ordinal(String value) {
+            return Arrays.binarySearch(values, value);
         }
 
         long mask(Set<String> values) {
@@ -133,8 +133,8 @@ final class Domain {
                     if (literal == null) {
                         return 0L;
                     }
-                    Integer ordinal = ordinals.get(literal);
-                    return ordinal == null ? 0L : 1L << ordinal;
+                    int ordinal = ordinal(literal);
+                    return ordinal < 0 ? 0L : 1L << ordinal;
                 }
                 case FINITE_MEMBERSHIP:
                     if (value == null || value.type() != Value.Type.LIST) {
@@ -142,8 +142,8 @@ final class Domain {
                     }
                     long mask = 0L;
                     for (String item : new TreeSet<>(value.getList())) {
-                        Integer ordinal = ordinals.get(item);
-                        if (ordinal == null) {
+                        int ordinal = ordinal(item);
+                        if (ordinal < 0) {
                             return 0L;
                         }
                         mask |= 1L << ordinal;
@@ -155,38 +155,6 @@ final class Domain {
             }
         }
 
-        String value(int ordinal) {
-            if (values == null) {
-                throw new IllegalStateException("Ordinal requested for non-finite spec: " + subKind);
-            }
-            return values[ordinal];
-        }
-
-        private static Map<String, Integer> stringOrdinals(Set<String> values, String label) {
-            if (values.isEmpty()) {
-                throw new IllegalArgumentException(label + " requires at least one value");
-            }
-            if (values.size() > Long.SIZE) {
-                throw new IllegalArgumentException(label + " supports at most " + Long.SIZE + " values");
-            }
-            Map<String, Integer> ordinals = new LinkedHashMap<>();
-            int ordinal = 0;
-            for (String value : new TreeSet<>(values)) {
-                ordinals.put(value, ordinal++);
-            }
-            return ordinals;
-        }
-
-        private static String[] values(Map<String, Integer> ordinals) {
-            String[] values = new String[ordinals.size()];
-            ordinals.forEach((value, ordinal) -> values[ordinal] = value);
-            return values;
-        }
-
-        private static long mask(int size) {
-            return size == Long.SIZE ? -1L : (1L << size) - 1L;
-        }
-
         @Override
         public boolean equals(Object o) {
             if (!(o instanceof Spec)) {
@@ -196,17 +164,17 @@ final class Domain {
             return kind == other.kind
                    && subKind == other.subKind
                    && mask == other.mask
-                   && Objects.equals(ordinals, other.ordinals);
+                   && Arrays.equals(values, other.values);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(kind, subKind, ordinals, mask);
+            return 31 * Objects.hash(kind, subKind, mask) + Arrays.hashCode(values);
         }
 
         @Override
         public String toString() {
-            return ordinals == null ? subKind.name() : subKind + values().toString();
+            return kind == Kind.OPEN_TEXT ? subKind.name() : subKind + Arrays.toString(values);
         }
     }
 
@@ -264,7 +232,7 @@ final class Domain {
         }
 
         String value(int ordinal) {
-            return domain.value(ordinal);
+            return domain.values[ordinal];
         }
 
         @Override
@@ -475,7 +443,8 @@ final class Domain {
         }
 
         String singletonScalar(Spec spec) {
-            return spec.value(Long.numberOfTrailingZeros(scalarMask));
+            int ordinal = Long.numberOfTrailingZeros(scalarMask);
+            return spec.values[ordinal];
         }
 
         Set<String> possibleValues(Spec spec) {
@@ -487,7 +456,7 @@ final class Domain {
             long remaining = mask;
             while (remaining != 0L) {
                 int ordinal = Long.numberOfTrailingZeros(remaining);
-                values.add(spec.value(ordinal));
+                values.add(spec.values[ordinal]);
                 remaining &= remaining - 1L;
             }
             return values;
@@ -917,7 +886,7 @@ final class Domain {
 
         Guard eq(int id, String value) {
             Symbol symbol = symbols.symbol(id);
-            if (!symbol.domain().values().contains(value)) {
+            if (!symbol.domain().contains(value)) {
                 return Guard.FALSE;
             }
             Clause clause = new Clause(new int[]{id}, new long[]{symbol.mask(value), 0L});
@@ -935,7 +904,7 @@ final class Domain {
             if (!symbol.guardable || symbol.tainted || domain.kind != Spec.Kind.FINITE_MEMBERSHIP) {
                 return Guard.FALSE;
             }
-            if (!domain.values().containsAll(values)) {
+            if (!domain.containsAll(values)) {
                 return Guard.FALSE;
             }
             Clause clause = new Clause(new int[]{id}, new long[]{symbol.mask(values), 0L});
@@ -1097,7 +1066,7 @@ final class Domain {
                 return null;
             }
             if (domain.kind() == Spec.Kind.FINITE_SCALAR) {
-                if (domain.values().contains(scalar)) {
+                if (domain.contains(scalar)) {
                     return Residual.scalarEq(symbol.id(), scalar);
                 }
                 return Residual.FALSE;
@@ -1116,13 +1085,13 @@ final class Domain {
             }
             if (literal.type() == Value.Type.STRING) {
                 String item = literal.getString();
-                return domain.values().contains(item)
+                return domain.contains(item)
                         ? Residual.membershipContainsAll(symbol.id(), domain.mask(item))
                         : Residual.FALSE;
             }
             if (literal.type() == Value.Type.LIST) {
                 Set<String> required = new TreeSet<>(literal.getList());
-                return domain.values().containsAll(required)
+                return domain.containsAll(required)
                         ? Residual.membershipContainsAll(symbol.id(), domain.mask(required))
                         : Residual.FALSE;
             }
@@ -1139,11 +1108,11 @@ final class Domain {
                 return null;
             }
             Set<String> allowed = new TreeSet<>(literal.getList());
-            allowed.retainAll(domain.values());
+            allowed.removeIf(value -> !domain.contains(value));
             if (allowed.isEmpty()) {
                 return Residual.FALSE;
             }
-            if (allowed.size() == domain.values().size()) {
+            if (allowed.size() == domain.values.length) {
                 return Residual.TRUE;
             }
             return Residual.scalarIn(symbol.id(), domain.mask(allowed));
@@ -1286,7 +1255,7 @@ final class Domain {
             }
             long allowedMask = 0L;
             for (String value : values) {
-                if (symbol.domain.values().contains(value)) {
+                if (symbol.domain.contains(value)) {
                     allowedMask |= symbol.mask(value);
                 }
             }
@@ -1310,7 +1279,7 @@ final class Domain {
                 return exactDefined(guards);
             }
             Spec domain = symbol.domain();
-            if (!domain.values().containsAll(values)) {
+            if (!domain.containsAll(values)) {
                 return Guard.FALSE;
             }
             long required = symbol.mask(values);

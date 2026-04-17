@@ -15,6 +15,7 @@
  */
 package io.helidon.build.archetype.engine.v2;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 
@@ -40,8 +41,8 @@ class DomainTest {
     @Test
     void testTopValuesFollowSpecs() {
         Spec booleanSpec = Spec.BOOLEAN;
-        Spec choiceSpec = Spec.choice(Set.of("mp", "se"));
-        Spec membershipSpec = Spec.finiteMembership(Set.of("rest", "grpc"));
+        Spec choiceSpec = new Spec(Spec.Kind.FINITE_SCALAR, Spec.SubKind.CHOICE, "mp", "se");
+        Spec membershipSpec = new Spec(Spec.Kind.FINITE_MEMBERSHIP, Spec.SubKind.MEMBERSHIP, "grpc", "rest");
         LatticeValue booleanTop = LatticeValue.top(booleanSpec);
         LatticeValue choiceTop = LatticeValue.top(choiceSpec);
         LatticeValue membershipTop = LatticeValue.top(membershipSpec);
@@ -61,11 +62,18 @@ class DomainTest {
     }
 
     @Test
+    void testOpenTextSpecUsesEmptyValuesArray() {
+        assertThat(Arrays.asList(Spec.OPEN_TEXT.values()), is(List.of()));
+    }
+
+    @Test
     void testGuardAlgebraRendersFiniteConditions() {
         Table.Builder builder = Table.builder();
         int enabled = builder.define("enabled", Spec.BOOLEAN, true, false);
-        int flavor = builder.define("flavor", Spec.choice(Set.of("mp", "se")), true, false);
-        int features = builder.define("features", Spec.finiteMembership(Set.of("rest", "grpc")), true, false);
+        int flavor = builder.define("flavor", new Spec(Spec.Kind.FINITE_SCALAR, Spec.SubKind.CHOICE, "mp", "se"),
+                true, false);
+        int features = builder.define("features", new Spec(Spec.Kind.FINITE_MEMBERSHIP, Spec.SubKind.MEMBERSHIP,
+                "grpc", "rest"), true, false);
         Table symbols = builder.build();
         Guards guards = new Guards(symbols);
         Context.Scope scope = new Context().scope();
@@ -90,7 +98,8 @@ class DomainTest {
     void testGuardImplicationKeepsBroaderPureDecision() {
         Table.Builder builder = Table.builder();
         int enabled = builder.define("enabled", Spec.BOOLEAN, true, false);
-        int flavor = builder.define("flavor", Spec.choice(Set.of("mp", "se")), true, false);
+        int flavor = builder.define("flavor", new Spec(Spec.Kind.FINITE_SCALAR, Spec.SubKind.CHOICE, "mp", "se"),
+                true, false);
         Table symbols = builder.build();
         Guards guards = new Guards(symbols);
 
@@ -109,7 +118,8 @@ class DomainTest {
     void testGuardOrMergesPureDecisionBranches() {
         Table.Builder builder = Table.builder();
         int enabled = builder.define("enabled", Spec.BOOLEAN, true, false);
-        int flavor = builder.define("flavor", Spec.choice(Set.of("mp", "se")), true, false);
+        int flavor = builder.define("flavor", new Spec(Spec.Kind.FINITE_SCALAR, Spec.SubKind.CHOICE, "mp", "se"),
+                true, false);
         Table symbols = builder.build();
         Guards guards = new Guards(symbols);
 
@@ -125,7 +135,8 @@ class DomainTest {
     @Test
     void testGuardAndNarrowsMergedScalarChoice() {
         Table.Builder builder = Table.builder();
-        int flavor = builder.define("flavor", Spec.choice(Set.of("mp", "nima", "se")), true, false);
+        int flavor = builder.define("flavor", new Spec(Spec.Kind.FINITE_SCALAR, Spec.SubKind.CHOICE,
+                "mp", "nima", "se"), true, false);
         Table symbols = builder.build();
         Guards guards = new Guards(symbols);
         Context.Scope scope = new Context().scope();
@@ -141,7 +152,8 @@ class DomainTest {
     @Test
     void testGuardContainsAllKeepsBroaderMembershipRequirement() {
         Table.Builder builder = Table.builder();
-        int features = builder.define("features", Spec.finiteMembership(Set.of("grpc", "metrics", "rest")), true, false);
+        int features = builder.define("features", new Spec(Spec.Kind.FINITE_MEMBERSHIP, Spec.SubKind.MEMBERSHIP,
+                "grpc", "metrics", "rest"), true, false);
         Table symbols = builder.build();
         Guards guards = new Guards(symbols);
 
@@ -159,7 +171,8 @@ class DomainTest {
     void testFactExactCasesUseFiniteMasksInsteadOfRawLiteralShape() {
         Table.Builder builder = Table.builder();
         int enabled = builder.define("enabled", Spec.BOOLEAN, true, false);
-        int features = builder.define("features", Spec.finiteMembership(Set.of("grpc", "rest")), true, false);
+        int features = builder.define("features", new Spec(Spec.Kind.FINITE_MEMBERSHIP, Spec.SubKind.MEMBERSHIP,
+                "grpc", "rest"), true, false);
         Table symbols = builder.build();
         Guards guards = new Guards(symbols);
         Symbol enabledSymbol = symbols.symbol(enabled);

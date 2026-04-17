@@ -1,5 +1,16 @@
 # Progress
 
+- 2026-04-16: Flipped `Domain.Spec.values()` from a collection view to
+  direct `String[]` exposure and updated the immediate `Flow` merge
+  path plus the affected `DomainTest` / `FlowTest` assertions to use
+  arrays. `Flow.Lowerer.optionValues()` already returned `String[]`, so
+  the remaining fallout was limited to array-to-set adaptation at the
+  merge sites and array-aware test expectations. Focused validation
+  reran green with `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`226` tests, `BUILD SUCCESS`, total time `4.881 s`).
 - 2026-04-16: Removed the redundant `Domain.Symbol.ordinals` cache.
   `Symbol` now keeps only the delegated `Spec` state (`domain`,
   `mask(...)`, `value(...)`), and the one remaining direct ordinal
@@ -1834,3 +1845,60 @@
 - 2026-04-16: Replaced remaining `Spec.booleanSpec()` call sites with
   the shared constant `Spec.BOOLEAN` in `Flow` and `DomainTest`, then
   removed the redundant `Spec.booleanSpec()` wrapper from `Domain`.
+- 2026-04-16: Removed `Domain.Spec.ordinals` and switched finite
+  `Spec` lookup to a sorted `String[] values` array plus
+  `Arrays.binarySearch(...)`. `Spec` now exposes
+  `contains(...)`, `containsAll(...)`, and `valueCount()` helpers for
+  membership/filter checks, `Flow` and `ScriptCompiler` no longer
+  depend on `Spec.values()` for direct finite-domain guard logic, and
+  `FlowTest` now asserts the deterministic sorted-list view exposed by
+  `Spec.values()`. Validation with `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest
+  -Dsurefire.failIfNoSpecifiedTests=false test` passed with `225`
+  tests and `BUILD SUCCESS`.
+- 2026-04-16: Removed the last nullable `Domain.Spec.values` case by
+  making `Spec.OPEN_TEXT` carry an empty `String[]` and switching
+  non-finite checks inside `Spec` from `values == null` to
+  `kind == OPEN_TEXT`. `values()` now always wraps the backing array,
+  `valueCount()` is just `values.length`, and `DomainTest` adds focused
+  coverage for `OPEN_TEXT` empty values plus the preserved non-finite
+  `mask(...)` / `value(...)` exceptions. Validation with
+  `git diff --check` and `mvn -pl archetype/engine-v2 -am
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest
+  -Dsurefire.failIfNoSpecifiedTests=false test` passed with `226`
+  tests and `BUILD SUCCESS`.
+- 2026-04-16: Replaced the remaining `Domain.Spec` factory methods with
+  two constructors only: a private pre-sorted `String...` path used by
+  `OPEN_TEXT` and `BOOLEAN`, plus a package-private `Set<String>` path
+  used directly by `Flow` and `DomainTest`. The `Set<String>`
+  constructor now only normalizes through `TreeSet` and delegates;
+  constructor validation was trimmed back to the actual bitmask-width
+  constraint (`<= Long.SIZE`) instead of enforcing every private
+  `Kind` / `SubKind` combination. Validation with `git diff --check`
+  and `mvn -pl archetype/engine-v2 -am
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest
+  -Dsurefire.failIfNoSpecifiedTests=false test` passed with `226`
+  tests and `BUILD SUCCESS`.
+- 2026-04-16: Made the pre-sorted `Domain.Spec(String...)` constructor
+  package-private and switched the remaining literal `Set.of(...)`
+  `Spec` construction sites to direct varargs. The singleton finite-text
+  path in `Flow` now uses the literal varargs constructor directly, and
+  the literal choice/membership specs in `DomainTest` now spell their
+  canonical sorted values explicitly instead of routing through the
+  normalizing `Set<String>` constructor. Computed-set sites in `Flow`
+  still use the `Set<String>` constructor. Validation with
+  `git diff --check` and `mvn -pl archetype/engine-v2 -am
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest
+  -Dsurefire.failIfNoSpecifiedTests=false test` passed with `226`
+  tests and `BUILD SUCCESS`.
+- 2026-04-16: Removed the last `Domain.Spec(Set<String>)` constructor
+  and collapsed construction back to the single varargs path. The
+  remaining computed finite-spec sites in `Flow` now convert their
+  `TreeSet` values with `toArray(String[]::new)` at the call site, so
+  `Spec` itself no longer owns a separate set-normalization entry
+  point. Validation with `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest
+  -Dsurefire.failIfNoSpecifiedTests=false test` passed with `226`
+  tests and `BUILD SUCCESS`.

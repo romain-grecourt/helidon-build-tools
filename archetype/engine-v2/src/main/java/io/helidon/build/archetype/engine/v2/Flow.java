@@ -922,7 +922,7 @@ final class Flow {
             if (scalar != null) {
                 SymbolInfo info = scalarSymbolInfo(key);
                 if (info != null) {
-                    return info.symbol.domain().values().contains(scalar)
+                    return info.symbol.domain().contains(scalar)
                             ? available(info, scalar, guards.eq(info.symbol.id(), scalar))
                             : Guard.FALSE;
                 }
@@ -933,8 +933,9 @@ final class Flow {
         Guard directScalarAny(String key, Set<String> values) {
             SymbolInfo info = scalarSymbolInfo(key);
             if (info != null) {
+                Spec domain = info.symbol.domain();
                 Set<String> allowed = new TreeSet<>(values);
-                allowed.retainAll(info.symbol.domain().values());
+                allowed.removeIf(value -> !domain.contains(value));
                 Guard direct = Guard.FALSE;
                 for (String value : allowed) {
                     direct = guards.or(direct, available(info, value, guards.eq(info.symbol.id(), value)));
@@ -948,8 +949,7 @@ final class Flow {
             if (info != null) {
                 Symbol symbol = info.symbol;
                 if (symbol.guardable() && !symbol.tainted() && symbol.domain().kind() == Spec.Kind.FINITE_MEMBERSHIP) {
-                    Set<String> items = symbol.domain().values();
-                    if (!items.containsAll(required)) {
+                    if (!symbol.domain().containsAll(required)) {
                         return Guard.FALSE;
                     }
                     Guard available = Guard.TRUE;
@@ -1057,7 +1057,7 @@ final class Flow {
                         break;
                     case INPUT_ENUM:
                     case INPUT_LIST:
-                        addDeclaredInput(childScope.key(), inputSpec(node), !optionValues(node).isEmpty(), false);
+                        addDeclaredInput(childScope.key(), inputSpec(node), optionValues(node).length != 0, false);
                         break;
                     case INPUT_TEXT:
                         addDeclaredInput(childScope.key(), Spec.OPEN_TEXT, false, true);
@@ -1077,7 +1077,7 @@ final class Flow {
                         break;
                     case INPUT_ENUM:
                     case INPUT_LIST:
-                        addSymbol(childScope.key(), inputSpec(node), !optionValues(node).isEmpty(), false);
+                        addSymbol(childScope.key(), inputSpec(node), optionValues(node).length != 0, false);
                         break;
                     case INPUT_TEXT:
                         addSymbol(childScope.key(), Spec.OPEN_TEXT, false, true);
@@ -1278,7 +1278,10 @@ final class Flow {
             if (literal == null) {
                 return new SymbolSeed(key, Spec.OPEN_TEXT, false, true);
             }
-            return new SymbolSeed(key, Spec.finiteText(Set.of(literal)), true, false);
+            return new SymbolSeed(key,
+                    new Spec(Spec.Kind.FINITE_SCALAR, Spec.SubKind.FINITE_TEXT, literal),
+                    true,
+                    false);
         }
 
         String literalScalar(Value<?> value) {
@@ -1336,7 +1339,7 @@ final class Flow {
             terminatorFalseIds.set(blockId, falseId);
         }
 
-        static Set<String> optionValues(Node input) {
+        static String[] optionValues(Node input) {
             Set<String> values = new TreeSet<>();
             for (Node child : input.children()) {
                 Node option = child.unwrap();
@@ -1344,17 +1347,17 @@ final class Flow {
                     values.add(option.value().getString());
                 }
             }
-            return values;
+            return values.toArray(String[]::new);
         }
 
         static Spec inputSpec(Node node) {
-            Set<String> values = optionValues(node);
-            if (values.isEmpty()) {
+            String[] values = optionValues(node);
+            if (values.length == 0) {
                 return Spec.OPEN_TEXT;
             }
             return node.kind() == Kind.INPUT_ENUM
-                    ? Spec.choice(values)
-                    : Spec.finiteMembership(values);
+                    ? new Spec(Spec.Kind.FINITE_SCALAR, Spec.SubKind.CHOICE, values)
+                    : new Spec(Spec.Kind.FINITE_MEMBERSHIP, Spec.SubKind.MEMBERSHIP, values);
         }
 
         static String definitionId(Scope scope, Node node) {
@@ -1393,19 +1396,21 @@ final class Flow {
                     if (spec.subKind() == Spec.SubKind.BOOLEAN || other.spec.subKind() == Spec.SubKind.BOOLEAN) {
                         return new SymbolSeed(name, Spec.OPEN_TEXT, false, tainted || other.tainted);
                     }
-                    Set<String> choiceValues = new TreeSet<>(spec.values());
-                    choiceValues.addAll(other.spec.values());
+                    Set<String> choiceValues = new TreeSet<>(Arrays.asList(spec.values()));
+                    choiceValues.addAll(Arrays.asList(other.spec.values()));
                     return new SymbolSeed(name,
                             spec.subKind() == Spec.SubKind.CHOICE || other.spec.subKind() == Spec.SubKind.CHOICE
-                                    ? Spec.choice(choiceValues)
-                                    : Spec.finiteText(choiceValues),
+                                    ? new Spec(Spec.Kind.FINITE_SCALAR, Spec.SubKind.CHOICE,
+                                            choiceValues.toArray(String[]::new))
+                                    : new Spec(Spec.Kind.FINITE_SCALAR, Spec.SubKind.FINITE_TEXT,
+                                            choiceValues.toArray(String[]::new)),
                             guardable && other.guardable,
                             tainted || other.tainted);
                 case FINITE_MEMBERSHIP:
-                    Set<String> items = new TreeSet<>(spec.values());
-                    items.addAll(other.spec.values());
+                    Set<String> items = new TreeSet<>(Arrays.asList(spec.values()));
+                    items.addAll(Arrays.asList(other.spec.values()));
                     return new SymbolSeed(name,
-                            Spec.finiteMembership(items),
+                            new Spec(Spec.Kind.FINITE_MEMBERSHIP, Spec.SubKind.MEMBERSHIP, items.toArray(String[]::new)),
                             guardable && other.guardable,
                             tainted || other.tainted);
                 default:
@@ -1550,7 +1555,7 @@ final class Flow {
             }
             if (literal.type() == Value.Type.STRING) {
                 String scalar = literal.getString();
-                if (symbol.domain().values().contains(scalar)) {
+                if (symbol.domain().contains(scalar)) {
                     return guards.eq(symbol.id(), scalar);
                 }
                 return null;
@@ -2218,13 +2223,13 @@ final class Flow {
             switch (literal.type()) {
                 case BOOLEAN: {
                     String scalar = String.valueOf(literal.getBoolean());
-                    if (spec.kind() == Spec.Kind.FINITE_SCALAR && spec.values().contains(scalar)) {
+                    if (spec.kind() == Spec.Kind.FINITE_SCALAR && spec.contains(scalar)) {
                         return LatticeValue.finiteScalar(spec.mask(scalar));
                     }
                     return spec.kind() == Spec.Kind.OPEN_TEXT ? LatticeValue.openText(scalar) : LatticeValue.top(spec);
                 }
                 case STRING:
-                    if (spec.kind() == Spec.Kind.FINITE_SCALAR && spec.values().contains(literal.getString())) {
+                    if (spec.kind() == Spec.Kind.FINITE_SCALAR && spec.contains(literal.getString())) {
                         return LatticeValue.finiteScalar(spec.mask(literal.getString()));
                     }
                     return LatticeValue.openText(literal.getString());
