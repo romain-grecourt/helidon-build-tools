@@ -1,5 +1,16 @@
 # Progress
 
+- 2026-04-16: Removed the redundant `Domain.Symbol.ordinals` cache.
+  `Symbol` now keeps only the delegated `Spec` state (`domain`,
+  `mask(...)`, `value(...)`), and the one remaining direct ordinal
+  lookup in `Fact.scalarAny(...)` now filters unknown values through the
+  symbol domain and reuses `Symbol.mask(value)` for encoding. This keeps
+  the current forgiving behavior for unknown values while shrinking the
+  private `Symbol` carrier. Focused validation reran green with
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`225` tests, `BUILD SUCCESS`, total time `4.778 s`).
 - 2026-04-16: Removed the cached `Domain.Clause.hashCode` field and the
   old `entriesHash(...)` helper. `Clause.equals(...)` now compares only
   `ids` and `masks`, and `Clause.hashCode()` computes directly from

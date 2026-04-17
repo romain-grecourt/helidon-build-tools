@@ -218,7 +218,6 @@ final class Domain {
         private final boolean tainted;
         private final boolean scalar;
         private final boolean member;
-        private final Map<String, Integer> ordinals;
         private final long mask;
 
         Symbol(int id, String name, Spec domain, boolean guardable, boolean tainted) {
@@ -229,7 +228,6 @@ final class Domain {
             this.tainted = tainted;
             this.scalar = domain.kind() == Spec.Kind.FINITE_SCALAR;
             this.member = domain.kind() == Spec.Kind.FINITE_MEMBERSHIP;
-            this.ordinals = scalar || member ? domain.ordinals : null;
             this.mask = scalar || member ? domain.mask : 0L;
         }
 
@@ -1288,9 +1286,8 @@ final class Domain {
             }
             long allowedMask = 0L;
             for (String value : values) {
-                Integer ordinal = symbol.ordinals.get(value);
-                if (ordinal != null) {
-                    allowedMask |= 1L << ordinal;
+                if (symbol.domain.values().contains(value)) {
+                    allowedMask |= symbol.mask(value);
                 }
             }
             if (allowedMask == 0L) {
@@ -1381,53 +1378,14 @@ final class Domain {
             this.clauses = clauses;
         }
 
-        static Decision of(List<Clause> clauses, Table symbols) {
-            if (clauses.isEmpty()) {
-                return FALSE;
-            }
-            Set<Clause> unique = new LinkedHashSet<>();
-            for (Clause clause : clauses) {
-                Clause next = clause.normalized(symbols);
-                if (next.ids.length == 0) {
-                    return TRUE;
-                }
-                unique.add(next);
-            }
-            List<Clause> normalized = new ArrayList<>(unique);
-            boolean changed;
-            do {
-                changed = false;
-                for (int i = 0; i < normalized.size() && !changed; i++) {
-                    for (int j = i + 1; j < normalized.size(); j++) {
-                        Clause left = normalized.get(i);
-                        Clause right = normalized.get(j);
-                        if (left.subsetOf(right, symbols)) {
-                            normalized.remove(i);
-                            changed = true;
-                            break;
-                        }
-                        if (right.subsetOf(left, symbols)) {
-                            normalized.remove(j);
-                            changed = true;
-                            break;
-                        }
-                        if (normalized.size() <= TRY_MERGE_MAX_CLAUSES) {
-                            Clause merged = left.tryMerge(right, symbols);
-                            if (merged != null) {
-                                normalized.set(i, merged);
-                                normalized.remove(j);
-                                changed = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            } while (changed);
-            if (normalized.isEmpty()) {
-                return FALSE;
-            }
-            normalized.sort(Clause::compare);
-            return new Decision(normalized);
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof Decision && clauses.equals(((Decision) o).clauses);
+        }
+
+        @Override
+        public int hashCode() {
+            return clauses.hashCode();
         }
 
         boolean isFalse() {
@@ -1563,14 +1521,53 @@ final class Domain {
             return true;
         }
 
-        @Override
-        public boolean equals(Object o) {
-            return o instanceof Decision && clauses.equals(((Decision) o).clauses);
-        }
-
-        @Override
-        public int hashCode() {
-            return clauses.hashCode();
+        static Decision of(List<Clause> clauses, Table symbols) {
+            if (clauses.isEmpty()) {
+                return FALSE;
+            }
+            Set<Clause> unique = new LinkedHashSet<>();
+            for (Clause clause : clauses) {
+                Clause next = clause.normalized(symbols);
+                if (next.ids.length == 0) {
+                    return TRUE;
+                }
+                unique.add(next);
+            }
+            List<Clause> normalized = new ArrayList<>(unique);
+            boolean changed;
+            do {
+                changed = false;
+                for (int i = 0; i < normalized.size() && !changed; i++) {
+                    for (int j = i + 1; j < normalized.size(); j++) {
+                        Clause left = normalized.get(i);
+                        Clause right = normalized.get(j);
+                        if (left.subsetOf(right, symbols)) {
+                            normalized.remove(i);
+                            changed = true;
+                            break;
+                        }
+                        if (right.subsetOf(left, symbols)) {
+                            normalized.remove(j);
+                            changed = true;
+                            break;
+                        }
+                        if (normalized.size() <= TRY_MERGE_MAX_CLAUSES) {
+                            Clause merged = left.tryMerge(right, symbols);
+                            if (merged != null) {
+                                normalized.set(i, merged);
+                                normalized.remove(j);
+                                changed = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            } while (changed);
+            if (normalized.isEmpty()) {
+                return FALSE;
+            }
+            normalized.sort(Clause::compare);
+            return new Decision(normalized);
         }
     }
 
@@ -2024,6 +2021,5 @@ final class Domain {
             }
             return expr;
         }
-
     }
 }
