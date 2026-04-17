@@ -121,20 +121,6 @@ public final class Expression implements Comparable<Expression> {
      * @param right    right expression
      * @return Expression
      */
-    public static Expression create(Expression left, String operator, Expression right) {
-        Operator op = OPS.get(operator);
-        return op == null ? create("(" + left.literal() + ") " + operator + " (" + right.literal() + ")")
-                : create(left, op, right);
-    }
-
-    /**
-     * Get or create a binary expression.
-     *
-     * @param left     left expression
-     * @param operator operator
-     * @param right    right expression
-     * @return Expression
-     */
     public static Expression create(Expression left, Operator operator, Expression right) {
         List<Token> tokens = new ArrayList<>(left.tokens);
         tokens.addAll(right.tokens);
@@ -168,17 +154,16 @@ public final class Expression implements Comparable<Expression> {
     }
 
     /**
-     * Combine this expression and the given expressions with the logical
-     * 'and' operator.
+     * Combine the given expressions with the logical 'and' operator.
      *
      * @param expressions expressions, or {@code null}
      * @return Expression
      */
-    public Expression and(List<Expression> expressions) {
+    public static Expression and(List<Expression> expressions) {
         if (expressions == null) {
-            return this;
+            return TRUE;
         }
-        Expression result = this;
+        Expression result = TRUE;
         for (Expression expression : expressions) {
             result = result.and(expression);
         }
@@ -206,17 +191,16 @@ public final class Expression implements Comparable<Expression> {
     }
 
     /**
-     * Combine this expression and the given expressions with the logical
-     * 'or' operator.
+     * Combine the given expressions with the logical 'or' operator.
      *
      * @param expressions expressions, or {@code null}
      * @return Expression
      */
-    public Expression or(List<Expression> expressions) {
+    public static Expression or(List<Expression> expressions) {
         if (expressions == null) {
-            return this;
+            return FALSE;
         }
-        Expression result = this;
+        Expression result = FALSE;
         for (Expression expression : expressions) {
             result = result.or(expression);
         }

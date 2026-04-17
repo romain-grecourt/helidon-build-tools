@@ -885,7 +885,7 @@ final class Flow {
                     return null;
                 }
                 if (bound.equals(Guard.FALSE)) {
-                    Guard exact = symbol == null ? fact.exactDefined(guards) : fact.supportedExactDefined(symbol, guards);
+                    Guard exact = symbol == null ? fact.exactGuard(guards) : fact.supportedExactGuard(symbol, guards);
                     if (defined == null || exact.equals(Guard.FALSE) || !guards.implies(exact, defined)) {
                         return null;
                     }
@@ -893,7 +893,7 @@ final class Flow {
                 return bound;
             }
             Guard available = defined == null ? Guard.TRUE : defined;
-            Guard exact = symbol == null ? fact.exactDefined(guards) : fact.supportedExactDefined(symbol, guards);
+            Guard exact = symbol == null ? fact.exactGuard(guards) : fact.supportedExactGuard(symbol, guards);
             Guard unresolved = guards.and(guards.minus(available, exact), direct);
             return guards.or(bound, unresolved);
         }

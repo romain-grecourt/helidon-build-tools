@@ -1,5 +1,38 @@
 # Progress
 
+- 2026-04-16: Extracted the shared non-boolean finite-scalar rendering
+  path into `Domain.finiteScalarExpression(...)`. The `Residual.SCALAR_IN`
+  branch and the scalar `Clause.expression(...)` overload now both
+  reuse that helper after their local boolean shortcuts, so the
+  full-domain, single-excluded-value, and equality-disjunction cases
+  live in one place. Focused validation reran green with
+  `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=ExpressionTest,DomainTest,FlowTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`227` tests, `BUILD SUCCESS`, total time `5.522 s`).
+- 2026-04-16: Converted `Expression.and(List<Expression>)` and
+  `Expression.or(List<Expression>)` from receiver-relative instance
+  methods to neutral-element static combiners. `and(...)` now folds
+  from `Expression.TRUE`, `or(...)` now folds from `Expression.FALSE`,
+  the `Domain` / `ScriptCompiler` call sites now use the static API,
+  and `ExpressionTest` now pins the static null/empty behavior
+  directly. Focused validation reran green with `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=ExpressionTest,DomainTest,FlowTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`227` tests, `BUILD SUCCESS`, total time `5.108 s`).
+- 2026-04-16: Fused the duplicated required/forbidden membership
+  rendering loops in `Domain.Clause.expression(...)` into one
+  two-iteration outer loop. The token construction is now shared, the
+  second pass applies `Token.negate(...)`, and the rendered order stays
+  the same: required `contains` terms first, forbidden negated
+  `contains` terms second. Focused validation reran green with
+  `git diff --check` and
+  `mvn -pl archetype/engine-v2 -am \
+  -Dtest=DomainTest,FlowTest,ExpressionTest,ScriptCompilerTest,VariationsTest \
+  -Dsurefire.failIfNoSpecifiedTests=false test`
+  (`227` tests, `BUILD SUCCESS`, total time `4.766 s`).
 - 2026-04-16: Extracted the duplicated `Domain.Clause.subtract(...)`
   split-and-recurse path into a private `split(...)` helper and
   shortened the surrounding scalar split locals to `full`, `left`,

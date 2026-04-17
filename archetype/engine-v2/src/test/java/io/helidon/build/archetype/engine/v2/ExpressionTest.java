@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 import io.helidon.build.archetype.engine.v2.Expression.FormatException;
+import io.helidon.build.archetype.engine.v2.Expression.Operator;
 import io.helidon.build.archetype.engine.v2.Expression.QmcLimitException;
 import io.helidon.build.archetype.engine.v2.Expression.UnresolvedVariableException;
 import io.helidon.build.archetype.engine.v2.Value.ValueException;
@@ -726,13 +727,13 @@ class ExpressionTest {
 
     @Test
     void testAndOrWithExpressionLists() {
-        assertThat(Expression.TRUE.and((List<Expression>) null), is(Expression.TRUE));
-        assertThat(Expression.FALSE.or((List<Expression>) null), is(Expression.FALSE));
-        assertThat(Expression.TRUE.and(List.<Expression>of()), is(Expression.TRUE));
-        assertThat(Expression.FALSE.or(List.<Expression>of()), is(Expression.FALSE));
-        assertThat(Expression.TRUE.and(List.of(expr("${a}"), expr("${b} || ${c}"))),
+        assertThat(Expression.and((List<Expression>) null), is(Expression.TRUE));
+        assertThat(Expression.or((List<Expression>) null), is(Expression.FALSE));
+        assertThat(Expression.and(List.<Expression>of()), is(Expression.TRUE));
+        assertThat(Expression.or(List.<Expression>of()), is(Expression.FALSE));
+        assertThat(Expression.and(List.of(expr("${a}"), expr("${b} || ${c}"))),
                 is(expr("${a} && (${b} || ${c})")));
-        assertThat(Expression.FALSE.or(List.of(expr("${a} && ${b}"), expr("${c}"))),
+        assertThat(Expression.or(List.of(expr("${a} && ${b}"), expr("${c}"))),
                 is(expr("(${a} && ${b}) || ${c}")));
     }
 
@@ -751,8 +752,7 @@ class ExpressionTest {
 
     @Test
     void testProgrammaticCreateBinaryExpression() {
-        Expression actual = Expression.create(expr("${a} || ${b}"), "==", expr("${c} && ${d}"));
-
+        Expression actual = Expression.create(expr("${a} || ${b}"), Operator.EQUAL, expr("${c} && ${d}"));
         assertThat(actual.literal(), is("(${a} || ${b}) == (${c} && ${d})"));
     }
 

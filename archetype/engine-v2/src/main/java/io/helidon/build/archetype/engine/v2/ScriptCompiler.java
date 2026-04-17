@@ -1090,7 +1090,7 @@ public class ScriptCompiler {
                 if (!removableProjectedConditionTerm(term, remaining)) {
                     continue;
                 }
-                Expression candidate = Expression.TRUE.and(remaining).reduce();
+                Expression candidate = Expression.and(remaining).reduce();
                 Guard candidateReach = projectedReach(candidate);
                 if (flow.equivalent(candidateReach, target)) {
                     minimized = candidate;
@@ -1166,7 +1166,7 @@ public class ScriptCompiler {
             }
             for (int i = 0; i < terms.size(); i++) {
                 List<Expression> remaining = Lists.withoutIndex(terms, i);
-                Expression candidate = Expression.FALSE.or(remaining).reduce();
+                Expression candidate = Expression.or(remaining).reduce();
                 Guard candidateReach = localReach(candidate, scope);
                 if (flow.equivalent(candidateReach, target)) {
                     minimized = candidate;
@@ -1580,7 +1580,7 @@ public class ScriptCompiler {
                     return null;
                 }
                 if (flow.isFalse(bound)) {
-                    Guard exact = symbol == null ? fact.exactDefined(flow.guards()) : fact.supportedExactDefined(symbol, flow.guards());
+                    Guard exact = symbol == null ? fact.exactGuard(flow.guards()) : fact.supportedExactGuard(symbol, flow.guards());
                     if (defined == null || flow.isFalse(exact) || !flow.contains(exact, defined)) {
                         return null;
                     }
@@ -1588,7 +1588,7 @@ public class ScriptCompiler {
                 return bound;
             }
             Guard available = defined == null ? TRUE : defined;
-            Guard exact = symbol == null ? fact.exactDefined(flow.guards()) : fact.supportedExactDefined(symbol, flow.guards());
+            Guard exact = symbol == null ? fact.exactGuard(flow.guards()) : fact.supportedExactGuard(symbol, flow.guards());
             Guard unresolved = flow.and(flow.minus(available, exact), raw);
             return flow.or(bound, unresolved);
         }
@@ -2847,7 +2847,7 @@ public class ScriptCompiler {
                 if (disjunctions.size() > 1) {
                     for (int i = 0; i < disjunctions.size(); i++) {
                         List<Expression> remaining = Lists.withoutIndex(disjunctions, i);
-                        Expression candidate = Expression.FALSE.or(remaining).reduce(base);
+                        Expression candidate = Expression.or(remaining).reduce(base);
                         Guard candidateReach = new ExpressionAnalyzer(scope, facts, false, false)
                                 .analyze(candidate)
                                 .reach;
@@ -2870,8 +2870,8 @@ public class ScriptCompiler {
                     for (int j = 0; j < conjunctions.size(); j++) {
                         List<Expression> reducedConjunctions = Lists.withoutIndex(conjunctions, j);
                         List<Expression> reducedDisjunctions = new ArrayList<>(disjunctions);
-                        reducedDisjunctions.set(i, Expression.TRUE.and(reducedConjunctions));
-                        Expression candidate = Expression.FALSE.or(reducedDisjunctions).reduce(base);
+                        reducedDisjunctions.set(i, Expression.and(reducedConjunctions));
+                        Expression candidate = Expression.or(reducedDisjunctions).reduce(base);
                         Guard candidateReach = new ExpressionAnalyzer(scope, facts, false, false)
                                 .analyze(candidate)
                                 .reach;
@@ -2912,7 +2912,7 @@ public class ScriptCompiler {
                             .reach;
                     if (flow.isFalse(overlap)) {
                         terms = Lists.withoutIndex(terms, i);
-                        expr = Expression.FALSE.or(terms).reduce(base);
+                        expr = Expression.or(terms).reduce(base);
                         changed = true;
                         break;
                     }
