@@ -33,6 +33,9 @@ import io.helidon.build.archetype.engine.v2.Domain.Symbol;
 import io.helidon.build.archetype.engine.v2.Domain.Fact;
 import io.helidon.build.archetype.engine.v2.Expression.Operator;
 import io.helidon.build.archetype.engine.v2.Expression.Token;
+import io.helidon.build.archetype.engine.v2.Ir.Block;
+import io.helidon.build.archetype.engine.v2.Ir.Op;
+import io.helidon.build.archetype.engine.v2.Ir.Terminator;
 import io.helidon.build.archetype.engine.v2.Node.Kind;
 
 import static java.util.Objects.requireNonNull;
@@ -147,8 +150,14 @@ final class Flow {
                     break;
             }
         }
-        Value<?> exact = exactValue(fact, required, type);
-        return exact != null ? exact : info == null ? Value.empty() : singletonValue(fact.value(), info.sym.domain(), type);
+        Value<?> exact = value(fact, required, type);
+        if (exact != null) {
+            return exact;
+        }
+        if (info == null) {
+            return Value.empty();
+        }
+        return singletonValue(fact.lattice(), info.sym.domain(), type);
     }
 
     Value<?> declaredValue(Node node) {
@@ -220,16 +229,16 @@ final class Flow {
         return id < 0 ? null : before.env.get(id);
     }
 
-    private Value<?> exactValue(Fact fact, Guard required, Value.Type type) {
-        if (!fact.guardedValues().isEmpty()) {
+    private Value<?> value(Fact fact, Guard required, Value.Type type) {
+        if (!fact.values().isEmpty()) {
             Value<?> exact = null;
             Guard coverage = Guard.FALSE;
-            for (GuardedValue guardedValue : fact.guardedValues()) {
-                Guard overlap = ir.guards().and(required, guardedValue.guard());
+            for (GuardedValue value : fact.values()) {
+                Guard overlap = ir.guards().and(required, value.guard());
                 if (overlap.equals(Guard.FALSE)) {
                     continue;
                 }
-                Value<?> candidate = coerceValue(guardedValue.value(), type);
+                Value<?> candidate = coerceValue(value.value(), type);
                 if (exact == null) {
                     exact = candidate;
                 } else if (!Value.isEqual(exact, candidate)) {
@@ -257,15 +266,15 @@ final class Flow {
         }
     }
 
-    private static Value<?> singletonValue(LatticeValue value, Spec spec, Value.Type type) {
-        if (value.kind() == LatticeValue.Kind.FINITE_SCALAR) {
-            String scalar = value.singletonScalar(spec);
+    private static Value<?> singletonValue(LatticeValue lattice, Spec spec, Value.Type type) {
+        if (lattice.kind() == LatticeValue.Kind.FINITE_SCALAR) {
+            String scalar = lattice.singletonScalar(spec);
             if (scalar == null) {
                 return Value.empty();
             }
             return type == Value.Type.BOOLEAN ? Value.parseBoolean(scalar) : Value.of(scalar);
         }
-        return Value.of(value.sample());
+        return Value.of(lattice.sample());
     }
 
     static final class SymbolInfo {
@@ -364,28 +373,30 @@ final class Flow {
         }
 
         void indexAnchors() {
-            for (int opId = 0; opId < ir.opCount(); opId++) {
-                ops.computeIfAbsent(ir.op(opId).source(), key -> new ArrayList<>()).add(opId);
+            Op[] irOps = ir.ops();
+            for (int opId = 0; opId < irOps.length; opId++) {
+                ops.computeIfAbsent(irOps[opId].source(), key -> new ArrayList<>()).add(opId);
             }
-            for (int blockId = 0; blockId < ir.blockCount(); blockId++) {
-                Ir.Terminator term = ir.block(blockId).term();
-                if (term.kind() != Ir.Terminator.Kind.BRANCH) {
-                    continue;
+            Block[] blocks = ir.blocks();
+            for (Block block : blocks) {
+                Terminator term = block.term();
+                if (term.kind() == Terminator.Kind.BRANCH) {
+                    int id = term.falseId();
+                    if (blocks[id].term().kind() == Terminator.Kind.GOTO) {
+                        id = blocks[id].term().targetId();
+                    }
+                    Node source = term.source();
+                    branchTrueIds.put(source, term.trueId());
+                    branchJoinIds.put(source, id);
                 }
-                int joinId = term.falseId();
-                if (ir.block(joinId).term().kind() == Ir.Terminator.Kind.GOTO) {
-                    joinId = ir.block(joinId).term().targetId();
-                }
-                Node source = term.source();
-                branchTrueIds.put(source, term.trueId());
-                branchJoinIds.put(source, joinId);
             }
         }
 
         void scanSymbols() {
-            for (int opId = 0; opId < ir.opCount(); opId++) {
-                State before = analyzer.beforeState(opId);
-                Ir.Op op = ir.op(opId);
+            Op[] ops = ir.ops();
+            for (int id = 0; id < ops.length; id++) {
+                State before = analyzer.beforeState(id);
+                Op op = ops[id];
                 switch (op.kind()) {
                     case DECLARE_INPUT: {
                         SymbolInfo info = symbolInfos[op.symbolId()];
@@ -406,10 +417,10 @@ final class Flow {
                         if (before.path.equals(Guard.FALSE)) {
                             break;
                         }
-                        Map<Integer, Fact> env = analyzer.afterState(opId).env;
+                        Map<Integer, Fact> env = analyzer.afterState(id).env;
                         Fact fact = env.get(op.symbolId());
                         if (fact == null) {
-                            throw new IllegalStateException("Missing flow fact after op for key: " + opId);
+                            throw new IllegalStateException("Missing flow fact after op for key: " + id);
                         }
                         info.addDefinition(fact.guard(), guards);
                         recordAvailability(info, fact);
@@ -422,46 +433,42 @@ final class Flow {
         }
 
         void recordAvailability(SymbolInfo info, Fact fact) {
-            if (!fact.guardedValues().isEmpty()) {
-                for (GuardedValue guardedValue : fact.guardedValues()) {
-                    recordExactAvailability(info, guardedValue);
+            if (!fact.values().isEmpty()) {
+                for (GuardedValue value : fact.values()) {
+                    recordExactAvailability(info, value);
                 }
                 return;
             }
-            if (fact.value().kind() != LatticeValue.Kind.FINITE_SCALAR) {
-                return;
-            }
-            switch (info.sym.domain().kind()) {
-                case BOOLEAN:
-                case CHOICE:
-                case FINITE_TEXT:
-                    break;
-                default:
-                    return;
-            }
-            if (fact.value().scalarMask() == info.sym.domain().mask()) {
-                return;
-            }
-            for (String value : fact.value().scalarValues(info.sym.domain())) {
-                info.addAvailability(value, fact.guard(), guards);
+            if (fact.lattice().kind() == LatticeValue.Kind.FINITE_SCALAR) {
+                switch (info.sym.domain().kind()) {
+                    case BOOLEAN:
+                    case CHOICE:
+                    case FINITE_TEXT:
+                        if (fact.lattice().scalarMask() != info.sym.domain().mask()) {
+                            for (String value : fact.lattice().scalarValues(info.sym.domain())) {
+                                info.addAvailability(value, fact.guard(), guards);
+                            }
+                        }
+                        break;
+                    default:
+                }
             }
         }
 
-        void recordExactAvailability(SymbolInfo info, GuardedValue guardedValue) {
+        void recordExactAvailability(SymbolInfo info, GuardedValue value) {
             switch (info.sym.domain().kind()) {
                 case BOOLEAN:
                 case CHOICE:
                 case FINITE_TEXT:
                 case MEMBERSHIP:
-                    long mask = guardedValue.mask();
+                    long mask = value.mask();
                     while (mask != 0L) {
                         int ordinal = Long.numberOfTrailingZeros(mask);
-                        info.addAvailability(info.sym.value(ordinal), guardedValue.guard(), guards);
+                        info.addAvailability(info.sym.value(ordinal), value.guard(), guards);
                         mask &= mask - 1L;
                     }
                     break;
                 default:
-                    break;
             }
         }
 

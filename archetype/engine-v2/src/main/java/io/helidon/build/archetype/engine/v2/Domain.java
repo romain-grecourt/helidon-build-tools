@@ -1087,38 +1087,38 @@ final class Domain {
 
     static final class Fact {
         private final Guard guard;
-        private final LatticeValue value;
-        private final List<GuardedValue> guardedValues;
+        private final LatticeValue lattice;
+        private final List<GuardedValue> values;
 
-        Fact(Guard guard, LatticeValue value, List<GuardedValue> guardedValues) {
+        Fact(Guard guard, LatticeValue lattice, List<GuardedValue> values) {
             this.guard = guard;
-            this.value = value;
-            this.guardedValues = guardedValues;
+            this.lattice = lattice;
+            this.values = values;
         }
 
         Guard guard() {
             return guard;
         }
 
-        LatticeValue value() {
-            return value;
+        LatticeValue lattice() {
+            return lattice;
         }
 
-        List<GuardedValue> guardedValues() {
-            return guardedValues;
+        List<GuardedValue> values() {
+            return values;
         }
 
         Guard exactGuard(Guards guards) {
             Guard result = Guard.FALSE;
-            for (GuardedValue guardedValue : guardedValues) {
-                result = guards.or(result, guardedValue.guard);
+            for (GuardedValue value : values) {
+                result = guards.or(result, value.guard);
             }
             return result;
         }
 
         Guard supportedExactGuard(Symbol sym, Guards guards) {
             Guard result = Guard.FALSE;
-            for (GuardedValue guardedValue : guardedValues) {
+            for (GuardedValue guardedValue : values) {
                 boolean supported;
                 switch (sym.domain.kind) {
                     case BOOLEAN:
@@ -1144,7 +1144,7 @@ final class Domain {
 
         Guard match(Symbol sym, Value<?> candidate, Guards guards) {
             Guard result = Guard.FALSE;
-            for (GuardedValue guardedValue : guardedValues) {
+            for (GuardedValue guardedValue : values) {
                 if (sym.domain.sameValue(guardedValue.value, candidate)) {
                     result = guards.or(result, guardedValue.guard);
                 }
@@ -1166,7 +1166,7 @@ final class Domain {
                 return Guard.FALSE;
             }
             Guard result = Guard.FALSE;
-            for (GuardedValue guardedValue : guardedValues) {
+            for (GuardedValue guardedValue : this.values) {
                 if ((guardedValue.mask & allowedMask) != 0L) {
                     result = guards.or(result, guardedValue.guard);
                 }
@@ -1186,45 +1186,43 @@ final class Domain {
             }
             long required = sym.domain.mask(values);
             Guard result = Guard.FALSE;
-            for (GuardedValue guardedValue : guardedValues) {
-                if (required == 0L ? guardedValue.value.type() == Value.Type.LIST
-                        : guardedValue.mask != 0L && (required & ~guardedValue.mask) == 0L) {
-                    result = guards.or(result, guardedValue.guard);
+            for (GuardedValue value : this.values) {
+                if (required == 0L ? value.value.type() == Value.Type.LIST
+                        : value.mask != 0L && (required & ~value.mask) == 0L) {
+                    result = guards.or(result, value.guard);
                 }
             }
             return result;
         }
 
-        static Fact exact(Guard guard, Spec spec, LatticeValue value, Value<?> exactValue) {
-            List<GuardedValue> guardedValues;
-            if (exactValue != null && exactValue.isPresent()) {
-                guardedValues = List.of(new GuardedValue(exactValue, guard, spec.mask(exactValue)));
+        static Fact exact(Guard guard, Spec spec, LatticeValue lattice, Value<?> value) {
+            List<GuardedValue> values;
+            if (value != null && value.isPresent()) {
+                values = List.of(new GuardedValue(value, guard, spec.mask(value)));
             } else {
-                guardedValues = List.of();
+                values = List.of();
             }
-            return new Fact(guard, value, guardedValues);
+            return new Fact(guard, lattice, values);
         }
 
         static Fact merge(Fact left, Fact right, Guards guards) {
             Guard guard = guards.or(left.guard, right.guard);
-            LatticeValue value = LatticeValue.join(left.value, right.value);
-            if (left.guardedValues.isEmpty()) {
-                return new Fact(guard, value, right.guardedValues);
+            LatticeValue lattice = LatticeValue.join(left.lattice, right.lattice);
+            if (left.values.isEmpty()) {
+                return new Fact(guard, lattice, right.values);
             }
-            if (right.guardedValues.isEmpty()) {
-                return new Fact(guard, value, left.guardedValues);
+            if (right.values.isEmpty()) {
+                return new Fact(guard, lattice, left.values);
             }
             List<GuardedValue> merged = new ArrayList<>();
-            Iterator<GuardedValue> leftIt = left.guardedValues.iterator();
-            Iterator<GuardedValue> rightIt = right.guardedValues.iterator();
+            Iterator<GuardedValue> leftIt = left.values.iterator();
+            Iterator<GuardedValue> rightIt = right.values.iterator();
             while (leftIt.hasNext() || rightIt.hasNext()) {
                 GuardedValue next = leftIt.hasNext() ? leftIt.next() : rightIt.next();
                 boolean mergedValue = false;
                 for (int i = 0; i < merged.size(); i++) {
                     GuardedValue current = merged.get(i);
-                    if (current.mask != 0L || next.mask != 0L
-                            ? current.mask != 0L && current.mask == next.mask
-                            : Value.isEqual(current.value, next.value)) {
+                    if (current.mask != 0L || current.mask == 0L && next.mask == 0L && Value.isEqual(current.value, next.value)) {
                         merged.set(i, current.withGuard(guards.or(current.guard, next.guard)));
                         mergedValue = true;
                         break;
@@ -1234,7 +1232,7 @@ final class Domain {
                     merged.add(next);
                 }
             }
-            return new Fact(guard, value, merged);
+            return new Fact(guard, lattice, merged);
         }
     }
 

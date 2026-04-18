@@ -104,15 +104,15 @@ class FlowTest {
 
         assertThat(flow.guards().equivalent(before.path(), TRUE), is(true));
         assertThat(flow.guards().equivalent(fact.guard(), TRUE), is(true));
-        assertThat(fact.value().kind(), is(LatticeValue.Kind.FINITE_SCALAR));
-        assertThat(fact.value().scalarValues(flavor.domain()), is(Set.of("mp", "se")));
+        assertThat(fact.lattice().kind(), is(LatticeValue.Kind.FINITE_SCALAR));
+        assertThat(fact.lattice().scalarValues(flavor.domain()), is(Set.of("mp", "se")));
         assertThat(exactByValue.keySet(), containsInAnyOrder("mp", "se"));
         assertThat(flow.guards().equivalent(exactByValue.get("mp"), flow.guards().eq(enabled.id(), "true")), is(true));
         assertThat(flow.guards().equivalent(exactByValue.get("se"), flow.guards().eq(enabled.id(), "false")), is(true));
     }
 
     @Test
-    void testAnalyzeMergesSameExactValueAcrossMultiplePaths() {
+    void testAnalyzeMergesSameValueAcrossMultiplePaths() {
         Context.Scope scope = new Context().scope();
         Node script = load("flow/same-exact-value-merge.xml");
 
@@ -127,7 +127,7 @@ class FlowTest {
         Map<String, Guard> exactByValue = exactGuards(fact);
 
         assertThat(flow.guards().equivalent(before.path(), TRUE), is(true));
-        assertThat(fact.value().scalarValues(flavor.domain()), is(Set.of("mp", "se")));
+        assertThat(fact.lattice().scalarValues(flavor.domain()), is(Set.of("mp", "se")));
         assertThat(exactByValue.keySet(), containsInAnyOrder("mp", "se"));
         assertThat(flow.guards().equivalent(exactByValue.get("mp"),
                 flow.guards().or(
@@ -154,9 +154,9 @@ class FlowTest {
         Symbol flag = symbol(flow, "flag");
         Fact fact = flow.before(findStep(script, "Observe")).env().get(flag.id());
 
-        assertThat(fact.guardedValues().size(), is(1));
-        assertThat(Value.scalarLiteral(fact.guardedValues().get(0).value()), is("true"));
-        assertThat(flow.guards().equivalent(fact.guardedValues().get(0).guard(), TRUE), is(true));
+        assertThat(fact.values().size(), is(1));
+        assertThat(Value.scalarLiteral(fact.values().get(0).value()), is("true"));
+        assertThat(flow.guards().equivalent(fact.values().get(0).guard(), TRUE), is(true));
     }
 
     @Test
@@ -176,8 +176,8 @@ class FlowTest {
         assertThat(names, is(Set.of("enabled", "flag")));
         assertThat(flow.declaredValue(condition, "flag").getBoolean(), is(true));
         assertThat(flow.guards().equivalent(fact.guard(), TRUE), is(true));
-        assertThat(fact.guardedValues().size(), is(1));
-        assertThat(Value.scalarLiteral(fact.guardedValues().get(0).value()), is("true"));
+        assertThat(fact.values().size(), is(1));
+        assertThat(Value.scalarLiteral(fact.values().get(0).value()), is("true"));
     }
 
     @Test
@@ -376,7 +376,7 @@ class FlowTest {
     }
 
     static Map<String, Guard> exactGuards(Fact fact) {
-        return fact.guardedValues().stream()
+        return fact.values().stream()
                 .collect(Collectors.toMap(it -> Value.scalarLiteral(it.value()), GuardedValue::guard));
     }
 }

@@ -833,9 +833,9 @@ public class ScriptCompiler {
         if (flow.isFalse(definedUnder)) {
             return null;
         }
-        List<GuardedValue> guardedValues = fact.guardedValues();
+        List<GuardedValue> guardedValues = fact.values();
         if (guardedValues.isEmpty()) {
-            return definedUnder.equals(fact.guard()) ? fact : new Fact(definedUnder, fact.value(), List.of());
+            return definedUnder.equals(fact.guard()) ? fact : new Fact(definedUnder, fact.lattice(), List.of());
         }
         List<GuardedValue> constrainedValues = new ArrayList<>(guardedValues.size());
         boolean changed = !definedUnder.equals(fact.guard());
@@ -852,7 +852,7 @@ public class ScriptCompiler {
                 constrainedValues.add(guardedValue);
             }
         }
-        return changed ? new Fact(definedUnder, fact.value(), constrainedValues) : fact;
+        return changed ? new Fact(definedUnder, fact.lattice(), constrainedValues) : fact;
     }
 
     private Fact fact(Map<String, Fact> facts, String key) {

@@ -100,28 +100,16 @@ final class Ir {
         return guards;
     }
 
-    int blockCount() {
-        return blocks.length;
+    Block[] blocks() {
+        return blocks;
     }
 
-    int opCount() {
-        return ops.length;
+    Op[] ops() {
+        return ops;
     }
 
-    int controlCount() {
-        return controls.length;
-    }
-
-    Block block(int blockId) {
-        return blocks[blockId];
-    }
-
-    Op op(int opId) {
-        return ops[opId];
-    }
-
-    Control control(int controlId) {
-        return controls[controlId];
+    Control[] controls() {
+        return controls;
     }
 
     static final class Op {

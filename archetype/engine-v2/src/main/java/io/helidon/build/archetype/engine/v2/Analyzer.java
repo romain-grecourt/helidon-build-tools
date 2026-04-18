@@ -34,6 +34,8 @@ import io.helidon.build.archetype.engine.v2.Domain.Spec;
 import io.helidon.build.archetype.engine.v2.Domain.Symbol;
 import io.helidon.build.archetype.engine.v2.Expression.Token;
 import io.helidon.build.archetype.engine.v2.Flow.State;
+import io.helidon.build.archetype.engine.v2.Ir.Block;
+import io.helidon.build.archetype.engine.v2.Ir.Control;
 
 final class Analyzer {
     private static final int EXACT_CASE_MAX = 16;
@@ -47,11 +49,13 @@ final class Analyzer {
 
     Analyzer(Ir ir) {
         this.ir = ir;
-        this.blocks = new BlockAnalysis[ir.blockCount()];
+        Block[] irBlocks = ir.blocks();
+        this.blocks = new BlockAnalysis[irBlocks.length];
         for (int i = 0; i < blocks.length; i++) {
             blocks[i] = new BlockAnalysis();
         }
-        this.ops = new OpAnalysis[ir.opCount()];
+        Ir.Op[] irOps = ir.ops();
+        this.ops = new OpAnalysis[irOps.length];
         for (int i = 0; i < ops.length; i++) {
             ops[i] = new OpAnalysis();
         }
@@ -82,85 +86,117 @@ final class Analyzer {
     }
 
     private void analyzeControl() {
-        ControlPass pass = new ControlPass(ir.blockCount(), ir.controlCount());
+        Block[] blocks = ir.blocks();
+        Control[] controls = ir.controls();
+        ControlPass pass = new ControlPass(blocks.length, controls.length);
         pass.reachable[0] = true;
         pass.guards[0] = Guard.TRUE;
-        for (int blockId = 0; blockId < pass.reachable.length; blockId++) {
-            if (!pass.reachable[blockId]) {
-                continue;
-            }
-            Ir.Terminator term = ir.block(blockId).term();
-            switch (term.kind()) {
-                case GOTO:
-                    pass.reachable[term.targetId()] = true;
-                    break;
-                case BRANCH:
-                    pass.reachable[term.trueId()] = true;
-                    pass.reachable[term.falseId()] = true;
-                    break;
-                case RETURN:
-                case UNREACHABLE:
-                default:
-                    break;
+        for (int id = 0; id < pass.reachable.length; id++) {
+            if (pass.reachable[id]) {
+                Ir.Terminator term = blocks[id].term();
+                switch (term.kind()) {
+                    case GOTO:
+                        pass.reachable[term.targetId()] = true;
+                        break;
+                    case BRANCH:
+                        pass.reachable[term.trueId()] = true;
+                        pass.reachable[term.falseId()] = true;
+                        break;
+                    case RETURN:
+                    case UNREACHABLE:
+                    default:
+                        break;
+                }
             }
         }
 
         for (int id = 0; id < pass.reachable.length; id++) {
             if (pass.reachable[id]) {
-                int controlId = ir.block(id).controlId();
-                blocks[id].guard = computeControlGuard(controlId, pass);
+                int ctrlId = blocks[id].controlId();
+                this.blocks[id].guard = computeControlGuard(ctrlId, controls, pass);
             }
         }
         for (int id = 0; id < pass.reachable.length; id++) {
             if (pass.reachable[id]) {
-                Guard entry = blocks[id].guard;
-                for (int opId : ir.block(id).opIds()) {
+                Guard entry = this.blocks[id].guard;
+                for (int opId : blocks[id].opIds()) {
                     ops[opId].beforeGuard = entry;
                 }
             }
         }
     }
 
-    private Guard computeControlGuard(int id, ControlPass pass) {
+    private Guard computeControlGuard(int id, Control[] irControls, ControlPass pass) {
         Guard cached = pass.guards[id];
         if (cached != null) {
             return cached;
         }
-        int parentId = ir.control(id).parentId();
+        int parentId = irControls[id].parentId();
         if (parentId < 0) {
             pass.guards[id] = Guard.TRUE;
             return Guard.TRUE;
         }
-        Guard guard = computeControlGuard(parentId, pass);
-        Guard materialized = ir.guards().and(guard, ir.control(id).edgeGuard());
+        Guard guard = computeControlGuard(parentId, irControls, pass);
+        Guard materialized = ir.guards().and(guard, irControls[id].edgeGuard());
         pass.guards[id] = materialized;
         return materialized;
     }
 
     private void analyzeFacts() {
-        FactPass pass = new FactPass(ir.blockCount());
-        pass.seen[0] = true;
-        pass.stack.add(0);
-        while (!pass.stack.isEmpty()) {
-            int blockId = pass.stack.removeFirst();
+        Block[] irBlocks = ir.blocks();
+        Deque<Integer> stack = new ArrayDeque<>();
+        boolean[] seen = new boolean[irBlocks.length];
+        seen[0] = true;
+        stack.add(0);
+        while (!stack.isEmpty()) {
+            int blockId = stack.removeFirst();
             BlockAnalysis blockAnalysis = blocks[blockId];
             if (!blockAnalysis.guard.equals(Guard.FALSE)) {
                 Map<Integer, FactAnalysis> current = blockAnalysis.facts;
-                for (int id : ir.block(blockId).opIds()) {
+                for (int id : irBlocks[blockId].opIds()) {
                     OpAnalysis op = ops[id];
                     op.beforeFacts = current;
                     current = transfer(id, op.beforeGuard, current);
                     op.afterFacts = current;
                 }
-                Ir.Terminator term = ir.block(blockId).term();
+                Ir.Terminator term = irBlocks[blockId].term();
                 switch (term.kind()) {
-                    case GOTO:
-                        enqueueFacts(term.targetId(), current, pass);
+                    case GOTO: {
+                        int targetId = term.targetId();
+                        BlockAnalysis target = blocks[targetId];
+                        if (!target.guard.equals(Guard.FALSE)) {
+                            Map<Integer, FactAnalysis> merged = mergeEnv(target.facts, current);
+                            if (merged != target.facts || !seen[targetId]) {
+                                target.facts = merged;
+                                seen[targetId] = true;
+                                stack.addLast(targetId);
+                            }
+                        }
                         break;
-                    case BRANCH:
-                        enqueueFacts(term.trueId(), current, pass);
-                        enqueueFacts(term.falseId(), current, pass);
+                    }
+                    case BRANCH: {
+                        int trueId = term.trueId();
+                        BlockAnalysis trueBlock = blocks[trueId];
+                        if (!trueBlock.guard.equals(Guard.FALSE)) {
+                            Map<Integer, FactAnalysis> merged = mergeEnv(trueBlock.facts, current);
+                            if (merged != trueBlock.facts || !seen[trueId]) {
+                                trueBlock.facts = merged;
+                                seen[trueId] = true;
+                                stack.addLast(trueId);
+                            }
+                        }
+                        int falseId = term.falseId();
+                        BlockAnalysis falseBlock = blocks[falseId];
+                        if (!falseBlock.guard.equals(Guard.FALSE)) {
+                            Map<Integer, FactAnalysis> merged = mergeEnv(falseBlock.facts, current);
+                            if (merged != falseBlock.facts || !seen[falseId]) {
+                                falseBlock.facts = merged;
+                                seen[falseId] = true;
+                                stack.addLast(falseId);
+                            }
+                        }
                         break;
+                    }
                     case RETURN:
                     case UNREACHABLE:
                     default:
@@ -170,13 +206,13 @@ final class Analyzer {
         }
     }
 
-    private Map<Integer, FactAnalysis> transfer(int opId, Guard currentGuard, Map<Integer, FactAnalysis> state) {
-        Ir.Op op = ir.op(opId);
+    private Map<Integer, FactAnalysis> transfer(int id, Guard currentGuard, Map<Integer, FactAnalysis> state) {
+        Ir.Op op = ir.ops()[id];
         switch (op.kind()) {
             case DECLARE_INPUT: {
-                FactAnalysis declared = new FactAnalysis(
-                        coverage(op.blockId()),
-                        LatticeValue.top(ir.table().symbol(op.symbolId()).domain()));
+                Coverage defined = coverage(op.blockId());
+                LatticeValue lattice = LatticeValue.top(ir.table().symbol(op.symbolId()).domain());
+                FactAnalysis declared = new FactAnalysis(defined, lattice);
                 FactAnalysis existing = state.get(op.symbolId());
                 if (existing == null) {
                     return define(state, op.symbolId(), declared);
@@ -186,24 +222,11 @@ final class Analyzer {
             }
             case DEFINE_VALUE: {
                 Symbol sym = ir.table().symbol(op.symbolId());
-                FactAnalysis fact = evaluateFact(opId, currentGuard, sym, state);
+                FactAnalysis fact = evaluateFact(id, currentGuard, sym, state);
                 return define(state, op.symbolId(), fact);
             }
             default:
                 return state;
-        }
-    }
-
-    private void enqueueFacts(int blockId, Map<Integer, FactAnalysis> incoming, FactPass pass) {
-        BlockAnalysis blockAnalysis = blocks[blockId];
-        if (!blockAnalysis.guard.equals(Guard.FALSE)) {
-            Map<Integer, FactAnalysis> current = blockAnalysis.facts;
-            Map<Integer, FactAnalysis> merged = mergeEnv(current, incoming);
-            if (merged != current || !pass.seen[blockId]) {
-                blockAnalysis.facts = merged;
-                pass.seen[blockId] = true;
-                pass.stack.addLast(blockId);
-            }
         }
     }
 
@@ -244,15 +267,18 @@ final class Analyzer {
         return env;
     }
 
-    private FactAnalysis evaluateFact(int opId, Guard currentGuard, Symbol sym, Map<Integer, FactAnalysis> state) {
-        Ir.Op op = ir.op(opId);
+    private FactAnalysis evaluateFact(int opId, Guard guard, Symbol sym, Map<Integer, FactAnalysis> state) {
+        Ir.Op op = ir.ops()[opId];
         Expression expression = op.expression();
-        LatticeValue value = evaluateValue(expression, sym, state);
-        Value<?> exactValue = exactValue(expression, currentGuard, state);
-        return exactValue.isPresent() ? FactAnalysis.exact(op.blockId(), value, exactValue) : new FactAnalysis(coverage(op.blockId()), value);
+        LatticeValue lattice = lattice(expression, sym, state);
+        Value<?> value = value(expression, guard, state);
+        if (value.isPresent()) {
+            return FactAnalysis.exact(op.blockId(), lattice, value);
+        }
+        return new FactAnalysis(coverage(op.blockId()), lattice);
     }
 
-    private LatticeValue evaluateValue(Expression expression, Symbol sym, Map<Integer, FactAnalysis> state) {
+    private LatticeValue lattice(Expression expression, Symbol sym, Map<Integer, FactAnalysis> state) {
         List<Token> tokens = expression.tokens();
         if (tokens.size() == 1) {
             Token token = tokens.get(0);
@@ -272,7 +298,7 @@ final class Analyzer {
         return LatticeValue.top(sym.domain());
     }
 
-    private Value<?> exactValue(Expression expression, Guard currentGuard, Map<Integer, FactAnalysis> state) {
+    private Value<?> value(Expression expression, Guard guard, Map<Integer, FactAnalysis> state) {
         List<Token> tokens = expression.tokens();
         if (tokens.size() == 1) {
             Token token = tokens.get(0);
@@ -285,15 +311,15 @@ final class Analyzer {
                     Symbol sym = ir.table().symbol(id);
                     FactAnalysis fact = state.get(id);
                     if (fact != null) {
-                        Value<?> exactFromValue = exactFromValue(sym.domain(), fact, currentGuard);
+                        Value<?> exactFromValue = value(sym.domain(), fact, guard);
                         if (exactFromValue.isPresent()) {
                             return exactFromValue;
                         }
-                        if (!fact.exact.values.isEmpty() && implies(currentGuard, fact.exact.coverage)) {
+                        if (!fact.exact.values.isEmpty() && implies(guard, fact.exact.coverage)) {
                             Value<?> value = Value.empty();
                             boolean found = false;
                             for (CoveredValue exactCase : fact.exact.values) {
-                                if (overlaps(currentGuard, exactCase.coverage)) {
+                                if (overlaps(guard, exactCase.coverage)) {
                                     if (!found) {
                                         value = exactCase.value;
                                         found = true;
@@ -311,7 +337,7 @@ final class Analyzer {
         return Value.empty();
     }
 
-    private Value<?> exactFromValue(Spec spec, FactAnalysis fact, Guard guard) {
+    private Value<?> value(Spec spec, FactAnalysis fact, Guard guard) {
         if (implies(guard, fact.defined)) {
             if (fact.lattice.kind() == LatticeValue.Kind.FINITE_SCALAR) {
                 String scalar = fact.lattice.singletonScalar(spec);
@@ -386,17 +412,17 @@ final class Analyzer {
     }
 
     private Fact fact(int id, FactAnalysis fact) {
-        Map<FactAnalysis, Fact> cacheBySymbol = facts.computeIfAbsent(id, unused -> new IdentityHashMap<>());
-        Fact materialized = cacheBySymbol.get(fact);
+        Map<FactAnalysis, Fact> cache = facts.computeIfAbsent(id, unused -> new IdentityHashMap<>());
+        Fact materialized = cache.get(fact);
         if (materialized == null) {
             Symbol sym = ir.table().symbol(id);
             List<GuardedValue> guardedValues = new ArrayList<>(fact.exact.values.size());
-            for (CoveredValue exactCase : fact.exact.values) {
-                Guard guard = guard(exactCase.coverage);
-                guardedValues.add(new GuardedValue(exactCase.value, guard, sym.domain().mask(exactCase.value)));
+            for (CoveredValue value : fact.exact.values) {
+                Guard guard = guard(value.coverage);
+                guardedValues.add(new GuardedValue(value.value, guard, sym.domain().mask(value.value)));
             }
             materialized = new Fact(guard(fact.defined), fact.lattice, guardedValues);
-            cacheBySymbol.put(fact, materialized);
+            cache.put(fact, materialized);
         }
         return materialized;
     }
@@ -463,15 +489,6 @@ final class Analyzer {
         ControlPass(int blockCount, int controlCount) {
             this.reachable = new boolean[blockCount];
             this.guards = new Guard[controlCount];
-        }
-    }
-
-    private static final class FactPass {
-        private final Deque<Integer> stack = new ArrayDeque<>();
-        private final boolean[] seen;
-
-        FactPass(int blockCount) {
-            this.seen = new boolean[blockCount];
         }
     }
 

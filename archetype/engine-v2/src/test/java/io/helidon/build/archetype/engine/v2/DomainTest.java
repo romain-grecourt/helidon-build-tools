@@ -199,7 +199,7 @@ class DomainTest {
                 Value.of("true"));
         Fact mergedBoolean = Fact.merge(booleanTrue, stringTrue, guards);
 
-        assertThat(mergedBoolean.guardedValues().size(), is(1));
+        assertThat(mergedBoolean.values().size(), is(1));
         assertThat(mergedBoolean.match(enabledSymbol, Value.of("true"), guards), is(TRUE));
         assertThat(mergedBoolean.scalarAny(enabledSymbol, Set.of("true"), guards), is(TRUE));
 
@@ -219,7 +219,7 @@ class DomainTest {
                 Value.of(List.of("rest", "grpc")));
         Fact mergedMembership = Fact.merge(grpcRest, restGrpc, guards);
 
-        assertThat(mergedMembership.guardedValues().size(), is(1));
+        assertThat(mergedMembership.values().size(), is(1));
         assertThat(mergedMembership.listContains(featuresSymbol, Set.of("grpc", "rest"), guards), is(TRUE));
     }
 
