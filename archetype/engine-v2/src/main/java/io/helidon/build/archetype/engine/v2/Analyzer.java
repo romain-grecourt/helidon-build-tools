@@ -1,0 +1,658 @@
+/*
+ * Copyright (c) 2026 Oracle and/or its affiliates.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.helidon.build.archetype.engine.v2;
+
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Deque;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.TreeSet;
+
+import io.helidon.build.archetype.engine.v2.Domain.Fact;
+import io.helidon.build.archetype.engine.v2.Domain.Guard;
+import io.helidon.build.archetype.engine.v2.Domain.GuardedValue;
+import io.helidon.build.archetype.engine.v2.Domain.LatticeValue;
+import io.helidon.build.archetype.engine.v2.Domain.Spec;
+import io.helidon.build.archetype.engine.v2.Domain.Symbol;
+import io.helidon.build.archetype.engine.v2.Expression.Token;
+import io.helidon.build.archetype.engine.v2.Flow.State;
+
+final class Analyzer {
+    private static final int EXACT_CASE_MAX = 16;
+    private static final int COVERAGE_MAX = 16;
+
+    private final Ir ir;
+    private final Map<Integer, Map<FactAnalysis, Fact>> facts = new LinkedHashMap<>();
+    private final Map<Map<Integer, FactAnalysis>, Map<Integer, Fact>> envs = new IdentityHashMap<>();
+    private final BlockAnalysis[] blocks;
+    private final OpAnalysis[] ops;
+
+    Analyzer(Ir ir) {
+        this.ir = ir;
+        this.blocks = new BlockAnalysis[ir.blockCount()];
+        for (int i = 0; i < blocks.length; i++) {
+            blocks[i] = new BlockAnalysis();
+        }
+        this.ops = new OpAnalysis[ir.opCount()];
+        for (int i = 0; i < ops.length; i++) {
+            ops[i] = new OpAnalysis();
+        }
+    }
+
+    void analyze() {
+        analyzeControl();
+        analyzeFacts();
+        for (BlockAnalysis e : blocks) {
+            e.state = new State(e.guard, env(e.facts));
+        }
+        for (OpAnalysis e : ops) {
+            e.beforeState = new State(e.beforeGuard, env(e.beforeFacts));
+            e.afterState = new State(e.beforeGuard, env(e.afterFacts));
+        }
+    }
+
+    State entryState(int blockId) {
+        return blocks[blockId].state;
+    }
+
+    State beforeState(int opId) {
+        return ops[opId].beforeState;
+    }
+
+    State afterState(int opId) {
+        return ops[opId].afterState;
+    }
+
+    private void analyzeControl() {
+        ControlPass pass = new ControlPass(ir.blockCount(), ir.controlCount());
+        pass.reachable[0] = true;
+        pass.guards[0] = Guard.TRUE;
+        for (int blockId = 0; blockId < pass.reachable.length; blockId++) {
+            if (!pass.reachable[blockId]) {
+                continue;
+            }
+            Ir.Terminator term = ir.block(blockId).term();
+            switch (term.kind()) {
+                case GOTO:
+                    pass.reachable[term.targetId()] = true;
+                    break;
+                case BRANCH:
+                    pass.reachable[term.trueId()] = true;
+                    pass.reachable[term.falseId()] = true;
+                    break;
+                case RETURN:
+                case UNREACHABLE:
+                default:
+                    break;
+            }
+        }
+
+        for (int id = 0; id < pass.reachable.length; id++) {
+            if (pass.reachable[id]) {
+                int controlId = ir.block(id).controlId();
+                blocks[id].guard = computeControlGuard(controlId, pass);
+            }
+        }
+        for (int id = 0; id < pass.reachable.length; id++) {
+            if (pass.reachable[id]) {
+                Guard entry = blocks[id].guard;
+                for (int opId : ir.block(id).opIds()) {
+                    ops[opId].beforeGuard = entry;
+                }
+            }
+        }
+    }
+
+    private Guard computeControlGuard(int id, ControlPass pass) {
+        Guard cached = pass.guards[id];
+        if (cached != null) {
+            return cached;
+        }
+        int parentId = ir.control(id).parentId();
+        if (parentId < 0) {
+            pass.guards[id] = Guard.TRUE;
+            return Guard.TRUE;
+        }
+        Guard guard = computeControlGuard(parentId, pass);
+        Guard materialized = ir.guards().and(guard, ir.control(id).edgeGuard());
+        pass.guards[id] = materialized;
+        return materialized;
+    }
+
+    private void analyzeFacts() {
+        FactPass pass = new FactPass(ir.blockCount());
+        pass.seen[0] = true;
+        pass.stack.add(0);
+        while (!pass.stack.isEmpty()) {
+            int blockId = pass.stack.removeFirst();
+            BlockAnalysis blockAnalysis = blocks[blockId];
+            if (!blockAnalysis.guard.equals(Guard.FALSE)) {
+                Map<Integer, FactAnalysis> current = blockAnalysis.facts;
+                for (int id : ir.block(blockId).opIds()) {
+                    OpAnalysis op = ops[id];
+                    op.beforeFacts = current;
+                    current = transfer(id, op.beforeGuard, current);
+                    op.afterFacts = current;
+                }
+                Ir.Terminator term = ir.block(blockId).term();
+                switch (term.kind()) {
+                    case GOTO:
+                        enqueueFacts(term.targetId(), current, pass);
+                        break;
+                    case BRANCH:
+                        enqueueFacts(term.trueId(), current, pass);
+                        enqueueFacts(term.falseId(), current, pass);
+                        break;
+                    case RETURN:
+                    case UNREACHABLE:
+                    default:
+                        break;
+                }
+            }
+        }
+    }
+
+    private Map<Integer, FactAnalysis> transfer(int opId, Guard currentGuard, Map<Integer, FactAnalysis> state) {
+        Ir.Op op = ir.op(opId);
+        switch (op.kind()) {
+            case DECLARE_INPUT: {
+                FactAnalysis declared = new FactAnalysis(
+                        coverage(op.blockId()),
+                        LatticeValue.top(ir.table().symbol(op.symbolId()).domain()));
+                FactAnalysis existing = state.get(op.symbolId());
+                if (existing == null) {
+                    return define(state, op.symbolId(), declared);
+                }
+                FactAnalysis fact = mergeFact(op.symbolId(), existing, declared);
+                return define(state, op.symbolId(), fact);
+            }
+            case DEFINE_VALUE: {
+                Symbol sym = ir.table().symbol(op.symbolId());
+                FactAnalysis fact = evaluateFact(opId, currentGuard, sym, state);
+                return define(state, op.symbolId(), fact);
+            }
+            default:
+                return state;
+        }
+    }
+
+    private void enqueueFacts(int blockId, Map<Integer, FactAnalysis> incoming, FactPass pass) {
+        BlockAnalysis blockAnalysis = blocks[blockId];
+        if (!blockAnalysis.guard.equals(Guard.FALSE)) {
+            Map<Integer, FactAnalysis> current = blockAnalysis.facts;
+            Map<Integer, FactAnalysis> merged = mergeEnv(current, incoming);
+            if (merged != current || !pass.seen[blockId]) {
+                blockAnalysis.facts = merged;
+                pass.seen[blockId] = true;
+                pass.stack.addLast(blockId);
+            }
+        }
+    }
+
+    private Map<Integer, FactAnalysis> mergeEnv(Map<Integer, FactAnalysis> current, Map<Integer, FactAnalysis> incoming) {
+        if (current == incoming || current.equals(incoming)) {
+            return current;
+        }
+        Map<Integer, FactAnalysis> next = null;
+        for (Map.Entry<Integer, FactAnalysis> entry : incoming.entrySet()) {
+            int id = entry.getKey();
+            FactAnalysis left = current.get(id);
+            FactAnalysis right = entry.getValue();
+            FactAnalysis merged;
+            if (left == null) {
+                merged = right;
+            } else if (left == right || left.equals(right)) {
+                merged = left;
+            } else {
+                merged = mergeFact(id, left, right);
+            }
+            if (merged != left) {
+                if (next == null) {
+                    next = new LinkedHashMap<>(current);
+                }
+                next.put(id, merged);
+            }
+        }
+        return next == null ? current : next;
+    }
+
+    private Map<Integer, FactAnalysis> define(Map<Integer, FactAnalysis> state, int id, FactAnalysis fact) {
+        FactAnalysis existing = state.get(id);
+        if (Objects.equals(existing, fact)) {
+            return state;
+        }
+        Map<Integer, FactAnalysis> env = new LinkedHashMap<>(state);
+        env.put(id, fact);
+        return env;
+    }
+
+    private FactAnalysis evaluateFact(int opId, Guard currentGuard, Symbol sym, Map<Integer, FactAnalysis> state) {
+        Ir.Op op = ir.op(opId);
+        Expression expression = op.expression();
+        LatticeValue value = evaluateValue(expression, sym, state);
+        Value<?> exactValue = exactValue(expression, currentGuard, state);
+        return exactValue.isPresent() ? FactAnalysis.exact(op.blockId(), value, exactValue) : new FactAnalysis(coverage(op.blockId()), value);
+    }
+
+    private LatticeValue evaluateValue(Expression expression, Symbol sym, Map<Integer, FactAnalysis> state) {
+        List<Token> tokens = expression.tokens();
+        if (tokens.size() == 1) {
+            Token token = tokens.get(0);
+            if (token.isOperand()) {
+                return literalValue(sym.domain(), token.operand());
+            }
+            if (token.isVariable()) {
+                int id = ir.table().findId(token.variable());
+                if (id >= 0) {
+                    FactAnalysis fact = state.get(id);
+                    if (fact != null) {
+                        return fact.lattice;
+                    }
+                }
+            }
+        }
+        return LatticeValue.top(sym.domain());
+    }
+
+    private Value<?> exactValue(Expression expression, Guard currentGuard, Map<Integer, FactAnalysis> state) {
+        List<Token> tokens = expression.tokens();
+        if (tokens.size() == 1) {
+            Token token = tokens.get(0);
+            if (token.isOperand()) {
+                return token.operand();
+            }
+            if (token.isVariable()) {
+                int id = ir.table().findId(token.variable());
+                if (id >= 0) {
+                    Symbol sym = ir.table().symbol(id);
+                    FactAnalysis fact = state.get(id);
+                    if (fact != null) {
+                        Value<?> exactFromValue = exactFromValue(sym.domain(), fact, currentGuard);
+                        if (exactFromValue.isPresent()) {
+                            return exactFromValue;
+                        }
+                        if (!fact.exact.values.isEmpty() && implies(currentGuard, fact.exact.coverage)) {
+                            Value<?> value = Value.empty();
+                            boolean found = false;
+                            for (CoveredValue exactCase : fact.exact.values) {
+                                if (overlaps(currentGuard, exactCase.coverage)) {
+                                    if (!found) {
+                                        value = exactCase.value;
+                                        found = true;
+                                    } else if (!Value.isEqual(value, exactCase.value)) {
+                                        return Value.empty();
+                                    }
+                                }
+                            }
+                            return found ? value : Value.empty();
+                        }
+                    }
+                }
+            }
+        }
+        return Value.empty();
+    }
+
+    private Value<?> exactFromValue(Spec spec, FactAnalysis fact, Guard guard) {
+        if (implies(guard, fact.defined)) {
+            if (fact.lattice.kind() == LatticeValue.Kind.FINITE_SCALAR) {
+                String scalar = fact.lattice.singletonScalar(spec);
+                if (scalar == null) {
+                    return Value.empty();
+                }
+                return spec.kind() == Spec.Kind.BOOLEAN ? Value.parseBoolean(scalar) : Value.of(scalar);
+            }
+            if (fact.lattice.kind() == LatticeValue.Kind.OPEN_TEXT && fact.lattice.sample() != null) {
+                return Value.of(fact.lattice.sample());
+            }
+        }
+        return Value.empty();
+    }
+
+    private FactAnalysis mergeFact(int id, FactAnalysis left, FactAnalysis right) {
+        Coverage defined = Coverage.merge(left.defined, right.defined, -1);
+        LatticeValue lattice = LatticeValue.join(left.lattice, right.lattice);
+        if (left.exact.values.isEmpty()) {
+            return right.exact.values.isEmpty()
+                    ? new FactAnalysis(defined, lattice)
+                    : new FactAnalysis(defined, lattice, right.exact);
+        }
+        if (right.exact.values.isEmpty()) {
+            return new FactAnalysis(defined, lattice, left.exact);
+        }
+        Coverage coverage = Coverage.merge(left.exact.coverage, right.exact.coverage, COVERAGE_MAX);
+        if (coverage == null) {
+            return new FactAnalysis(defined, lattice);
+        }
+        Symbol sym = ir.table().symbol(id);
+        List<CoveredValue> merged = new ArrayList<>();
+        for (int i = 0; i < 2; i++) {
+            for (CoveredValue value : i == 0 ? left.exact.values : right.exact.values) {
+                boolean found = false;
+                for (int j = 0; j < merged.size(); j++) {
+                    CoveredValue current = merged.get(j);
+                    if (sym.domain().sameValue(current.value, value.value)) {
+                        Coverage next = Coverage.merge(current.coverage, value.coverage, COVERAGE_MAX);
+                        if (next == null) {
+                            return new FactAnalysis(defined, lattice);
+                        }
+                        merged.set(j, new CoveredValue(current.value, next));
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    if (merged.size() >= EXACT_CASE_MAX) {
+                        return new FactAnalysis(defined, lattice);
+                    }
+                    merged.add(value);
+                }
+            }
+        }
+        return new FactAnalysis(defined, lattice, new ExactValues(coverage, merged));
+    }
+
+    private Map<Integer, Fact> env(Map<Integer, FactAnalysis> env) {
+        if (env.isEmpty()) {
+            return Map.of();
+        }
+        Map<Integer, Fact> materialized = envs.get(env);
+        if (materialized == null) {
+            materialized = new LinkedHashMap<>();
+            for (Map.Entry<Integer, FactAnalysis> entry : env.entrySet()) {
+                materialized.put(entry.getKey(), fact(entry.getKey(), entry.getValue()));
+            }
+            envs.put(env, materialized);
+        }
+        return materialized;
+    }
+
+    private Fact fact(int id, FactAnalysis fact) {
+        Map<FactAnalysis, Fact> cacheBySymbol = facts.computeIfAbsent(id, unused -> new IdentityHashMap<>());
+        Fact materialized = cacheBySymbol.get(fact);
+        if (materialized == null) {
+            Symbol sym = ir.table().symbol(id);
+            List<GuardedValue> guardedValues = new ArrayList<>(fact.exact.values.size());
+            for (CoveredValue exactCase : fact.exact.values) {
+                Guard guard = guard(exactCase.coverage);
+                guardedValues.add(new GuardedValue(exactCase.value, guard, sym.domain().mask(exactCase.value)));
+            }
+            materialized = new Fact(guard(fact.defined), fact.lattice, guardedValues);
+            cacheBySymbol.put(fact, materialized);
+        }
+        return materialized;
+    }
+
+    private boolean implies(Guard left, Coverage right) {
+        return right.ids.length != 0 && ir.guards().implies(left, guard(right));
+    }
+
+    private boolean overlaps(Guard left, Coverage right) {
+        return right.ids.length != 0 && !ir.guards().and(left, guard(right)).equals(Guard.FALSE);
+    }
+
+    private Coverage coverage(int id) {
+        BlockAnalysis analysis = blocks[id];
+        if (analysis.coverage == null) {
+            analysis.coverage = new Coverage(id);
+        }
+        return analysis.coverage;
+    }
+
+    private Guard guard(Coverage coverage) {
+        if (coverage.guard == null) {
+            if (coverage.ids.length == 0) {
+                return Guard.FALSE;
+            }
+            Guard guard = blocks[coverage.ids[0]].guard;
+            for (int i = 1; i < coverage.ids.length; i++) {
+                guard = ir.guards().or(guard, blocks[coverage.ids[i]].guard);
+            }
+            coverage.guard = guard;
+        }
+        return coverage.guard;
+    }
+
+    private static LatticeValue literalValue(Spec spec, Value<?> literal) {
+        switch (literal.type()) {
+            case BOOLEAN: {
+                String scalar = String.valueOf(literal.getBoolean());
+                if (spec.scalar() && spec.contains(scalar)) {
+                    return LatticeValue.finiteScalar(spec.mask(scalar));
+                }
+                return spec.kind() == Spec.Kind.OPEN_TEXT ? LatticeValue.openText(scalar) : LatticeValue.top(spec);
+            }
+            case STRING:
+                if (spec.scalar() && spec.contains(literal.getString())) {
+                    return LatticeValue.finiteScalar(spec.mask(literal.getString()));
+                }
+                return LatticeValue.openText(literal.getString());
+            case LIST:
+                if (spec.kind() == Spec.Kind.MEMBERSHIP) {
+                    long listMask = spec.mask(new TreeSet<>(literal.getList()));
+                    return LatticeValue.membership(listMask, listMask);
+                }
+                return LatticeValue.top(spec);
+            default:
+                return LatticeValue.top(spec);
+        }
+    }
+
+    private static final class ControlPass {
+        private final boolean[] reachable;
+        private final Guard[] guards;
+
+        ControlPass(int blockCount, int controlCount) {
+            this.reachable = new boolean[blockCount];
+            this.guards = new Guard[controlCount];
+        }
+    }
+
+    private static final class FactPass {
+        private final Deque<Integer> stack = new ArrayDeque<>();
+        private final boolean[] seen;
+
+        FactPass(int blockCount) {
+            this.seen = new boolean[blockCount];
+        }
+    }
+
+    private static final class BlockAnalysis {
+        private Coverage coverage;
+        private Guard guard = Guard.FALSE;
+        private Map<Integer, FactAnalysis> facts = Map.of();
+        private State state = State.EMPTY;
+    }
+
+    private static final class OpAnalysis {
+        private Guard beforeGuard = Guard.FALSE;
+        private Map<Integer, FactAnalysis> beforeFacts = Map.of();
+        private Map<Integer, FactAnalysis> afterFacts = Map.of();
+        private State beforeState = State.EMPTY;
+        private State afterState = State.EMPTY;
+    }
+
+    private static final class FactAnalysis {
+        private final Coverage defined;
+        private final LatticeValue lattice;
+        private final ExactValues exact;
+
+        FactAnalysis(Coverage defined, LatticeValue lattice) {
+            this(defined, lattice, ExactValues.EMPTY);
+        }
+
+        FactAnalysis(Coverage defined, LatticeValue lattice, ExactValues exact) {
+            this.defined = defined;
+            this.lattice = lattice;
+            this.exact = exact;
+        }
+
+        static FactAnalysis exact(int id, LatticeValue lattice, Value<?> value) {
+            Coverage defined = new Coverage(id);
+            if (!value.isPresent()) {
+                return new FactAnalysis(defined, lattice);
+            }
+            List<CoveredValue> values = List.of(new CoveredValue(value, defined));
+            return new FactAnalysis(defined, lattice, new ExactValues(defined, values));
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (!(o instanceof FactAnalysis)) {
+                return false;
+            }
+            FactAnalysis other = (FactAnalysis) o;
+            return defined.equals(other.defined)
+                   && lattice.equals(other.lattice)
+                   && exact.equals(other.exact);
+        }
+    }
+
+    private static final class ExactValues {
+        private static final ExactValues EMPTY = new ExactValues(Coverage.EMPTY, List.of());
+
+        private final Coverage coverage;
+        private final List<CoveredValue> values;
+
+        ExactValues(Coverage coverage, List<CoveredValue> values) {
+            this.coverage = coverage;
+            this.values = values;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (!(o instanceof ExactValues)) {
+                return false;
+            }
+            ExactValues other = (ExactValues) o;
+            return coverage.equals(other.coverage) && values.equals(other.values);
+        }
+    }
+
+    private static final class CoveredValue {
+        private final Value<?> value;
+        private final Coverage coverage;
+
+        CoveredValue(Value<?> value, Coverage coverage) {
+            this.value = value;
+            this.coverage = coverage;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (!(o instanceof CoveredValue)) {
+                return false;
+            }
+            CoveredValue other = (CoveredValue) o;
+            return coverage.equals(other.coverage) && Value.isEqual(value, other.value);
+        }
+    }
+
+    private static final class Coverage {
+        private static final Coverage EMPTY = new Coverage();
+
+        private final int[] ids;
+        private Guard guard;
+
+        Coverage(int... ids) {
+            this.ids = ids;
+        }
+
+        static Coverage merge(Coverage left, Coverage right, int maxEntries) {
+            if (left.ids.length == 0) {
+                return right;
+            }
+            if (right.ids.length == 0 || left == right || left.equals(right)) {
+                return left;
+            }
+            int[] merged = new int[left.ids.length + right.ids.length];
+            int l = 0;
+            int r = 0;
+            int size = 0;
+            while (l < left.ids.length || r < right.ids.length) {
+                int next;
+                if (r >= right.ids.length) {
+                    next = left.ids[l++];
+                } else if (l >= left.ids.length) {
+                    next = right.ids[r++];
+                } else {
+                    int leftId = left.ids[l];
+                    int rightId = right.ids[r];
+                    if (leftId == rightId) {
+                        next = leftId;
+                        l++;
+                        r++;
+                    } else if (leftId < rightId) {
+                        next = leftId;
+                        l++;
+                    } else {
+                        next = rightId;
+                        r++;
+                    }
+                }
+                if (maxEntries > 0 && size == maxEntries) {
+                    return null;
+                }
+                merged[size++] = next;
+            }
+            if (matches(merged, size, left.ids)) {
+                return left;
+            }
+            if (matches(merged, size, right.ids)) {
+                return right;
+            }
+            return new Coverage(size == merged.length ? merged : Arrays.copyOf(merged, size));
+        }
+
+        static boolean matches(int[] merged, int size, int[] other) {
+            if (size != other.length) {
+                return false;
+            }
+            for (int i = 0; i < size; i++) {
+                if (merged[i] != other[i]) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (!(o instanceof Coverage)) {
+                return false;
+            }
+            Coverage other = (Coverage) o;
+            return Arrays.equals(ids, other.ids);
+        }
+    }
+}
