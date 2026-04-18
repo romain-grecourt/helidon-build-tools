@@ -48,6 +48,7 @@ import io.helidon.build.archetype.engine.v2.Context.Scope;
 import io.helidon.build.archetype.engine.v2.Domain.Guard;
 import io.helidon.build.archetype.engine.v2.Domain.Fact;
 import io.helidon.build.archetype.engine.v2.Domain.GuardedValue;
+import io.helidon.build.archetype.engine.v2.Expression.Operator;
 import io.helidon.build.archetype.engine.v2.Expression.Token;
 import io.helidon.build.archetype.engine.v2.Node.Kind;
 import io.helidon.build.archetype.engine.v2.Value.Type;
@@ -469,7 +470,7 @@ public class ScriptCompiler {
             boolean compatible = analysis.incompatibleOps.isEmpty();
 
             // check operators compatibility
-            for (Expression.Operator operator : analysis.incompatibleOps) {
+            for (Operator operator : analysis.incompatibleOps) {
                 errors.add(String.format("%s %s: '%s'",
                         node.location(),
                         EXPR_INCOMPATIBLE_OPERATOR,
@@ -1003,7 +1004,7 @@ public class ScriptCompiler {
         }).reduce();
     }
 
-    private boolean incompatibleOperator(Expression.Operator operator) {
+    private boolean incompatibleOperator(Operator operator) {
         switch (operator) {
             case AS_INT:
             case AS_LIST:
@@ -1124,8 +1125,8 @@ public class ScriptCompiler {
         if (tokens.size() != 3 || !tokens.get(0).isVariable() || !tokens.get(1).isOperand()) {
             return false;
         }
-        Expression.Operator operator = tokens.get(2).operator();
-        return operator == Expression.Operator.EQUAL || operator == Expression.Operator.CONTAINS;
+        Operator operator = tokens.get(2).operator();
+        return operator == Operator.EQUAL || operator == Operator.CONTAINS;
     }
 
     private boolean ancestorProjectedConditionTerm(Expression left, Expression right) {
@@ -1245,7 +1246,7 @@ public class ScriptCompiler {
 
         ExpressionAnalysis analyze(List<Token> tokens, Expression source) {
             Map<String, String> variables = new LinkedHashMap<>();
-            List<Expression.Operator> incompatibleOps = new ArrayList<>();
+            List<Operator> incompatibleOps = new ArrayList<>();
             Deque<AnalysisTerm> stack = new ArrayDeque<>();
             String evaluationError = evaluationError(source, tokens);
             boolean compatible = true;
@@ -1362,7 +1363,7 @@ public class ScriptCompiler {
             }
         }
 
-        AnalysisTerm unsupportedOperation(Expression.Operator operator, Deque<AnalysisTerm> stack) {
+        AnalysisTerm unsupportedOperation(Operator operator, Deque<AnalysisTerm> stack) {
             switch (operator) {
                 case AS_INT:
                 case AS_LIST:
@@ -1818,14 +1819,14 @@ public class ScriptCompiler {
         private final Guard reach;
         private final Map<String, Guard> variableDemands;
         private final Map<String, String> variables;
-        private final List<Expression.Operator> incompatibleOps;
+        private final List<Operator> incompatibleOps;
         private final String evaluationError;
         private final ResolvedGuard supportedTerms;
 
         ExpressionAnalysis(Guard reach,
                            Map<String, Guard> variableDemands,
                            Map<String, String> variables,
-                           List<Expression.Operator> incompatibleOps,
+                           List<Operator> incompatibleOps,
                            String evaluationError,
                            ResolvedGuard supportedTerms) {
             this.reach = reach;

@@ -666,12 +666,12 @@ final class Ir {
         }
     }
 
-    private static final class Operand {
+    private static final class ConditionOperand {
         private final Guard guard;
         private final Symbol symbol;
         private final Value<?> literal;
 
-        Operand(Guard guard, Symbol symbol, Value<?> literal) {
+        ConditionOperand(Guard guard, Symbol symbol, Value<?> literal) {
             this.guard = guard;
             this.symbol = symbol;
             this.literal = literal;
@@ -697,24 +697,24 @@ final class Ir {
                 return Guard.FALSE;
             }
             int capacity = expression.tokens().size();
-            Deque<Operand> stack = new ArrayDeque<>(capacity);
+            Deque<ConditionOperand> stack = new ArrayDeque<>(capacity);
             for (Token token : expression.tokens()) {
                 if (token.isVariable()) {
-                    stack.addLast(new Operand(null, findSymbol(scope.key(token.variable())), null));
+                    stack.addLast(new ConditionOperand(null, findSymbol(scope.key(token.variable())), null));
                     continue;
                 }
                 if (token.isOperand()) {
-                    stack.addLast(new Operand(null, null, token.operand()));
+                    stack.addLast(new ConditionOperand(null, null, token.operand()));
                     continue;
                 }
                 switch (token.operator()) {
                     case NOT: {
-                        Operand operand = stack.removeLast();
+                        ConditionOperand operand = stack.removeLast();
                         Guard direct = asGuard(operand);
                         if (direct == null) {
                             return guards.residualGuard(expression);
                         }
-                        stack.addLast(new Operand(guards.not(direct), null, null));
+                        stack.addLast(new ConditionOperand(guards.not(direct), null, null));
                         break;
                     }
                     case AND:
@@ -725,31 +725,31 @@ final class Ir {
                             return guards.residualGuard(expression);
                         }
                         if (token.operator() == Operator.OR) {
-                            stack.addLast(new Operand(guards.or(left, right), null, null));
+                            stack.addLast(new ConditionOperand(guards.or(left, right), null, null));
                         } else {
-                            stack.addLast(new Operand(guards.and(left, right), null, null));
+                            stack.addLast(new ConditionOperand(guards.and(left, right), null, null));
                         }
                         break;
                     }
                     case EQUAL:
                     case NOT_EQUAL: {
-                        Operand right = stack.removeLast();
-                        Operand left = stack.removeLast();
+                        ConditionOperand right = stack.removeLast();
+                        ConditionOperand left = stack.removeLast();
                         Guard direct = compare(left, right, token.operator() == Operator.EQUAL);
                         if (direct == null) {
                             return guards.residualGuard(expression);
                         }
-                        stack.addLast(new Operand(direct, null, null));
+                        stack.addLast(new ConditionOperand(direct, null, null));
                         break;
                     }
                     case CONTAINS: {
-                        Operand right = stack.removeLast();
-                        Operand left = stack.removeLast();
+                        ConditionOperand right = stack.removeLast();
+                        ConditionOperand left = stack.removeLast();
                         Guard direct = contains(left, right);
                         if (direct == null) {
                             return guards.residualGuard(expression);
                         }
-                        stack.addLast(new Operand(direct, null, null));
+                        stack.addLast(new ConditionOperand(direct, null, null));
                         break;
                     }
                     default:
@@ -763,7 +763,7 @@ final class Ir {
             return guard != null ? guard : guards.residualGuard(expression);
         }
 
-        Guard compare(Operand left, Operand right, boolean equal) {
+        Guard compare(ConditionOperand left, ConditionOperand right, boolean equal) {
             Guard direct = compareGuard(left.symbol, right.literal);
             if (direct == null) {
                 direct = compareGuard(right.symbol, left.literal);
@@ -791,7 +791,7 @@ final class Ir {
             return null;
         }
 
-        Guard contains(Operand left, Operand right) {
+        Guard contains(ConditionOperand left, ConditionOperand right) {
             Guard direct = containsGuard(left.symbol, right.literal);
             if (direct == null) {
                 direct = scalarAnyGuard(right.symbol, left.literal);
@@ -825,7 +825,7 @@ final class Ir {
             return result;
         }
 
-        Guard asGuard(Operand operand) {
+        Guard asGuard(ConditionOperand operand) {
             if (operand.guard != null) {
                 return operand.guard;
             }

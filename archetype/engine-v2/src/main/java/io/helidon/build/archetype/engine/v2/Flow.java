@@ -15,7 +15,9 @@
  */
 package io.helidon.build.archetype.engine.v2;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -573,134 +575,113 @@ final class Flow {
         }
 
         Guard translatedCondition0(Expression expression, Scope scope, State state) {
-            int capacity = expression.tokens().size();
             Guards guards = ir.guards();
-            Guard[] guardStack = new Guard[capacity];
-            String[] refStack = new String[capacity];
-            Value<?>[] literalStack = new Value<?>[capacity];
-            int size = 0;
+            Deque<ReferenceOperand> stack = new ArrayDeque<>(expression.tokens().size());
             for (Token token : expression.tokens()) {
                 if (token.isVariable()) {
-                    guardStack[size] = null;
-                    refStack[size] = scope.key(token.variable());
-                    literalStack[size] = null;
-                    size++;
+                    stack.addLast(new ReferenceOperand(null, scope.key(token.variable()), null));
                     continue;
                 }
                 if (token.isOperand()) {
-                    guardStack[size] = null;
-                    refStack[size] = null;
-                    literalStack[size] = token.operand();
-                    size++;
+                    stack.addLast(new ReferenceOperand(null, null, token.operand()));
                     continue;
                 }
-                Operator op = token.operator();
-                switch (op) {
+                switch (token.operator()) {
                     case NOT: {
-                        int index = size - 1;
-                        Guard negated = booleanGuard(guardStack[index], refStack[index], literalStack[index], state);
+                        Guard negated = booleanGuard(stack.removeLast(), state);
                         if (negated == null) {
                             return null;
                         }
-                        guardStack[index] = guards.not(negated);
-                        refStack[index] = null;
-                        literalStack[index] = null;
+                        stack.addLast(new ReferenceOperand(guards.not(negated), null, null));
                         break;
                     }
                     case AND:
                     case OR: {
-                        int right = --size;
-                        Guard rightGuard = booleanGuard(guardStack[right], refStack[right], literalStack[right], state);
-                        int left = --size;
-                        Guard leftGuard = booleanGuard(guardStack[left], refStack[left], literalStack[left], state);
+                        ReferenceOperand right = stack.removeLast();
+                        ReferenceOperand left = stack.removeLast();
+                        Guard rightGuard = booleanGuard(right, state);
+                        Guard leftGuard = booleanGuard(left, state);
                         if (leftGuard == null || rightGuard == null) {
                             return null;
                         }
-                        guardStack[left] = op == Operator.AND
+                        stack.addLast(new ReferenceOperand(token.operator() == Operator.AND
                                 ? guards.and(leftGuard, rightGuard)
-                                : guards.or(leftGuard, rightGuard);
-                        refStack[left] = null;
-                        literalStack[left] = null;
-                        size = left + 1;
+                                : guards.or(leftGuard, rightGuard), null, null));
                         break;
                     }
                     case EQUAL:
                     case NOT_EQUAL: {
-                        int right = --size;
-                        int left = --size;
-                        Guard equality = equalityGuard(refStack[left], literalStack[left], refStack[right],
-                                literalStack[right], state);
+                        ReferenceOperand right = stack.removeLast();
+                        ReferenceOperand left = stack.removeLast();
+                        Guard equality = equalityGuard(left, right, state);
                         if (equality == null) {
                             return null;
                         }
-                        guardStack[left] = op == Operator.EQUAL ? equality : guards.not(equality);
-                        refStack[left] = null;
-                        literalStack[left] = null;
-                        size = left + 1;
+                        if (token.operator() == Operator.EQUAL) {
+                            stack.addLast(new ReferenceOperand(equality, null, null));
+                        } else {
+                            stack.addLast(new ReferenceOperand(guards.not(equality), null, null));
+                        }
                         break;
                     }
                     case CONTAINS: {
-                        int right = --size;
-                        int left = --size;
-                        Guard contains = containsGuard(refStack[left], literalStack[left], refStack[right],
-                                literalStack[right], state);
+                        ReferenceOperand right = stack.removeLast();
+                        ReferenceOperand left = stack.removeLast();
+                        Guard contains = containsGuard(left, right, state);
                         if (contains == null) {
                             return null;
                         }
-                        guardStack[left] = contains;
-                        refStack[left] = null;
-                        literalStack[left] = null;
-                        size = left + 1;
+                        stack.addLast(new ReferenceOperand(contains, null, null));
                         break;
                     }
                     default:
                         return null;
                 }
             }
-            return size == 1 ? booleanGuard(guardStack[0], refStack[0], literalStack[0], state) : null;
+            return stack.size() == 1 ? booleanGuard(stack.peekLast(), state) : null;
         }
 
-        Guard booleanGuard(Guard guard, String ref, Value<?> literal, State state) {
-            if (guard != null) {
-                return guard;
+        Guard booleanGuard(ReferenceOperand operand, State state) {
+            if (operand.guard != null) {
+                return operand.guard;
             }
-            if (ref != null) {
-                SymbolInfo info = symbolInfo(ref);
-                if (info == null || info.sym.domain().kind() != Spec.Kind.BOOLEAN) {
-                    return null;
+            if (operand.ref != null) {
+                SymbolInfo info = symbolInfo(operand.ref);
+                if (info != null && info.sym.domain().kind() == Spec.Kind.BOOLEAN) {
+                    return translatedEquality(operand.ref, Value.TRUE, state);
                 }
-                return translatedEquality(ref, Value.TRUE, state);
+                return null;
             }
-            if (literal != null && literal.type() == Value.Type.BOOLEAN) {
-                return literal.getBoolean() ? Guard.TRUE : Guard.FALSE;
-            }
-            return null;
-        }
-
-        Guard equalityGuard(String leftRef, Value<?> leftLiteral, String rightRef, Value<?> rightLiteral, State state) {
-            if (leftLiteral != null && rightLiteral != null) {
-                return Value.isEqual(leftLiteral, rightLiteral) ? Guard.TRUE : Guard.FALSE;
-            }
-            if (leftRef != null && rightLiteral != null) {
-                return translatedEquality(leftRef, rightLiteral, state);
-            }
-            if (leftLiteral != null && rightRef != null) {
-                return translatedEquality(rightRef, leftLiteral, state);
+            if (operand.literal != null && operand.literal.type() == Value.Type.BOOLEAN) {
+                return operand.literal.getBoolean() ? Guard.TRUE : Guard.FALSE;
             }
             return null;
         }
 
-        Guard containsGuard(String leftRef, Value<?> leftLiteral, String rightRef, Value<?> rightLiteral, State state) {
-            if (leftRef != null && rightLiteral != null) {
-                return translatedListContains(leftRef, rightLiteral, state);
+        Guard equalityGuard(ReferenceOperand left, ReferenceOperand right, State state) {
+            if (left.literal != null && right.literal != null) {
+                return Value.isEqual(left.literal, right.literal) ? Guard.TRUE : Guard.FALSE;
             }
-            if (leftLiteral != null && rightRef != null && leftLiteral.type() == Value.Type.LIST) {
-                return translatedScalarAny(rightRef, new TreeSet<>(leftLiteral.getList()), state);
+            if (left.ref != null && right.literal != null) {
+                return translatedEquality(left.ref, right.literal, state);
             }
-            if (leftLiteral != null && rightLiteral != null && leftLiteral.type() == Value.Type.LIST) {
-                Set<String> required = containsValues(rightLiteral);
+            if (left.literal != null && right.ref != null) {
+                return translatedEquality(right.ref, left.literal, state);
+            }
+            return null;
+        }
+
+        Guard containsGuard(ReferenceOperand left, ReferenceOperand right, State state) {
+            if (left.ref != null && right.literal != null) {
+                return translatedListContains(left.ref, right.literal, state);
+            }
+            if (left.literal != null && right.ref != null && left.literal.type() == Value.Type.LIST) {
+                return translatedScalarAny(right.ref, new TreeSet<>(left.literal.getList()), state);
+            }
+            if (left.literal != null && right.literal != null && left.literal.type() == Value.Type.LIST) {
+                Set<String> required = containsValues(right.literal);
                 if (required != null) {
-                    return new TreeSet<>(leftLiteral.getList()).containsAll(required)
+                    return new TreeSet<>(left.literal.getList()).containsAll(required)
                             ? Guard.TRUE
                             : Guard.FALSE;
                 }
@@ -807,18 +788,18 @@ final class Flow {
 
         Guard directScalarAny(String key, Set<String> values) {
             SymbolInfo info = scalarSymbolInfo(key);
-            if (info != null) {
-                Spec domain = info.sym.domain();
-                Set<String> allowed = new TreeSet<>(values);
-                allowed.removeIf(value -> !domain.contains(value));
-                Guard direct = Guard.FALSE;
-                Guards guards = ir.guards();
-                for (String value : allowed) {
-                    direct = guards.or(direct, available(info, value, guards.eq(info.sym.id(), value)));
-                }
-                return direct;
+            if (info == null) {
+                return null;
             }
-            return null;
+            Spec domain = info.sym.domain();
+            Set<String> allowed = new TreeSet<>(values);
+            allowed.removeIf(value -> !domain.contains(value));
+            Guard direct = Guard.FALSE;
+            Guards guards = ir.guards();
+            for (String value : allowed) {
+                direct = guards.or(direct, available(info, value, guards.eq(info.sym.id(), value)));
+            }
+            return direct;
         }
 
         Guard directListContains(SymbolInfo info, Set<String> required) {
@@ -858,6 +839,18 @@ final class Flow {
                 default:
                     return null;
             }
+        }
+    }
+
+    private static final class ReferenceOperand {
+        private final Guard guard;
+        private final String ref;
+        private final Value<?> literal;
+
+        ReferenceOperand(Guard guard, String ref, Value<?> literal) {
+            this.guard = guard;
+            this.ref = ref;
+            this.literal = literal;
         }
     }
 }
