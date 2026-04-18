@@ -15,8 +15,11 @@
  */
 package io.helidon.build.archetype.engine.v2;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,7 +35,6 @@ import io.helidon.build.archetype.engine.v2.Domain.Symbol;
 import io.helidon.build.archetype.engine.v2.Expression.Token;
 import io.helidon.build.archetype.engine.v2.Flow.State;
 import io.helidon.build.archetype.engine.v2.Ir.Block;
-import io.helidon.build.archetype.engine.v2.Ir.Control;
 import io.helidon.build.archetype.engine.v2.Ir.Op;
 
 final class Analyzer {
@@ -41,7 +43,7 @@ final class Analyzer {
 
     private final Ir ir;
     private final BlockAnalysis[] blocks;
-    private final OpAnalysis[] ops;
+    private final OpAnalysis[] analyses;
 
     Analyzer(Ir ir) {
         this.ir = ir;
@@ -51,9 +53,9 @@ final class Analyzer {
             this.blocks[i] = new BlockAnalysis();
         }
         Op[] ops = ir.ops();
-        this.ops = new OpAnalysis[ops.length];
-        for (int i = 0; i < this.ops.length; i++) {
-            this.ops[i] = new OpAnalysis();
+        this.analyses = new OpAnalysis[ops.length];
+        for (int i = 0; i < this.analyses.length; i++) {
+            this.analyses[i] = new OpAnalysis();
         }
     }
 
@@ -63,7 +65,7 @@ final class Analyzer {
         for (BlockAnalysis block : blocks) {
             block.state = new State(block.guard, env(block.facts));
         }
-        for (OpAnalysis op : ops) {
+        for (OpAnalysis op : analyses) {
             op.beforeState = new State(op.beforeGuard, env(op.beforeFacts));
             op.afterState = new State(op.beforeGuard, env(op.afterFacts));
         }
@@ -74,45 +76,76 @@ final class Analyzer {
     }
 
     State beforeState(int opId) {
-        return ops[opId].beforeState;
+        return analyses[opId].beforeState;
     }
 
     State afterState(int opId) {
-        return ops[opId].afterState;
+        return analyses[opId].afterState;
     }
 
     private void analyzeControls() {
-        Block[] irBlocks = ir.blocks();
-        Control[] irControls = ir.controls();
-        ControlPass pass = new ControlPass(irControls.length);
-        pass.guards[0] = Guard.TRUE;
-        ir.visitReachableBlocks(blockId -> {
-            Guard entry = controlGuard(irBlocks[blockId].controlId(), irControls, pass);
-            blocks[blockId].guard = entry;
-            for (int opId : irBlocks[blockId].opIds()) {
-                ops[opId].beforeGuard = entry;
+        Guard[] guards = new Guard[ir.controls().length];
+        guards[0] = Guard.TRUE;
+        BitSet seen = new BitSet(ir.blocks().length);
+        seen.set(0);
+        Deque<Integer> pending = new ArrayDeque<>(ir.controls().length);
+        ir.visitDataflowBlocks(blockId -> {
+            int current = ir.blocks()[blockId].controlId();
+            Guard entry = guards[current];
+            if (entry == null) {
+                pending.clear();
+                while (true) {
+                    Guard cached = guards[current];
+                    if (cached != null) {
+                        entry = cached;
+                        break;
+                    }
+                    int parentId = ir.controls()[current].parentId();
+                    if (parentId < 0) {
+                        entry = Guard.TRUE;
+                        guards[current] = Guard.TRUE;
+                        break;
+                    }
+                    pending.addLast(current);
+                    current = parentId;
+                }
+                while (!pending.isEmpty()) {
+                    current = pending.removeLast();
+                    entry = ir.guards().and(entry, ir.controls()[current].guard());
+                    guards[current] = entry;
+                }
             }
+            blocks[blockId].guard = entry;
+            for (int opId : ir.blocks()[blockId].opIds()) {
+                analyses[opId].beforeGuard = entry;
+            }
+            return targetId -> {
+                if (seen.get(targetId)) {
+                    return false;
+                }
+                seen.set(targetId);
+                return true;
+            };
         });
     }
 
     private void analyzeFacts() {
-        Block[] irBlocks = ir.blocks();
         blocks[0].facts = EnvAnalysis.EMPTY;
         ir.visitDataflowBlocks(blockId -> {
-            BlockAnalysis block = this.blocks[blockId];
+            BlockAnalysis block = blocks[blockId];
             if (block.guard.equals(Guard.FALSE)) {
                 return targetId -> false;
             }
             EnvAnalysis outgoing = block.facts;
-            for (int id : irBlocks[blockId].opIds()) {
-                OpAnalysis op = ops[id];
+            for (int id : ir.blocks()[blockId].opIds()) {
+                OpAnalysis op = analyses[id];
                 op.beforeFacts = outgoing;
                 outgoing = transfer(id, op.beforeGuard, outgoing);
                 op.afterFacts = outgoing;
             }
             EnvAnalysis facts = outgoing;
             return targetId -> {
-                BlockAnalysis target = this.blocks[targetId];
+                BlockAnalysis target = blocks[targetId];
                 if (target.guard.equals(Guard.FALSE)) {
                     return false;
                 }
@@ -128,22 +161,6 @@ final class Analyzer {
                 return true;
             };
         });
-    }
-
-    private Guard controlGuard(int id, Control[] controls, ControlPass pass) {
-        Guard cached = pass.guards[id];
-        if (cached != null) {
-            return cached;
-        }
-        int parentId = controls[id].parentId();
-        if (parentId < 0) {
-            pass.guards[id] = Guard.TRUE;
-            return Guard.TRUE;
-        }
-        Guard guard = controlGuard(parentId, controls, pass);
-        Guard materialized = ir.guards().and(guard, controls[id].edgeGuard());
-        pass.guards[id] = materialized;
-        return materialized;
     }
 
     private EnvAnalysis transfer(int id, Guard currentGuard, EnvAnalysis state) {
@@ -403,14 +420,6 @@ final class Analyzer {
                 return LatticeValue.top(spec);
             default:
                 return LatticeValue.top(spec);
-        }
-    }
-
-    private static final class ControlPass {
-        private final Guard[] guards;
-
-        ControlPass(int controlCount) {
-            this.guards = new Guard[controlCount];
         }
     }
 

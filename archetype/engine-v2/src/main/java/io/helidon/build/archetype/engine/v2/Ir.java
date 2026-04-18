@@ -18,7 +18,6 @@ package io.helidon.build.archetype.engine.v2;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.BitSet;
 import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
@@ -91,50 +90,17 @@ final class Ir {
         return lowerCondition(table, guards, scope, expression);
     }
 
-    void visitReachableBlocks(IntConsumer visitor) {
-        BitSet seen = new BitSet(blocks.length);
-        seen.set(0);
-        visitDataflowBlocks(blockId -> {
-            visitor.accept(blockId);
-            return targetId -> {
-                if (seen.get(targetId)) {
-                    return false;
-                }
-                seen.set(targetId);
-                return true;
-            };
-        });
-    }
-
     void visitDataflowBlocks(IntFunction<IntPredicate> visitor) {
         Deque<Integer> queue = new ArrayDeque<>();
         queue.add(0);
         while (!queue.isEmpty()) {
             int blockId = queue.removeFirst();
             IntPredicate predicate = visitor.apply(blockId);
-            visitSuccessors(blockId, targetId -> {
+            blocks[blockId].term.visitTargets(targetId -> {
                 if (predicate.test(targetId)) {
                     queue.addLast(targetId);
                 }
             });
-        }
-    }
-
-    void visitSuccessors(int blockId, IntConsumer visitor) {
-        Terminator term = blocks[blockId].term;
-        switch (term.kind) {
-            case GOTO:
-                visitor.accept(term.targetId);
-                break;
-            case BRANCH:
-                visitor.accept(term.trueId);
-                visitor.accept(term.falseId);
-                break;
-            case RETURN:
-            case UNREACHABLE:
-            case NONE:
-            default:
-                break;
         }
     }
 
@@ -253,6 +219,23 @@ final class Ir {
             return falseId;
         }
 
+        void visitTargets(IntConsumer visitor) {
+            switch (kind) {
+                case GOTO:
+                    visitor.accept(targetId);
+                    break;
+                case BRANCH:
+                    visitor.accept(trueId);
+                    visitor.accept(falseId);
+                    break;
+                case RETURN:
+                case UNREACHABLE:
+                case NONE:
+                default:
+                    break;
+            }
+        }
+
         enum Kind {
             NONE,
             GOTO,
@@ -264,19 +247,19 @@ final class Ir {
 
     static final class Control {
         private final int parentId;
-        private final Guard edgeGuard;
+        private final Guard guard;
 
-        Control(int parentId, Guard edgeGuard) {
+        Control(int parentId, Guard guard) {
             this.parentId = parentId;
-            this.edgeGuard = edgeGuard;
+            this.guard = guard;
         }
 
         int parentId() {
             return parentId;
         }
 
-        Guard edgeGuard() {
-            return edgeGuard;
+        Guard guard() {
+            return guard;
         }
     }
 

@@ -287,7 +287,12 @@ public final class VariationEngine {
                     BitSet bitSet = new BitSet();
                     for (int i = row.bits.nextSetBit(0); i >= 0 && i < Integer.MAX_VALUE;
                             i = row.bits.nextSetBit(i + 1)) {
-                        bitSet.set(indexes.get(input.columns.get(i)));
+                        int index = indexes.getOrDefault(input.columns.get(i), -1);
+                        if (index < 0) {
+                            throw new IllegalStateException(
+                                    "Missing column index for input column: " + input.columns.get(i));
+                        }
+                        bitSet.set(index);
                     }
                     table.addRow(bitSet, row.expr);
                 }

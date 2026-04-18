@@ -479,9 +479,9 @@ final class Flow {
             Scope nodeScope = node.kind().isInput() ? childScope : scope;
             State branchEntry;
             Guard activeGuard;
-            Integer branchTrueId = branchTrueIds.get(node);
-            Integer branchJoinId = branchJoinIds.get(node);
-            if (branchTrueId == null || branchJoinId == null) {
+            int branchTrueId = branchTrueIds.getOrDefault(node, -1);
+            int branchJoinId = branchJoinIds.getOrDefault(node, -1);
+            if (branchTrueId < 0 || branchJoinId < 0) {
                 branchEntry = null;
                 activeGuard = activeGuard(node, nodeScope, afterOps);
             } else {
@@ -492,7 +492,7 @@ final class Flow {
             nodeFacts.put(node, new NodeFacts(before, nodeKey, before.path, activeGuard));
 
             Scope descendantScope = node.kind().isInput() ? childScope : scope;
-            if (branchTrueId != null && branchJoinId != null) {
+            if (branchTrueId >= 0 && branchJoinId >= 0) {
                 State cursor = constrainPath(branchEntry, activeGuard);
                 for (Node child : node.children()) {
                     cursor = projectNode(child, descendantScope, cursor);
