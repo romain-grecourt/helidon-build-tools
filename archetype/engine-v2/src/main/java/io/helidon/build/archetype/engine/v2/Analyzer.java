@@ -15,10 +15,8 @@
  */
 package io.helidon.build.archetype.engine.v2;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,7 +41,6 @@ final class Analyzer {
     private static final int COVERAGE_MAX = 16;
 
     private final Ir ir;
-    private final Map<Integer, Map<FactAnalysis, Fact>> facts = new LinkedHashMap<>();
     private final Map<Map<Integer, FactAnalysis>, Map<Integer, Fact>> envs = new IdentityHashMap<>();
     private final BlockAnalysis[] blocks;
     private final OpAnalysis[] ops;
@@ -89,122 +86,66 @@ final class Analyzer {
     private void analyzeControl() {
         Block[] blocks = ir.blocks();
         Control[] controls = ir.controls();
-        ControlPass pass = new ControlPass(blocks.length, controls.length);
-        pass.reachable[0] = true;
+        ControlPass pass = new ControlPass(controls.length);
         pass.guards[0] = Guard.TRUE;
-        for (int id = 0; id < pass.reachable.length; id++) {
-            if (pass.reachable[id]) {
-                Ir.Terminator term = blocks[id].term();
-                switch (term.kind()) {
-                    case GOTO:
-                        pass.reachable[term.targetId()] = true;
-                        break;
-                    case BRANCH:
-                        pass.reachable[term.trueId()] = true;
-                        pass.reachable[term.falseId()] = true;
-                        break;
-                    case RETURN:
-                    case UNREACHABLE:
-                    default:
-                        break;
-                }
+        ir.visitReachableBlocks(blockId -> {
+            Guard entry = controlGuard(blocks[blockId].controlId(), controls, pass);
+            this.blocks[blockId].guard = entry;
+            for (int opId : blocks[blockId].opIds()) {
+                ops[opId].beforeGuard = entry;
             }
-        }
-
-        for (int id = 0; id < pass.reachable.length; id++) {
-            if (pass.reachable[id]) {
-                int ctrlId = blocks[id].controlId();
-                this.blocks[id].guard = computeControlGuard(ctrlId, controls, pass);
-            }
-        }
-        for (int id = 0; id < pass.reachable.length; id++) {
-            if (pass.reachable[id]) {
-                Guard entry = this.blocks[id].guard;
-                for (int opId : blocks[id].opIds()) {
-                    ops[opId].beforeGuard = entry;
-                }
-            }
-        }
+        });
     }
 
-    private Guard computeControlGuard(int id, Control[] irControls, ControlPass pass) {
+    private Guard controlGuard(int id, Control[] controls, ControlPass pass) {
         Guard cached = pass.guards[id];
         if (cached != null) {
             return cached;
         }
-        int parentId = irControls[id].parentId();
+        int parentId = controls[id].parentId();
         if (parentId < 0) {
             pass.guards[id] = Guard.TRUE;
             return Guard.TRUE;
         }
-        Guard guard = computeControlGuard(parentId, irControls, pass);
-        Guard materialized = ir.guards().and(guard, irControls[id].edgeGuard());
+        Guard guard = controlGuard(parentId, controls, pass);
+        Guard materialized = ir.guards().and(guard, controls[id].edgeGuard());
         pass.guards[id] = materialized;
         return materialized;
     }
 
     private void analyzeFacts() {
         Block[] irBlocks = ir.blocks();
-        Deque<Integer> stack = new ArrayDeque<>();
-        boolean[] seen = new boolean[irBlocks.length];
-        seen[0] = true;
-        stack.add(0);
-        while (!stack.isEmpty()) {
-            int blockId = stack.removeFirst();
-            BlockAnalysis blockAnalysis = blocks[blockId];
-            if (!blockAnalysis.guard.equals(Guard.FALSE)) {
-                Map<Integer, FactAnalysis> current = blockAnalysis.facts;
-                for (int id : irBlocks[blockId].opIds()) {
-                    OpAnalysis op = ops[id];
-                    op.beforeFacts = current;
-                    current = transfer(id, op.beforeGuard, current);
-                    op.afterFacts = current;
-                }
-                Ir.Terminator term = irBlocks[blockId].term();
-                switch (term.kind()) {
-                    case GOTO: {
-                        int targetId = term.targetId();
-                        BlockAnalysis target = blocks[targetId];
-                        if (!target.guard.equals(Guard.FALSE)) {
-                            Map<Integer, FactAnalysis> merged = mergeEnv(target.facts, current);
-                            if (merged != target.facts || !seen[targetId]) {
-                                target.facts = merged;
-                                seen[targetId] = true;
-                                stack.addLast(targetId);
-                            }
-                        }
-                        break;
-                    }
-                    case BRANCH: {
-                        int trueId = term.trueId();
-                        BlockAnalysis trueBlock = blocks[trueId];
-                        if (!trueBlock.guard.equals(Guard.FALSE)) {
-                            Map<Integer, FactAnalysis> merged = mergeEnv(trueBlock.facts, current);
-                            if (merged != trueBlock.facts || !seen[trueId]) {
-                                trueBlock.facts = merged;
-                                seen[trueId] = true;
-                                stack.addLast(trueId);
-                            }
-                        }
-                        int falseId = term.falseId();
-                        BlockAnalysis falseBlock = blocks[falseId];
-                        if (!falseBlock.guard.equals(Guard.FALSE)) {
-                            Map<Integer, FactAnalysis> merged = mergeEnv(falseBlock.facts, current);
-                            if (merged != falseBlock.facts || !seen[falseId]) {
-                                falseBlock.facts = merged;
-                                seen[falseId] = true;
-                                stack.addLast(falseId);
-                            }
-                        }
-                        break;
-                    }
-                    case RETURN:
-                    case UNREACHABLE:
-                    default:
-                        break;
-                }
+        blocks[0].facts = Map.of();
+        ir.visitDataflowBlocks(blockId -> {
+            BlockAnalysis block = blocks[blockId];
+            if (block.guard.equals(Guard.FALSE)) {
+                return targetId -> false;
             }
-        }
+            Map<Integer, FactAnalysis> outgoing = block.facts;
+            for (int id : irBlocks[blockId].opIds()) {
+                OpAnalysis op = ops[id];
+                op.beforeFacts = outgoing;
+                outgoing = transfer(id, op.beforeGuard, outgoing);
+                op.afterFacts = outgoing;
+            }
+            Map<Integer, FactAnalysis> facts = outgoing;
+            return targetId -> {
+                BlockAnalysis target = blocks[targetId];
+                if (target.guard.equals(Guard.FALSE)) {
+                    return false;
+                }
+                if (target.facts == null) {
+                    target.facts = mergeEnv(Map.of(), facts);
+                    return true;
+                }
+                Map<Integer, FactAnalysis> merged = mergeEnv(target.facts, facts);
+                if (merged == target.facts) {
+                    return false;
+                }
+                target.facts = merged;
+                return true;
+            };
+        });
     }
 
     private Map<Integer, FactAnalysis> transfer(int id, Guard currentGuard, Map<Integer, FactAnalysis> state) {
@@ -386,7 +327,7 @@ final class Analyzer {
     }
 
     private Map<Integer, Fact> env(Map<Integer, FactAnalysis> env) {
-        if (env.isEmpty()) {
+        if (env == null || env.isEmpty()) {
             return Map.of();
         }
         Map<Integer, Fact> materialized = envs.get(env);
@@ -401,19 +342,16 @@ final class Analyzer {
     }
 
     private Fact fact(int id, FactAnalysis analysis) {
-        Map<FactAnalysis, Fact> cache = facts.computeIfAbsent(id, unused -> new IdentityHashMap<>());
-        Fact fact = cache.get(analysis);
-        if (fact == null) {
+        if (analysis.fact == null) {
             Symbol sym = ir.table().symbol(id);
             List<GuardedValue> values = new ArrayList<>(analysis.exact.values.size());
             for (CoveredValue value : analysis.exact.values) {
                 Guard guard = guard(value.coverage);
                 values.add(new GuardedValue(value.value, guard, sym.domain().mask(value.value)));
             }
-            fact = new Fact(guard(analysis.defined), analysis.lattice, values);
-            cache.put(analysis, fact);
+            analysis.fact = new Fact(guard(analysis.defined), analysis.lattice, values);
         }
-        return fact;
+        return analysis.fact;
     }
 
     private boolean implies(Guard left, Coverage right) {
@@ -472,11 +410,9 @@ final class Analyzer {
     }
 
     private static final class ControlPass {
-        private final boolean[] reachable;
         private final Guard[] guards;
 
-        ControlPass(int blockCount, int controlCount) {
-            this.reachable = new boolean[blockCount];
+        ControlPass(int controlCount) {
             this.guards = new Guard[controlCount];
         }
     }
@@ -484,7 +420,7 @@ final class Analyzer {
     private static final class BlockAnalysis {
         private Coverage coverage;
         private Guard guard = Guard.FALSE;
-        private Map<Integer, FactAnalysis> facts = Map.of();
+        private Map<Integer, FactAnalysis> facts;
         private State state = State.EMPTY;
     }
 
@@ -500,6 +436,7 @@ final class Analyzer {
         private final Coverage defined;
         private final LatticeValue lattice;
         private final ExactValues exact;
+        private Fact fact;
 
         FactAnalysis(Coverage defined, LatticeValue lattice) {
             this(defined, lattice, ExactValues.EMPTY);

@@ -15,8 +15,11 @@
  */
 package io.helidon.build.archetype.engine.v2;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
+import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,6 +27,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.BiConsumer;
+import java.util.function.IntConsumer;
+import java.util.function.IntFunction;
+import java.util.function.IntPredicate;
 
 import io.helidon.build.archetype.engine.v2.Context.Scope;
 import io.helidon.build.archetype.engine.v2.Domain.Guard;
@@ -112,6 +118,53 @@ final class Ir {
         return controls;
     }
 
+    void visitReachableBlocks(IntConsumer visitor) {
+        BitSet seen = new BitSet(blocks.length);
+        seen.set(0);
+        visitDataflowBlocks(blockId -> {
+            visitor.accept(blockId);
+            return targetId -> {
+                if (seen.get(targetId)) {
+                    return false;
+                }
+                seen.set(targetId);
+                return true;
+            };
+        });
+    }
+
+    void visitDataflowBlocks(IntFunction<IntPredicate> visitor) {
+        Deque<Integer> queue = new ArrayDeque<>();
+        queue.add(0);
+        while (!queue.isEmpty()) {
+            int blockId = queue.removeFirst();
+            IntPredicate scheduleSuccessor = visitor.apply(blockId);
+            visitSuccessors(blockId, targetId -> {
+                if (scheduleSuccessor.test(targetId)) {
+                    queue.addLast(targetId);
+                }
+            });
+        }
+    }
+
+    void visitSuccessors(int blockId, IntConsumer visitor) {
+        Terminator term = blocks[blockId].term;
+        switch (term.kind) {
+            case GOTO:
+                visitor.accept(term.targetId);
+                break;
+            case BRANCH:
+                visitor.accept(term.trueId);
+                visitor.accept(term.falseId);
+                break;
+            case RETURN:
+            case UNREACHABLE:
+            case NONE:
+            default:
+                break;
+        }
+    }
+
     static final class Op {
         private final Kind kind;
         private final int blockId;
@@ -147,7 +200,12 @@ final class Ir {
             return expression;
         }
 
-        enum Kind {DECLARE_INPUT, DECLARE_OPTION, DEFINE_VALUE, EMIT}
+        enum Kind {
+            DECLARE_INPUT,
+            DECLARE_OPTION,
+            DEFINE_VALUE,
+            EMIT
+        }
     }
 
     static final class Terminator {
@@ -187,7 +245,13 @@ final class Ir {
             return falseId;
         }
 
-        enum Kind {NONE, GOTO, BRANCH, RETURN, UNREACHABLE}
+        enum Kind {
+            NONE,
+            GOTO,
+            BRANCH,
+            RETURN,
+            UNREACHABLE
+        }
     }
 
     static final class Control {
