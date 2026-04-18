@@ -795,7 +795,7 @@ public class ScriptCompiler {
     }
 
     private Map<String, Fact> facts0(Node node) {
-        Flow.State before = flow.before(node);
+        IrAnalyzer.IrState before = flow.before(node);
         if (before.env().isEmpty()) {
             return Map.of();
         }

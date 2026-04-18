@@ -98,7 +98,7 @@ class FlowTest {
 
         Symbol enabled = symbol(flow, "enabled");
         Symbol flavor = symbol(flow, "flavor");
-        Flow.State before = flow.before(findStep(script, "Observe"));
+        IrAnalyzer.IrState before = flow.before(findStep(script, "Observe"));
         Fact fact = before.env().get(flavor.id());
         Map<String, Guard> exactByValue = exactGuards(fact);
 
@@ -122,7 +122,7 @@ class FlowTest {
         Symbol primary = symbol(flow, "primary");
         Symbol secondary = symbol(flow, "secondary");
         Symbol flavor = symbol(flow, "flavor");
-        Flow.State before = flow.before(findStep(script, "Observe"));
+        IrAnalyzer.IrState before = flow.before(findStep(script, "Observe"));
         Fact fact = before.env().get(flavor.id());
         Map<String, Guard> exactByValue = exactGuards(fact);
 
@@ -168,7 +168,7 @@ class FlowTest {
         flow.process(script);
 
         Node condition = findCondition(script, "${enabled} && ${flag}");
-        Flow.State before = flow.before(condition);
+        IrAnalyzer.IrState before = flow.before(condition);
         Symbol flag = symbol(flow, "flag");
         Fact fact = before.env().get(flag.id());
         Set<String> names = before.env().keySet().stream().map(flow::symbol).map(Symbol::name).collect(Collectors.toSet());

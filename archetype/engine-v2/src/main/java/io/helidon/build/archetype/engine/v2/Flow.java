@@ -35,6 +35,7 @@ import io.helidon.build.archetype.engine.v2.Domain.Symbol;
 import io.helidon.build.archetype.engine.v2.Domain.Fact;
 import io.helidon.build.archetype.engine.v2.Expression.Operator;
 import io.helidon.build.archetype.engine.v2.Expression.Token;
+import io.helidon.build.archetype.engine.v2.IrAnalyzer.IrState;
 import io.helidon.build.archetype.engine.v2.Ir.Block;
 import io.helidon.build.archetype.engine.v2.Ir.Op;
 import io.helidon.build.archetype.engine.v2.Ir.Terminator;
@@ -45,7 +46,7 @@ import static java.util.Objects.requireNonNull;
 final class Flow {
     private final Scope scope;
     private Ir ir;
-    private State rootEntry;
+    private IrState rootEntry;
     private Map<Node, NodeFacts> nodeFacts = Map.of();
     private SymbolInfo[] symbolInfos = new SymbolInfo[0];
 
@@ -56,7 +57,7 @@ final class Flow {
     void process(Node root) {
         requireNonNull(root, "root is null");
         ir = Ir.lower(scope, root);
-        Analyzer analyzer = new Analyzer(ir);
+        IrAnalyzer analyzer = new IrAnalyzer(ir);
         analyzer.analyze();
         Projector projector = new Projector(ir, analyzer, root, scope);
         projector.project();
@@ -89,7 +90,7 @@ final class Flow {
         return node == null ? Guard.TRUE : facts(node).activeGuard;
     }
 
-    State before(Node node) {
+    IrState before(Node node) {
         return node == null ? rootEntry : facts(node).before;
     }
 
@@ -220,15 +221,15 @@ final class Flow {
     }
 
     private Fact fact(Node node, String key) {
-        State before = before(node);
-        if (before.env.isEmpty()) {
+        IrState before = before(node);
+        if (before.env().isEmpty()) {
             return null;
         }
         int id = ir.table().findId(key);
         if (id < 0 && !key.startsWith("~")) {
             id = ir.table().findId("~" + key);
         }
-        return id < 0 ? null : before.env.get(id);
+        return id < 0 ? null : before.env().get(id);
     }
 
     private Value<?> value(Fact fact, Guard required, Value.Type type) {
@@ -302,33 +303,13 @@ final class Flow {
         }
     }
 
-    static final class State {
-        static final State EMPTY = new State(Guard.FALSE, Map.of());
-
-        private final Guard path;
-        private final Map<Integer, Fact> env;
-
-        State(Guard path, Map<Integer, Fact> env) {
-            this.path = path;
-            this.env = env;
-        }
-
-        Guard path() {
-            return path;
-        }
-
-        Map<Integer, Fact> env() {
-            return env;
-        }
-    }
-
     private static final class NodeFacts {
-        private final State before;
+        private final IrState before;
         private final String key;
         private final Guard renderGuard;
         private final Guard activeGuard;
 
-        NodeFacts(State before, String key, Guard renderGuard, Guard activeGuard) {
+        NodeFacts(IrState before, String key, Guard renderGuard, Guard activeGuard) {
             this.before = before;
             this.key = key;
             this.renderGuard = renderGuard;
@@ -338,7 +319,7 @@ final class Flow {
 
     private static final class Projector {
         private final Ir ir;
-        private final Analyzer analyzer;
+        private final IrAnalyzer analyzer;
         private final Node node;
         private final Scope scope;
         private final Map<Node, List<Integer>> ops = new IdentityHashMap<>();
@@ -347,7 +328,7 @@ final class Flow {
         private final Map<Node, NodeFacts> nodeFacts = new IdentityHashMap<>();
         private final SymbolInfo[] symbolInfos;
 
-        Projector(Ir ir, Analyzer analyzer, Node node, Scope scope) {
+        Projector(Ir ir, IrAnalyzer analyzer, Node node, Scope scope) {
             this.ir = ir;
             this.analyzer = analyzer;
             this.node = node;
@@ -389,29 +370,29 @@ final class Flow {
             Op[] ops = ir.ops();
             Guards guards = ir.guards();
             for (int id = 0; id < ops.length; id++) {
-                State before = analyzer.beforeState(id);
+                IrState before = analyzer.beforeState(id);
                 Op op = ops[id];
                 switch (op.kind()) {
                     case DECLARE_INPUT: {
                         SymbolInfo info = symbolInfos[op.symbolId()];
-                        info.addDefinition(before.path, guards);
+                        info.addDefinition(before.path(), guards);
                         if (info.sym.domain().kind() == Spec.Kind.BOOLEAN) {
-                            info.addAvailability("true", before.path, guards);
-                            info.addAvailability("false", before.path, guards);
+                            info.addAvailability("true", before.path(), guards);
+                            info.addAvailability("false", before.path(), guards);
                         }
                         break;
                     }
                     case DECLARE_OPTION: {
                         SymbolInfo info = symbolInfos[op.symbolId()];
-                        info.addAvailability(op.source().value().getString(), before.path, guards);
+                        info.addAvailability(op.source().value().getString(), before.path(), guards);
                         break;
                     }
                     case DEFINE_VALUE: {
                         SymbolInfo info = symbolInfos[op.symbolId()];
-                        if (before.path.equals(Guard.FALSE)) {
+                        if (before.path().equals(Guard.FALSE)) {
                             break;
                         }
-                        Map<Integer, Fact> env = analyzer.afterState(id).env;
+                        Map<Integer, Fact> env = analyzer.afterState(id).env();
                         Fact fact = env.get(op.symbolId());
                         if (fact == null) {
                             throw new IllegalStateException("Missing flow fact after op for key: " + id);
@@ -466,20 +447,20 @@ final class Flow {
             }
         }
 
-        State projectNode(Node node, Scope scope, State current) {
+        IrState projectNode(Node node, Scope scope, IrState current) {
             List<Integer> opIds = ops.getOrDefault(node, List.of());
-            State before;
-            State afterOps;
+            IrState before;
+            IrState afterOps;
             if (opIds.isEmpty()) {
                 before = current;
                 afterOps = before;
             } else {
-                before = constrainPath(analyzer.beforeState(opIds.get(0)), current.path);
-                afterOps = constrainPath(analyzer.afterState(opIds.get(opIds.size() - 1)), current.path);
+                before = constrainPath(analyzer.beforeState(opIds.get(0)), current.path());
+                afterOps = constrainPath(analyzer.afterState(opIds.get(opIds.size() - 1)), current.path());
             }
             Scope childScope = childScope(scope, node);
             Scope nodeScope = node.kind().isInput() ? childScope : scope;
-            State branchEntry;
+            IrState branchEntry;
             Guard activeGuard;
             int branchTrueId = branchTrueIds.getOrDefault(node, -1);
             int branchJoinId = branchJoinIds.getOrDefault(node, -1);
@@ -487,22 +468,22 @@ final class Flow {
                 branchEntry = null;
                 activeGuard = activeGuard(node, nodeScope, afterOps);
             } else {
-                branchEntry = constrainPath(analyzer.entryState(branchTrueId), current.path);
+                branchEntry = constrainPath(analyzer.entryState(branchTrueId), current.path());
                 activeGuard = activeGuard(node, nodeScope, branchEntry);
             }
             String nodeKey = nodeKey(node, scope, childScope);
-            nodeFacts.put(node, new NodeFacts(before, nodeKey, before.path, activeGuard));
+            nodeFacts.put(node, new NodeFacts(before, nodeKey, before.path(), activeGuard));
 
             Scope descendantScope = node.kind().isInput() ? childScope : scope;
             if (branchTrueId >= 0 && branchJoinId >= 0) {
-                State cursor = constrainPath(branchEntry, activeGuard);
+                IrState cursor = constrainPath(branchEntry, activeGuard);
                 for (Node child : node.children()) {
                     cursor = projectNode(child, descendantScope, cursor);
                 }
-                return constrainPath(analyzer.entryState(branchJoinId), current.path);
+                return constrainPath(analyzer.entryState(branchJoinId), current.path());
             }
 
-            State cursor = afterOps;
+            IrState cursor = afterOps;
             for (Node child : node.children()) {
                 cursor = projectNode(child, descendantScope, cursor);
             }
@@ -530,20 +511,20 @@ final class Flow {
             }
         }
 
-        State constrainPath(State state, Guard required) {
-            if (state.path.equals(required)) {
+        IrState constrainPath(IrState state, Guard required) {
+            if (state.path().equals(required)) {
                 return state;
             }
-            Guard constrained = ir.guards().and(state.path, required);
-            return constrained.equals(state.path) ? state : new State(constrained, state.env);
+            Guard constrained = ir.guards().and(state.path(), required);
+            return constrained.equals(state.path()) ? state : new IrState(constrained, state.env());
         }
 
-        Guard activeGuard(Node node, Scope nodeScope, State afterOps) {
+        Guard activeGuard(Node node, Scope nodeScope, IrState afterOps) {
             Guard control = controlGuard(node, nodeScope, afterOps);
-            return control == null ? afterOps.path : ir.guards().and(afterOps.path, control);
+            return control == null ? afterOps.path() : ir.guards().and(afterOps.path(), control);
         }
 
-        Guard controlGuard(Node node, Scope nodeScope, State state) {
+        Guard controlGuard(Node node, Scope nodeScope, IrState state) {
             switch (node.kind()) {
                 case CONDITION:
                     return translatedCondition(node.expression(), nodeScope, state);
@@ -566,7 +547,7 @@ final class Flow {
             }
         }
 
-        Guard translatedCondition(Expression expression, Scope scope, State state) {
+        Guard translatedCondition(Expression expression, Scope scope, IrState state) {
             Guard translated = translatedCondition0(expression, scope, state);
             if (translated == null) {
                 translated = ir.lowerCondition(scope, expression);
@@ -574,7 +555,7 @@ final class Flow {
             return translated;
         }
 
-        Guard translatedCondition0(Expression expression, Scope scope, State state) {
+        Guard translatedCondition0(Expression expression, Scope scope, IrState state) {
             Guards guards = ir.guards();
             Deque<ReferenceOperand> stack = new ArrayDeque<>(expression.tokens().size());
             for (Token token : expression.tokens()) {
@@ -641,7 +622,7 @@ final class Flow {
             return stack.size() == 1 ? booleanGuard(stack.peekLast(), state) : null;
         }
 
-        Guard booleanGuard(ReferenceOperand operand, State state) {
+        Guard booleanGuard(ReferenceOperand operand, IrState state) {
             if (operand.guard != null) {
                 return operand.guard;
             }
@@ -658,7 +639,7 @@ final class Flow {
             return null;
         }
 
-        Guard equalityGuard(ReferenceOperand left, ReferenceOperand right, State state) {
+        Guard equalityGuard(ReferenceOperand left, ReferenceOperand right, IrState state) {
             if (left.literal != null && right.literal != null) {
                 return Value.isEqual(left.literal, right.literal) ? Guard.TRUE : Guard.FALSE;
             }
@@ -671,7 +652,7 @@ final class Flow {
             return null;
         }
 
-        Guard containsGuard(ReferenceOperand left, ReferenceOperand right, State state) {
+        Guard containsGuard(ReferenceOperand left, ReferenceOperand right, IrState state) {
             if (left.ref != null && right.literal != null) {
                 return translatedListContains(left.ref, right.literal, state);
             }
@@ -689,7 +670,7 @@ final class Flow {
             return null;
         }
 
-        Guard translatedEquality(String key, Value<?> value, State state) {
+        Guard translatedEquality(String key, Value<?> value, IrState state) {
             Fact fact = factFor(state, key);
             SymbolInfo info = symbolInfo(key);
             Guard bound = fact == null || info == null ? Guard.FALSE : fact.match(info.sym, value, ir.guards());
@@ -697,7 +678,7 @@ final class Flow {
             return combine(key, fact, bound, direct);
         }
 
-        Guard translatedScalarAny(String key, Set<String> values, State state) {
+        Guard translatedScalarAny(String key, Set<String> values, IrState state) {
             Fact fact = factFor(state, key);
             SymbolInfo info = symbolInfo(key);
             Guard bound = fact == null || info == null ? Guard.FALSE : fact.scalarAny(info.sym, values, ir.guards());
@@ -705,7 +686,7 @@ final class Flow {
             return combine(key, fact, bound, direct);
         }
 
-        Guard translatedListContains(String key, Value<?> value, State state) {
+        Guard translatedListContains(String key, Value<?> value, IrState state) {
             Set<String> required = containsValues(value);
             if (required == null) {
                 return null;
@@ -743,9 +724,9 @@ final class Flow {
             return guards.or(bound, unresolved);
         }
 
-        Fact factFor(State state, String key) {
+        Fact factFor(IrState state, String key) {
             int id = ir.table().findId(key);
-            return id < 0 ? null : state.env.get(id);
+            return id < 0 ? null : state.env().get(id);
         }
 
         Guard definitionFor(String key, Fact fact) {

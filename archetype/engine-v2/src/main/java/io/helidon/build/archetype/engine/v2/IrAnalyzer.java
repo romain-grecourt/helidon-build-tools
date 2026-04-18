@@ -33,19 +33,18 @@ import io.helidon.build.archetype.engine.v2.Domain.LatticeValue;
 import io.helidon.build.archetype.engine.v2.Domain.Spec;
 import io.helidon.build.archetype.engine.v2.Domain.Symbol;
 import io.helidon.build.archetype.engine.v2.Expression.Token;
-import io.helidon.build.archetype.engine.v2.Flow.State;
 import io.helidon.build.archetype.engine.v2.Ir.Block;
 import io.helidon.build.archetype.engine.v2.Ir.Op;
 
-final class Analyzer {
+final class IrAnalyzer {
     private static final int EXACT_CASE_MAX = 16;
     private static final int COVERAGE_MAX = 16;
 
     private final Ir ir;
     private final BlockAnalysis[] blocks;
-    private final OpAnalysis[] analyses;
+    private final OpAnalysis[] ops;
 
-    Analyzer(Ir ir) {
+    IrAnalyzer(Ir ir) {
         this.ir = ir;
         Block[] blocks = ir.blocks();
         this.blocks = new BlockAnalysis[blocks.length];
@@ -53,9 +52,9 @@ final class Analyzer {
             this.blocks[i] = new BlockAnalysis();
         }
         Op[] ops = ir.ops();
-        this.analyses = new OpAnalysis[ops.length];
-        for (int i = 0; i < this.analyses.length; i++) {
-            this.analyses[i] = new OpAnalysis();
+        this.ops = new OpAnalysis[ops.length];
+        for (int i = 0; i < this.ops.length; i++) {
+            this.ops[i] = new OpAnalysis();
         }
     }
 
@@ -63,24 +62,24 @@ final class Analyzer {
         analyzeControls();
         analyzeFacts();
         for (BlockAnalysis block : blocks) {
-            block.state = new State(block.guard, env(block.facts));
+            block.state = new IrState(block.guard, env(block.facts));
         }
-        for (OpAnalysis op : analyses) {
-            op.beforeState = new State(op.beforeGuard, env(op.beforeFacts));
-            op.afterState = new State(op.beforeGuard, env(op.afterFacts));
+        for (OpAnalysis op : ops) {
+            op.beforeState = new IrState(op.beforeGuard, env(op.beforeFacts));
+            op.afterState = new IrState(op.beforeGuard, env(op.afterFacts));
         }
     }
 
-    State entryState(int blockId) {
+    IrState entryState(int blockId) {
         return blocks[blockId].state;
     }
 
-    State beforeState(int opId) {
-        return analyses[opId].beforeState;
+    IrState beforeState(int opId) {
+        return ops[opId].beforeState;
     }
 
-    State afterState(int opId) {
-        return analyses[opId].afterState;
+    IrState afterState(int opId) {
+        return ops[opId].afterState;
     }
 
     private void analyzeControls() {
@@ -117,7 +116,7 @@ final class Analyzer {
             }
             blocks[blockId].guard = entry;
             for (int opId : ir.blocks()[blockId].opIds()) {
-                analyses[opId].beforeGuard = entry;
+                ops[opId].beforeGuard = entry;
             }
             return targetId -> {
                 if (seen.get(targetId)) {
@@ -138,7 +137,7 @@ final class Analyzer {
             }
             EnvAnalysis outgoing = block.facts;
             for (int id : ir.blocks()[blockId].opIds()) {
-                OpAnalysis op = analyses[id];
+                OpAnalysis op = ops[id];
                 op.beforeFacts = outgoing;
                 outgoing = transfer(id, op.beforeGuard, outgoing);
                 op.afterFacts = outgoing;
@@ -423,19 +422,39 @@ final class Analyzer {
         }
     }
 
+    static final class IrState {
+        static final IrState EMPTY = new IrState(Guard.FALSE, Map.of());
+
+        private final Guard path;
+        private final Map<Integer, Fact> env;
+
+        IrState(Guard path, Map<Integer, Fact> env) {
+            this.path = path;
+            this.env = env;
+        }
+
+        Guard path() {
+            return path;
+        }
+
+        Map<Integer, Fact> env() {
+            return env;
+        }
+    }
+
     private static final class BlockAnalysis {
         private Coverage coverage;
         private Guard guard = Guard.FALSE;
         private EnvAnalysis facts;
-        private State state = State.EMPTY;
+        private IrState state = IrState.EMPTY;
     }
 
     private static final class OpAnalysis {
         private Guard beforeGuard = Guard.FALSE;
         private EnvAnalysis beforeFacts = EnvAnalysis.EMPTY;
         private EnvAnalysis afterFacts = EnvAnalysis.EMPTY;
-        private State beforeState = State.EMPTY;
-        private State afterState = State.EMPTY;
+        private IrState beforeState = IrState.EMPTY;
+        private IrState afterState = IrState.EMPTY;
     }
 
     private static final class EnvAnalysis {
