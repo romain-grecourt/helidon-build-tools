@@ -107,6 +107,7 @@ public final class VariationEngine {
         List<Variations.Entry> variations = new ArrayList<>();
         sourceNode.visit(new VisitorImpl(sourceNode,
                 flow,
+                indexer,
                 ctx.cwd(),
                 variations,
                 filters,
@@ -129,10 +130,12 @@ public final class VariationEngine {
     private static final class VisitorImpl implements Node.Visitor {
         private final Node sourceNode;
         private final Flow flow;
+        private final ScriptIndexer indexer;
         private final Path cwd;
 
         private final List<Table> inputs = new ArrayList<>();
         private final List<Column> columns = new ArrayList<>();
+        private final List<Set<String>> filterDependencies = new ArrayList<>();
         private final Map<Column, Integer> indexes = new LinkedHashMap<>();
         private final Map<BitSet, Map<String, String>> variationCache = new ConcurrentHashMap<>();
         private final Set<String> textInputs = new LinkedHashSet<>();
@@ -147,6 +150,7 @@ public final class VariationEngine {
 
         VisitorImpl(Node sourceNode,
                     Flow flow,
+                    ScriptIndexer indexer,
                     Path cwd,
                     Collection<Variations.Entry> variations,
                     List<Expression> filters,
@@ -155,6 +159,7 @@ public final class VariationEngine {
                     long maxIntermediateVariations) {
             this.sourceNode = sourceNode;
             this.flow = flow;
+            this.indexer = indexer;
             this.cwd = cwd;
             this.variations = variations;
             this.filters = filters;
@@ -305,6 +310,13 @@ public final class VariationEngine {
             for (Table table : tables) {
                 table.dependencies.addAll(dependencies(table, inputIds));
             }
+            Scope sourceScope = flow.scope(sourceNode);
+            for (Expression filter : filters) {
+                Set<String> dependencies = dependencies(prune(sourceNode, filter), sourceScope, null, inputIds);
+                if (!dependencies.isEmpty()) {
+                    filterDependencies.add(dependencies);
+                }
+            }
 
             List<Table> pending = new ArrayList<>(tables);
             Map<String, Integer> joined = new HashMap<>();
@@ -374,7 +386,7 @@ public final class VariationEngine {
         void addMerged(Set<BitSet> merged, BitSet bits, String inputId) {
             if (merged.add(bits) && merged.size() > maxIntermediateVariations) {
                 throw new IllegalStateException(String.format(
-                        "Intermediate variation row count %d exceeds %d while joining input '%s'",
+                        "Intermediate variation row count %d exceeds the configured limit of %d while joining input '%s'",
                         merged.size(),
                         maxIntermediateVariations,
                         inputId));
@@ -402,7 +414,7 @@ public final class VariationEngine {
                 return null;
             }
 
-            Map<String, String> values = Maps.mapValue(effective, value -> Value.toString(value));
+            Map<String, String> values = orderedValues(effective);
             if (!filter(sourceNode, values)) {
                 return null;
             }
@@ -418,6 +430,35 @@ public final class VariationEngine {
 
             String signature = Lists.join(normalized.entrySet(), " ");
             return Variations.entry(values, unbounded, signature);
+        }
+
+        Map<String, String> orderedValues(Map<String, ScopeValue<?>> effective) {
+            Map<String, List<Map.Entry<String, ScopeValue<?>>>> groups = new LinkedHashMap<>();
+            Map<String, Integer> encounterOrder = new HashMap<>();
+            int next = 0;
+            for (Map.Entry<String, ScopeValue<?>> entry : effective.entrySet()) {
+                encounterOrder.put(entry.getKey(), next++);
+                groups.computeIfAbsent(groupKey(entry.getKey()), ignored -> new ArrayList<>()).add(entry);
+            }
+            Map<String, String> values = new LinkedHashMap<>();
+            for (List<Map.Entry<String, ScopeValue<?>>> group : groups.values()) {
+                for (Map.Entry<String, ScopeValue<?>> entry : group) {
+                    if (entry.getKey().indexOf('.') < 0) {
+                        values.put(entry.getKey(), Value.toString(entry.getValue()));
+                    }
+                }
+                group.stream()
+                        .filter(entry -> entry.getKey().indexOf('.') >= 0)
+                        .sorted(Comparator.comparingInt((Map.Entry<String, ScopeValue<?>> entry) -> inputOrder(entry.getKey()))
+                                .thenComparingInt(entry -> encounterOrder.get(entry.getKey())))
+                        .forEach(entry -> values.put(entry.getKey(), Value.toString(entry.getValue())));
+            }
+            return values;
+        }
+
+        String groupKey(String key) {
+            int index = key.indexOf('.');
+            return index < 0 ? key : key.substring(0, index);
         }
 
         boolean filter(Node node, Map<String, String> variation) {
@@ -582,7 +623,7 @@ public final class VariationEngine {
         Map<String, Value.Type> inputTypes() {
             Map<String, Value.Type> types = new LinkedHashMap<>();
             for (Node input : sourceNode.traverse(Kind::isInput)) {
-                types.putIfAbsent(flow.key(input), input.kind().valueType());
+                types.putIfAbsent(indexer.key(input), input.kind().valueType());
             }
             return Collections.unmodifiableMap(types);
         }
@@ -643,6 +684,9 @@ public final class VariationEngine {
             }
             Table best = null;
             Table fallback = null;
+            int bestUnlocked = -1;
+            int bestNearUnlocked = -1;
+            int bestReferences = -1;
             int mergedSize = merged.size();
             long bestCost = Long.MAX_VALUE;
             for (Table table : tables) {
@@ -652,9 +696,37 @@ public final class VariationEngine {
                 if (!available.containsAll(table.dependencies)) {
                     continue;
                 }
+                int unlocked = 0;
+                int nearUnlocked = 0;
+                int references = 0;
+                for (Set<String> dependencies : filterDependencies) {
+                    if (!dependencies.contains(table.id)) {
+                        continue;
+                    }
+                    references++;
+                    int remaining = 0;
+                    for (String dependency : dependencies) {
+                        if (!dependency.equals(table.id) && !available.contains(dependency)) {
+                            remaining++;
+                        }
+                    }
+                    if (remaining == 0) {
+                        unlocked++;
+                    } else if (remaining == 1) {
+                        nearUnlocked++;
+                    }
+                }
                 long cost = estimateJoinSize(table, mergedSize);
-                if (best == null || cost < bestCost || (cost == bestCost && table.rows.size() < best.rows.size())) {
+                if (best == null
+                        || unlocked > bestUnlocked
+                        || unlocked == bestUnlocked && nearUnlocked > bestNearUnlocked
+                        || unlocked == bestUnlocked && nearUnlocked == bestNearUnlocked && references > bestReferences
+                        || unlocked == bestUnlocked && nearUnlocked == bestNearUnlocked && references == bestReferences
+                        && (cost < bestCost || cost == bestCost && table.rows.size() < best.rows.size())) {
                     best = table;
+                    bestUnlocked = unlocked;
+                    bestNearUnlocked = nearUnlocked;
+                    bestReferences = references;
                     bestCost = cost;
                 }
             }
@@ -712,7 +784,7 @@ public final class VariationEngine {
             Set<String> dependencies = new LinkedHashSet<>();
             for (String variable : expr.variables()) {
                 String key = scope.key(variable);
-                if (!key.equals(self) && inputIds.contains(key)) {
+                if ((self == null || !key.equals(self)) && inputIds.contains(key)) {
                     dependencies.add(key);
                 }
             }
@@ -721,7 +793,7 @@ public final class VariationEngine {
 
         Table table(Node node) {
             Expression expr = flow.activationCondition(node.parent());
-            return new Table(node, flow.key(node), prune(node, expr));
+            return new Table(node, indexer.key(node), prune(node, expr));
         }
 
         static List<Node> optionNodes(Node node) {

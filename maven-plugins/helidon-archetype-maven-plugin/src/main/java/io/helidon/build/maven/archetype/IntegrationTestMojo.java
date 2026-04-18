@@ -18,6 +18,7 @@ package io.helidon.build.maven.archetype;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.UncheckedIOException;
@@ -39,6 +40,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import io.helidon.build.archetype.engine.v2.ArchetypeEngineV2;
+import io.helidon.build.archetype.engine.v2.Expression;
 import io.helidon.build.archetype.engine.v2.VariationEngine;
 import io.helidon.build.archetype.engine.v2.Variations;
 import io.helidon.build.common.Lists;
@@ -51,6 +53,7 @@ import io.helidon.build.common.ProcessMonitor.ProcessTimeoutException;
 import io.helidon.build.common.ansi.AnsiConsoleInstaller;
 import io.helidon.build.common.logging.Log;
 import io.helidon.build.common.maven.plugin.MavenArtifact;
+import io.helidon.build.common.xml.XMLElement;
 import io.helidon.build.maven.archetype.config.Validation;
 
 import org.apache.maven.RepositoryUtils;
@@ -419,7 +422,11 @@ public class IntegrationTestMojo extends AbstractMojo {
             List<VariationPlan> plans = plans();
             try {
                 Variations variations = plans.isEmpty()
-                        ? variationEngine.compute(List.of(), externalValues, externalDefaults, max)
+                        ? variationEngine.compute(
+                                defaultFilters(cwd, project.getBasedir().toPath()),
+                                externalValues,
+                                externalDefaults,
+                                max)
                         : variations(variationEngine, plans, max);
                 if (failOnUnbounded && !variations.exhaustive()) {
                     throw new MojoFailureException(
@@ -431,6 +438,21 @@ public class IntegrationTestMojo extends AbstractMojo {
             } catch (IllegalStateException ex) {
                 throw new MojoFailureException(ex.getMessage());
             }
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex);
+        }
+    }
+
+    static List<Expression> defaultFilters(Path cwd, Path projectDir) {
+        Path rulesFile = projectDir.resolve("src/test/archetype/rules.xml");
+        if (!Files.exists(rulesFile)) {
+            rulesFile = cwd.resolve("test/archetype/rules.xml");
+        }
+        if (!Files.exists(rulesFile)) {
+            return List.of();
+        }
+        try (InputStream is = Files.newInputStream(rulesFile)) {
+            return VariationRules.load(XMLElement.parse(is));
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }

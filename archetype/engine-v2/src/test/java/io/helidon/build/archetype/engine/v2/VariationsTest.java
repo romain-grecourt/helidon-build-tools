@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import io.helidon.build.archetype.engine.v2.ScriptCompiler.ValidationException;
 import io.helidon.build.common.VirtualFileSystem;
@@ -357,6 +358,33 @@ class VariationsTest {
                 Map.of(),
                 Long.MAX_VALUE);
         assertThat(actual, is(expected));
+    }
+
+    @Test
+    void testVariationsPreferFilterGatesBeforeLowerCostFanOut() {
+        List<Expression> filters = filters("variations/filter-aware-join-order-filters.xml");
+        Variations actual = variations("variations", "filter-aware-join-order.xml", filters, Map.of(), Map.of(), 20);
+        assertThat(actual.size(), is(16));
+        assertThat(actual.exhaustive(), is(true));
+        assertThat(actual.stream().allMatch(entry -> "false".equals(entry.get("x"))
+                && "basic".equals(entry.get("y"))
+                && "false".equals(entry.get("z"))
+                && "base".equals(entry.get("w"))), is(true));
+        Set<String> expectedFanouts = new java.util.TreeSet<>();
+        String[] values = {"a", "b", "c", "d"};
+        expectedFanouts.add("none");
+        for (int bits = 1; bits < 1 << values.length; bits++) {
+            List<String> selected = new ArrayList<>();
+            for (int i = 0; i < values.length; i++) {
+                if ((bits & (1 << i)) != 0) {
+                    selected.add(values[i]);
+                }
+            }
+            expectedFanouts.add(String.join(",", selected));
+        }
+        assertThat(actual.stream()
+                .map(entry -> entry.get("fanout"))
+                .collect(Collectors.toCollection(java.util.TreeSet::new)), is(expectedFanouts));
     }
 
     @Test

@@ -19,6 +19,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
@@ -31,6 +32,7 @@ final class ScriptIndexer implements Node.Visitor {
     private final Map<String, Set<Node>> definedRefs = new HashMap<>();
     private final Map<String, Type> refTypes = new HashMap<>();
     private final Set<String> textInputRefs = new HashSet<>();
+    private final Map<Node, String> keys = new IdentityHashMap<>();
 
     private final Scope rootScope;
     private final Deque<Scope> scopes = new ArrayDeque<>();
@@ -62,6 +64,10 @@ final class ScriptIndexer implements Node.Visitor {
         return textInputRefs.contains(key);
     }
 
+    String key(Node node) {
+        return keys.getOrDefault(node, "");
+    }
+
     @Override
     public boolean visit(Node node) {
         Scope currentScope = scopes.peek();
@@ -73,6 +79,7 @@ final class ScriptIndexer implements Node.Visitor {
             case INPUT_LIST:
             case INPUT_TEXT:
                 childScope = currentScope.getOrCreate(node);
+                keys.put(node, childScope.key());
                 definedRefs.computeIfAbsent(childScope.key(), k -> new LinkedHashSet<>()).add(node);
                 refTypes.putIfAbsent(childScope.key(), node.kind().valueType());
                 if (node.kind() == Node.Kind.INPUT_TEXT) {

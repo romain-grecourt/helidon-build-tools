@@ -564,15 +564,17 @@ final class Ir {
         }
 
         void terminate(int blockId, Node source, int trueId, int falseId) {
-            if (block(blockId).term.kind() != Terminator.Kind.NONE) {
+            Block block = block(blockId);
+            if (block.term.kind() != Terminator.Kind.NONE) {
                 throw new IllegalStateException(String.format("Block %d already terminated", blockId));
             }
-            block(blockId).term = new Terminator(Terminator.Kind.BRANCH, source, -1, trueId, falseId);
+            block.term = new Terminator(Terminator.Kind.BRANCH, source, -1, trueId, falseId);
         }
 
         void terminateIfMissing(int blockId, Terminator.Kind kind, Node source, int targetId) {
-            if (block(blockId).term.kind() == Terminator.Kind.NONE) {
-                block(blockId).term = new Terminator(kind, source, targetId, -1, -1);
+            Block block = block(blockId);
+            if (block.term.kind() == Terminator.Kind.NONE) {
+                block.term = new Terminator(kind, source, targetId, -1, -1);
             }
         }
 

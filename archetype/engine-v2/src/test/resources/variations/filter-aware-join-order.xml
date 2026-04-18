@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Copyright (c) 2026 Oracle and/or its affiliates.
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
+<archetype-script xmlns="https://helidon.io/archetype/2.0"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
+
+    <step name="Filter Aware Join Order">
+        <inputs>
+            <list id="fanout" name="Fanout" optional="true">
+                <option value="a" name="A"/>
+                <option value="b" name="B"/>
+                <option value="c" name="C"/>
+                <option value="d" name="D"/>
+            </list>
+            <boolean id="x" name="X"/>
+            <enum id="y" name="Y">
+                <option value="basic" name="Basic"/>
+                <option value="advanced" name="Advanced"/>
+                <option value="expert" name="Expert"/>
+                <option value="custom" name="Custom"/>
+            </enum>
+            <boolean id="z" name="Z"/>
+            <enum id="w" name="W">
+                <option value="base" name="Base"/>
+                <option value="alt1" name="Alt 1"/>
+                <option value="alt2" name="Alt 2"/>
+                <option value="alt3" name="Alt 3"/>
+            </enum>
+        </inputs>
+    </step>
+</archetype-script>

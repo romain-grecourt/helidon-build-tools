@@ -188,11 +188,10 @@ validate_paths() {
     HELIDON_DIR="$(cd "${HELIDON_DIR}" && pwd)" || die "cannot resolve --helidon-dir"
 
     HELIDON_POM="${HELIDON_DIR}/archetypes/archetypes/pom.xml"
-    HELPER_SCRIPT="${HELIDON_DIR}/archetypes/archetypes/etc/projects-diff.sh"
+    HELIDON_RULES_FILE="${HELIDON_DIR}/archetypes/archetypes/src/test/archetype/rules.xml"
     HELIDON_TARGET_DIR="${HELIDON_DIR}/archetypes/archetypes/target/tests"
 
     [ -f "${HELIDON_POM}" ] || die "missing ${HELIDON_POM}"
-    [ -x "${HELPER_SCRIPT}" ] || die "missing executable helper ${HELPER_SCRIPT}"
 
     validate_threshold "--threshold-seconds" "${THRESHOLD_SECONDS}"
     validate_threshold "--variations-threshold-seconds" "${VARIATIONS_THRESHOLD_SECONDS}"
@@ -207,6 +206,29 @@ validate_paths() {
             || die "invalid --baseline-ref '${BASELINE_REF}'"
         BASELINE_SHA="${baseline_sha}"
     fi
+}
+
+write_default_plans_file() {
+    DEFAULT_PLANS_FILE=""
+    [ -f "${HELIDON_RULES_FILE}" ] || return 0
+
+    DEFAULT_PLANS_FILE="${STATE_DIR}/plans/default-rules.xml"
+    mkdir -p "${STATE_DIR}/plans" || return 1
+    step "state: generating default variation plan from ${HELIDON_RULES_FILE}"
+    {
+        printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>'
+        printf '%s\n' '<plans xmlns="https://helidon.io/archetype-plans/1.0"'
+        printf '%s\n' '       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"'
+        printf '%s\n' '       xsi:schemaLocation="https://helidon.io/archetype-plans/1.0 https://helidon.io/xsd/archetype-plans-1.0.xsd">'
+        printf '%s\n' '    <plan id="default">'
+        awk '
+            /<rules([[:space:]>]|$)/ { in_rules = 1 }
+            in_rules { print }
+            /<\/rules>/ { exit }
+        ' "${HELIDON_RULES_FILE}" | sed 's/^/        /'
+        printf '%s\n' '    </plan>'
+        printf '%s\n' '</plans>'
+    } > "${DEFAULT_PLANS_FILE}" || return 1
 }
 
 cleanup_state_dir() {
@@ -344,16 +366,22 @@ install_current() {
 
 generate_variations() {
     local build_tools_version log_file side
+    local -a plans_arg
     log_file="$1"
     side="$2"
+    plans_arg=()
     build_tools_version="$(helidon_build_tools_version_for_side "${side}")" \
         || return 1
+    if [ -n "${DEFAULT_PLANS_FILE}" ]; then
+        plans_arg=(-Darchetype.test.plansFile="${DEFAULT_PLANS_FILE}")
+    fi
 
     step "${CURRENT_MODE}: generating variation snapshot"
     if [ "${side}" = "baseline" ]; then
         run_timed_logged "${HELIDON_DIR}" "${log_file}" \
             mvn -f archetypes/archetypes/pom.xml \
                 -Dversion.plugin.helidon-build-tools="${build_tools_version}" \
+                "${plans_arg[@]}" \
                 clean \
                 install \
                 -Darchetype.test.variationsOnly=true \
@@ -363,6 +391,7 @@ generate_variations() {
     run_timed_logged "${HELIDON_DIR}" "${log_file}" \
         mvn -f archetypes/archetypes/pom.xml \
             -Dversion.plugin.helidon-build-tools="${build_tools_version}" \
+            "${plans_arg[@]}" \
             clean \
             install \
             -Darchetype.test.variationsOnly=true
@@ -370,16 +399,22 @@ generate_variations() {
 
 generate_projects() {
     local build_tools_version log_file side
+    local -a plans_arg
     log_file="$1"
     side="$2"
+    plans_arg=()
     build_tools_version="$(helidon_build_tools_version_for_side "${side}")" \
         || return 1
+    if [ -n "${DEFAULT_PLANS_FILE}" ]; then
+        plans_arg=(-Darchetype.test.plansFile="${DEFAULT_PLANS_FILE}")
+    fi
 
     step "${CURRENT_MODE}: generating project snapshot"
     if [ "${side}" = "baseline" ]; then
         run_logged "${HELIDON_DIR}" "${log_file}" \
             mvn -f archetypes/archetypes/pom.xml \
                 -Dversion.plugin.helidon-build-tools="${build_tools_version}" \
+                "${plans_arg[@]}" \
                 clean \
                 install \
                 -Darchetype.test.generateOnly=true \
@@ -390,6 +425,7 @@ generate_projects() {
     run_logged "${HELIDON_DIR}" "${log_file}" \
         mvn -f archetypes/archetypes/pom.xml \
             -Dversion.plugin.helidon-build-tools="${build_tools_version}" \
+            "${plans_arg[@]}" \
             clean \
             install \
             -Darchetype.test.generateOnly=true \
@@ -416,18 +452,102 @@ copy_projects_snapshot() {
     cp -R "${HELIDON_TARGET_DIR}/." "${dest_dir}/" || return 1
 }
 
-run_helper_compare() {
-    local log_file command orig_dir actual_dir
+compare_csv_snapshots() {
+    local log_file orig_file actual_file status
     log_file="$1"
-    command="$2"
-    orig_dir="$3"
-    actual_dir="$4"
+    orig_file="$2/projects.csv"
+    actual_file="$3/projects.csv"
 
-    run_logged "${WORKSPACE_DIR}" "${log_file}" \
-        "${HELPER_SCRIPT}" \
-        "--orig=${orig_dir}" \
-        "--actual=${actual_dir}" \
-        "${command}"
+    : > "${log_file}" || return 1
+    if cmp -s "${orig_file}" "${actual_file}"; then
+        return 0
+    fi
+
+    log_command diff -u "${orig_file}" "${actual_file}"
+    diff -u "${orig_file}" "${actual_file}" > "${log_file}" 2>&1
+    status=$?
+    if [ "${status}" -eq 1 ]; then
+        return 0
+    fi
+    return "${status}"
+}
+
+compare_project_snapshots() {
+    local log_file orig_dir actual_dir
+    local orig_files actual_files diff_file status relative
+    log_file="$1"
+    orig_dir="$2"
+    actual_dir="$3"
+
+    : > "${log_file}" || return 1
+    orig_files="$(mktemp)" || return 1
+    actual_files="$(mktemp)" || {
+        rm -f "${orig_files}"
+        return 1
+    }
+    diff_file="$(mktemp)" || {
+        rm -f "${orig_files}" "${actual_files}"
+        return 1
+    }
+
+    find "${orig_dir}" -type f ! -name build.log ! -name projects.csv \
+        | sed "s#^${orig_dir}/##" | LC_ALL=C sort > "${orig_files}" || {
+        rm -f "${orig_files}" "${actual_files}" "${diff_file}"
+        return 1
+    }
+    find "${actual_dir}" -type f ! -name build.log ! -name projects.csv \
+        | sed "s#^${actual_dir}/##" | LC_ALL=C sort > "${actual_files}" || {
+        rm -f "${orig_files}" "${actual_files}" "${diff_file}"
+        return 1
+    }
+
+    if ! diff -u "${orig_files}" "${actual_files}" > "${diff_file}" 2>&1; then
+        status=$?
+        if [ "${status}" -ne 1 ]; then
+            rm -f "${orig_files}" "${actual_files}" "${diff_file}"
+            return "${status}"
+        fi
+        cat "${diff_file}" > "${log_file}" || {
+            rm -f "${orig_files}" "${actual_files}" "${diff_file}"
+            return 1
+        }
+        rm -f "${orig_files}" "${actual_files}" "${diff_file}"
+        return 0
+    fi
+
+    while IFS= read -r relative; do
+        if cmp -s "${orig_dir}/${relative}" "${actual_dir}/${relative}"; then
+            continue
+        fi
+        if diff -u \
+            -I "${IGNORED_PROJECT_DIFF_LINE}" \
+            "${orig_dir}/${relative}" \
+            "${actual_dir}/${relative}" > "${diff_file}" 2>&1; then
+            continue
+        fi
+        status=$?
+        if [ "${status}" -ne 1 ]; then
+            rm -f "${orig_files}" "${actual_files}" "${diff_file}"
+            return "${status}"
+        fi
+        if log_has_text "${diff_file}"; then
+            printf "File: %s\n" "${relative}" >> "${log_file}" || {
+                rm -f "${orig_files}" "${actual_files}" "${diff_file}"
+                return 1
+            }
+            cat "${diff_file}" >> "${log_file}" || {
+                rm -f "${orig_files}" "${actual_files}" "${diff_file}"
+                return 1
+            }
+            printf "\n" >> "${log_file}" || {
+                rm -f "${orig_files}" "${actual_files}" "${diff_file}"
+                return 1
+            }
+        fi
+    done < "${orig_files}"
+
+    rm -f "${orig_files}" "${actual_files}" "${diff_file}"
+    return 0
 }
 
 log_has_text() {
@@ -608,7 +728,7 @@ run_diff_variations() {
     fi
 
     if ! copy_variations_snapshot "${actual_snapshot}" \
-        || ! run_helper_compare "${compare_log}" diff_csv "${baseline_snapshot}" "${actual_snapshot}"; then
+        || ! compare_csv_snapshots "${compare_log}" "${baseline_snapshot}" "${actual_snapshot}"; then
         print_diff_variations_summary "${status}" "${changed}" "${timing_ok}" \
             "${baseline_wall_seconds}" "${actual_wall_seconds}" "${snapshot_root}" "${compare_log}"
         return 1
@@ -669,7 +789,7 @@ run_diff_projects_core() {
         || ! generate_projects "${baseline_generate_log}" baseline || ! copy_projects_snapshot "${baseline_snapshot}" \
         || ! install_current "${actual_install_log}" "current workspace" || ! generate_projects "${actual_generate_log}" current \
         || ! copy_projects_snapshot "${actual_snapshot}" \
-        || ! run_helper_compare "${csv_log}" diff_csv "${baseline_snapshot}" "${actual_snapshot}"; then
+        || ! compare_csv_snapshots "${csv_log}" "${baseline_snapshot}" "${actual_snapshot}"; then
         print_diff_projects_summary "${status}" "${changed}" "${csv_changed}" "${tree_changed}" \
             "${snapshot_root}" "${compare_log}"
         return 1
@@ -680,7 +800,7 @@ run_diff_projects_core() {
         csv_changed=0
     fi
 
-    if ! run_helper_compare "${compare_log}" diff_projects "${baseline_snapshot}" "${actual_snapshot}"; then
+    if ! compare_project_snapshots "${compare_log}" "${baseline_snapshot}" "${actual_snapshot}"; then
         print_diff_projects_summary "${status}" "${changed}" "${csv_changed}" "${tree_changed}" \
             "${snapshot_root}" "${compare_log}"
         return 1
@@ -830,6 +950,7 @@ main() {
     validate_mode
     validate_paths
     create_state_dir || exit 1
+    write_default_plans_file || exit 1
     step "state: ${STATE_DIR}"
 
     case "${MODE}" in
@@ -885,11 +1006,13 @@ BASELINE_WORKTREE_DIR=""
 BASELINE_WORKTREE_LOG=""
 BASELINE_SHA=""
 HELIDON_POM=""
-HELPER_SCRIPT=""
+HELIDON_RULES_FILE=""
 HELIDON_TARGET_DIR=""
 LOCAL_M2_REPO="${HOME}/.m2"
 CURRENT_BUILD_TOOLS_VERSION=""
 BASELINE_BUILD_TOOLS_VERSION=""
+DEFAULT_PLANS_FILE=""
+IGNORED_PROJECT_DIFF_LINE='[A-Z]{1}[a-z]{2} [A-Z]{1}[a-z]{2} [0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2} [A-Z]{3} [0-9]{4}'
 WORKSPACE_DIR="$(git -C "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" \
     rev-parse --show-toplevel 2>/dev/null)" \
     || die "run-regression.sh must live inside a git checkout"

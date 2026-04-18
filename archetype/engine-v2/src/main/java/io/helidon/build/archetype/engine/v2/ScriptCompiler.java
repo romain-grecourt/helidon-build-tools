@@ -980,7 +980,7 @@ public class ScriptCompiler {
             case INPUT_ENUM:
             case INPUT_LIST:
             case INPUT_TEXT:
-                return flow.renderGuard(node);
+                return renderGuardsByNode.getOrDefault(node, flow.renderGuard(node));
             case PRESET_BOOLEAN:
             case PRESET_ENUM:
             case PRESET_LIST:
@@ -989,7 +989,7 @@ public class ScriptCompiler {
             case VARIABLE_ENUM:
             case VARIABLE_LIST:
             case VARIABLE_TEXT:
-                return flow.activeGuard(node);
+                return activeGuardsByNode.getOrDefault(node, flow.activeGuard(node));
             default:
                 return null;
         }
@@ -2410,7 +2410,7 @@ public class ScriptCompiler {
                 case INPUT_ENUM:
                 case INPUT_TEXT:
                 case INPUT_LIST:
-                    rememberFact(mirror(node), flow.renderGuard(mirror(node)), null);
+                    rememberFact(mirror(node), definitionGuard(mirror(node)), null);
                     break;
                 case CONDITION:
                     factRefs.put(node, Map.copyOf(currentFacts));
