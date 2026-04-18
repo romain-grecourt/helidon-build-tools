@@ -339,19 +339,7 @@ final class Analyzer {
     }
 
     private Value<?> value(Spec spec, FactAnalysis fact, Guard guard) {
-        if (implies(guard, fact.defined)) {
-            if (fact.lattice.kind() == LatticeValue.Kind.FINITE_SCALAR) {
-                String scalar = fact.lattice.singletonScalar(spec);
-                if (scalar == null) {
-                    return Value.empty();
-                }
-                return spec.kind() == Spec.Kind.BOOLEAN ? Value.parseBoolean(scalar) : Value.of(scalar);
-            }
-            if (fact.lattice.kind() == LatticeValue.Kind.OPEN_TEXT && fact.lattice.sample() != null) {
-                return Value.of(fact.lattice.sample());
-            }
-        }
-        return Value.empty();
+        return implies(guard, fact.defined) ? fact.lattice.value(spec) : Value.empty();
     }
 
     private FactAnalysis mergeFact(int id, FactAnalysis left, FactAnalysis right) {
@@ -412,20 +400,20 @@ final class Analyzer {
         return materialized;
     }
 
-    private Fact fact(int id, FactAnalysis fact) {
+    private Fact fact(int id, FactAnalysis analysis) {
         Map<FactAnalysis, Fact> cache = facts.computeIfAbsent(id, unused -> new IdentityHashMap<>());
-        Fact materialized = cache.get(fact);
-        if (materialized == null) {
+        Fact fact = cache.get(analysis);
+        if (fact == null) {
             Symbol sym = ir.table().symbol(id);
-            List<GuardedValue> guardedValues = new ArrayList<>(fact.exact.values.size());
-            for (CoveredValue value : fact.exact.values) {
+            List<GuardedValue> values = new ArrayList<>(analysis.exact.values.size());
+            for (CoveredValue value : analysis.exact.values) {
                 Guard guard = guard(value.coverage);
-                guardedValues.add(new GuardedValue(value.value, guard, sym.domain().mask(value.value)));
+                values.add(new GuardedValue(value.value, guard, sym.domain().mask(value.value)));
             }
-            materialized = new Fact(guard(fact.defined), fact.lattice, guardedValues);
-            cache.put(fact, materialized);
+            fact = new Fact(guard(analysis.defined), analysis.lattice, values);
+            cache.put(analysis, fact);
         }
-        return materialized;
+        return fact;
     }
 
     private boolean implies(Guard left, Coverage right) {

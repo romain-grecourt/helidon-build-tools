@@ -406,7 +406,25 @@ final class Domain {
         }
 
         String singletonScalar(Spec spec) {
+            if (Long.bitCount(scalarMask) != 1) {
+                return null;
+            }
             return spec.values[Long.numberOfTrailingZeros(scalarMask)];
+        }
+
+        Value<?> value(Spec spec) {
+            switch (kind) {
+                case FINITE_SCALAR:
+                    String scalar = singletonScalar(spec);
+                    if (scalar == null) {
+                        return Value.empty();
+                    }
+                    return spec.kind == Spec.Kind.BOOLEAN ? Value.parseBoolean(scalar) : Value.of(scalar);
+                case OPEN_TEXT:
+                    return Value.of(sample);
+                default:
+                    return Value.empty();
+            }
         }
 
         @Override

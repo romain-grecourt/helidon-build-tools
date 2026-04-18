@@ -64,6 +64,29 @@ class DomainTest {
     }
 
     @Test
+    void testLatticeValueMaterializesOnlySingletonScalar() {
+        Spec choiceSpec = new Spec(Spec.Kind.CHOICE, "mp", "se");
+        Spec membershipSpec = new Spec(Spec.Kind.MEMBERSHIP, "grpc", "rest");
+
+        Value<?> booleanValue = LatticeValue.finiteScalar(Spec.BOOLEAN.mask("true")).value(Spec.BOOLEAN);
+        Value<?> choiceValue = LatticeValue.finiteScalar(choiceSpec.mask("se")).value(choiceSpec);
+        Value<?> multipleChoiceValue = LatticeValue.finiteScalar(choiceSpec.mask()).value(choiceSpec);
+        Value<?> openTextValue = LatticeValue.openText("custom").value(Spec.OPEN_TEXT);
+        Value<?> membershipValue = LatticeValue.membership(0L, membershipSpec.mask()).value(membershipSpec);
+        Value<?> emptyScalarValue = LatticeValue.finiteScalar(0L).value(choiceSpec);
+
+        assertThat(booleanValue.type(), is(Value.Type.BOOLEAN));
+        assertThat(booleanValue.getBoolean(), is(true));
+        assertThat(choiceValue.type(), is(Value.Type.STRING));
+        assertThat(choiceValue.getString(), is("se"));
+        assertThat(multipleChoiceValue.isPresent(), is(false));
+        assertThat(openTextValue.type(), is(Value.Type.STRING));
+        assertThat(openTextValue.getString(), is("custom"));
+        assertThat(membershipValue.isPresent(), is(false));
+        assertThat(emptyScalarValue.isPresent(), is(false));
+    }
+
+    @Test
     void testSpecKindIsScalar() {
         assertThat(Spec.Kind.OPEN_TEXT.isScalar(), is(false));
         assertThat(Spec.Kind.BOOLEAN.isScalar(), is(true));

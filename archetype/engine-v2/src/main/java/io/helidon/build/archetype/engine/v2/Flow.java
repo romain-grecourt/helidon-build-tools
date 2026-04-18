@@ -267,14 +267,7 @@ final class Flow {
     }
 
     private static Value<?> singletonValue(LatticeValue lattice, Spec spec, Value.Type type) {
-        if (lattice.kind() == LatticeValue.Kind.FINITE_SCALAR) {
-            String scalar = lattice.singletonScalar(spec);
-            if (scalar == null) {
-                return Value.empty();
-            }
-            return type == Value.Type.BOOLEAN ? Value.parseBoolean(scalar) : Value.of(scalar);
-        }
-        return Value.of(lattice.sample());
+        return coerceValue(lattice.value(spec), type);
     }
 
     static final class SymbolInfo {
