@@ -17,7 +17,6 @@ package io.helidon.build.archetype.engine.v2;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,7 +40,6 @@ final class Analyzer {
     private static final int COVERAGE_MAX = 16;
 
     private final Ir ir;
-    private final Map<Map<Integer, FactAnalysis>, Map<Integer, Fact>> envs = new IdentityHashMap<>();
     private final BlockAnalysis[] blocks;
     private final OpAnalysis[] ops;
 
@@ -60,7 +58,7 @@ final class Analyzer {
     }
 
     void analyze() {
-        analyzeControl();
+        analyzeControls();
         analyzeFacts();
         for (BlockAnalysis block : blocks) {
             block.state = new State(block.guard, env(block.facts));
@@ -83,17 +81,52 @@ final class Analyzer {
         return ops[opId].afterState;
     }
 
-    private void analyzeControl() {
-        Block[] blocks = ir.blocks();
-        Control[] controls = ir.controls();
-        ControlPass pass = new ControlPass(controls.length);
+    private void analyzeControls() {
+        Block[] irBlocks = ir.blocks();
+        Control[] irControls = ir.controls();
+        ControlPass pass = new ControlPass(irControls.length);
         pass.guards[0] = Guard.TRUE;
         ir.visitReachableBlocks(blockId -> {
-            Guard entry = controlGuard(blocks[blockId].controlId(), controls, pass);
-            this.blocks[blockId].guard = entry;
-            for (int opId : blocks[blockId].opIds()) {
+            Guard entry = controlGuard(irBlocks[blockId].controlId(), irControls, pass);
+            blocks[blockId].guard = entry;
+            for (int opId : irBlocks[blockId].opIds()) {
                 ops[opId].beforeGuard = entry;
             }
+        });
+    }
+
+    private void analyzeFacts() {
+        Block[] irBlocks = ir.blocks();
+        blocks[0].facts = EnvAnalysis.EMPTY;
+        ir.visitDataflowBlocks(blockId -> {
+            BlockAnalysis block = this.blocks[blockId];
+            if (block.guard.equals(Guard.FALSE)) {
+                return targetId -> false;
+            }
+            EnvAnalysis outgoing = block.facts;
+            for (int id : irBlocks[blockId].opIds()) {
+                OpAnalysis op = ops[id];
+                op.beforeFacts = outgoing;
+                outgoing = transfer(id, op.beforeGuard, outgoing);
+                op.afterFacts = outgoing;
+            }
+            EnvAnalysis facts = outgoing;
+            return targetId -> {
+                BlockAnalysis target = this.blocks[targetId];
+                if (target.guard.equals(Guard.FALSE)) {
+                    return false;
+                }
+                if (target.facts == null) {
+                    target.facts = mergeEnv(EnvAnalysis.EMPTY, facts);
+                    return true;
+                }
+                EnvAnalysis merged = mergeEnv(target.facts, facts);
+                if (merged == target.facts) {
+                    return false;
+                }
+                target.facts = merged;
+                return true;
+            };
         });
     }
 
@@ -113,49 +146,14 @@ final class Analyzer {
         return materialized;
     }
 
-    private void analyzeFacts() {
-        Block[] irBlocks = ir.blocks();
-        blocks[0].facts = Map.of();
-        ir.visitDataflowBlocks(blockId -> {
-            BlockAnalysis block = blocks[blockId];
-            if (block.guard.equals(Guard.FALSE)) {
-                return targetId -> false;
-            }
-            Map<Integer, FactAnalysis> outgoing = block.facts;
-            for (int id : irBlocks[blockId].opIds()) {
-                OpAnalysis op = ops[id];
-                op.beforeFacts = outgoing;
-                outgoing = transfer(id, op.beforeGuard, outgoing);
-                op.afterFacts = outgoing;
-            }
-            Map<Integer, FactAnalysis> facts = outgoing;
-            return targetId -> {
-                BlockAnalysis target = blocks[targetId];
-                if (target.guard.equals(Guard.FALSE)) {
-                    return false;
-                }
-                if (target.facts == null) {
-                    target.facts = mergeEnv(Map.of(), facts);
-                    return true;
-                }
-                Map<Integer, FactAnalysis> merged = mergeEnv(target.facts, facts);
-                if (merged == target.facts) {
-                    return false;
-                }
-                target.facts = merged;
-                return true;
-            };
-        });
-    }
-
-    private Map<Integer, FactAnalysis> transfer(int id, Guard currentGuard, Map<Integer, FactAnalysis> state) {
+    private EnvAnalysis transfer(int id, Guard currentGuard, EnvAnalysis state) {
         Op op = ir.ops()[id];
         switch (op.kind()) {
             case DECLARE_INPUT: {
                 Coverage defined = coverage(op.blockId());
                 LatticeValue lattice = LatticeValue.top(ir.table().symbol(op.symbolId()).domain());
                 FactAnalysis declared = new FactAnalysis(defined, lattice);
-                FactAnalysis existing = state.get(op.symbolId());
+                FactAnalysis existing = state.facts.get(op.symbolId());
                 if (existing == null) {
                     return define(state, op.symbolId(), declared);
                 }
@@ -172,14 +170,14 @@ final class Analyzer {
         }
     }
 
-    private Map<Integer, FactAnalysis> mergeEnv(Map<Integer, FactAnalysis> current, Map<Integer, FactAnalysis> incoming) {
-        if (current == incoming || current.equals(incoming)) {
+    private EnvAnalysis mergeEnv(EnvAnalysis current, EnvAnalysis incoming) {
+        if (current == incoming || current.facts.equals(incoming.facts)) {
             return current;
         }
         Map<Integer, FactAnalysis> next = null;
-        for (Map.Entry<Integer, FactAnalysis> entry : incoming.entrySet()) {
+        for (Map.Entry<Integer, FactAnalysis> entry : incoming.facts.entrySet()) {
             int id = entry.getKey();
-            FactAnalysis left = current.get(id);
+            FactAnalysis left = current.facts.get(id);
             FactAnalysis right = entry.getValue();
             FactAnalysis merged;
             if (left == null) {
@@ -191,25 +189,25 @@ final class Analyzer {
             }
             if (merged != left) {
                 if (next == null) {
-                    next = new LinkedHashMap<>(current);
+                    next = new LinkedHashMap<>(current.facts);
                 }
                 next.put(id, merged);
             }
         }
-        return next == null ? current : next;
+        return next == null ? current : new EnvAnalysis(next);
     }
 
-    private Map<Integer, FactAnalysis> define(Map<Integer, FactAnalysis> state, int id, FactAnalysis fact) {
-        FactAnalysis existing = state.get(id);
+    private EnvAnalysis define(EnvAnalysis state, int id, FactAnalysis fact) {
+        FactAnalysis existing = state.facts.get(id);
         if (Objects.equals(existing, fact)) {
             return state;
         }
-        Map<Integer, FactAnalysis> env = new LinkedHashMap<>(state);
-        env.put(id, fact);
-        return env;
+        Map<Integer, FactAnalysis> facts = new LinkedHashMap<>(state.facts);
+        facts.put(id, fact);
+        return new EnvAnalysis(facts);
     }
 
-    private FactAnalysis evaluateFact(int opId, Guard guard, Symbol sym, Map<Integer, FactAnalysis> state) {
+    private FactAnalysis evaluateFact(int opId, Guard guard, Symbol sym, EnvAnalysis state) {
         Op op = ir.ops()[opId];
         Expression expression = op.expression();
         LatticeValue lattice = lattice(expression, sym, state);
@@ -220,7 +218,7 @@ final class Analyzer {
         return new FactAnalysis(coverage(op.blockId()), lattice);
     }
 
-    private LatticeValue lattice(Expression expression, Symbol sym, Map<Integer, FactAnalysis> state) {
+    private LatticeValue lattice(Expression expression, Symbol sym, EnvAnalysis state) {
         List<Token> tokens = expression.tokens();
         if (tokens.size() == 1) {
             Token token = tokens.get(0);
@@ -230,7 +228,7 @@ final class Analyzer {
             if (token.isVariable()) {
                 int id = ir.table().findId(token.variable());
                 if (id >= 0) {
-                    FactAnalysis fact = state.get(id);
+                    FactAnalysis fact = state.facts.get(id);
                     if (fact != null) {
                         return fact.lattice;
                     }
@@ -240,7 +238,7 @@ final class Analyzer {
         return LatticeValue.top(sym.domain());
     }
 
-    private Value<?> value(Expression expression, Guard guard, Map<Integer, FactAnalysis> state) {
+    private Value<?> value(Expression expression, Guard guard, EnvAnalysis state) {
         List<Token> tokens = expression.tokens();
         if (tokens.size() == 1) {
             Token token = tokens.get(0);
@@ -251,7 +249,7 @@ final class Analyzer {
                 int id = ir.table().findId(token.variable());
                 if (id >= 0) {
                     Symbol sym = ir.table().symbol(id);
-                    FactAnalysis fact = state.get(id);
+                    FactAnalysis fact = state.facts.get(id);
                     if (fact != null) {
                         Value<?> exactFromValue = value(sym.domain(), fact, guard);
                         if (exactFromValue.isPresent()) {
@@ -326,19 +324,18 @@ final class Analyzer {
         return new FactAnalysis(defined, lattice, new ExactValues(coverage, merged));
     }
 
-    private Map<Integer, Fact> env(Map<Integer, FactAnalysis> env) {
-        if (env == null || env.isEmpty()) {
+    private Map<Integer, Fact> env(EnvAnalysis analysis) {
+        if (analysis == null || analysis.facts.isEmpty()) {
             return Map.of();
         }
-        Map<Integer, Fact> materialized = envs.get(env);
-        if (materialized == null) {
-            materialized = new LinkedHashMap<>();
-            for (Map.Entry<Integer, FactAnalysis> entry : env.entrySet()) {
-                materialized.put(entry.getKey(), fact(entry.getKey(), entry.getValue()));
+        if (analysis.env == null) {
+            Map<Integer, Fact> env = new LinkedHashMap<>();
+            for (Map.Entry<Integer, FactAnalysis> entry : analysis.facts.entrySet()) {
+                env.put(entry.getKey(), fact(entry.getKey(), entry.getValue()));
             }
-            envs.put(env, materialized);
+            analysis.env = env;
         }
-        return materialized;
+        return analysis.env;
     }
 
     private Fact fact(int id, FactAnalysis analysis) {
@@ -420,16 +417,27 @@ final class Analyzer {
     private static final class BlockAnalysis {
         private Coverage coverage;
         private Guard guard = Guard.FALSE;
-        private Map<Integer, FactAnalysis> facts;
+        private EnvAnalysis facts;
         private State state = State.EMPTY;
     }
 
     private static final class OpAnalysis {
         private Guard beforeGuard = Guard.FALSE;
-        private Map<Integer, FactAnalysis> beforeFacts = Map.of();
-        private Map<Integer, FactAnalysis> afterFacts = Map.of();
+        private EnvAnalysis beforeFacts = EnvAnalysis.EMPTY;
+        private EnvAnalysis afterFacts = EnvAnalysis.EMPTY;
         private State beforeState = State.EMPTY;
         private State afterState = State.EMPTY;
+    }
+
+    private static final class EnvAnalysis {
+        private static final EnvAnalysis EMPTY = new EnvAnalysis(Map.of());
+
+        private final Map<Integer, FactAnalysis> facts;
+        private Map<Integer, Fact> env;
+
+        EnvAnalysis(Map<Integer, FactAnalysis> facts) {
+            this.facts = facts;
+        }
     }
 
     private static final class FactAnalysis {
