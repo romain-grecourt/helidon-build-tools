@@ -36,6 +36,7 @@ import io.helidon.build.archetype.engine.v2.Expression.Token;
 import io.helidon.build.archetype.engine.v2.Flow.State;
 import io.helidon.build.archetype.engine.v2.Ir.Block;
 import io.helidon.build.archetype.engine.v2.Ir.Control;
+import io.helidon.build.archetype.engine.v2.Ir.Op;
 
 final class Analyzer {
     private static final int EXACT_CASE_MAX = 16;
@@ -49,27 +50,27 @@ final class Analyzer {
 
     Analyzer(Ir ir) {
         this.ir = ir;
-        Block[] irBlocks = ir.blocks();
-        this.blocks = new BlockAnalysis[irBlocks.length];
-        for (int i = 0; i < blocks.length; i++) {
-            blocks[i] = new BlockAnalysis();
+        Block[] blocks = ir.blocks();
+        this.blocks = new BlockAnalysis[blocks.length];
+        for (int i = 0; i < this.blocks.length; i++) {
+            this.blocks[i] = new BlockAnalysis();
         }
-        Ir.Op[] irOps = ir.ops();
-        this.ops = new OpAnalysis[irOps.length];
-        for (int i = 0; i < ops.length; i++) {
-            ops[i] = new OpAnalysis();
+        Op[] ops = ir.ops();
+        this.ops = new OpAnalysis[ops.length];
+        for (int i = 0; i < this.ops.length; i++) {
+            this.ops[i] = new OpAnalysis();
         }
     }
 
     void analyze() {
         analyzeControl();
         analyzeFacts();
-        for (BlockAnalysis e : blocks) {
-            e.state = new State(e.guard, env(e.facts));
+        for (BlockAnalysis block : blocks) {
+            block.state = new State(block.guard, env(block.facts));
         }
-        for (OpAnalysis e : ops) {
-            e.beforeState = new State(e.beforeGuard, env(e.beforeFacts));
-            e.afterState = new State(e.beforeGuard, env(e.afterFacts));
+        for (OpAnalysis op : ops) {
+            op.beforeState = new State(op.beforeGuard, env(op.beforeFacts));
+            op.afterState = new State(op.beforeGuard, env(op.afterFacts));
         }
     }
 
@@ -207,7 +208,7 @@ final class Analyzer {
     }
 
     private Map<Integer, FactAnalysis> transfer(int id, Guard currentGuard, Map<Integer, FactAnalysis> state) {
-        Ir.Op op = ir.ops()[id];
+        Op op = ir.ops()[id];
         switch (op.kind()) {
             case DECLARE_INPUT: {
                 Coverage defined = coverage(op.blockId());
@@ -268,7 +269,7 @@ final class Analyzer {
     }
 
     private FactAnalysis evaluateFact(int opId, Guard guard, Symbol sym, Map<Integer, FactAnalysis> state) {
-        Ir.Op op = ir.ops()[opId];
+        Op op = ir.ops()[opId];
         Expression expression = op.expression();
         LatticeValue lattice = lattice(expression, sym, state);
         Value<?> value = value(expression, guard, state);
