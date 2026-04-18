@@ -1049,13 +1049,12 @@ final class Domain {
         }
 
         private int register(Decision decision) {
-            Integer existing = ids.get(decision);
-            if (existing != null) {
-                return existing;
+            int id = ids.getOrDefault(decision, -1);
+            if (id < 0) {
+                id = decisions.size();
+                decisions.add(decision);
+                ids.put(decision, id);
             }
-            int id = decisions.size();
-            decisions.add(decision);
-            ids.put(decision, id);
             return id;
         }
 

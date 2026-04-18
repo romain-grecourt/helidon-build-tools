@@ -665,9 +665,10 @@ final class Ir {
                 if (kind != Spec.Kind.MEMBERSHIP || otherKind != Spec.Kind.MEMBERSHIP) {
                     return new SymbolSeed(name, Spec.OPEN_TEXT, false, tainted || other.tainted);
                 }
-                Set<String> items = new TreeSet<>(Arrays.asList(spec.values()));
-                items.addAll(Arrays.asList(other.spec.values()));
-                Spec merged = new Spec(Spec.Kind.MEMBERSHIP, items.toArray(String[]::new));
+                Set<String> choices = new TreeSet<>(Arrays.asList(spec.values()));
+                choices.addAll(Arrays.asList(other.spec.values()));
+                String[] values = choices.toArray(String[]::new);
+                Spec merged = new Spec(Spec.Kind.MEMBERSHIP, values);
                 return new SymbolSeed(name, merged, guardable && other.guardable, tainted || other.tainted);
             }
             if (kind == Spec.Kind.BOOLEAN || otherKind == Spec.Kind.BOOLEAN) {
@@ -679,10 +680,22 @@ final class Ir {
             Set<String> choices = new TreeSet<>(Arrays.asList(spec.values()));
             choices.addAll(Arrays.asList(other.spec.values()));
             String[] values = choices.toArray(String[]::new);
-            Spec mergedSpec = kind == Spec.Kind.CHOICE || otherKind == Spec.Kind.CHOICE
+            Spec merged = kind == Spec.Kind.CHOICE || otherKind == Spec.Kind.CHOICE
                     ? new Spec(Spec.Kind.CHOICE, values)
                     : new Spec(Spec.Kind.FINITE_TEXT, values);
-            return new SymbolSeed(name, mergedSpec, guardable && other.guardable, tainted || other.tainted);
+            return new SymbolSeed(name, merged, guardable && other.guardable, tainted || other.tainted);
+        }
+    }
+
+    private static final class Operand {
+        private final Guard guard;
+        private final Symbol symbol;
+        private final Value<?> literal;
+
+        Operand(Guard guard, Symbol symbol, Value<?> literal) {
+            this.guard = guard;
+            this.symbol = symbol;
+            this.literal = literal;
         }
     }
 
@@ -705,99 +718,76 @@ final class Ir {
                 return Guard.FALSE;
             }
             int capacity = expression.tokens().size();
-            Guard[] guardStack = new Guard[capacity];
-            Symbol[] symStack = new Symbol[capacity];
-            Value<?>[] literalStack = new Value<?>[capacity];
-            int size = 0;
+            Deque<Operand> stack = new ArrayDeque<>(capacity);
             for (Token token : expression.tokens()) {
                 if (token.isVariable()) {
-                    guardStack[size] = null;
-                    symStack[size] = findSymbol(scope.key(token.variable()));
-                    literalStack[size] = null;
-                    size++;
+                    stack.addLast(new Operand(null, findSymbol(scope.key(token.variable())), null));
                     continue;
                 }
                 if (token.isOperand()) {
-                    guardStack[size] = null;
-                    symStack[size] = null;
-                    literalStack[size] = token.operand();
-                    size++;
+                    stack.addLast(new Operand(null, null, token.operand()));
                     continue;
                 }
                 switch (token.operator()) {
                     case NOT: {
-                        int index = size - 1;
-                        Guard direct = asGuard(guardStack[index], symStack[index], literalStack[index]);
+                        Operand operand = stack.removeLast();
+                        Guard direct = asGuard(operand);
                         if (direct == null) {
                             return guards.residualGuard(expression);
                         }
-                        guardStack[index] = guards.not(direct);
-                        symStack[index] = null;
-                        literalStack[index] = null;
+                        stack.addLast(new Operand(guards.not(direct), null, null));
                         break;
                     }
                     case AND:
                     case OR: {
-                        int right = --size;
-                        Guard rightGuard = asGuard(guardStack[right], symStack[right], literalStack[right]);
-                        int left = --size;
-                        Guard leftGuard = asGuard(guardStack[left], symStack[left], literalStack[left]);
-                        if (leftGuard == null || rightGuard == null) {
+                        Guard right = asGuard(stack.removeLast());
+                        Guard left = asGuard(stack.removeLast());
+                        if (left == null || right == null) {
                             return guards.residualGuard(expression);
                         }
                         if (token.operator() == Operator.OR) {
-                            guardStack[left] = guards.or(leftGuard, rightGuard);
+                            stack.addLast(new Operand(guards.or(left, right), null, null));
                         } else {
-                            guardStack[left] = guards.and(leftGuard, rightGuard);
+                            stack.addLast(new Operand(guards.and(left, right), null, null));
                         }
-                        symStack[left] = null;
-                        literalStack[left] = null;
-                        size = left + 1;
                         break;
                     }
                     case EQUAL:
                     case NOT_EQUAL: {
-                        int right = --size;
-                        int left = --size;
-                        Guard direct = compare(symStack[left], literalStack[left], symStack[right],
-                                literalStack[right], token.operator() == Operator.EQUAL);
+                        Operand right = stack.removeLast();
+                        Operand left = stack.removeLast();
+                        Guard direct = compare(left, right, token.operator() == Operator.EQUAL);
                         if (direct == null) {
                             return guards.residualGuard(expression);
                         }
-                        guardStack[left] = direct;
-                        symStack[left] = null;
-                        literalStack[left] = null;
-                        size = left + 1;
+                        stack.addLast(new Operand(direct, null, null));
                         break;
                     }
                     case CONTAINS: {
-                        int right = --size;
-                        int left = --size;
-                        Guard direct = contains(symStack[left], literalStack[left], symStack[right], literalStack[right]);
+                        Operand right = stack.removeLast();
+                        Operand left = stack.removeLast();
+                        Guard direct = contains(left, right);
                         if (direct == null) {
                             return guards.residualGuard(expression);
                         }
-                        guardStack[left] = direct;
-                        symStack[left] = null;
-                        literalStack[left] = null;
-                        size = left + 1;
+                        stack.addLast(new Operand(direct, null, null));
                         break;
                     }
                     default:
                         return guards.residualGuard(expression);
                 }
             }
-            if (size != 1) {
-                throw new IllegalStateException("Unexpected expression stack size: " + size);
+            if (stack.size() != 1) {
+                throw new IllegalStateException("Unexpected expression stack size: " + stack.size());
             }
-            Guard guard = asGuard(guardStack[0], symStack[0], literalStack[0]);
+            Guard guard = asGuard(stack.peekLast());
             return guard != null ? guard : guards.residualGuard(expression);
         }
 
-        Guard compare(Symbol leftSymbol, Value<?> leftLiteral, Symbol rightSymbol, Value<?> rightLiteral, boolean equal) {
-            Guard direct = compareGuard(leftSymbol, rightLiteral);
+        Guard compare(Operand left, Operand right, boolean equal) {
+            Guard direct = compareGuard(left.symbol, right.literal);
             if (direct == null) {
-                direct = compareGuard(rightSymbol, leftLiteral);
+                direct = compareGuard(right.symbol, left.literal);
             }
             if (direct != null && !equal) {
                 direct = guards.not(direct);
@@ -822,10 +812,10 @@ final class Ir {
             return null;
         }
 
-        Guard contains(Symbol leftSymbol, Value<?> leftLiteral, Symbol rightSymbol, Value<?> rightLiteral) {
-            Guard direct = containsGuard(leftSymbol, rightLiteral);
+        Guard contains(Operand left, Operand right) {
+            Guard direct = containsGuard(left.symbol, right.literal);
             if (direct == null) {
-                direct = scalarAnyGuard(rightSymbol, leftLiteral);
+                direct = scalarAnyGuard(right.symbol, left.literal);
             }
             return direct;
         }
@@ -856,15 +846,16 @@ final class Ir {
             return result;
         }
 
-        Guard asGuard(Guard guard, Symbol sym, Value<?> literal) {
-            if (guard != null) {
-                return guard;
+        Guard asGuard(Operand operand) {
+            if (operand.guard != null) {
+                return operand.guard;
             }
-            if (sym != null && sym.guardable() && !sym.tainted() && sym.domain().kind() == Spec.Kind.BOOLEAN) {
-                return guards.eq(sym.id(), "true");
+            if (operand.symbol != null && operand.symbol.guardable() && !operand.symbol.tainted()
+                && operand.symbol.domain().kind() == Spec.Kind.BOOLEAN) {
+                return guards.eq(operand.symbol.id(), "true");
             }
-            if (literal != null && literal.type() == Value.Type.BOOLEAN) {
-                return literal.getBoolean() ? Guard.TRUE : Guard.FALSE;
+            if (operand.literal != null && operand.literal.type() == Value.Type.BOOLEAN) {
+                return operand.literal.getBoolean() ? Guard.TRUE : Guard.FALSE;
             }
             return null;
         }
