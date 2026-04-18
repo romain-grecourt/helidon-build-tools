@@ -1045,11 +1045,11 @@ final class Domain {
             return decision(guard.id());
         }
 
-        private Decision decision(int guardId) {
-            if (guardId < 0 || guardId >= decisions.size()) {
-                throw new IllegalArgumentException("Unknown guard id: " + guardId);
+        private Decision decision(int id) {
+            if (id < 0 || id >= decisions.size()) {
+                throw new IllegalArgumentException("Unknown guard id: " + id);
             }
-            return decisions.get(guardId);
+            return decisions.get(id);
         }
 
         private boolean subsetOf(int leftId, int rightId) {
@@ -1118,17 +1118,17 @@ final class Domain {
 
         Guard supportedExactGuard(Symbol sym, Guards guards) {
             Guard result = Guard.FALSE;
-            for (GuardedValue guardedValue : values) {
+            for (GuardedValue value : values) {
                 boolean supported;
                 switch (sym.domain.kind) {
                     case BOOLEAN:
                     case CHOICE:
                     case FINITE_TEXT:
-                        supported = guardedValue.mask != 0L;
+                        supported = value.mask != 0L;
                         break;
                     case MEMBERSHIP:
-                        supported = guardedValue.value.type() == Value.Type.LIST
-                                    && (guardedValue.mask != 0L || guardedValue.value.getList().isEmpty());
+                        supported = value.value.type() == Value.Type.LIST
+                                    && (value.mask != 0L || value.value.getList().isEmpty());
                         break;
                     case OPEN_TEXT:
                     default:
@@ -1136,7 +1136,7 @@ final class Domain {
                         break;
                 }
                 if (supported) {
-                    result = guards.or(result, guardedValue.guard);
+                    result = guards.or(result, value.guard);
                 }
             }
             return result;
@@ -1144,9 +1144,9 @@ final class Domain {
 
         Guard match(Symbol sym, Value<?> candidate, Guards guards) {
             Guard result = Guard.FALSE;
-            for (GuardedValue guardedValue : values) {
-                if (sym.domain.sameValue(guardedValue.value, candidate)) {
-                    result = guards.or(result, guardedValue.guard);
+            for (GuardedValue value : values) {
+                if (sym.domain.sameValue(value.value, candidate)) {
+                    result = guards.or(result, value.guard);
                 }
             }
             return result;
@@ -1166,9 +1166,9 @@ final class Domain {
                 return Guard.FALSE;
             }
             Guard result = Guard.FALSE;
-            for (GuardedValue guardedValue : this.values) {
-                if ((guardedValue.mask & allowedMask) != 0L) {
-                    result = guards.or(result, guardedValue.guard);
+            for (GuardedValue value : this.values) {
+                if ((value.mask & allowedMask) != 0L) {
+                    result = guards.or(result, value.guard);
                 }
             }
             return result;
@@ -1187,8 +1187,8 @@ final class Domain {
             long required = sym.domain.mask(values);
             Guard result = Guard.FALSE;
             for (GuardedValue value : this.values) {
-                if (required == 0L ? value.value.type() == Value.Type.LIST
-                        : value.mask != 0L && (required & ~value.mask) == 0L) {
+                if (required == 0L  && value.value.type() == Value.Type.LIST
+                    || required != 0L && value.mask != 0L && (required & ~value.mask) == 0L) {
                     result = guards.or(result, value.guard);
                 }
             }
@@ -1219,16 +1219,16 @@ final class Domain {
             Iterator<GuardedValue> rightIt = right.values.iterator();
             while (leftIt.hasNext() || rightIt.hasNext()) {
                 GuardedValue next = leftIt.hasNext() ? leftIt.next() : rightIt.next();
-                boolean mergedValue = false;
+                boolean merged = false;
                 for (int i = 0; i < values.size(); i++) {
                     GuardedValue current = values.get(i);
                     if (current.mask != 0L || next.mask == 0L && Value.isEqual(current.value, next.value)) {
                         values.set(i, current.withGuard(guards.or(current.guard, next.guard)));
-                        mergedValue = true;
+                        merged = true;
                         break;
                     }
                 }
-                if (!mergedValue) {
+                if (!merged) {
                     values.add(next);
                 }
             }
