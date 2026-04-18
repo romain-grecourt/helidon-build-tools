@@ -641,6 +641,16 @@ public final class Context {
         }
 
         /**
+         * Get or create the canonical definition key for a path.
+         *
+         * @param path definition path
+         * @return canonical definition key
+         */
+        public String definitionKey(String path) {
+            return getOrCreate("~" + Key.normalize(path)).key();
+        }
+
+        /**
          * Get or create a scope.
          *
          * @param key    key

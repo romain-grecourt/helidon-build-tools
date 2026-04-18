@@ -87,7 +87,7 @@ final class ScriptIndexer implements Node.Visitor {
             case VARIABLE_ENUM:
             case VARIABLE_LIST:
             case VARIABLE_TEXT:
-                String key = currentScope.getOrCreate("~" + Context.Key.normalize(node.attribute("path").getString())).key();
+                String key = currentScope.definitionKey(node.attribute("path").getString());
                 definedRefs.computeIfAbsent(key, k -> new LinkedHashSet<>()).add(node);
                 declaredValues.computeIfAbsent(key, k -> new LinkedHashSet<>()).add(node);
                 refTypes.putIfAbsent(key, node.kind().valueType());

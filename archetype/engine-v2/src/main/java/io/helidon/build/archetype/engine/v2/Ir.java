@@ -111,9 +111,9 @@ final class Ir {
         queue.add(0);
         while (!queue.isEmpty()) {
             int blockId = queue.removeFirst();
-            IntPredicate scheduleSuccessor = visitor.apply(blockId);
+            IntPredicate predicate = visitor.apply(blockId);
             visitSuccessors(blockId, targetId -> {
-                if (scheduleSuccessor.test(targetId)) {
+                if (predicate.test(targetId)) {
                     queue.addLast(targetId);
                 }
             });
@@ -140,10 +140,6 @@ final class Ir {
 
     static Ir lower(Scope scope, Node root) {
         return new Lowerer(scope).lower(root);
-    }
-
-    static String definitionId(Scope scope, Node node) {
-        return scope.getOrCreate("~" + Context.Key.normalize(node.attribute("path").getString())).key();
     }
 
     private static Guard directBooleanGuard(Table table, Guards guards, String key) {
@@ -383,7 +379,7 @@ final class Ir {
                         break;
                     case PRESET_BOOLEAN:
                     case VARIABLE_BOOLEAN:
-                        addSymbol(definitionId(nodeScope, node), Spec.BOOLEAN, true, false);
+                        addSymbol(nodeScope.definitionKey(node.attribute("path").getString()), Spec.BOOLEAN, true, false);
                         break;
                     case PRESET_ENUM:
                     case VARIABLE_ENUM:
@@ -393,7 +389,7 @@ final class Ir {
                         break;
                     case PRESET_LIST:
                     case VARIABLE_LIST: {
-                        String key = definitionId(nodeScope, node);
+                        String key = nodeScope.definitionKey(node.attribute("path").getString());
                         SymbolSeed declared = declaredInputSymbols.get(key);
                         if (declared != null) {
                             addSymbol(key, declared.spec, declared.guardable, declared.tainted);
@@ -408,16 +404,16 @@ final class Ir {
             });
         }
 
-        void traverse(Node root, Scope scope, BiConsumer<Node, Scope> visitor) {
+        void traverse(Node root, Scope rootScope, BiConsumer<Node, Scope> visitor) {
             Map<Node, Scope> scopes = new IdentityHashMap<>();
-            scopes.put(root, scope);
+            scopes.put(root, rootScope);
             for (Node node : root.traverse()) {
-                Scope nodeScope = scopes.get(node);
-                if (nodeScope == null) {
+                Scope scope = scopes.get(node);
+                if (scope == null) {
                     throw new IllegalStateException("Missing scope for node: " + node);
                 }
-                visitor.accept(node, nodeScope);
-                Scope childScope = childScope(nodeScope, node);
+                visitor.accept(node, scope);
+                Scope childScope = childScope(scope, node);
                 for (Node child : node.children()) {
                     scopes.put(child, childScope);
                 }
@@ -496,7 +492,7 @@ final class Ir {
         }
 
         int lowerDefinition(Node node, int blockId, int controlId, Scope scope) {
-            int id = table.findId(definitionId(scope, node));
+            int id = table.findId(scope.definitionKey(node.attribute("path").getString()));
             if (id >= 0) {
                 Expression expr = new Expression(List.of(Token.of(node.value())), true);
                 append(blockId, Op.Kind.DEFINE_VALUE, node, id, expr);
@@ -549,7 +545,7 @@ final class Ir {
         }
 
         SymbolSeed symbolSeed(Scope scope, Node node) {
-            String key = definitionId(scope, node);
+            String key = scope.definitionKey(node.attribute("path").getString());
             SymbolSeed declared = declaredInputSymbols.get(key);
             if (declared != null) {
                 return declared;

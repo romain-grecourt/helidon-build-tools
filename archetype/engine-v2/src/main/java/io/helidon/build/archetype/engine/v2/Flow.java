@@ -522,7 +522,7 @@ final class Flow {
                 case VARIABLE_ENUM:
                 case VARIABLE_LIST:
                 case VARIABLE_TEXT:
-                    return Ir.definitionId(scope, node);
+                    return scope.definitionKey(node.attribute("path").getString());
                 default:
                     return scope.key();
             }
