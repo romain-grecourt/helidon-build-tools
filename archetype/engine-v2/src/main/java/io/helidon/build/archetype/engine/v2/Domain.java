@@ -1214,25 +1214,25 @@ final class Domain {
             if (right.values.isEmpty()) {
                 return new Fact(guard, lattice, left.values);
             }
-            List<GuardedValue> merged = new ArrayList<>();
+            List<GuardedValue> values = new ArrayList<>();
             Iterator<GuardedValue> leftIt = left.values.iterator();
             Iterator<GuardedValue> rightIt = right.values.iterator();
             while (leftIt.hasNext() || rightIt.hasNext()) {
                 GuardedValue next = leftIt.hasNext() ? leftIt.next() : rightIt.next();
                 boolean mergedValue = false;
-                for (int i = 0; i < merged.size(); i++) {
-                    GuardedValue current = merged.get(i);
-                    if (current.mask != 0L || current.mask == 0L && next.mask == 0L && Value.isEqual(current.value, next.value)) {
-                        merged.set(i, current.withGuard(guards.or(current.guard, next.guard)));
+                for (int i = 0; i < values.size(); i++) {
+                    GuardedValue current = values.get(i);
+                    if (current.mask != 0L || next.mask == 0L && Value.isEqual(current.value, next.value)) {
+                        values.set(i, current.withGuard(guards.or(current.guard, next.guard)));
                         mergedValue = true;
                         break;
                     }
                 }
                 if (!mergedValue) {
-                    merged.add(next);
+                    values.add(next);
                 }
             }
-            return new Fact(guard, lattice, merged);
+            return new Fact(guard, lattice, values);
         }
     }
 
