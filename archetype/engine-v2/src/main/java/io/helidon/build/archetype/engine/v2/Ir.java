@@ -59,45 +59,6 @@ final class Ir {
         this.controls = controls.toArray(Control[]::new);
     }
 
-    static Ir lower(Scope scope, Node root) {
-        return new Lowerer(scope).lower(root);
-    }
-
-    static Guard directBooleanGuard(Table table, Guards guards, String key) {
-        Symbol sym = table.symbol(table.findId(key));
-        if (!sym.guardable() || sym.tainted() || sym.domain().kind() != Spec.Kind.BOOLEAN) {
-            return Guard.TRUE;
-        }
-        return guards.eq(sym.id(), "true");
-    }
-
-    static Guard directOptionGuard(Table table, Guards guards, String key, Node input, Node option) {
-        Symbol sym = table.symbol(table.findId(key));
-        String value = option.value().getString();
-        switch (input.kind()) {
-            case INPUT_ENUM:
-                if (!sym.guardable() || sym.tainted()) {
-                    return Guard.TRUE;
-                }
-                return sym.domain().scalar() ? guards.eq(sym.id(), value) : Guard.TRUE;
-            case INPUT_LIST:
-                if (!sym.guardable() || sym.tainted() || sym.domain().kind() != Spec.Kind.MEMBERSHIP) {
-                    return Guard.TRUE;
-                }
-                return guards.contains(sym.id(), value);
-            default:
-                throw new IllegalArgumentException("Unsupported option parent: " + input.kind());
-        }
-    }
-
-    static Guard lowerCondition(Table table, Guards guards, Scope scope, Expression expression) {
-        return new ConditionLowerer(table, guards, scope).lower(expression);
-    }
-
-    static String definitionId(Scope scope, Node node) {
-        return scope.getOrCreate("~" + Context.Key.normalize(node.attribute("path").getString())).key();
-    }
-
     Table table() {
         return table;
     }
@@ -116,6 +77,18 @@ final class Ir {
 
     Control[] controls() {
         return controls;
+    }
+
+    Guard directBooleanGuard(String key) {
+        return directBooleanGuard(table, guards, key);
+    }
+
+    Guard directOptionGuard(String key, Node input, Node option) {
+        return directOptionGuard(table, guards, key, input, option);
+    }
+
+    Guard lowerCondition(Scope scope, Expression expression) {
+        return lowerCondition(table, guards, scope, expression);
     }
 
     void visitReachableBlocks(IntConsumer visitor) {
@@ -163,6 +136,45 @@ final class Ir {
             default:
                 break;
         }
+    }
+
+    static Ir lower(Scope scope, Node root) {
+        return new Lowerer(scope).lower(root);
+    }
+
+    static String definitionId(Scope scope, Node node) {
+        return scope.getOrCreate("~" + Context.Key.normalize(node.attribute("path").getString())).key();
+    }
+
+    private static Guard directBooleanGuard(Table table, Guards guards, String key) {
+        Symbol sym = table.symbol(table.findId(key));
+        if (!sym.guardable() || sym.tainted() || sym.domain().kind() != Spec.Kind.BOOLEAN) {
+            return Guard.TRUE;
+        }
+        return guards.eq(sym.id(), "true");
+    }
+
+    private static Guard directOptionGuard(Table table, Guards guards, String key, Node input, Node option) {
+        Symbol sym = table.symbol(table.findId(key));
+        String value = option.value().getString();
+        switch (input.kind()) {
+            case INPUT_ENUM:
+                if (!sym.guardable() || sym.tainted()) {
+                    return Guard.TRUE;
+                }
+                return sym.domain().scalar() ? guards.eq(sym.id(), value) : Guard.TRUE;
+            case INPUT_LIST:
+                if (!sym.guardable() || sym.tainted() || sym.domain().kind() != Spec.Kind.MEMBERSHIP) {
+                    return Guard.TRUE;
+                }
+                return guards.contains(sym.id(), value);
+            default:
+                throw new IllegalArgumentException("Unsupported option parent: " + input.kind());
+        }
+    }
+
+    private static Guard lowerCondition(Table table, Guards guards, Scope scope, Expression expression) {
+        return new ConditionLowerer(table, guards, scope).lower(expression);
     }
 
     static final class Op {
@@ -329,7 +341,7 @@ final class Ir {
 
             for (int blockId = 0; blockId < blocks.size(); blockId++) {
                 if (blocks.get(blockId).term.kind() == Terminator.Kind.NONE) {
-                    setTerminator(blockId, Terminator.Kind.UNREACHABLE, root, -1, -1, -1);
+                    block(blockId).term = new Terminator(Terminator.Kind.UNREACHABLE, root, -1, -1, -1);
                 }
             }
             return new Ir(blocks, table, ops, guards, controls);
@@ -576,12 +588,12 @@ final class Ir {
             if (block(blockId).term.kind() != Terminator.Kind.NONE) {
                 throw new IllegalStateException(String.format("Block %d already terminated", blockId));
             }
-            setTerminator(blockId, Terminator.Kind.BRANCH, source, -1, trueId, falseId);
+            block(blockId).term = new Terminator(Terminator.Kind.BRANCH, source, -1, trueId, falseId);
         }
 
         void terminateIfMissing(int blockId, Terminator.Kind kind, Node source, int targetId) {
             if (block(blockId).term.kind() == Terminator.Kind.NONE) {
-                setTerminator(blockId, kind, source, targetId, -1, -1);
+                block(blockId).term = new Terminator(kind, source, targetId, -1, -1);
             }
         }
 
@@ -598,13 +610,9 @@ final class Ir {
 
         Block block(int blockId) {
             if (blockId < 0 || blockId >= blocks.size()) {
-                throw new IllegalStateException("Unknown lowered block id: " + blockId);
+                throw new IllegalStateException("Unknown block id: " + blockId);
             }
             return blocks.get(blockId);
-        }
-
-        void setTerminator(int blockId, Terminator.Kind kind, Node source, int targetId, int trueId, int falseId) {
-            block(blockId).term = new Terminator(kind, source, targetId, trueId, falseId);
         }
 
         static Scope childScope(Scope scope, Node node) {
@@ -613,11 +621,8 @@ final class Ir {
 
         static String[] optionValues(Node input) {
             Set<String> values = new TreeSet<>();
-            for (Node child : input.children()) {
-                Node option = child.unwrap();
-                if (option.kind() == Kind.INPUT_OPTION) {
-                    values.add(option.value().getString());
-                }
+            for (Node option : Nodes.options(input)) {
+                values.add(option.value().getString());
             }
             return values.toArray(String[]::new);
         }
@@ -627,7 +632,10 @@ final class Ir {
             if (values.length == 0) {
                 return Spec.OPEN_TEXT;
             }
-            return node.kind() == Kind.INPUT_ENUM ? new Spec(Spec.Kind.CHOICE, values) : new Spec(Spec.Kind.MEMBERSHIP, values);
+            if (node.kind() == Kind.INPUT_ENUM) {
+                return new Spec(Spec.Kind.CHOICE, values);
+            }
+            return new Spec(Spec.Kind.MEMBERSHIP, values);
         }
     }
 
@@ -648,35 +656,33 @@ final class Ir {
             if (!name.equals(other.name)) {
                 throw new IllegalArgumentException("Cannot merge different symbols");
             }
-            if (spec.kind() == Spec.Kind.OPEN_TEXT || other.spec.kind() == Spec.Kind.OPEN_TEXT) {
+            Spec.Kind kind = spec.kind();
+            Spec.Kind otherKind = other.spec.kind();
+            if (kind == Spec.Kind.OPEN_TEXT || otherKind == Spec.Kind.OPEN_TEXT) {
                 return new SymbolSeed(name, Spec.OPEN_TEXT, false, tainted || other.tainted);
             }
-            if (spec.kind() == Spec.Kind.MEMBERSHIP || other.spec.kind() == Spec.Kind.MEMBERSHIP) {
-                if (spec.kind() != Spec.Kind.MEMBERSHIP || other.spec.kind() != Spec.Kind.MEMBERSHIP) {
+            if (kind == Spec.Kind.MEMBERSHIP || otherKind == Spec.Kind.MEMBERSHIP) {
+                if (kind != Spec.Kind.MEMBERSHIP || otherKind != Spec.Kind.MEMBERSHIP) {
                     return new SymbolSeed(name, Spec.OPEN_TEXT, false, tainted || other.tainted);
                 }
                 Set<String> items = new TreeSet<>(Arrays.asList(spec.values()));
                 items.addAll(Arrays.asList(other.spec.values()));
-                return new SymbolSeed(name,
-                        new Spec(Spec.Kind.MEMBERSHIP, items.toArray(String[]::new)),
-                        guardable && other.guardable,
-                        tainted || other.tainted);
+                Spec merged = new Spec(Spec.Kind.MEMBERSHIP, items.toArray(String[]::new));
+                return new SymbolSeed(name, merged, guardable && other.guardable, tainted || other.tainted);
             }
-            if (spec.kind() == Spec.Kind.BOOLEAN || other.spec.kind() == Spec.Kind.BOOLEAN) {
-                if (spec.kind() == Spec.Kind.BOOLEAN && other.spec.kind() == Spec.Kind.BOOLEAN) {
+            if (kind == Spec.Kind.BOOLEAN || otherKind == Spec.Kind.BOOLEAN) {
+                if (kind == Spec.Kind.BOOLEAN && otherKind == Spec.Kind.BOOLEAN) {
                     return new SymbolSeed(name, Spec.BOOLEAN, guardable && other.guardable, tainted || other.tainted);
                 }
                 return new SymbolSeed(name, Spec.OPEN_TEXT, false, tainted || other.tainted);
             }
-            Set<String> choiceValues = new TreeSet<>(Arrays.asList(spec.values()));
-            choiceValues.addAll(Arrays.asList(other.spec.values()));
-            String[] values = choiceValues.toArray(String[]::new);
-            return new SymbolSeed(name,
-                    spec.kind() == Spec.Kind.CHOICE || other.spec.kind() == Spec.Kind.CHOICE
-                            ? new Spec(Spec.Kind.CHOICE, values)
-                            : new Spec(Spec.Kind.FINITE_TEXT, values),
-                    guardable && other.guardable,
-                    tainted || other.tainted);
+            Set<String> choices = new TreeSet<>(Arrays.asList(spec.values()));
+            choices.addAll(Arrays.asList(other.spec.values()));
+            String[] values = choices.toArray(String[]::new);
+            Spec mergedSpec = kind == Spec.Kind.CHOICE || otherKind == Spec.Kind.CHOICE
+                    ? new Spec(Spec.Kind.CHOICE, values)
+                    : new Spec(Spec.Kind.FINITE_TEXT, values);
+            return new SymbolSeed(name, mergedSpec, guardable && other.guardable, tainted || other.tainted);
         }
     }
 
@@ -723,7 +729,7 @@ final class Ir {
                         int index = size - 1;
                         Guard direct = asGuard(guardStack[index], symStack[index], literalStack[index]);
                         if (direct == null) {
-                            return residual(expression);
+                            return guards.residualGuard(expression);
                         }
                         guardStack[index] = guards.not(direct);
                         symStack[index] = null;
@@ -737,7 +743,7 @@ final class Ir {
                         int left = --size;
                         Guard leftGuard = asGuard(guardStack[left], symStack[left], literalStack[left]);
                         if (leftGuard == null || rightGuard == null) {
-                            return residual(expression);
+                            return guards.residualGuard(expression);
                         }
                         if (token.operator() == Operator.OR) {
                             guardStack[left] = guards.or(leftGuard, rightGuard);
@@ -756,7 +762,7 @@ final class Ir {
                         Guard direct = compare(symStack[left], literalStack[left], symStack[right],
                                 literalStack[right], token.operator() == Operator.EQUAL);
                         if (direct == null) {
-                            return residual(expression);
+                            return guards.residualGuard(expression);
                         }
                         guardStack[left] = direct;
                         symStack[left] = null;
@@ -769,7 +775,7 @@ final class Ir {
                         int left = --size;
                         Guard direct = contains(symStack[left], literalStack[left], symStack[right], literalStack[right]);
                         if (direct == null) {
-                            return residual(expression);
+                            return guards.residualGuard(expression);
                         }
                         guardStack[left] = direct;
                         symStack[left] = null;
@@ -778,14 +784,14 @@ final class Ir {
                         break;
                     }
                     default:
-                        return residual(expression);
+                        return guards.residualGuard(expression);
                 }
             }
             if (size != 1) {
                 throw new IllegalStateException("Unexpected expression stack size: " + size);
             }
             Guard guard = asGuard(guardStack[0], symStack[0], literalStack[0]);
-            return guard != null ? guard : residual(expression);
+            return guard != null ? guard : guards.residualGuard(expression);
         }
 
         Guard compare(Symbol leftSymbol, Value<?> leftLiteral, Symbol rightSymbol, Value<?> rightLiteral, boolean equal) {
@@ -793,32 +799,25 @@ final class Ir {
             if (direct == null) {
                 direct = compareGuard(rightSymbol, leftLiteral);
             }
-            return direct == null ? null : equal ? direct : guards.not(direct);
+            if (direct != null && !equal) {
+                direct = guards.not(direct);
+            }
+            return direct;
         }
 
         Guard compareGuard(Symbol sym, Value<?> literal) {
-            if (sym == null || literal == null) {
-                return null;
-            }
-            if (!sym.guardable() || sym.tainted()) {
-                return null;
-            }
-            if (literal.type() == Value.Type.BOOLEAN) {
-                if (sym.domain().kind() == Spec.Kind.BOOLEAN) {
+            if (sym != null && literal != null && sym.guardable() && !sym.tainted()) {
+                if (literal.type() != Value.Type.BOOLEAN) {
+                    if (sym.domain().scalar() && literal.type() == Value.Type.STRING) {
+                        String scalar = literal.getString();
+                        if (sym.domain().contains(scalar)) {
+                            return guards.eq(sym.id(), scalar);
+                        }
+                    }
+                } else if (sym.domain().kind() == Spec.Kind.BOOLEAN) {
                     String value = String.valueOf(literal.getBoolean());
                     return guards.eq(sym.id(), value);
                 }
-                return null;
-            }
-            if (!sym.domain().scalar()) {
-                return null;
-            }
-            if (literal.type() == Value.Type.STRING) {
-                String scalar = literal.getString();
-                if (sym.domain().contains(scalar)) {
-                    return guards.eq(sym.id(), scalar);
-                }
-                return null;
             }
             return null;
         }
@@ -832,29 +831,22 @@ final class Ir {
         }
 
         Guard containsGuard(Symbol sym, Value<?> literal) {
-            if (sym == null || literal == null) {
-                return null;
-            }
-            if (sym.domain().kind() != Spec.Kind.MEMBERSHIP || !sym.guardable() || sym.tainted()) {
-                return null;
-            }
-            if (literal.type() == Value.Type.STRING) {
-                return guards.contains(sym.id(), literal.getString());
-            }
-            if (literal.type() == Value.Type.LIST) {
-                return guards.containsAll(sym.id(), new TreeSet<>(literal.getList()));
+            if (sym != null && literal != null && sym.domain().kind() == Spec.Kind.MEMBERSHIP
+                && sym.guardable() && !sym.tainted()) {
+                if (literal.type() != Value.Type.STRING) {
+                    if (literal.type() == Value.Type.LIST) {
+                        return guards.containsAll(sym.id(), new TreeSet<>(literal.getList()));
+                    }
+                } else {
+                    return guards.contains(sym.id(), literal.getString());
+                }
             }
             return null;
         }
 
         Guard scalarAnyGuard(Symbol sym, Value<?> literal) {
-            if (sym == null || literal == null || literal.type() != Value.Type.LIST) {
-                return null;
-            }
-            if (!sym.guardable() || sym.tainted()) {
-                return null;
-            }
-            if (!sym.domain().scalar()) {
+            if (sym == null || literal == null || literal.type() != Value.Type.LIST
+                || !sym.guardable() || sym.tainted() || !sym.domain().scalar()) {
                 return null;
             }
             Guard result = Guard.FALSE;
@@ -875,10 +867,6 @@ final class Ir {
                 return literal.getBoolean() ? Guard.TRUE : Guard.FALSE;
             }
             return null;
-        }
-
-        Guard residual(Expression expression) {
-            return guards.residualGuard(expression);
         }
 
         Symbol findSymbol(String name) {

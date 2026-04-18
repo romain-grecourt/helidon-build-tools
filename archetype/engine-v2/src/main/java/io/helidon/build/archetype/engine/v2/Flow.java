@@ -339,7 +339,6 @@ final class Flow {
         private final Analyzer analyzer;
         private final Node node;
         private final Scope scope;
-        private final Guards guards;
         private final Map<Node, List<Integer>> ops = new IdentityHashMap<>();
         private final Map<Node, Integer> branchTrueIds = new IdentityHashMap<>();
         private final Map<Node, Integer> branchJoinIds = new IdentityHashMap<>();
@@ -351,7 +350,6 @@ final class Flow {
             this.analyzer = analyzer;
             this.node = node;
             this.scope = scope;
-            this.guards = ir.guards();
             List<Symbol> symbols = ir.table().symbols();
             this.symbolInfos = new SymbolInfo[symbols.size()];
             for (int i = 0; i < symbols.size(); i++) {
@@ -387,6 +385,7 @@ final class Flow {
 
         void scanSymbols() {
             Op[] ops = ir.ops();
+            Guards guards = ir.guards();
             for (int id = 0; id < ops.length; id++) {
                 State before = analyzer.beforeState(id);
                 Op op = ops[id];
@@ -439,7 +438,7 @@ final class Flow {
                     case FINITE_TEXT:
                         if (fact.lattice().scalarMask() != info.sym.domain().mask()) {
                             for (String value : fact.lattice().scalarValues(info.sym.domain())) {
-                                info.addAvailability(value, fact.guard(), guards);
+                                info.addAvailability(value, fact.guard(), ir.guards());
                             }
                         }
                         break;
@@ -457,7 +456,7 @@ final class Flow {
                     long mask = value.mask();
                     while (mask != 0L) {
                         int ordinal = Long.numberOfTrailingZeros(mask);
-                        info.addAvailability(info.sym.value(ordinal), value.guard(), guards);
+                        info.addAvailability(info.sym.value(ordinal), value.guard(), ir.guards());
                         mask &= mask - 1L;
                     }
                     break;
@@ -533,13 +532,13 @@ final class Flow {
             if (state.path.equals(required)) {
                 return state;
             }
-            Guard constrained = guards.and(state.path, required);
+            Guard constrained = ir.guards().and(state.path, required);
             return constrained.equals(state.path) ? state : new State(constrained, state.env);
         }
 
         Guard activeGuard(Node node, Scope nodeScope, State afterOps) {
             Guard control = controlGuard(node, nodeScope, afterOps);
-            return control == null ? afterOps.path : guards.and(afterOps.path, control);
+            return control == null ? afterOps.path : ir.guards().and(afterOps.path, control);
         }
 
         Guard controlGuard(Node node, Scope nodeScope, State state) {
@@ -547,7 +546,7 @@ final class Flow {
                 case CONDITION:
                     return translatedCondition(node.expression(), nodeScope, state);
                 case INPUT_BOOLEAN:
-                    return Ir.directBooleanGuard(ir.table(), guards, nodeScope.key());
+                    return ir.directBooleanGuard(nodeScope.key());
                 case INPUT_OPTION:
                     Node input = node.ancestor(Kind::isInput).orElse(null);
                     if (input == null) {
@@ -556,7 +555,7 @@ final class Flow {
                     switch (input.kind()) {
                         case INPUT_ENUM:
                         case INPUT_LIST:
-                            return Ir.directOptionGuard(ir.table(), guards, nodeScope.key(), input, node);
+                            return ir.directOptionGuard(nodeScope.key(), input, node);
                         default:
                             return null;
                     }
@@ -568,13 +567,14 @@ final class Flow {
         Guard translatedCondition(Expression expression, Scope scope, State state) {
             Guard translated = translatedCondition0(expression, scope, state);
             if (translated == null) {
-                translated = Ir.lowerCondition(ir.table(), guards, scope, expression);
+                translated = ir.lowerCondition(scope, expression);
             }
             return translated;
         }
 
         Guard translatedCondition0(Expression expression, Scope scope, State state) {
             int capacity = expression.tokens().size();
+            Guards guards = ir.guards();
             Guard[] guardStack = new Guard[capacity];
             String[] refStack = new String[capacity];
             Value<?>[] literalStack = new Value<?>[capacity];
@@ -711,7 +711,7 @@ final class Flow {
         Guard translatedEquality(String key, Value<?> value, State state) {
             Fact fact = factFor(state, key);
             SymbolInfo info = symbolInfo(key);
-            Guard bound = fact == null || info == null ? Guard.FALSE : fact.match(info.sym, value, guards);
+            Guard bound = fact == null || info == null ? Guard.FALSE : fact.match(info.sym, value, ir.guards());
             Guard direct = directEquality(key, value);
             return combine(key, fact, bound, direct);
         }
@@ -719,7 +719,7 @@ final class Flow {
         Guard translatedScalarAny(String key, Set<String> values, State state) {
             Fact fact = factFor(state, key);
             SymbolInfo info = symbolInfo(key);
-            Guard bound = fact == null || info == null ? Guard.FALSE : fact.scalarAny(info.sym, values, guards);
+            Guard bound = fact == null || info == null ? Guard.FALSE : fact.scalarAny(info.sym, values, ir.guards());
             Guard direct = directScalarAny(key, values);
             return combine(key, fact, bound, direct);
         }
@@ -731,7 +731,7 @@ final class Flow {
             }
             Fact fact = factFor(state, key);
             SymbolInfo info = symbolInfo(key);
-            Guard bound = fact == null || info == null ? Guard.FALSE : fact.listContains(info.sym, required, guards);
+            Guard bound = fact == null || info == null ? Guard.FALSE : fact.listContains(info.sym, required, ir.guards());
             Guard direct = directListContains(symbolInfo(key), required);
             return combine(key, fact, bound, direct);
         }
@@ -740,6 +740,7 @@ final class Flow {
             SymbolInfo info = symbolInfo(key);
             Symbol symbol = info == null ? null : info.sym;
             Guard defined = definitionFor(key, fact);
+            Guards guards = ir.guards();
             if (fact == null) {
                 return direct == null ? null : defined == null ? direct : guards.and(defined, direct);
             }
@@ -797,7 +798,7 @@ final class Flow {
                 SymbolInfo info = scalarSymbolInfo(key);
                 if (info != null) {
                     return info.sym.domain().contains(scalar)
-                            ? available(info, scalar, guards.eq(info.sym.id(), scalar))
+                            ? available(info, scalar, ir.guards().eq(info.sym.id(), scalar))
                             : Guard.FALSE;
                 }
             }
@@ -811,6 +812,7 @@ final class Flow {
                 Set<String> allowed = new TreeSet<>(values);
                 allowed.removeIf(value -> !domain.contains(value));
                 Guard direct = Guard.FALSE;
+                Guards guards = ir.guards();
                 for (String value : allowed) {
                     direct = guards.or(direct, available(info, value, guards.eq(info.sym.id(), value)));
                 }
@@ -827,6 +829,7 @@ final class Flow {
                         return Guard.FALSE;
                     }
                     Guard available = Guard.TRUE;
+                    Guards guards = ir.guards();
                     for (String value : required) {
                         Guard availability = info.availability(value);
                         if (availability == null) {
@@ -842,7 +845,7 @@ final class Flow {
 
         Guard available(SymbolInfo info, String value, Guard direct) {
             Guard availability = info.availability(value);
-            return availability == null ? Guard.FALSE : guards.and(availability, direct);
+            return availability == null ? Guard.FALSE : ir.guards().and(availability, direct);
         }
 
         Set<String> containsValues(Value<?> value) {
@@ -857,5 +860,4 @@ final class Flow {
             }
         }
     }
-
 }
