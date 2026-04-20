@@ -34,6 +34,7 @@ import io.helidon.build.common.xml.XMLElement;
 import org.junit.jupiter.api.Test;
 
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.EXPR_TEXT_INPUT_CONTROL_FLOW;
+import static io.helidon.build.archetype.engine.v2.Variations.entry;
 import static io.helidon.build.common.test.utils.TestFiles.targetDir;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
@@ -223,7 +224,7 @@ class VariationsTest {
 
     @Test
     void testVariationEntryFactoryCreatesExhaustiveEntry() {
-        Variations.Entry actual = Variations.entry(Map.of("name", "Foo"));
+        Variations.Entry actual = entry(Map.of("name", "Foo"));
         assertThat(actual.exhaustive(), is(true));
         assertThat(actual, is(Variations.of(Map.of("name", "Foo"), Set.of()).iterator().next()));
     }
@@ -245,16 +246,16 @@ class VariationsTest {
     void testVariationsUnionMergesEquivalentEntries() {
         Variations actual = Variations.union(List.of(
                 Variations.of(
-                        Variations.entry(Map.of("name", "Foo"), Set.of("name")),
-                        Variations.entry(Map.of("name", "Bar"), Set.of())),
+                        entry(Map.of("name", "Foo"), Set.of("name")),
+                        entry(Map.of("name", "Bar"), Set.of())),
                 Variations.of(
-                        Variations.entry(Map.of("name", "Foo"), Set.of()),
-                        Variations.entry(Map.of("name", "Baz"), Set.of()))));
+                        entry(Map.of("name", "Foo"), Set.of()),
+                        entry(Map.of("name", "Baz"), Set.of()))));
 
         Variations expected = Variations.of(
-                Variations.entry(Map.of("name", "Foo"), Set.of("name")),
-                Variations.entry(Map.of("name", "Bar"), Set.of()),
-                Variations.entry(Map.of("name", "Baz"), Set.of()));
+                entry(Map.of("name", "Foo"), Set.of("name")),
+                entry(Map.of("name", "Bar"), Set.of()),
+                entry(Map.of("name", "Baz"), Set.of()));
 
         assertThat(actual, is(expected));
         assertThat(actual.unboundedInputs(), contains("name"));
@@ -263,12 +264,12 @@ class VariationsTest {
     @Test
     void testVariationsUnionRetainsDistinctResolvedValues() {
         Variations actual = Variations.union(List.of(
-                Variations.of(Variations.entry(Map.of("name", "Foo", "preset", "red"), Set.of())),
-                Variations.of(Variations.entry(Map.of("name", "Foo", "preset", "blue"), Set.of()))));
+                Variations.of(entry(Map.of("name", "Foo", "preset", "red"), Set.of())),
+                Variations.of(entry(Map.of("name", "Foo", "preset", "blue"), Set.of()))));
 
         Variations expected = Variations.of(
-                Variations.entry(Map.of("name", "Foo", "preset", "red"), Set.of()),
-                Variations.entry(Map.of("name", "Foo", "preset", "blue"), Set.of()));
+                entry(Map.of("name", "Foo", "preset", "red"), Set.of()),
+                entry(Map.of("name", "Foo", "preset", "blue"), Set.of()));
 
         assertThat(actual, is(expected));
     }
@@ -321,8 +322,8 @@ class VariationsTest {
     @Test
     void testVariationsIgnoreProjectionOverestimate() {
         Variations expected = Variations.of(
-                Variations.entry(Map.of("advanced", "false", "mode", "basic")),
-                Variations.entry(Map.of("advanced", "true", "mode", "expert")));
+                entry(Map.of("advanced", "false", "mode", "basic")),
+                entry(Map.of("advanced", "true", "mode", "expert")));
         Variations actual = variations("variations",
                 "projection-overestimate.xml",
                 List.of(),
@@ -349,8 +350,8 @@ class VariationsTest {
     @Test
     void testVariationsFiltersCanReferenceNestedInputKeys() {
         Variations expected = Variations.of(
-                Variations.entry(Map.of("flag", "false", "media", "json", "media.json-lib", "jsonb")),
-                Variations.entry(Map.of("flag", "true", "media", "json", "media.json-lib", "jackson")));
+                entry(Map.of("flag", "false", "media", "json", "media.json-lib", "jsonb")),
+                entry(Map.of("flag", "true", "media", "json", "media.json-lib", "jackson")));
         Variations actual = variations("variations",
                 "derived-local-filter.xml",
                 List.of(Expression.create("${flag} != (${media.json-lib} == 'jackson')")),
@@ -390,21 +391,21 @@ class VariationsTest {
     @Test
     void testVariationsKeepNestedEnumWhenParentBooleanIsExternallyFixed() {
         Variations expected = Variations.of(
-                Variations.entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
+                entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
                         "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "opentelemetry")),
-                Variations.entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
+                entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
                         "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "zipkin")),
-                Variations.entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
+                entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
                         "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "opentelemetry")),
-                Variations.entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
+                entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
                         "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "zipkin")),
-                Variations.entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
+                entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
                         "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "opentelemetry")),
-                Variations.entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
+                entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
                         "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "zipkin")),
-                Variations.entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
+                entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
                         "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "opentelemetry")),
-                Variations.entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
+                entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
                         "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "zipkin")));
         Variations actual = variations("variations",
                 "nested-enum-under-fixed-boolean.xml",
@@ -418,21 +419,21 @@ class VariationsTest {
     @Test
     void testVariationsKeepNestedEnumAcrossSourceAndExecGraph() {
         Variations expected = Variations.of(
-                Variations.entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
+                entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
                         "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "opentelemetry")),
-                Variations.entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
+                entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
                         "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "zipkin")),
-                Variations.entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
+                entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
                         "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "opentelemetry")),
-                Variations.entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
+                entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
                         "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "zipkin")),
-                Variations.entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
+                entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
                         "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "opentelemetry")),
-                Variations.entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
+                entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
                         "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "zipkin")),
-                Variations.entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
+                entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
                         "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "opentelemetry")),
-                Variations.entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
+                entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
                         "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "zipkin")));
         Variations actual = variations("variations/observability-repro",
                 "main.xml",
@@ -454,7 +455,8 @@ class VariationsTest {
         try (FileSystem fs = VirtualFileSystem.create(targetDir.resolve("test-classes"))) {
             Path cwd = fs.getPath(path);
             Path source = cwd.resolve(entrypoint).toAbsolutePath().normalize();
-            return new VariationEngine(() -> source, cwd).compute(filters, externalValues, externalDefaults, max);
+            Variations.Request request = new Variations.Request(filters, externalValues, externalDefaults, List.of(), max);
+            return new VariationEngine(() -> source, cwd).compute(request);
         } catch (IOException ex) {
             throw new UncheckedIOException(ex.getMessage(), ex);
         }
@@ -494,7 +496,7 @@ class VariationsTest {
             for (XMLElement entry : e.children()) {
                 map.put(entry.name(), entry.value());
             }
-            result.add(Variations.entry(map));
+            result.add(entry(map));
         }
         return Variations.of(result);
     }

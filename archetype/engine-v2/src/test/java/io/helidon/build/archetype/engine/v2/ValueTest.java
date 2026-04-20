@@ -161,6 +161,24 @@ class ValueTest {
     }
 
     @Test
+    void testParse() {
+        assertThat(Value.parse("foo", Value.Type.STRING).getString(), is("foo"));
+        assertThat(Value.parse("foo", Value.Type.DYNAMIC).getString(), is("foo"));
+        assertThat(Value.parse("true", Value.Type.BOOLEAN).getBoolean(), is(true));
+        assertThat(Value.parse("0", Value.Type.INTEGER).getInt(), is(0));
+        assertThat(Value.parse("none", Value.Type.LIST).getList(), is(List.of()));
+
+        ValueException ex;
+        ex = assertThrows(ValueException.class, () -> Value.parse("foo", Value.Type.BOOLEAN).getBoolean());
+        assertThat(ex.getMessage(), is("Cannot parse boolean value: foo"));
+
+        ex = assertThrows(ValueException.class, () ->  Value.parse("foo", Value.Type.INTEGER).getInt());
+        assertThat(ex.getMessage(), is("Cannot parse integer value: foo"));
+
+        assertThrows(IllegalArgumentException.class, () -> Value.parse("foo", Value.Type.EMPTY));
+    }
+
+    @Test
     void testTypedEmptyType() {
         assertThrows(IllegalArgumentException.class, () -> Value.typed(Value.Type.EMPTY));
 

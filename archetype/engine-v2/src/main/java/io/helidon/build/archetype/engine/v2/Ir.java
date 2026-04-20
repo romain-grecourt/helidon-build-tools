@@ -319,8 +319,9 @@ final class Ir {
             terminateIfMissing(exitBlock, Terminator.Kind.RETURN, root, -1);
 
             for (int blockId = 0; blockId < blocks.size(); blockId++) {
-                if (blocks.get(blockId).term.kind() == Terminator.Kind.NONE) {
-                    block(blockId).term = new Terminator(Terminator.Kind.UNREACHABLE, root, -1, -1, -1);
+                Block block = block(blockId);
+                if (block.term.kind() == Terminator.Kind.NONE) {
+                    block.term = new Terminator(Terminator.Kind.UNREACHABLE, root, -1, -1, -1);
                 }
             }
             return new Ir(blocks, table, ops, guards, controls);

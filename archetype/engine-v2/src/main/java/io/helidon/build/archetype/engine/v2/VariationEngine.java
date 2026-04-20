@@ -16,12 +16,9 @@
 package io.helidon.build.archetype.engine.v2;
 
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.ArrayList;
-import java.util.BitSet;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -31,28 +28,32 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.BinaryOperator;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collector;
-import java.util.stream.Collectors;
 
 import io.helidon.build.archetype.engine.v2.Context.Scope;
 import io.helidon.build.archetype.engine.v2.Context.ScopeValue;
 import io.helidon.build.archetype.engine.v2.Context.ValueKind;
+import io.helidon.build.archetype.engine.v2.Domain.Guard;
+import io.helidon.build.archetype.engine.v2.Domain.Guards;
+import io.helidon.build.archetype.engine.v2.Domain.Spec;
+import io.helidon.build.archetype.engine.v2.Domain.Symbol;
 import io.helidon.build.archetype.engine.v2.InputResolver.InvalidInputException;
 import io.helidon.build.archetype.engine.v2.InputResolver.ResolvedKind;
 import io.helidon.build.archetype.engine.v2.Node.Kind;
 import io.helidon.build.archetype.engine.v2.ScriptInvoker.InvocationException;
-import io.helidon.build.common.BitSets;
+import io.helidon.build.archetype.engine.v2.Variations.Diagnostics;
+import io.helidon.build.archetype.engine.v2.Variations.Finding;
+import io.helidon.build.archetype.engine.v2.Variations.Plan;
+import io.helidon.build.archetype.engine.v2.Variations.Request;
 import io.helidon.build.common.Lists;
 import io.helidon.build.common.Maps;
 import io.helidon.build.common.logging.Log;
 import io.helidon.build.common.logging.LogLevel;
 
-import static io.helidon.build.archetype.engine.v2.Nodes.optionIndex;
 import static java.util.Objects.requireNonNull;
 
 /**
@@ -60,12 +61,14 @@ import static java.util.Objects.requireNonNull;
  */
 public final class VariationEngine {
     private final Script.Source source;
-    private final Context ctx = new Context();
+    private final Path cwd;
     private final ScriptInliner inliner;
     private final ScriptIndexer indexer;
     private final Flow flow;
     private boolean initialized;
-    private Node sourceNode;
+    private Prepared prepared;
+    private Request cachedPlanRequest;
+    private PlanAnalysis cachedPlanAnalysis;
 
     /**
      * Create a new instance.
@@ -74,8 +77,10 @@ public final class VariationEngine {
      * @param cwd    cwd
      */
     public VariationEngine(Script.Source source, Path cwd) {
-        ctx.pushCwd(requireNonNull(cwd, "cwd is null"));
+        this.cwd = requireNonNull(cwd, "cwd is null");
         this.source = requireNonNull(source, "source is null");
+        Context ctx = new Context();
+        ctx.pushCwd(cwd);
         this.inliner = new ScriptInliner(ctx);
         this.indexer = new ScriptIndexer(ctx.scope());
         this.flow = new Flow(ctx.scope());
@@ -84,37 +89,50 @@ public final class VariationEngine {
     /**
      * Compute variations.
      *
-     * @param filters                  filters
-     * @param externalValues           fixed external values
-     * @param externalDefaults         external defaults
-     * @param maxIntermediateVariations max actual intermediate variation row count
+     * @param request computation request
      * @return computed variations
      * @throws IllegalStateException if the intermediate variation row count exceeds the configured limit
      */
-    public Variations compute(List<Expression> filters,
-                              Map<String, String> externalValues,
-                              Map<String, String> externalDefaults,
-                              long maxIntermediateVariations) {
-
-        requireNonNull(filters);
-        requireNonNull(externalValues);
-        requireNonNull(externalDefaults);
-        if (maxIntermediateVariations < 0) {
-            throw new IllegalArgumentException("maxIntermediateVariations must be >= 0");
-        }
-
+    public Variations compute(Request request) {
+        requireNonNull(request, "request is null");
         init();
-        List<Variations.Entry> variations = new ArrayList<>();
-        sourceNode.visit(new VisitorImpl(sourceNode,
-                flow,
-                indexer,
-                ctx.cwd(),
-                variations,
-                filters,
-                externalValues,
-                externalDefaults,
-                maxIntermediateVariations));
-        return Variations.of(variations);
+        if (request.plans().isEmpty()) {
+            clearPlanCache();
+            return new PlainComputation(
+                    request.filters(),
+                    request.externalValues(),
+                    request.externalDefaults(),
+                    request.maxIntermediateVariations())
+                    .compute();
+        }
+        if (request.plans().size() == 1) {
+            clearPlanCache();
+            return new PlanComputation(request).computeSingle();
+        }
+        PlanComputation computation = new PlanComputation(request);
+        PlanAnalysis analysis = cachedPlanRequest == request && cachedPlanAnalysis != null
+                ? cachedPlanAnalysis
+                : computation.analysis();
+        cachePlanAnalysis(request, analysis);
+        return computation.compute(analysis);
+    }
+
+    /**
+     * Analyze semantic plan coverage against the current script.
+     *
+     * @param request computation request
+     * @return semantic diagnostics
+     */
+    public Diagnostics analyze(Request request) {
+        requireNonNull(request, "request is null");
+        init();
+        if (request.plans().isEmpty()) {
+            clearPlanCache();
+            return Diagnostics.empty();
+        }
+        PlanAnalysis analysis = new PlanComputation(request).analysis();
+        cachePlanAnalysis(request, analysis);
+        return analysis.diagnostics;
     }
 
     private void init() {
@@ -122,796 +140,1199 @@ public final class VariationEngine {
             return;
         }
         initialized = true;
-        sourceNode = inliner.inline(source);
+        Node sourceNode = inliner.inline(source);
         indexer.index(sourceNode);
         flow.process(sourceNode);
+        prepared = new Prepared(sourceNode, indexer);
     }
 
-    private static final class VisitorImpl implements Node.Visitor {
-        private final Node sourceNode;
-        private final Flow flow;
-        private final ScriptIndexer indexer;
-        private final Path cwd;
+    private void cachePlanAnalysis(Request request, PlanAnalysis analysis) {
+        cachedPlanRequest = request;
+        cachedPlanAnalysis = analysis;
+    }
 
-        private final List<Table> inputs = new ArrayList<>();
-        private final List<Column> columns = new ArrayList<>();
-        private final List<Set<String>> filterDependencies = new ArrayList<>();
-        private final Map<Column, Integer> indexes = new LinkedHashMap<>();
-        private final Map<BitSet, Map<String, String>> variationCache = new ConcurrentHashMap<>();
-        private final Set<String> textInputs = new LinkedHashSet<>();
-        private final Collection<Variations.Entry> variations;
-        private final List<Expression> filters;
-        private final Map<String, String> externalValues;
-        private final Map<String, String> externalDefaults;
-        private final Map<String, Value.Type> inputTypes;
-        private final Map<String, String> resolvedExternalValues;
-        private final Map<String, String> resolvedExternalDefaults;
-        private final long maxIntermediateVariations;
+    private void clearPlanCache() {
+        cachedPlanRequest = null;
+        cachedPlanAnalysis = null;
+    }
 
-        VisitorImpl(Node sourceNode,
-                    Flow flow,
-                    ScriptIndexer indexer,
-                    Path cwd,
-                    Collection<Variations.Entry> variations,
-                    List<Expression> filters,
-                    Map<String, String> externalValues,
-                    Map<String, String> externalDefaults,
-                    long maxIntermediateVariations) {
-            this.sourceNode = sourceNode;
-            this.flow = flow;
-            this.indexer = indexer;
-            this.cwd = cwd;
-            this.variations = variations;
-            this.filters = filters;
+    private Map<String, String> resolveExternalValues(Map<String, String> externalValues,
+                                                      Map<String, String> externalDefaults) {
+        if (externalValues.isEmpty()) {
+            return Map.of();
+        }
+        Context context = new Context()
+                .externalValues(externalValues)
+                .externalDefaults(externalDefaults)
+                .pushCwd(cwd);
+        Map<String, String> values = new LinkedHashMap<>();
+        for (String key : externalValues.keySet()) {
+            ScopeValue<?> value = context.scope().getOrCreate(key).value();
+            if (value.isPresent()) {
+                values.put(key, Value.toString(value));
+            }
+        }
+        return Collections.unmodifiableMap(values);
+    }
+
+    private Map<String, String> resolveExternalDefaults(Map<String, String> externalValues,
+                                                        Map<String, String> externalDefaults) {
+        if (externalDefaults.isEmpty()) {
+            return Map.of();
+        }
+        Context context = new Context()
+                .externalValues(externalValues)
+                .externalDefaults(externalDefaults)
+                .pushCwd(cwd);
+        Map<String, String> values = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : externalDefaults.entrySet()) {
+            try {
+                String value = Value.toString(context.defaultValue(entry.getKey()));
+                if (value != null) {
+                    values.put(entry.getKey(), value);
+                }
+            } catch (RuntimeException ignored) {
+                values.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return Collections.unmodifiableMap(values);
+    }
+
+    private Value<String> externalDefaultValue(String key,
+                                               Map<String, String> externalDefaults,
+                                               Map<String, String> resolvedExternalDefaults) {
+        String value = resolvedExternalDefaults.get(key);
+        if (value == null) {
+            value = externalDefaults.get(key);
+        }
+        return Value.of(value);
+    }
+
+    private Value.Type valueType(String key) {
+        InputModel input = prepared.inputsByKey.get(key);
+        if (input != null) {
+            return input.kind.valueType();
+        }
+        Flow.SymbolInfo info = symbolInfo(key);
+        if (info == null) {
+            return Value.Type.STRING;
+        }
+        switch (info.symbol().domain().kind()) {
+            case BOOLEAN:
+                return Value.Type.BOOLEAN;
+            case MEMBERSHIP:
+                return Value.Type.LIST;
+            default:
+                return Value.Type.STRING;
+        }
+    }
+
+    private Flow.SymbolInfo symbolInfo(String key) {
+        Flow.SymbolInfo info = flow.symbol(key);
+        if (info == null && !key.startsWith("~")) {
+            info = flow.symbol("~" + key);
+        }
+        return info;
+    }
+
+    private Guard externalConstraintGuard(Map<String, String> resolvedExternalValues) {
+        return externalConstraintGuard(resolvedExternalValues, null, null);
+    }
+
+    private Guard externalConstraintGuard(Map<String, String> resolvedExternalValues,
+                                          String planId,
+                                          List<Finding> findings) {
+        Guard guard = Guard.TRUE;
+        for (Map.Entry<String, String> entry : resolvedExternalValues.entrySet()) {
+            Guard next = constraintGuard(entry.getKey(), entry.getValue(), planId, findings, guard);
+            if (next != null) {
+                guard = flow.and(guard, next);
+            }
+        }
+        return guard;
+    }
+
+    private Guard constraintGuard(String key, String value, String planId, List<Finding> findings, Guard current) {
+        InputModel input = prepared.inputsByKey.get(key);
+        Guard next = input != null ? input.constraintGuard(value) : constraintGuard(key, value, symbolInfo(key));
+        if (next != null && findings != null && planId != null && subset(current, next)) {
+            findings.add(Finding.redundantPin(planId, key, value));
+        }
+        return next;
+    }
+
+    private Guard constraintGuard(String key, String value, Flow.SymbolInfo info) {
+        if (info == null) {
+            return null;
+        }
+        Symbol symbol = info.symbol();
+        if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() == Spec.Kind.OPEN_TEXT) {
+            return null;
+        }
+        switch (symbol.domain().kind()) {
+            case BOOLEAN:
+            case CHOICE:
+            case FINITE_TEXT:
+                if (!symbol.domain().contains(value)) {
+                    throw new IllegalStateException(String.format("Invalid value '%s' for key '%s'", value, key));
+                }
+                Guard direct = flow.guards().eq(symbol.id(), value);
+                Guard availability = info.availability(value);
+                return availability == null ? direct : flow.guards().and(availability, direct);
+            case MEMBERSHIP:
+                return exactMembershipGuard(info, Value.parseList(value).orElse(List.of()));
+            default:
+                return null;
+        }
+    }
+
+    private Guard combinedExcludeGuard(List<Expression> filters, Map<String, String> externalValues) {
+        Guard combined = Guard.FALSE;
+        for (Expression filter : filters) {
+            Expression pruned = prune(filter, externalValues);
+            combined = flow.or(combined, flow.conditionGuard(pruned));
+        }
+        return combined;
+    }
+
+    private List<Expression> combineFilters(List<Expression> left, List<Expression> right) {
+        if (left.isEmpty()) {
+            return right;
+        }
+        if (right.isEmpty()) {
+            return left;
+        }
+        List<Expression> filters = new ArrayList<>(left.size() + right.size());
+        filters.addAll(left);
+        filters.addAll(right);
+        return filters;
+    }
+
+    private Expression prune(Expression expression, Map<String, String> externalValues) {
+        if (expression == Expression.TRUE || expression == Expression.FALSE || externalValues.isEmpty()) {
+            return expression;
+        }
+        return expression.inline(variable -> {
+            String value = externalValues.get(variable);
+            return value == null ? null : Value.parse(value, valueType(variable));
+        });
+    }
+
+    private boolean subset(Guard left, Guard right) {
+        return flow.isFalse(flow.minus(left, right));
+    }
+
+    private String render(Guard guard) {
+        return flow.expression(guard).literal();
+    }
+
+    private Variations.Entry materialize(CandidateRegion region,
+                                         List<Expression> filters,
+                                         Map<String, String> externalValues,
+                                         Map<String, String> externalDefaults,
+                                         Map<String, String> resolvedExternalDefaults) {
+        Map<String, String> variation = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : region.values.entrySet()) {
+            if (!externalValues.containsKey(entry.getKey())) {
+                variation.put(entry.getKey(), entry.getValue());
+            }
+        }
+        for (String key : region.textInputs) {
+            if (!externalValues.containsKey(key)) {
+                variation.put(key, representativeTextValue(key, region.guard, externalDefaults, resolvedExternalDefaults));
+            }
+        }
+
+        Map<String, ScopeValue<?>> effective = execute(variation, externalValues, externalDefaults);
+        if (effective.isEmpty()) {
+            return null;
+        }
+
+        Map<String, String> values = orderedValues(effective);
+        if (filtered(filters, values)) {
+            return null;
+        }
+
+        Set<String> unbounded = new TreeSet<>();
+        for (Map.Entry<String, ScopeValue<?>> entry : effective.entrySet()) {
+            if (prepared.textInputs.contains(entry.getKey()) && entry.getValue().kind() != ValueKind.EXTERNAL) {
+                unbounded.add(entry.getKey());
+            }
+        }
+
+        Map<String, String> normalized = Maps.mapValue(effective,
+                (key, value) -> value.kind() == ValueKind.USER,
+                value -> Value.toString(value),
+                TreeMap::new);
+        String signature = Lists.join(normalized.entrySet(), " ");
+        return Variations.entry(values, unbounded, signature);
+    }
+
+    private String representativeTextValue(String key,
+                                           Guard regionGuard,
+                                           Map<String, String> externalDefaults,
+                                           Map<String, String> resolvedExternalDefaults) {
+        InputModel input = prepared.inputsByKey.get(key);
+        if (input == null) {
+            return "<?>";
+        }
+        return input.declaredValue(regionGuard).asString()
+                .or(() -> externalDefaultValue(key, externalDefaults, resolvedExternalDefaults))
+                .or(() -> Value.of(input.defaultValue(regionGuard)))
+                .orElse("<?>");
+    }
+
+    private boolean filtered(List<Expression> filters, Map<String, String> values) {
+        if (filters.isEmpty()) {
+            return false;
+        }
+        for (Expression exclude : filters) {
+            if (eval(exclude, values)) {
+                if (LogLevel.isDebug()) {
+                    Log.debug("Excluding variation, rule: %s, entries: %s", exclude.literal(), values);
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean eval(Expression expression, Map<String, String> values) {
+        if (expression == Expression.TRUE) {
+            return true;
+        }
+        if (expression == Expression.FALSE) {
+            return false;
+        }
+        try {
+            return expression.eval(variable -> {
+                String value = values.get(variable);
+                return value == null ? null : Value.dynamic(value);
+            });
+        } catch (Expression.UnresolvedVariableException ignored) {
+            return false;
+        }
+    }
+
+    private Map<String, ScopeValue<?>> execute(Map<String, String> variation,
+                                               Map<String, String> externalValues,
+                                               Map<String, String> externalDefaults) {
+        try {
+            Context context = new Context()
+                    .externalValues(externalValues)
+                    .externalDefaults(externalDefaults)
+                    .pushCwd(cwd);
+            variation.forEach((key, value) -> {
+                if (externalValues.containsKey(key)) {
+                    return;
+                }
+                Scope scope = context.scope().getOrCreate(key);
+                scope.value(Value.dynamic(value), ValueKind.USER);
+            });
+
+            Set<Scope> scopes = new LinkedHashSet<>();
+            ScriptInvoker.invoke(prepared.node, context, new InputResolver.BatchResolver(context), node -> {
+                scopes.add(context.scope());
+                return true;
+            });
+
+            Map<String, ScopeValue<?>> values = new LinkedHashMap<>();
+            for (Scope scope : scopes) {
+                if (scope.parent() == null) {
+                    continue;
+                }
+                scope.values().forEach((key, value) -> {
+                    if (!value.isPresent()) {
+                        return;
+                    }
+                    switch (value.kind()) {
+                        case USER:
+                        case EXTERNAL:
+                            if (!scopes.contains(value.scope())) {
+                                return;
+                            }
+                            break;
+                        case DEFAULT:
+                            for (Object qualifier : value.qualifiers()) {
+                                if (qualifier == ResolvedKind.AUTO_CREATED) {
+                                    return;
+                                }
+                            }
+                            break;
+                        default:
+                            return;
+                    }
+                    values.putIfAbsent(key, value);
+                });
+            }
+            return values;
+        } catch (InvocationException ex) {
+            if (!(ex.getCause() instanceof InvalidInputException)) {
+                Log.debug("Execution error: %s, inputs: %s", ex.getCause().getMessage(), variation);
+            }
+            return Map.of();
+        }
+    }
+
+    private Map<String, String> orderedValues(Map<String, ScopeValue<?>> effective) {
+        Map<String, List<Map.Entry<String, ScopeValue<?>>>> groups = new LinkedHashMap<>();
+        Map<String, Integer> encounterOrder = new HashMap<>();
+        int next = 0;
+        for (Map.Entry<String, ScopeValue<?>> entry : effective.entrySet()) {
+            encounterOrder.put(entry.getKey(), next++);
+            groups.computeIfAbsent(groupKey(entry.getKey()), ignored -> new ArrayList<>()).add(entry);
+        }
+        Map<String, String> values = new LinkedHashMap<>();
+        for (List<Map.Entry<String, ScopeValue<?>>> group : groups.values()) {
+            for (Map.Entry<String, ScopeValue<?>> entry : group) {
+                if (entry.getKey().indexOf('.') < 0) {
+                    values.put(entry.getKey(), Value.toString(entry.getValue()));
+                }
+            }
+            List<Map.Entry<String, ScopeValue<?>>> toSort = new ArrayList<>();
+            for (Map.Entry<String, ScopeValue<?>> entry : group) {
+                if (entry.getKey().indexOf('.') >= 0) {
+                    toSort.add(entry);
+                }
+            }
+            toSort.sort((left, right) -> {
+                int result = Integer.compare(
+                        prepared.inputOrder.getOrDefault(left.getKey(), Integer.MAX_VALUE),
+                        prepared.inputOrder.getOrDefault(right.getKey(), Integer.MAX_VALUE));
+                if (result != 0) {
+                    return result;
+                }
+                return Integer.compare(encounterOrder.get(left.getKey()), encounterOrder.get(right.getKey()));
+            });
+            for (Map.Entry<String, ScopeValue<?>> entry : toSort) {
+                values.put(entry.getKey(), Value.toString(entry.getValue()));
+            }
+        }
+        return values;
+    }
+
+    private String groupKey(String key) {
+        int index = key.indexOf('.');
+        return index < 0 ? key : key.substring(0, index);
+    }
+
+    private Guard exactMembershipGuard(Flow.SymbolInfo info, List<String> values) {
+        if (info == null) {
+            return Guard.FALSE;
+        }
+        Set<String> selected = new LinkedHashSet<>(values);
+        Guard guard = info.definition();
+        Guards guards = flow.guards();
+        List<String> options = List.of(info.symbol().domain().values());
+        for (String option : options) {
+            Guard availability = info.availability(option);
+            Guard contains = guards.contains(info.symbol().id(), option);
+            if (selected.contains(option)) {
+                if (availability == null) {
+                    return Guard.FALSE;
+                }
+                guard = guards.and(guard, guards.and(availability, contains));
+            } else if (availability != null) {
+                guard = guards.and(guard, guards.or(guards.not(availability), guards.not(contains)));
+            }
+        }
+        if (!info.symbol().domain().containsAll(selected)) {
+            return Guard.FALSE;
+        }
+        return guard;
+    }
+
+    private abstract class AbstractComputation {
+        final Map<String, String> externalValues;
+        final Map<String, String> externalDefaults;
+        final Map<String, String> resolvedExternalValues;
+        final Map<String, String> resolvedExternalDefaults;
+        final long maxIntermediateVariations;
+
+        AbstractComputation(Map<String, String> externalValues,
+                            Map<String, String> externalDefaults,
+                            long maxIntermediateVariations) {
             this.externalValues = Collections.unmodifiableMap(new LinkedHashMap<>(externalValues));
             this.externalDefaults = Collections.unmodifiableMap(new LinkedHashMap<>(externalDefaults));
-            this.inputTypes = inputTypes();
-            this.resolvedExternalValues = resolvedExternalValues();
-            this.resolvedExternalDefaults = resolvedExternalDefaults();
+            this.resolvedExternalValues = resolveExternalValues(this.externalValues, this.externalDefaults);
+            this.resolvedExternalDefaults = resolveExternalDefaults(this.externalValues, this.externalDefaults);
             this.maxIntermediateVariations = maxIntermediateVariations;
         }
 
-        @Override
-        public boolean visit(Node node) {
-            if (!active(node)) {
-                return false;
-            }
-            Table table;
-            List<Node> options;
-            List<Node> optionNodes;
-            switch (node.kind()) {
-                case INPUT_TEXT:
-                    table = table(node);
-                    String textValue = declaredValue(node, table.id).asString()
-                            .or(() -> externalDefaultValue(table.id))
-                            .or(() -> node.attribute("default").asString())
-                            .orElse("<?>");
-                    table.columns.add(new Column(table.id, textValue));
-                    table.addRow(BitSets.of(0), Expression.TRUE);
-                    inputs.add(table);
-                    textInputs.add(table.id);
-                    break;
-                case INPUT_BOOLEAN:
-                    table = table(node);
-                    table.columns.add(new Column(table.id, "true"));
-                    table.columns.add(new Column(table.id, "false"));
-                    Value<Boolean> boolValue = declaredValue(node, table.id).asBoolean();
-                    if (boolValue.isPresent()) {
-                        table.addRow(BitSets.of(boolValue.get() ? 0 : 1), Expression.TRUE);
-                    } else {
-                        table.addRow(BitSets.of(0), Expression.TRUE);
-                        table.addRow(BitSets.of(1), Expression.TRUE);
-                    }
-                    inputs.add(table);
-                    break;
-                case INPUT_ENUM:
-                    table = table(node);
-                    optionNodes = optionNodes(node);
-                    options = Lists.map(optionNodes, Node::unwrap);
-                    for (Node option : options) {
-                        table.columns.add(new Column(table.id, option.value().getString()));
-                    }
-                    int index = declaredValue(node, table.id).asString()
-                            .map(option -> requiredOptionIndex(table.id, option, options))
-                            .orElse(-1);
-                    if (index >= 0) {
-                        Node selected = optionNodes.get(index);
-                        table.addRow(BitSets.of(index), prune(node, selected.expression()));
-                    } else {
-                        for (int i = 0; i < table.columns.size(); i++) {
-                            Node option = optionNodes.get(i);
-                            table.addRow(BitSets.of(i), prune(node, option.expression()));
-                        }
-                    }
-                    inputs.add(table);
-                    break;
-                case INPUT_LIST:
-                    table = table(node);
-                    optionNodes = optionNodes(node);
-                    options = Lists.map(optionNodes, Node::unwrap);
-                    for (Node option : options) {
-                        table.columns.add(new Column(table.id, option.value().getString()));
-                    }
-                    Value<List<String>> value = declaredValue(node, table.id).asList();
-                    if (value.isPresent()) {
-                        BitSet bits = new BitSet();
-                        Expression expr = Expression.TRUE;
-                        for (String option : value.getList()) {
-                            int i = requiredOptionIndex(table.id, option, options);
-                            bits.set(i);
-                            Node selected = optionNodes.get(i);
-                            expr = expr.and(prune(node, selected.expression()));
-                        }
-                        table.addRow(bits, expr);
-                    } else {
-                        for (int p = 1, permSize = 1 << table.columns.size(); p < permSize; p++) {
-                            Expression expr = Expression.TRUE;
-                            BitSet bits = BitSets.of((long) p);
-                            for (int i = bits.nextSetBit(0); i >= 0 && i < Integer.MAX_VALUE;
-                                    i = bits.nextSetBit(i + 1)) {
-                                Node option = optionNodes.get(i);
-                                expr = expr.and(prune(node, option.expression()));
-                            }
-                            table.addRow(bits, expr);
-                        }
-                    }
-                    table.columns.add(new Column(table.id, "none"));
-                    table.addRow(BitSets.of(table.columns.size() - 1), Expression.TRUE);
-                    inputs.add(table);
-                    break;
-                default:
-            }
-            return true;
+        Variations normalized(List<CandidateRegion> regions, List<Expression> filters) {
+            return normalized(regions, filters, externalValues, externalDefaults, resolvedExternalDefaults);
         }
 
-        @Override
-        public void postVisit(Node node) {
-            if (node.kind() != Kind.SCRIPT) {
-                return;
-            }
-
-            long computeStartTime = System.currentTimeMillis();
-
-            List<Table> orderedInputs = new ArrayList<>(inputs);
-            orderedInputs.sort(Comparator.comparingInt((Table table) -> inputOrder(table.id))
-                    .thenComparingInt(table -> table.node.id()));
-            for (Table table : orderedInputs) {
-                for (Column column : table.columns) {
-                    int index = indexes.computeIfAbsent(column, ignored -> indexes.size());
-                    if (index == columns.size()) {
-                        columns.add(column);
-                    }
-                }
-            }
-
-            List<Table> tables = new ArrayList<>();
-            for (Table input : inputs) {
-                Table table = table(input.node);
-                table.columns.addAll(input.columns);
-                for (Row row : input.rows) {
-                    BitSet bitSet = new BitSet();
-                    for (int i = row.bits.nextSetBit(0); i >= 0 && i < Integer.MAX_VALUE;
-                            i = row.bits.nextSetBit(i + 1)) {
-                        int index = indexes.getOrDefault(input.columns.get(i), -1);
-                        if (index < 0) {
-                            throw new IllegalStateException(
-                                    "Missing column index for input column: " + input.columns.get(i));
-                        }
-                        bitSet.set(index);
-                    }
-                    table.addRow(bitSet, row.expr);
-                }
-                tables.add(table);
-            }
-
-            Set<String> inputIds = tables.stream()
-                    .map(table -> table.id)
-                    .collect(Collectors.toCollection(LinkedHashSet::new));
-            for (Table table : tables) {
-                table.dependencies.addAll(dependencies(table, inputIds));
-            }
-            Scope sourceScope = flow.scope(sourceNode);
-            for (Expression filter : filters) {
-                Set<String> dependencies = dependencies(prune(sourceNode, filter), sourceScope, null, inputIds);
-                if (!dependencies.isEmpty()) {
-                    filterDependencies.add(dependencies);
-                }
-            }
-
-            List<Table> pending = new ArrayList<>(tables);
-            Map<String, Integer> joined = new HashMap<>();
-            Set<String> available = new LinkedHashSet<>();
-            Map<String, Integer> totals = new HashMap<>();
-            for (Table table : tables) {
-                totals.compute(table.id, (key, value) -> value == null ? 1 : value + 1);
-            }
-
-            Set<BitSet> merged = new LinkedHashSet<>();
-            for (int i = 0; i < tables.size(); i++) {
-                Join join = nextJoin(pending, available, merged);
-                join.filtered.forEach(merged::remove);
-                pending.remove(join.table);
-
-                int count = joined.compute(join.table.id, (key, value) -> value == null ? 1 : value + 1);
-                if (count == totals.getOrDefault(join.table.id, -1)) {
-                    available.add(join.table.id);
-                }
-
-                Log.debug("Progress: %d/%d - %s - filtered: %d, merged: %d",
-                        i + 1,
-                        tables.size(),
-                        join.table,
-                        join.filtered.size(),
-                        merged.size());
-
-                if (join.filtered.isEmpty()) {
-                    if (merged.isEmpty()) {
-                        for (Row row : join.table.rows) {
-                            mergeRow(node, join, merged, BitSets.copyOf(row.bits), row.expr);
-                        }
-                    }
-                } else {
-                    for (Row row1 : join.table.rows) {
-                        for (BitSet row2 : join.filtered) {
-                            mergeRow(node, join, merged, BitSets.or(BitSets.copyOf(row1.bits), row2), row1.expr);
-                        }
-                    }
-                }
-            }
-            logDuration(computeStartTime, "Computed " + merged.size() + " variations");
-
-            long normalizeStartTime = System.currentTimeMillis();
-            Collection<Variations.Entry> normalized = merged.parallelStream()
-                    .map(this::normalize)
+        Variations normalized(List<CandidateRegion> regions,
+                              List<Expression> filters,
+                              Map<String, String> externalValues,
+                              Map<String, String> externalDefaults,
+                              Map<String, String> resolvedExternalDefaults) {
+            Collection<Variations.Entry> normalized = regions.stream()
+                    .map(region -> materialize(region, filters, externalValues, externalDefaults, resolvedExternalDefaults))
                     .filter(Objects::nonNull)
                     .collect(new NormalizedCollector());
-            logDuration(normalizeStartTime, "Normalized " + merged.size() + " variations");
+            return Variations.of(normalized);
+        }
+    }
 
-            long sortStartTime = System.currentTimeMillis();
-            variations.addAll(normalized);
-            logDuration(sortStartTime, "Sorted " + variations.size() + " variations");
+    private final class PlainComputation extends AbstractComputation {
+        private final List<Expression> filters;
+
+        PlainComputation(List<Expression> filters,
+                         Map<String, String> externalValues,
+                         Map<String, String> externalDefaults,
+                         long maxIntermediateVariations) {
+            super(externalValues, externalDefaults, maxIntermediateVariations);
+            this.filters = filters;
         }
 
-        void mergeRow(Node node, Join join, Set<BitSet> merged, BitSet bits, Expression rowExpr) {
-            if (join.table.expr == Expression.TRUE && rowExpr == Expression.TRUE && filters.isEmpty()) {
-                addMerged(merged, bits, join.table.id);
+        Variations compute() {
+            Guard initialGuard = externalConstraintGuard(resolvedExternalValues);
+            Guard excludedGuard = combinedExcludeGuard(filters, resolvedExternalValues);
+            List<CandidateRegion> regions = new RegionEnumerator(initialGuard,
+                    excludedGuard,
+                    filters,
+                    resolvedExternalValues,
+                    maxIntermediateVariations)
+                    .enumerate();
+            return normalized(regions, filters);
+        }
+    }
+
+    private final class PlanComputation extends AbstractComputation {
+        private final List<Expression> filters;
+        private final List<Plan> plans;
+
+        PlanComputation(Request request) {
+            super(request.externalValues(), request.externalDefaults(), request.maxIntermediateVariations());
+            this.filters = request.filters();
+            this.plans = request.plans();
+        }
+
+        PlanAnalysis analysis() {
+            List<CompiledPlan> compiled = new ArrayList<>(plans.size());
+            for (Plan plan : plans) {
+                compiled.add(compiledPlan(plan));
+            }
+            return new PlanAnalysis(compiled, diagnostics(compiled));
+        }
+
+        Variations computeSingle() {
+            CompiledPlan compiledPlan = compiledPlan(plans.get(0));
+            ensureSatisfiable(compiledPlan);
+            return computePlan(compiledPlan);
+        }
+
+        Variations compute(PlanAnalysis analysis) {
+            if (analysis.diagnostics.hasErrors()) {
+                Finding finding = analysis.diagnostics.findings().stream()
+                        .filter(it -> it.kind() == Finding.Kind.UNSATISFIABLE_PLAN)
+                        .findFirst()
+                        .orElseThrow();
+                throw new IllegalStateException(String.format(
+                        "Variation plan '%s' is unsatisfiable: %s",
+                        finding.planId().orElseThrow(),
+                        finding.expression().orElseThrow()));
+            }
+            List<Variations> computed = new ArrayList<>();
+            analysis.plans.forEach(compiledPlan -> computed.add(computePlan(compiledPlan)));
+            return Variations.union(computed);
+        }
+
+        CompiledPlan compiledPlan(Plan plan) {
+            Map<String, String> planValues = new LinkedHashMap<>(externalValues);
+            planValues.putAll(plan.externalValues());
+            Map<String, String> planDefaults = new LinkedHashMap<>(externalDefaults);
+            planDefaults.putAll(plan.externalDefaults());
+            Map<String, String> resolvedPlanValues = resolveExternalValues(planValues, planDefaults);
+            List<Finding> redundantPins = new ArrayList<>();
+            Guard pinned = externalConstraintGuard(resolvedPlanValues, plan.id(), redundantPins);
+            Guard excluded = combinedExcludeGuard(plan.filters(), resolvedPlanValues);
+            return new CompiledPlan(
+                    plan,
+                    pinned,
+                    excluded,
+                    Collections.unmodifiableMap(planValues),
+                    Collections.unmodifiableMap(planDefaults),
+                    redundantPins);
+        }
+
+        Variations computePlan(CompiledPlan compiledPlan) {
+            Log.info("");
+            Log.info("Computing plan %s...", compiledPlan.plan.id());
+            Variations computedPlan = new PlainComputation(
+                    combineFilters(filters, compiledPlan.plan.filters()),
+                    compiledPlan.externalValues,
+                    compiledPlan.externalDefaults,
+                    maxIntermediateVariations)
+                    .compute();
+            Log.info("Variations: %d", computedPlan.size());
+            return computedPlan;
+        }
+
+        void ensureSatisfiable(CompiledPlan compiledPlan) {
+            Guard included = flow.minus(compiledPlan.pinnedRegion, compiledPlan.excludedRegion);
+            Guard covered = flow.and(reachableGuard(), included);
+            if (!flow.isFalse(covered)) {
                 return;
             }
-            Map<String, String> vars = variation(bits);
-            if (eval(join.table.node, join.table.expr, vars) && eval(join.table.node, rowExpr, vars) && filter(node, vars)) {
-                addMerged(merged, bits, join.table.id);
-            }
+            throw new IllegalStateException(String.format(
+                    "Variation plan '%s' is unsatisfiable: %s",
+                    compiledPlan.plan.id(),
+                    render(included)));
         }
 
-        void addMerged(Set<BitSet> merged, BitSet bits, String inputId) {
-            if (merged.add(bits) && merged.size() > maxIntermediateVariations) {
-                throw new IllegalStateException(String.format(
-                        "Intermediate variation row count %d exceeds the configured limit of %d while joining input '%s'",
-                        merged.size(),
-                        maxIntermediateVariations,
-                        inputId));
-            }
+        Guard reachableGuard() {
+            return flow.minus(
+                    externalConstraintGuard(resolvedExternalValues),
+                    combinedExcludeGuard(filters, resolvedExternalValues));
         }
 
-        Map<String, String> variation(BitSet row) {
-            return variationCache.computeIfAbsent(row, this::variation0);
-        }
-
-        Map<String, String> variation0(BitSet row) {
-            Map<String, String> variation = new LinkedHashMap<>();
-            for (int i = row.nextSetBit(0); i >= 0 && i < Integer.MAX_VALUE; i = row.nextSetBit(i + 1)) {
-                Column column = columns.get(i);
-                variation.compute(column.name, (key, value) -> value == null ? column.value : value + "," + column.value);
-            }
-            variation.putAll(resolvedExternalValues);
-            return Collections.unmodifiableMap(variation);
-        }
-
-        Variations.Entry normalize(BitSet row) {
-            Map<String, String> variation = variation(row);
-            Map<String, ScopeValue<?>> effective = execute(variation);
-            if (effective.isEmpty()) {
-                return null;
+        Diagnostics diagnostics(List<CompiledPlan> compiledPlans) {
+            Guard reachable = reachableGuard();
+            List<Finding> unsatisfiablePlans = new ArrayList<>();
+            List<Finding> overlaps = new ArrayList<>();
+            List<Finding> redundantPlans = new ArrayList<>();
+            List<Finding> redundantPins = new ArrayList<>();
+            for (CompiledPlan compiledPlan : compiledPlans) {
+                redundantPins.addAll(compiledPlan.findings);
+                Guard included = flow.minus(compiledPlan.pinnedRegion, compiledPlan.excludedRegion);
+                Guard covered = flow.and(reachable, included);
+                if (flow.isFalse(covered)) {
+                    unsatisfiablePlans.add(Finding.unsatisfiablePlan(compiledPlan.plan.id(), render(included)));
+                }
             }
 
-            Map<String, String> values = orderedValues(effective);
-            if (!filter(sourceNode, values)) {
-                return null;
-            }
-            Set<String> unbounded = effective.entrySet().stream()
-                    .filter(entry -> textInputs.contains(entry.getKey()) && entry.getValue().kind() != ValueKind.EXTERNAL)
-                    .map(Map.Entry::getKey)
-                    .collect(Collectors.toCollection(TreeSet::new));
-
-            Map<String, String> normalized = Maps.mapValue(effective,
-                    (key, value) -> value.kind() == ValueKind.USER,
-                    value -> Value.toString(value),
-                    TreeMap::new);
-
-            String signature = Lists.join(normalized.entrySet(), " ");
-            return Variations.entry(values, unbounded, signature);
-        }
-
-        Map<String, String> orderedValues(Map<String, ScopeValue<?>> effective) {
-            Map<String, List<Map.Entry<String, ScopeValue<?>>>> groups = new LinkedHashMap<>();
-            Map<String, Integer> encounterOrder = new HashMap<>();
-            int next = 0;
-            for (Map.Entry<String, ScopeValue<?>> entry : effective.entrySet()) {
-                encounterOrder.put(entry.getKey(), next++);
-                groups.computeIfAbsent(groupKey(entry.getKey()), ignored -> new ArrayList<>()).add(entry);
-            }
-            Map<String, String> values = new LinkedHashMap<>();
-            for (List<Map.Entry<String, ScopeValue<?>>> group : groups.values()) {
-                for (Map.Entry<String, ScopeValue<?>> entry : group) {
-                    if (entry.getKey().indexOf('.') < 0) {
-                        values.put(entry.getKey(), Value.toString(entry.getValue()));
+            for (int i = 0; i < compiledPlans.size(); i++) {
+                CompiledPlan left = compiledPlans.get(i);
+                Guard leftGuard = flow.and(reachable, flow.minus(left.pinnedRegion, left.excludedRegion));
+                for (int j = i + 1; j < compiledPlans.size(); j++) {
+                    CompiledPlan right = compiledPlans.get(j);
+                    Guard rightGuard = flow.and(reachable, flow.minus(right.pinnedRegion, right.excludedRegion));
+                    Guard overlapGuard = flow.and(leftGuard, rightGuard);
+                    if (!flow.isFalse(overlapGuard)) {
+                        overlaps.add(Finding.planOverlap(left.plan.id(), right.plan.id(), render(overlapGuard)));
+                    }
+                    if (!flow.isFalse(leftGuard) && subset(leftGuard, rightGuard) && !subset(rightGuard, leftGuard)) {
+                        redundantPlans.add(Finding.redundantPlan(left.plan.id(), right.plan.id()));
+                    }
+                    if (!flow.isFalse(rightGuard) && subset(rightGuard, leftGuard) && !subset(leftGuard, rightGuard)) {
+                        redundantPlans.add(Finding.redundantPlan(right.plan.id(), left.plan.id()));
                     }
                 }
-                group.stream()
-                        .filter(entry -> entry.getKey().indexOf('.') >= 0)
-                        .sorted(Comparator.comparingInt((Map.Entry<String, ScopeValue<?>> entry) -> inputOrder(entry.getKey()))
-                                .thenComparingInt(entry -> encounterOrder.get(entry.getKey())))
-                        .forEach(entry -> values.put(entry.getKey(), Value.toString(entry.getValue())));
             }
-            return values;
+
+            Guard covered = Guard.FALSE;
+            for (CompiledPlan compiledPlan : compiledPlans) {
+                Guard included = flow.and(reachable, flow.minus(compiledPlan.pinnedRegion, compiledPlan.excludedRegion));
+                covered = flow.or(covered, included);
+            }
+            List<Finding> coverageGaps = List.of();
+            if (compiledPlans.size() > 1) {
+                Guard uncovered = flow.minus(reachable, covered);
+                if (!flow.isFalse(uncovered)) {
+                    coverageGaps = List.of(Finding.coverageGap(render(uncovered)));
+                }
+            }
+
+            List<Finding> findings = new ArrayList<>();
+            findings.addAll(unsatisfiablePlans);
+            findings.addAll(overlaps);
+            findings.addAll(redundantPlans);
+            findings.addAll(redundantPins);
+            findings.addAll(coverageGaps);
+            return new Diagnostics(findings);
+        }
+    }
+
+    private final class RegionEnumerator {
+        private final Guard initialGuard;
+        private final Guard excludedGuard;
+        private final List<Expression> filters;
+        private final List<Set<String>> filterVariables;
+        private final Map<String, String> fixedValues;
+        private final List<InputModel> inputs;
+        private final long maxIntermediateVariations;
+        private final List<CandidateRegion> regions = new ArrayList<>();
+
+        RegionEnumerator(Guard initialGuard,
+                         Guard excludedGuard,
+                         List<Expression> filters,
+                         Map<String, String> fixedValues,
+                         long maxIntermediateVariations) {
+            this.initialGuard = initialGuard;
+            this.excludedGuard = excludedGuard;
+            this.filters = filters;
+            this.filterVariables = Lists.map(this.filters, Expression::variables);
+            this.fixedValues = fixedValues;
+            this.inputs = orderedInputs(this.filters);
+            this.maxIntermediateVariations = maxIntermediateVariations;
         }
 
-        String groupKey(String key) {
-            int index = key.indexOf('.');
-            return index < 0 ? key : key.substring(0, index);
+        List<CandidateRegion> enumerate() {
+            if (!flow.isFalse(initialGuard)) {
+                enumerate(0, initialGuard, new LinkedHashMap<>(), new LinkedHashSet<>());
+            }
+            return regions;
         }
 
-        boolean filter(Node node, Map<String, String> variation) {
+        void enumerate(int index, Guard regionGuard, Map<String, String> values, Set<String> activeTextInputs) {
+            if (flow.isFalse(regionGuard) || excluded(regionGuard, values)) {
+                return;
+            }
+            if (index == inputs.size()) {
+                addRegion(regionGuard, values, activeTextInputs, inputs.isEmpty() ? "<none>" : inputs.get(inputs.size() - 1).key);
+                return;
+            }
+
+            InputModel input = inputs.get(index);
+            Guard active = flow.and(regionGuard, input.definitionGuard);
+            Guard inactive = flow.minus(regionGuard, input.definitionGuard);
+            if (!flow.isFalse(inactive)) {
+                enumerate(index + 1, inactive, values, activeTextInputs);
+            }
+            if (flow.isFalse(active)) {
+                return;
+            }
+
+            switch (input.kind) {
+                case INPUT_TEXT:
+                    Set<String> nextText = new LinkedHashSet<>(activeTextInputs);
+                    nextText.add(input.key);
+                    enumerate(index + 1, active, values, nextText);
+                    break;
+                case INPUT_BOOLEAN:
+                case INPUT_ENUM:
+                    enumerateScalar(input, index, active, values, activeTextInputs);
+                    break;
+                case INPUT_LIST:
+                    enumerateList(input, index, 0, active, values, activeTextInputs, new ArrayList<>());
+                    break;
+                default:
+                    enumerate(index + 1, active, values, activeTextInputs);
+            }
+        }
+
+        private void enumerateScalar(InputModel input,
+                                     int index,
+                                     Guard active,
+                                     Map<String, String> values,
+                                     Set<String> activeTextInputs) {
+            Value<?> exact = input.declaredValue(active);
+            if (exact.isPresent()) {
+                String value = input.canonicalFiniteValue(exact);
+                Guard guard = flow.and(active, input.constraintGuard(value));
+                if (!flow.isFalse(guard)) {
+                    Map<String, String> nextValues = new LinkedHashMap<>(values);
+                    nextValues.put(input.key, value);
+                    enumerate(index + 1, guard, nextValues, activeTextInputs);
+                }
+                return;
+            }
+            for (String option : input.options) {
+                Guard guard = flow.and(active, input.constraintGuard(option));
+                if (flow.isFalse(guard)) {
+                    continue;
+                }
+                Map<String, String> nextValues = new LinkedHashMap<>(values);
+                nextValues.put(input.key, option);
+                enumerate(index + 1, guard, nextValues, activeTextInputs);
+            }
+        }
+
+        private void enumerateList(InputModel input,
+                                   int index,
+                                   int optionIndex,
+                                   Guard current,
+                                   Map<String, String> values,
+                                   Set<String> activeTextInputs,
+                                   List<String> selected) {
+            if (flow.isFalse(current)) {
+                return;
+            }
+            if (optionIndex == input.options.size()) {
+                Map<String, String> nextValues = new LinkedHashMap<>(values);
+                nextValues.put(input.key, input.canonicalList(selected));
+                enumerate(index + 1, current, nextValues, activeTextInputs);
+                return;
+            }
+
+            String option = input.options.get(optionIndex);
+            Guard availability = input.availability(option);
+            Guard contains = flow.guards().contains(input.symbolInfo.symbol().id(), option);
+            if (!flow.isFalse(availability)) {
+                Guard included = flow.and(current, flow.guards().and(availability, contains));
+                if (!flow.isFalse(included)) {
+                    List<String> nextSelected = new ArrayList<>(selected);
+                    nextSelected.add(option);
+                    enumerateList(input, index, optionIndex + 1, included, values, activeTextInputs, nextSelected);
+                }
+            }
+
+            Guard excluded = flow.isFalse(availability)
+                    ? current
+                    : flow.and(current, flow.guards().or(flow.guards().not(availability), flow.guards().not(contains)));
+            if (!flow.isFalse(excluded)) {
+                enumerateList(input, index, optionIndex + 1, excluded, values, activeTextInputs, selected);
+            }
+        }
+
+        private List<InputModel> orderedInputs(List<Expression> filters) {
             if (filters.isEmpty()) {
+                return prepared.inputs;
+            }
+            Map<String, Integer> references = new HashMap<>();
+            for (Expression filter : filters) {
+                for (String variable : filter.variables()) {
+                    references.compute(variable, (key, value) -> value == null ? 1 : value + 1);
+                }
+            }
+            List<InputModel> ordered = new ArrayList<>(prepared.inputs);
+            ordered.sort((left, right) -> {
+                int leftRefs = references.getOrDefault(left.key, 0);
+                int rightRefs = references.getOrDefault(right.key, 0);
+                if ((leftRefs > 0) != (rightRefs > 0)) {
+                    return leftRefs > 0 ? -1 : 1;
+                }
+                int result = Long.compare(left.branchCount(), right.branchCount());
+                if (result != 0) {
+                    return result;
+                }
+                result = Integer.compare(rightRefs, leftRefs);
+                if (result != 0) {
+                    return result;
+                }
+                return Integer.compare(
+                        prepared.inputOrder.getOrDefault(left.key, Integer.MAX_VALUE),
+                        prepared.inputOrder.getOrDefault(right.key, Integer.MAX_VALUE));
+            });
+            return ordered;
+        }
+
+        private boolean excluded(Guard regionGuard, Map<String, String> values) {
+            if (!flow.isFalse(excludedGuard) && subset(regionGuard, excludedGuard)) {
                 return true;
             }
-            for (Expression exclude : filters) {
-                if (eval(node, exclude, variation)) {
-                    if (LogLevel.isDebug()) {
-                        Log.debug("Excluding variation, rule: %s, entries: %s", exclude.literal(), variation);
-                    }
+            if (filters.isEmpty()) {
+                return false;
+            }
+            Map<String, String> current = null;
+            for (int i = 0; i < filters.size(); i++) {
+                if (!resolvableFilter(i, values)) {
+                    continue;
+                }
+                if (current == null) {
+                    current = currentValues(values);
+                }
+                if (eval(filters.get(i), current)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        Map<String, String> currentValues(Map<String, String> values) {
+            if (fixedValues.isEmpty()) {
+                return values;
+            }
+            Map<String, String> current = new LinkedHashMap<>(fixedValues);
+            current.putAll(values);
+            return current;
+        }
+
+        boolean resolvableFilter(int index, Map<String, String> values) {
+            for (String variable : filterVariables.get(index)) {
+                if (!fixedValues.containsKey(variable) && !values.containsKey(variable)) {
                     return false;
                 }
             }
             return true;
         }
 
-        boolean eval(Node node, Expression expr, Map<String, String> variation) {
-            if (expr == Expression.TRUE) {
-                return true;
+        void addRegion(Guard guard, Map<String, String> values, Set<String> activeTextInputs, String inputKey) {
+            regions.add(new CandidateRegion(guard, values, activeTextInputs));
+            if (regions.size() > maxIntermediateVariations) {
+                throw new IllegalStateException(String.format(
+                        "Intermediate variation row count %d exceeds the configured limit of %d while joining input '%s'",
+                        regions.size(),
+                        maxIntermediateVariations,
+                        inputKey));
             }
-            if (expr == Expression.FALSE) {
-                return false;
-            }
-            try {
-                Scope scope = flow.scope(node);
-                return expr.eval(variable -> {
-                    String value = variation.get(scope.key(variable));
-                    if (value != null) {
-                        return Value.dynamic(value);
+        }
+    }
+
+    private final class Prepared {
+        private final Node node;
+        private final List<InputModel> inputs;
+        private final Map<String, InputModel> inputsByKey;
+        private final Set<String> textInputs;
+        private final Map<String, Integer> inputOrder;
+
+        Prepared(Node node, ScriptIndexer indexer) {
+            this.node = node;
+            List<InputModel> inputs = new ArrayList<>();
+            Map<String, InputModel> inputsByKey = new LinkedHashMap<>();
+            Set<String> textInputs = new LinkedHashSet<>();
+            Map<String, Integer> inputOrder = new LinkedHashMap<>();
+            int next = 0;
+            for (Node input : node.traverse(Kind::isInput)) {
+                String key = indexer.key(input);
+                Flow.SymbolInfo symbol = symbolInfo(key);
+                if (symbol == null) {
+                    throw new IllegalStateException("Input is not part of the flow symbol table: " + key);
+                }
+                InputModel model = inputsByKey.get(key);
+                if (model == null) {
+                    model = new InputModel(key, input.kind(), symbol);
+                    inputs.add(model);
+                    inputsByKey.put(key, model);
+                    inputOrder.put(key, next++);
+                    if (input.kind() == Kind.INPUT_TEXT) {
+                        textInputs.add(key);
                     }
-                    return null;
-                });
-            } catch (Expression.UnresolvedVariableException ignored) {
-                return false;
+                }
+                model.addOccurrence(input);
+            }
+            this.inputs = inputs;
+            this.inputsByKey = inputsByKey;
+            this.textInputs = textInputs;
+            this.inputOrder = inputOrder;
+        }
+    }
+
+    private final class InputModel {
+        private final String key;
+        private final Kind kind;
+        private final Flow.SymbolInfo symbolInfo;
+        private final List<InputOccurrence> occurrences = new ArrayList<>();
+        private final List<String> options = new ArrayList<>();
+        private final Map<String, Guard> availabilityGuards = new HashMap<>();
+        private final Map<String, Guard> constraintGuards = new HashMap<>();
+        private Guard definitionGuard = Guard.FALSE;
+
+        InputModel(String key, Kind kind, Flow.SymbolInfo symbolInfo) {
+            this.key = key;
+            this.kind = kind;
+            this.symbolInfo = symbolInfo;
+            if (kind == Kind.INPUT_BOOLEAN) {
+                options.add("true");
+                options.add("false");
             }
         }
 
-        boolean active(Node node) {
-            return prune(node, activation(node)) != Expression.FALSE;
+        Guard availability(String value) {
+            if (!supportsOption(value)) {
+                return Guard.FALSE;
+            }
+            if (availabilityGuards.containsKey(value)) {
+                return availabilityGuards.get(value);
+            }
+            Guard available = Guard.FALSE;
+            for (InputOccurrence occurrence : occurrences) {
+                available = flow.or(available, occurrence.availability(value));
+            }
+            availabilityGuards.put(value, available);
+            return available;
         }
 
-        Expression activation(Node node) {
-            switch (node.kind()) {
-                case INPUT_TEXT:
+        Guard constraintGuard(String value) {
+            switch (kind) {
                 case INPUT_BOOLEAN:
                 case INPUT_ENUM:
+                    validateOption(value);
+                    if (constraintGuards.containsKey(value)) {
+                        return constraintGuards.get(value);
+                    }
+                    Guard allowed = Guard.FALSE;
+                    for (InputOccurrence occurrence : occurrences) {
+                        Guard next = occurrence.constraintGuard(value);
+                        if (!flow.isFalse(next)) {
+                            allowed = flow.or(allowed, next);
+                        }
+                    }
+                    constraintGuards.put(value, allowed);
+                    return allowed;
                 case INPUT_LIST:
-                    return flow.activationCondition(node.parent());
+                    return membershipGuard(value);
                 default:
-                    return flow.activationCondition(node);
-            }
-        }
-
-        Expression prune(Node node, Expression expr) {
-            if (expr == Expression.TRUE || expr == Expression.FALSE || resolvedExternalValues.isEmpty()) {
-                return expr;
-            }
-            Scope scope = flow.scope(node);
-            return expr.inline(variable -> {
-                String key = scope.key(variable);
-                String value = resolvedExternalValues.get(key);
-                if (value == null) {
                     return null;
-                }
-                return typedValue(key, value);
-            });
+            }
         }
 
-        Map<String, ScopeValue<?>> execute(Map<String, String> variation) {
-            try {
-                Context context = new Context()
-                        .externalValues(externalValues)
-                        .externalDefaults(externalDefaults)
-                        .pushCwd(cwd);
-                variation.forEach((key, value) -> {
-                    if (externalValues.containsKey(key)) {
-                        return;
+        void addOccurrence(Node node) {
+            if (node.kind() != kind) {
+                throw new IllegalStateException(String.format(
+                        "Input '%s' is declared with incompatible kinds: %s and %s",
+                        key,
+                        kind,
+                        node.kind()));
+            }
+            InputOccurrence occurrence = new InputOccurrence(node);
+            occurrences.add(occurrence);
+            availabilityGuards.clear();
+            constraintGuards.clear();
+            definitionGuard = flow.or(definitionGuard, occurrence.definitionGuard);
+            if (kind == Kind.INPUT_ENUM || kind == Kind.INPUT_LIST) {
+                for (String option : occurrence.options) {
+                    if (!options.contains(option)) {
+                        options.add(option);
                     }
-                    Scope scope = context.scope().getOrCreate(key);
-                    scope.value(Value.dynamic(value), ValueKind.USER);
-                });
-
-                Set<Scope> scopes = new LinkedHashSet<>();
-                ScriptInvoker.invoke(sourceNode, context, new InputResolver.BatchResolver(context), node -> {
-                    scopes.add(context.scope());
-                    return true;
-                });
-
-                Map<String, ScopeValue<?>> values = new LinkedHashMap<>();
-                for (Scope scope : scopes) {
-                    if (scope.parent() == null) {
-                        continue;
-                    }
-                    scope.values().forEach((key, value) -> {
-                        if (!value.isPresent()) {
-                            return;
-                        }
-                        switch (value.kind()) {
-                            case USER:
-                            case EXTERNAL:
-                                if (!scopes.contains(value.scope())) {
-                                    return;
-                                }
-                                break;
-                            case DEFAULT:
-                                for (Object qualifier : value.qualifiers()) {
-                                    if (qualifier == ResolvedKind.AUTO_CREATED) {
-                                        return;
-                                    }
-                                }
-                                break;
-                            default:
-                                return;
-                        }
-                        values.putIfAbsent(key, value);
-                    });
-                }
-                return values;
-            } catch (InvocationException ex) {
-                if (!(ex.getCause() instanceof InvalidInputException)) {
-                    Log.debug("Execution error: %s, inputs: %s", ex.getCause().getMessage(), variation);
-                }
-                return Map.of();
-            }
-        }
-
-        Value<?> declaredValue(Node node, String key) {
-            String value = resolvedExternalValues.get(key);
-            if (value != null) {
-                return Value.typed(Value.dynamic(value), node.kind().valueType());
-            }
-            return flow.declaredValue(node, key);
-        }
-
-        Value<String> externalDefaultValue(String key) {
-            String value = resolvedExternalDefaults.get(key);
-            if (value == null) {
-                value = externalDefaults.get(key);
-            }
-            return Value.of(value);
-        }
-
-        Map<String, String> resolvedExternalValues() {
-            if (externalValues.isEmpty()) {
-                return Map.of();
-            }
-            Context context = new Context()
-                    .externalValues(externalValues)
-                    .externalDefaults(externalDefaults)
-                    .pushCwd(cwd);
-            Map<String, String> values = new LinkedHashMap<>();
-            for (String key : externalValues.keySet()) {
-                ScopeValue<?> value = context.scope().getOrCreate(key).value();
-                if (value.isPresent()) {
-                    values.put(key, Value.toString(value));
                 }
             }
-            return Collections.unmodifiableMap(values);
         }
 
-        Map<String, Value.Type> inputTypes() {
-            Map<String, Value.Type> types = new LinkedHashMap<>();
-            for (Node input : sourceNode.traverse(Kind::isInput)) {
-                types.putIfAbsent(indexer.key(input), input.kind().valueType());
-            }
-            return Collections.unmodifiableMap(types);
-        }
-
-        Value<?> typedValue(String key, String value) {
-            Value.Type type = inputTypes.get(key);
-            if (type == null) {
-                return Value.of(value);
-            }
-            switch (type) {
-                case BOOLEAN:
-                    return Value.parseBoolean(value);
-                case INTEGER:
-                    return Value.parseInt(value);
-                case LIST:
-                    return Value.parseList(value);
+        String canonicalFiniteValue(Value<?> value) {
+            switch (kind) {
+                case INPUT_BOOLEAN:
+                    return String.valueOf(value.asBoolean().orElse(false));
+                case INPUT_ENUM:
+                    String scalar = value.asString().orElseThrow(() ->
+                            new IllegalStateException("Expected scalar value for input: " + key));
+                    validateOption(scalar);
+                    return scalar;
+                case INPUT_LIST:
+                    return canonicalList(value.asList().orElse(List.of()));
                 default:
-                    return Value.of(value);
+                    throw new IllegalStateException("Unsupported finite input kind: " + kind);
             }
         }
 
-        int inputOrder(String key) {
-            int index = 0;
-            for (String id : inputTypes.keySet()) {
-                if (id.equals(key)) {
-                    return index;
-                }
-                index++;
-            }
-            return Integer.MAX_VALUE;
-        }
-
-        Map<String, String> resolvedExternalDefaults() {
-            if (externalDefaults.isEmpty()) {
-                return Map.of();
-            }
-            Context context = new Context()
-                    .externalValues(externalValues)
-                    .externalDefaults(externalDefaults)
-                    .pushCwd(cwd);
-            Map<String, String> values = new LinkedHashMap<>();
-            for (Map.Entry<String, String> entry : externalDefaults.entrySet()) {
-                try {
-                    String value = Value.toString(context.defaultValue(entry.getKey()));
-                    if (value != null) {
-                        values.put(entry.getKey(), value);
+        long branchCount() {
+            switch (kind) {
+                case INPUT_TEXT:
+                    return 1;
+                case INPUT_LIST:
+                    long count = 1;
+                    for (int i = 0; i < options.size(); i++) {
+                        if (count > Long.MAX_VALUE / 2) {
+                            return Long.MAX_VALUE;
+                        }
+                        count <<= 1;
                     }
-                } catch (RuntimeException ignored) {
-                    values.put(entry.getKey(), entry.getValue());
-                }
+                    return count;
+                default:
+                    return Math.max(options.size(), 1);
             }
-            return Collections.unmodifiableMap(values);
         }
 
-        Join nextJoin(List<Table> tables, Set<String> available, Set<BitSet> merged) {
-            if (tables.isEmpty()) {
-                throw new IllegalStateException("No tables available for join");
+        String canonicalList(List<String> values) {
+            if (values.isEmpty()) {
+                return "none";
             }
-            Table best = null;
-            Table fallback = null;
-            int bestUnlocked = -1;
-            int bestNearUnlocked = -1;
-            int bestReferences = -1;
-            int mergedSize = merged.size();
-            long bestCost = Long.MAX_VALUE;
-            for (Table table : tables) {
-                if (fallback == null) {
-                    fallback = table;
+            List<String> ordered = new ArrayList<>();
+            Set<String> remaining = new LinkedHashSet<>(values);
+            for (String option : options) {
+                if (remaining.remove(option)) {
+                    ordered.add(option);
                 }
-                if (!available.containsAll(table.dependencies)) {
+            }
+            if (!remaining.isEmpty()) {
+                validateOption(remaining.iterator().next());
+            }
+            return ordered.isEmpty() ? "none" : String.join(",", ordered);
+        }
+
+        Value<?> declaredValue(Guard regionGuard) {
+            Value<?> exact = Value.empty();
+            for (InputOccurrence occurrence : occurrences) {
+                Guard active = flow.and(regionGuard, occurrence.definitionGuard);
+                if (flow.isFalse(active)) {
                     continue;
                 }
-                int unlocked = 0;
-                int nearUnlocked = 0;
-                int references = 0;
-                for (Set<String> dependencies : filterDependencies) {
-                    if (!dependencies.contains(table.id)) {
-                        continue;
+                Value<?> value = flow.declaredValue(occurrence.node, key, active);
+                if (!value.isPresent()) {
+                    continue;
+                }
+                if (!exact.isPresent()) {
+                    exact = value;
+                } else if (!Value.isEqual(exact, value)) {
+                    return Value.empty();
+                }
+            }
+            return exact;
+        }
+
+        String defaultValue(Guard regionGuard) {
+            for (InputOccurrence occurrence : occurrences) {
+                Guard active = flow.and(regionGuard, occurrence.definitionGuard);
+                if (!flow.isFalse(active) && occurrence.defaultValue != null) {
+                    return occurrence.defaultValue;
+                }
+            }
+            return null;
+        }
+
+        void validateOption(String value) {
+            if (kind != Kind.INPUT_LIST || !"none".equals(value)) {
+                for (String option : options) {
+                    if (option.equals(value)) {
+                        return;
                     }
-                    references++;
-                    int remaining = 0;
-                    for (String dependency : dependencies) {
-                        if (!dependency.equals(table.id) && !available.contains(dependency)) {
-                            remaining++;
-                        }
-                    }
-                    if (remaining == 0) {
-                        unlocked++;
-                    } else if (remaining == 1) {
-                        nearUnlocked++;
-                    }
                 }
-                long cost = estimateJoinSize(table, mergedSize);
-                if (best == null
-                        || unlocked > bestUnlocked
-                        || unlocked == bestUnlocked && nearUnlocked > bestNearUnlocked
-                        || unlocked == bestUnlocked && nearUnlocked == bestNearUnlocked && references > bestReferences
-                        || unlocked == bestUnlocked && nearUnlocked == bestNearUnlocked && references == bestReferences
-                        && (cost < bestCost || cost == bestCost && table.rows.size() < best.rows.size())) {
-                    best = table;
-                    bestUnlocked = unlocked;
-                    bestNearUnlocked = nearUnlocked;
-                    bestReferences = references;
-                    bestCost = cost;
+                throw invalidValue(value);
+            }
+        }
+
+        boolean supportsOption(String value) {
+            for (String option : options) {
+                if (option.equals(value)) {
+                    return true;
                 }
             }
-            return join(best != null ? best : fallback, merged);
+            return false;
         }
 
-        long estimateJoinSize(Table table, int mergedSize) {
-            if (table.expr == Expression.FALSE) {
-                return mergedSize;
+        Guard membershipGuard(String value) {
+            List<String> selected = Value.parseList(value).orElse(List.of());
+            for (String value0 : selected) {
+                validateOption(value0);
             }
-            if (mergedSize == 0) {
-                return table.rows.size();
-            }
-            if (table.expr == Expression.TRUE) {
-                return (long) mergedSize * table.rows.size();
-            }
-            if (table.rows.size() <= 1) {
-                return mergedSize;
-            }
-            long estimatedFiltered = mergedSize >>> 1;
-            return mergedSize - estimatedFiltered + estimatedFiltered * table.rows.size();
-        }
-
-        Join join(Table table, Set<BitSet> merged) {
-            if (table.expr == Expression.FALSE || merged.isEmpty()) {
-                return new Join(table, List.of());
-            }
-            if (table.expr == Expression.TRUE) {
-                return new Join(table, new ArrayList<>(merged));
-            }
-
-            List<BitSet> filtered = new ArrayList<>();
-            for (BitSet row : merged) {
-                Map<String, String> variation = variation(row);
-                if (eval(table.node, table.expr, variation)) {
-                    filtered.add(row);
+            Guard allowed = Guard.FALSE;
+            for (InputOccurrence occurrence : occurrences) {
+                Guard next = occurrence.membershipGuard(selected);
+                if (!flow.isFalse(next)) {
+                    allowed = flow.or(allowed, next);
                 }
             }
-            return new Join(table, filtered);
+            return allowed;
         }
 
-        Set<String> dependencies(Table table, Set<String> inputIds) {
-            Scope scope = flow.scope(table.node);
-            Set<String> dependencies = new LinkedHashSet<>(dependencies(table.expr, scope, table.id, inputIds));
-            for (Row row : table.rows) {
-                dependencies.addAll(dependencies(row.expr, scope, table.id, inputIds));
-            }
-            return dependencies;
-        }
-
-        Set<String> dependencies(Expression expr, Scope scope, String self, Set<String> inputIds) {
-            if (expr == Expression.TRUE || expr == Expression.FALSE) {
-                return Set.of();
-            }
-            Set<String> dependencies = new LinkedHashSet<>();
-            for (String variable : expr.variables()) {
-                String key = scope.key(variable);
-                if ((self == null || !key.equals(self)) && inputIds.contains(key)) {
-                    dependencies.add(key);
-                }
-            }
-            return dependencies;
-        }
-
-        Table table(Node node) {
-            Expression expr = flow.activationCondition(node.parent());
-            return new Table(node, indexer.key(node), prune(node, expr));
-        }
-
-        static List<Node> optionNodes(Node node) {
-            return node.children().stream()
-                    .filter(child -> child.unwrap().kind() == Kind.INPUT_OPTION)
-                    .collect(Collectors.toList());
-        }
-
-        static int requiredOptionIndex(String inputId, String option, List<Node> options) {
-            int index = optionIndex(option, options);
-            if (index >= 0) {
-                return index;
-            }
-            String values = options.stream()
-                    .map(Node::value)
-                    .map(value -> Value.toString(value))
-                    .collect(Collectors.joining(", "));
-            throw new IllegalStateException(String.format(
+        IllegalStateException invalidValue(String value) {
+            return new IllegalStateException(String.format(
                     "Invalid value '%s' for input '%s', available options: %s",
-                    option,
-                    inputId,
-                    values));
+                    value, key, String.join(", ", options)));
         }
 
-        static void logDuration(long startTime, String msg) {
-            long endTime = System.currentTimeMillis();
-            Duration duration = Duration.ofMillis(endTime - startTime);
-            Log.debug("%s in %d.%ds", msg, duration.toSeconds(), duration.toMillisPart());
-        }
-    }
-
-    private static final class Column {
-        private final String name;
-        private final String value;
-
-        Column(String name, String value) {
-            this.name = name;
-            this.value = value;
+        String[] optionValues(Node node) {
+            List<String> values = new ArrayList<>();
+            for (Node option : Nodes.options(node)) {
+                values.add(option.value().getString());
+            }
+            return values.toArray(String[]::new);
         }
 
-        @Override
-        public boolean equals(Object o) {
-            if (!(o instanceof Column)) {
+        private final class InputOccurrence {
+            private final Node node;
+            private final Guard definitionGuard;
+            private final String[] options;
+            private final String defaultValue;
+
+            InputOccurrence(Node node) {
+                this.node = node;
+                this.definitionGuard = flow.activeGuard(node.parent());
+                switch (node.kind()) {
+                    case INPUT_BOOLEAN:
+                        this.options = new String[] {"true", "false"};
+                        break;
+                    case INPUT_ENUM:
+                    case INPUT_LIST:
+                        this.options = optionValues(node);
+                        break;
+                    default:
+                        this.options = new String[0];
+                        break;
+                }
+                this.defaultValue = node.attribute("default").asString().orElse(null);
+            }
+
+            Guard availability(String value) {
+                if (!supportsOption(value)) {
+                    return Guard.FALSE;
+                }
+                Guards guards = flow.guards();
+                Guard availability = symbolInfo.availability(value);
+                Guard active = availability == null ? definitionGuard : guards.and(definitionGuard, availability);
+                return flow.isFalse(active) ? Guard.FALSE : active;
+            }
+
+            Guard constraintGuard(String value) {
+                Guards guards = flow.guards();
+                Symbol sym = symbolInfo.symbol();
+                if (!sym.domain().scalar() || !sym.domain().contains(value) || !sym.guardable()) {
+                    return Guard.FALSE;
+                }
+                return guards.and(availability(value), guards.eq(sym.id(), value));
+            }
+
+            Guard membershipGuard(List<String> selected) {
+                Guards guards = flow.guards();
+                Guard guard = definitionGuard;
+                Symbol sym = symbolInfo.symbol();
+                Spec domain = sym.domain();
+                for (String option : options) {
+                    Guard availability = availability(option);
+                    Guard directContains = domain.contains(option)
+                            ? guards.contains(sym.id(), option)
+                            : Guard.FALSE;
+                    Guard contains = domain.kind() == Spec.Kind.MEMBERSHIP && directContains != Guard.FALSE
+                            ? guards.and(availability, directContains)
+                            : Guard.FALSE;
+                    if (selected.contains(option)) {
+                        if (contains == Guard.FALSE) {
+                            return Guard.FALSE;
+                        }
+                        guard = guards.and(guard, contains);
+                    } else if (!flow.isFalse(availability)) {
+                        guard = guards.and(guard, guards.or(guards.not(availability), guards.not(directContains)));
+                    }
+                }
+                return guard;
+            }
+
+            boolean supportsOption(String value) {
+                for (String option : options) {
+                    if (option.equals(value)) {
+                        return true;
+                    }
+                }
                 return false;
             }
-            Column column = (Column) o;
-            return Objects.equals(name, column.name) && Objects.equals(value, column.value);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(name, value);
-        }
-
-        @Override
-        public String toString() {
-            return name + "=" + value;
         }
     }
 
-    private static final class Row {
-        private final BitSet bits;
-        private final Expression expr;
+    private static final class CandidateRegion {
+        private final Guard guard;
+        private final Map<String, String> values;
+        private final Set<String> textInputs;
 
-        Row(BitSet bits, Expression expr) {
-            this.bits = bits;
-            this.expr = expr;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (!(o instanceof Row)) {
-                return false;
-            }
-            Row row = (Row) o;
-            return Objects.equals(bits, row.bits) && Objects.equals(expr, row.expr);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(bits, expr);
+        CandidateRegion(Guard guard, Map<String, String> values, Set<String> textInputs) {
+            this.guard = guard;
+            this.values = values;
+            this.textInputs = textInputs;
         }
     }
 
-    private static final class Table {
-        private final List<Column> columns = new ArrayList<>();
-        private final Set<Row> rows = new LinkedHashSet<>();
-        private final Set<String> dependencies = new LinkedHashSet<>();
-        private final String id;
-        private final Node node;
-        private final Expression expr;
+    private static final class PlanAnalysis {
+        private final List<CompiledPlan> plans;
+        private final Diagnostics diagnostics;
 
-        Table(Node node, String id, Expression expr) {
-            this.id = id;
-            this.node = node;
-            this.expr = expr;
-        }
-
-        void addRow(BitSet bits, Expression expr) {
-            Expression folded = expr.fold();
-            if (folded != Expression.FALSE) {
-                rows.add(new Row(bits, folded));
-            }
-        }
-
-        @Override
-        public String toString() {
-            return id;
+        PlanAnalysis(List<CompiledPlan> plans, Diagnostics diagnostics) {
+            this.plans = plans;
+            this.diagnostics = diagnostics;
         }
     }
 
-    private static final class Join {
-        private final Table table;
-        private final List<BitSet> filtered;
+    private static final class CompiledPlan {
+        private final Plan plan;
+        private final Guard pinnedRegion;
+        private final Guard excludedRegion;
+        private final Map<String, String> externalValues;
+        private final Map<String, String> externalDefaults;
+        private final List<Finding> findings;
 
-        Join(Table table, List<BitSet> filtered) {
-            this.table = table;
-            this.filtered = filtered;
+        CompiledPlan(Plan plan,
+                     Guard pinnedRegion,
+                     Guard excludedRegion,
+                     Map<String, String> externalValues,
+                     Map<String, String> externalDefaults,
+                     List<Finding> findings) {
+            this.plan = plan;
+            this.pinnedRegion = pinnedRegion;
+            this.excludedRegion = excludedRegion;
+            this.externalValues = externalValues;
+            this.externalDefaults = externalDefaults;
+            this.findings = findings;
         }
     }
 

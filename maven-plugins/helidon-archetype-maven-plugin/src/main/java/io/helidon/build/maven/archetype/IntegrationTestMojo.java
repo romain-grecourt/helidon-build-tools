@@ -18,7 +18,6 @@ package io.helidon.build.maven.archetype;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.UncheckedIOException;
@@ -53,7 +52,6 @@ import io.helidon.build.common.ProcessMonitor.ProcessTimeoutException;
 import io.helidon.build.common.ansi.AnsiConsoleInstaller;
 import io.helidon.build.common.logging.Log;
 import io.helidon.build.common.maven.plugin.MavenArtifact;
-import io.helidon.build.common.xml.XMLElement;
 import io.helidon.build.maven.archetype.config.Validation;
 
 import org.apache.maven.RepositoryUtils;
@@ -413,21 +411,20 @@ public class IntegrationTestMojo extends AbstractMojo {
             throw new MojoFailureException(
                     "Parameter 'maxIntermediateVariations' must be -1 or greater");
         }
-        long max = maxIntermediateVariations == -1
-                ? Long.MAX_VALUE
-                : maxIntermediateVariations;
+        long max = maxIntermediateVariations == -1 ? Long.MAX_VALUE : maxIntermediateVariations;
         try (FileSystem fs = newFileSystem(archetypeFile, this.getClass().getClassLoader())) {
             Path cwd = fs.getPath("/");
             VariationEngine variationEngine = new VariationEngine(() -> cwd.resolve("main.xml"), cwd);
-            List<VariationPlan> plans = plans();
+            List<Variations.Plan> plans = plansFile == null ? List.of() : Variations.Plan.load(plansFile.toPath());
             try {
-                Variations variations = plans.isEmpty()
-                        ? variationEngine.compute(
-                                defaultFilters(cwd, project.getBasedir().toPath()),
-                                externalValues,
-                                externalDefaults,
-                                max)
-                        : variations(variationEngine, plans, max);
+                Path projectDir = project.getBasedir().toPath();
+                List<Expression> filters = plans.isEmpty() ? defaultFilters(cwd, projectDir) : List.of();
+                Variations.Request request = new Variations.Request(filters, externalValues, externalDefaults, plans,
+                        maxIntermediateVariations);
+                if (plans.size() > 1) {
+                    handleDiagnostics(variationEngine.analyze(request));
+                }
+                Variations variations = variationEngine.compute(request);
                 if (failOnUnbounded && !variations.exhaustive()) {
                     throw new MojoFailureException(
                             "Variations must be exhaustive, unbounded inputs: "
@@ -451,16 +448,10 @@ public class IntegrationTestMojo extends AbstractMojo {
         if (!Files.exists(rulesFile)) {
             return List.of();
         }
-        try (InputStream is = Files.newInputStream(rulesFile)) {
-            return VariationRules.load(XMLElement.parse(is));
-        } catch (IOException ex) {
-            throw new UncheckedIOException(ex);
-        }
+        return Variations.Plan.loadFilters(rulesFile);
     }
 
-    static void assertExpectedVariationCount(long expectedVariations,
-                                             Variations variations)
-            throws MojoFailureException {
+    static void assertExpectedVariationCount(long expectedVariations, Variations variations) throws MojoFailureException {
         if (expectedVariations != -1 && variations.size() != expectedVariations) {
             throw new MojoFailureException(String.format(
                     "Expected %d variations but found %d",
@@ -469,26 +460,43 @@ public class IntegrationTestMojo extends AbstractMojo {
         }
     }
 
-    private Variations variations(VariationEngine variationEngine,
-                                  List<VariationPlan> plans,
-                                  long maxIntermediateVariations) {
-        List<Variations> computed = new ArrayList<>();
-        for (VariationPlan plan : plans) {
-            Log.info("");
-            Log.info("Computing plan %s...", plan.id());
-            Map<String, String> planValues = new LinkedHashMap<>(externalValues);
-            planValues.putAll(plan.externalValues());
-            Map<String, String> planDefaults = new LinkedHashMap<>(externalDefaults);
-            planDefaults.putAll(plan.externalDefaults());
-            Variations computedPlan = variationEngine.compute(
-                    plan.filters(),
-                    planValues,
-                    planDefaults,
-                    maxIntermediateVariations);
-            computed.add(computedPlan);
-            Log.info("Variations: %d", computedPlan.size());
+    private static void handleDiagnostics(Variations.Diagnostics diagnostics) throws MojoFailureException {
+        List<String> errors = new ArrayList<>();
+        for (Variations.Finding finding : diagnostics.findings()) {
+            String message = formatFinding(finding);
+            if (finding.severity() == Variations.Finding.Severity.ERROR) {
+                errors.add(message);
+            } else {
+                Log.warn(message);
+            }
         }
-        return Variations.union(computed);
+        if (!errors.isEmpty()) {
+            throw new MojoFailureException(String.join(System.lineSeparator(), errors));
+        }
+    }
+
+    private static String formatFinding(Variations.Finding finding) {
+        return switch (finding.kind()) {
+            case UNSATISFIABLE_PLAN -> String.format(
+                    "Variation plan '%s' is unsatisfiable: %s",
+                    finding.planId().orElseThrow(),
+                    finding.expression().orElseThrow());
+            case PLAN_OVERLAP -> String.format(
+                    "Variation plans '%s' and '%s' overlap: %s",
+                    finding.planId().orElseThrow(),
+                    finding.relatedPlanId().orElseThrow(),
+                    finding.expression().orElseThrow());
+            case REDUNDANT_PLAN -> String.format(
+                    "Variation plan '%s' is redundant because '%s' already covers it",
+                    finding.planId().orElseThrow(),
+                    finding.relatedPlanId().orElseThrow());
+            case REDUNDANT_PIN -> String.format(
+                    "Variation plan '%s' redundantly pins %s=%s",
+                    finding.planId().orElseThrow(),
+                    finding.key().orElseThrow(),
+                    finding.value().orElseThrow());
+            case COVERAGE_GAP -> "Variation plans do not cover reachable region: " + finding.expression().orElseThrow();
+        };
     }
 
     private Path writeSummary() {
@@ -811,10 +819,6 @@ public class IntegrationTestMojo extends AbstractMojo {
         } catch (MavenInvocationException ex) {
             throw new MojoExecutionException(ex.getMessage(), ex);
         }
-    }
-
-    private List<VariationPlan> plans() {
-        return plansFile == null ? List.of() : VariationPlan.load(plansFile.toPath());
     }
 
     private Path archetypeFile() throws MojoFailureException {

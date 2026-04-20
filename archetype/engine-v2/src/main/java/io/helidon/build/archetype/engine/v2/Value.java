@@ -334,6 +334,29 @@ public interface Value<T> {
     }
 
     /**
+     * Parse the given string as the requested value type.
+     *
+     * @param str  string
+     * @param type target type
+     * @return parsed value
+     */
+    static Value<?> parse(String str, Type type) {
+        switch (type) {
+            case STRING:
+            case DYNAMIC:
+                return of(str);
+            case INTEGER:
+                return parseInt(str);
+            case BOOLEAN:
+                return parseBoolean(str);
+            case LIST:
+                return parseList(str);
+            default:
+                throw new IllegalArgumentException("Unsupported value type: " + type);
+        }
+    }
+
+    /**
      * Create a new dynamic value.
      *
      * @param value value

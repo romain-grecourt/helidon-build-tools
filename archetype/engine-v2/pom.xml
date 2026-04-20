@@ -108,7 +108,7 @@
                 <executions>
                     <execution>
                         <id>attach-artifacts</id>
-                        <phase>package</phase>
+                        <phase>process-resources</phase>
                         <goals>
                             <goal>attach-artifact</goal>
                         </goals>
@@ -118,6 +118,11 @@
                                     <file>${project.build.directory}/schema/archetype.xsd</file>
                                     <type>xsd</type>
                                     <classifier>schema-2.0</classifier>
+                                </artifact>
+                                <artifact>
+                                    <file>${project.build.directory}/schema/plans-1.0.xsd</file>
+                                    <type>xsd</type>
+                                    <classifier>plans-1.0</classifier>
                                 </artifact>
                             </artifacts>
                         </configuration>

@@ -122,9 +122,17 @@ final class Flow {
         return expression(activeGuard(node), scope);
     }
 
+    Guard conditionGuard(Expression expression) {
+        return ir.lowerCondition(scope, requireNonNull(expression, "expression is null"));
+    }
+
     Value<?> declaredValue(Node node, String key) {
-        Fact fact = fact(node, key);
         Guard required = activeGuard(node == null ? null : node.parent());
+        return declaredValue(node, key, required);
+    }
+
+    Value<?> declaredValue(Node node, String key, Guard required) {
+        Fact fact = fact(node, key);
         if (fact == null || !ir.guards().implies(required, fact.guard())) {
             return Value.empty();
         }
@@ -414,13 +422,14 @@ final class Flow {
                 }
                 return;
             }
-            if (fact.lattice().kind() == LatticeValue.Kind.FINITE_SCALAR) {
+            LatticeValue lattice = fact.lattice();
+            if (lattice.kind() == LatticeValue.Kind.FINITE_SCALAR) {
                 switch (info.sym.domain().kind()) {
                     case BOOLEAN:
                     case CHOICE:
                     case FINITE_TEXT:
-                        if (fact.lattice().scalarMask() != info.sym.domain().mask()) {
-                            for (String value : fact.lattice().scalarValues(info.sym.domain())) {
+                        if (lattice.scalarMask() != info.sym.domain().mask()) {
+                            for (String value : lattice.scalarValues(info.sym.domain())) {
                                 info.addAvailability(value, fact.guard(), ir.guards());
                             }
                         }
