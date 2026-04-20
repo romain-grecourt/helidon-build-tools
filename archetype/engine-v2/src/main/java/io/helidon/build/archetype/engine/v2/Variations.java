@@ -41,6 +41,7 @@ import io.helidon.build.common.Lists;
 import io.helidon.build.common.Maps;
 import io.helidon.build.common.xml.XMLElement;
 
+import static java.util.Collections.unmodifiableMap;
 import static java.util.Objects.requireNonNull;
 
 /**
@@ -166,7 +167,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         for (Entry entry : entries) {
             unboundedInputs.addAll(entry.unbounded());
         }
-        return Collections.unmodifiableSet(unboundedInputs);
+        return unboundedInputs;
     }
 
     /**
@@ -217,11 +218,6 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                 .collect(Collectors.joining(separator));
     }
 
-    private static Map<String, String> copyMap(Map<String, String> map) {
-        requireNonNull(map, "map is null");
-        return Collections.unmodifiableMap(new LinkedHashMap<>(map));
-    }
-
     /**
      * Computed variation.
      */
@@ -233,7 +229,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         private Entry(Map<String, String> values, Set<String> unbounded, String signature) {
             requireNonNull(values);
             requireNonNull(unbounded);
-            this.map = Collections.unmodifiableMap(new LinkedHashMap<>(values));
+            this.map = unmodifiableMap(new LinkedHashMap<>(values));
             this.signature = signature;
             this.unbounded = Collections.unmodifiableSet(new TreeSet<>(unbounded));
         }
@@ -363,30 +359,31 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         private final Map<String, String> externalValues;
         private final Map<String, String> externalDefaults;
         private final List<Plan> plans;
-        private final long maxIntermediateVariations;
+        private final long maxIntermediate;
 
         /**
-         * Create a new request.
-         *
-         * @param filters                   global exclusion filters
-         * @param externalValues            fixed external values
-         * @param externalDefaults          external defaults
-         * @param plans                     named plans, or an empty list for plain computation
-         * @param maxIntermediateVariations max actual intermediate variation row count
+         * Empty variation request.
          */
-        public Request(List<Expression> filters,
-                       Map<String, String> externalValues,
-                       Map<String, String> externalDefaults,
-                       List<Plan> plans,
-                       long maxIntermediateVariations) {
-            this.filters = List.copyOf(requireNonNull(filters, "filters is null"));
-            this.externalValues = copyMap(requireNonNull(externalValues, "externalValues is null"));
-            this.externalDefaults = copyMap(requireNonNull(externalDefaults, "externalDefaults is null"));
-            this.plans = List.copyOf(requireNonNull(plans, "plans is null"));
-            if (maxIntermediateVariations < 0) {
-                throw new IllegalArgumentException("maxIntermediateVariations must be >= 0");
+        public static final Request EMPTY = builder().build();
+
+        /**
+         * Create a new builder.
+         *
+         * @return builder
+         */
+        public static Builder builder() {
+            return new Builder();
+        }
+
+        private Request(Builder builder) {
+            this.filters = List.copyOf(builder.filters);
+            this.externalValues = unmodifiableMap(new LinkedHashMap<>(builder.externalValues));
+            this.externalDefaults = unmodifiableMap(new LinkedHashMap<>(builder.externalDefaults));
+            this.plans = List.copyOf(builder.plans);
+            if (builder.maxIntermediate < 0) {
+                throw new IllegalArgumentException("maxIntermediate must be >= 0");
             }
-            this.maxIntermediateVariations = maxIntermediateVariations;
+            this.maxIntermediate = builder.maxIntermediate;
         }
 
         /**
@@ -430,8 +427,156 @@ public final class Variations extends AbstractSet<Variations.Entry> {
          *
          * @return maximum intermediate variation row count
          */
-        public long maxIntermediateVariations() {
-            return maxIntermediateVariations;
+        public long maxIntermediate() {
+            return maxIntermediate;
+        }
+
+        /**
+         * Request builder.
+         */
+        @SuppressWarnings("UnusedReturnValue")
+        public static final class Builder {
+            private final List<Expression> filters = new ArrayList<>();
+            private final Map<String, String> externalValues = new LinkedHashMap<>();
+            private final Map<String, String> externalDefaults = new LinkedHashMap<>();
+            private final List<Plan> plans = new ArrayList<>();
+            private long maxIntermediate = Long.MAX_VALUE;
+
+            private Builder() {
+            }
+
+            /**
+             * Add a global exclusion filter.
+             *
+             * @param filter exclusion filter
+             * @return this builder
+             */
+            public Builder filter(Expression filter) {
+                this.filters.add(requireNonNull(filter, "filter is null"));
+                return this;
+            }
+
+            /**
+             * Add a global exclusion filter from its expression string.
+             *
+             * @param expression exclusion filter expression
+             * @return this builder
+             */
+            public Builder expression(String expression) {
+                return filter(Expression.create(expression));
+            }
+
+            /**
+             * Add global exclusion filters.
+             *
+             * @param filters exclusion filters
+             * @return this builder
+             */
+            public Builder filters(Iterable<? extends Expression> filters) {
+                requireNonNull(filters, "filters is null");
+                for (Expression filter : filters) {
+                    filter(filter);
+                }
+                return this;
+            }
+
+            /**
+             * Add a fixed external value.
+             *
+             * @param key   external value key
+             * @param value external value
+             * @return this builder
+             */
+            public Builder externalValue(String key, String value) {
+                requireNonNull(key, "key is null");
+                requireNonNull(value, "value is null");
+                this.externalValues.put(key, value);
+                return this;
+            }
+
+            /**
+             * Add fixed external values.
+             *
+             * @param externalValues fixed external values
+             * @return this builder
+             */
+            public Builder externalValues(Map<String, String> externalValues) {
+                requireNonNull(externalValues, "externalValues is null");
+                externalValues.forEach(this::externalValue);
+                return this;
+            }
+
+            /**
+             * Add an external default.
+             *
+             * @param key   external default key
+             * @param value external default value
+             * @return this builder
+             */
+            public Builder externalDefault(String key, String value) {
+                requireNonNull(key, "key is null");
+                requireNonNull(value, "value is null");
+                this.externalDefaults.put(key, value);
+                return this;
+            }
+
+            /**
+             * Add external defaults.
+             *
+             * @param externalDefaults external defaults
+             * @return this builder
+             */
+            public Builder externalDefaults(Map<String, String> externalDefaults) {
+                requireNonNull(externalDefaults, "externalDefaults is null");
+                externalDefaults.forEach(this::externalDefault);
+                return this;
+            }
+
+            /**
+             * Add a plan.
+             *
+             * @param plan plan
+             * @return this builder
+             */
+            public Builder plan(Plan plan) {
+                requireNonNull(plan, "plan is null");
+                this.plans.add(plan);
+                return this;
+            }
+
+            /**
+             * Add plans.
+             *
+             * @param plans plans
+             * @return this builder
+             */
+            public Builder plans(Iterable<? extends Plan> plans) {
+                requireNonNull(plans, "plans is null");
+                for (Plan plan : plans) {
+                    plan(plan);
+                }
+                return this;
+            }
+
+            /**
+             * Set the maximum actual pre-normalization intermediate variation rows to allow.
+             *
+             * @param maxIntermediate maximum intermediate variation rows
+             * @return this builder
+             */
+            public Builder maxIntermediate(long maxIntermediate) {
+                this.maxIntermediate = maxIntermediate;
+                return this;
+            }
+
+            /**
+             * Build the request.
+             *
+             * @return request
+             */
+            public Request build() {
+                return new Request(this);
+            }
         }
     }
 
@@ -445,21 +590,19 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         private final List<Expression> filters;
 
         /**
-         * Create a new plan.
+         * Create a new builder.
          *
-         * @param id               plan id
-         * @param externalValues   fixed external values
-         * @param externalDefaults external defaults
-         * @param filters          exclusion filters
+         * @return builder
          */
-        public Plan(String id,
-                    Map<String, String> externalValues,
-                    Map<String, String> externalDefaults,
-                    List<Expression> filters) {
-            this.id = requireNonNull(id, "id is null");
-            this.externalValues = copyMap(requireNonNull(externalValues, "externalValues is null"));
-            this.externalDefaults = copyMap(requireNonNull(externalDefaults, "externalDefaults is null"));
-            this.filters = List.copyOf(requireNonNull(filters, "filters is null"));
+        public static Builder builder() {
+            return new Builder();
+        }
+
+        private Plan(Builder builder) {
+            this.id = requireNonNull(builder.id, "id is null");
+            this.externalValues = unmodifiableMap(new LinkedHashMap<>(builder.externalValues));
+            this.externalDefaults = unmodifiableMap(new LinkedHashMap<>(builder.externalDefaults));
+            this.filters = List.copyOf(builder.filters);
         }
 
         /**
@@ -496,27 +639,28 @@ public final class Variations extends AbstractSet<Variations.Entry> {
          */
         public static List<Plan> load(XMLElement root) {
             requireNonNull(root, "root is null");
-            Map<String, Template> fragments = new LinkedHashMap<>();
+            Map<String, Fragment> fragments = new LinkedHashMap<>();
             int fragmentIndex = 1;
             for (XMLElement fragment : root.children("fragment")) {
-                Template template = template(fragment, "fragment-" + fragmentIndex++, true);
-                if (fragments.putIfAbsent(template.id(), template) != null) {
-                    throw new IllegalStateException("Duplicate fragment id: " + template.id());
+                Fragment template = template(fragment, "fragment-" + fragmentIndex++, true);
+                if (fragments.putIfAbsent(template.id, template) != null) {
+                    throw new IllegalStateException("Duplicate fragment id: " + template.id);
                 }
             }
 
             List<Plan> plans = new ArrayList<>();
-            Map<String, ResolvedTemplate> resolvedFragments = new LinkedHashMap<>();
+            Map<String, Fragment> resolved = new LinkedHashMap<>();
             int index = 1;
             for (XMLElement plan : root.children("plan")) {
-                Template template = template(plan, "plan-" + index++, false);
-                ResolvedTemplate resolved = resolvePlan(template, fragments, resolvedFragments);
-                plans.add(new Plan(template.id(),
-                        resolved.externalValues(),
-                        resolved.externalDefaults(),
-                        resolved.filters()));
+                Fragment fragment = template(plan, "plan-" + index++, false);
+                Fragment merged = fragment.merge(resolveParents(fragment, fragments, resolved, new ArrayList<>()));
+                Builder builder = builder().id(fragment.id)
+                        .externalValues(merged.externalValues)
+                        .externalDefaults(merged.externalDefaults)
+                        .filters(merged.filters);
+                plans.add(builder.build());
             }
-            return List.copyOf(plans);
+            return plans;
         }
 
         /**
@@ -546,7 +690,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             for (XMLElement elt : root.traverse(it -> it.name().equals("exclude"))) {
                 excludes.add(exclude(root, elt));
             }
-            return List.copyOf(excludes);
+            return excludes;
         }
 
         /**
@@ -585,6 +729,117 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             return filters;
         }
 
+        /**
+         * Plan builder.
+         */
+        public static final class Builder {
+            private String id;
+            private final Map<String, String> externalValues = new LinkedHashMap<>();
+            private final Map<String, String> externalDefaults = new LinkedHashMap<>();
+            private final List<Expression> filters = new ArrayList<>();
+
+            private Builder() {
+            }
+
+            /**
+             * Set the plan id.
+             *
+             * @param id plan id
+             * @return this builder
+             */
+            public Builder id(String id) {
+                this.id = requireNonNull(id, "id is null");
+                return this;
+            }
+
+            /**
+             * Add a fixed external value.
+             *
+             * @param key   external value key
+             * @param value external value
+             * @return this builder
+             */
+            public Builder externalValue(String key, String value) {
+                requireNonNull(key, "key is null");
+                requireNonNull(value, "value is null");
+                this.externalValues.put(key, value);
+                return this;
+            }
+
+            /**
+             * Add fixed external values.
+             *
+             * @param externalValues fixed external values
+             * @return this builder
+             */
+            public Builder externalValues(Map<String, String> externalValues) {
+                requireNonNull(externalValues, "externalValues is null");
+                externalValues.forEach(this::externalValue);
+                return this;
+            }
+
+            /**
+             * Add an external default.
+             *
+             * @param key   external default key
+             * @param value external default value
+             * @return this builder
+             */
+            public Builder externalDefault(String key, String value) {
+                requireNonNull(key, "key is null");
+                requireNonNull(value, "value is null");
+                this.externalDefaults.put(key, value);
+                return this;
+            }
+
+            /**
+             * Add external defaults.
+             *
+             * @param externalDefaults external defaults
+             * @return this builder
+             */
+            public Builder externalDefaults(Map<String, String> externalDefaults) {
+                requireNonNull(externalDefaults, "externalDefaults is null");
+                externalDefaults.forEach(this::externalDefault);
+                return this;
+            }
+
+            /**
+             * Add an exclusion filter.
+             *
+             * @param filter exclusion filter
+             * @return this builder
+             */
+            public Builder filter(Expression filter) {
+                requireNonNull(filter, "filter is null");
+                this.filters.add(filter);
+                return this;
+            }
+
+            /**
+             * Add exclusion filters.
+             *
+             * @param filters exclusion filters
+             * @return this builder
+             */
+            public Builder filters(Iterable<? extends Expression> filters) {
+                requireNonNull(filters, "filters is null");
+                for (Expression filter : filters) {
+                    filter(filter);
+                }
+                return this;
+            }
+
+            /**
+             * Build the plan.
+             *
+             * @return plan
+             */
+            public Plan build() {
+                return new Plan(this);
+            }
+        }
+
         private static Map<String, String> readMap(XMLElement root) {
             Map<String, String> values = new LinkedHashMap<>();
             for (XMLElement entry : root.children()) {
@@ -593,9 +848,9 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             return values;
         }
 
-        private static Template template(XMLElement element, String defaultId, boolean requireId) {
+        private static Fragment template(XMLElement element, String defaultId, boolean requireId) {
             String id = templateId(element, defaultId, requireId);
-            return new Template(id,
+            return new Fragment(id,
                     extendsIds(element),
                     element.child("values")
                             .map(Plan::readMap)
@@ -631,56 +886,49 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                     ids.add(id);
                 }
             }
-            return List.copyOf(ids);
+            return ids;
         }
 
-        private static ResolvedTemplate resolvePlan(Template plan,
-                                                    Map<String, Template> fragments,
-                                                    Map<String, ResolvedTemplate> resolvedFragments) {
-            ResolvedTemplate inherited = resolveParents(plan, fragments, resolvedFragments, new ArrayList<>());
-            return plan.merge(inherited);
-        }
-
-        private static ResolvedTemplate resolveParents(Template template,
-                                                       Map<String, Template> fragments,
-                                                       Map<String, ResolvedTemplate> resolvedFragments,
-                                                       List<String> stack) {
-            LinkedHashMap<String, String> externalValues = new LinkedHashMap<>();
-            LinkedHashMap<String, String> externalDefaults = new LinkedHashMap<>();
+        private static Fragment resolveParents(Fragment template,
+                                               Map<String, Fragment> fragments,
+                                               Map<String, Fragment> resolvedFragments,
+                                               List<String> stack) {
+            Map<String, String> externalValues = new LinkedHashMap<>();
+            Map<String, String> externalDefaults = new LinkedHashMap<>();
             List<Expression> filters = new ArrayList<>();
-            for (String fragmentId : template.extendsIds()) {
-                Template fragment = fragments.get(fragmentId);
+            for (String fragmentId : template.extendsIds) {
+                Fragment fragment = fragments.get(fragmentId);
                 if (fragment == null) {
                     throw new IllegalStateException(
-                            String.format("Unknown fragment '%s' referenced by '%s'", fragmentId, template.id()));
+                            String.format("Unknown fragment '%s' referenced by '%s'", fragmentId, template.id));
                 }
-                ResolvedTemplate resolved = resolveFragment(fragment, fragments, resolvedFragments, stack);
-                externalValues.putAll(resolved.externalValues());
-                externalDefaults.putAll(resolved.externalDefaults());
-                filters.addAll(resolved.filters());
+                Fragment resolved = resolve(fragment, fragments, resolvedFragments, stack);
+                externalValues.putAll(resolved.externalValues);
+                externalDefaults.putAll(resolved.externalDefaults);
+                filters.addAll(resolved.filters);
             }
-            return new ResolvedTemplate(externalValues, externalDefaults, filters);
+            return new Fragment(null, null, externalValues, externalDefaults, filters);
         }
 
-        private static ResolvedTemplate resolveFragment(Template fragment,
-                                                        Map<String, Template> fragments,
-                                                        Map<String, ResolvedTemplate> resolvedFragments,
-                                                        List<String> stack) {
-            ResolvedTemplate cached = resolvedFragments.get(fragment.id());
+        private static Fragment resolve(Fragment fragment,
+                                        Map<String, Fragment> fragments,
+                                        Map<String, Fragment> resolved,
+                                        List<String> stack) {
+            Fragment cached = resolved.get(fragment.id);
             if (cached != null) {
                 return cached;
             }
-            if (stack.contains(fragment.id())) {
+            if (stack.contains(fragment.id)) {
                 List<String> cycle = new ArrayList<>(stack);
-                cycle.add(fragment.id());
+                cycle.add(fragment.id);
                 throw new IllegalStateException("Circular fragment inheritance: " + String.join(" -> ", cycle));
             }
-            stack.add(fragment.id());
-            ResolvedTemplate inherited = resolveParents(fragment, fragments, resolvedFragments, stack);
-            ResolvedTemplate resolved = fragment.merge(inherited);
+            stack.add(fragment.id);
+            Fragment inherited = resolveParents(fragment, fragments, resolved, stack);
+            Fragment merged = fragment.merge(inherited);
             stack.remove(stack.size() - 1);
-            resolvedFragments.put(fragment.id(), resolved);
-            return resolved;
+            resolved.put(fragment.id, merged);
+            return merged;
         }
 
         private static Expression exclude(XMLElement root, XMLElement elt) {
@@ -696,67 +944,33 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             return exclude;
         }
 
-        private static final class Template {
+        private static final class Fragment {
             private final String id;
             private final List<String> extendsIds;
             private final Map<String, String> externalValues;
             private final Map<String, String> externalDefaults;
             private final List<Expression> filters;
 
-            private Template(String id,
-                             List<String> extendsIds,
-                             Map<String, String> externalValues,
-                             Map<String, String> externalDefaults,
-                             List<Expression> filters) {
+            Fragment(String id,
+                     List<String> extendsIds,
+                     Map<String, String> externalValues,
+                     Map<String, String> externalDefaults,
+                     List<Expression> filters) {
                 this.id = id;
-                this.extendsIds = List.copyOf(extendsIds);
-                this.externalValues = copyMap(externalValues);
-                this.externalDefaults = copyMap(externalDefaults);
-                this.filters = List.copyOf(filters);
+                this.extendsIds = extendsIds;
+                this.externalValues = externalValues;
+                this.externalDefaults = externalDefaults;
+                this.filters = filters;
             }
 
-            private String id() {
-                return id;
-            }
-
-            private List<String> extendsIds() {
-                return extendsIds;
-            }
-
-            private ResolvedTemplate merge(ResolvedTemplate inherited) {
-                Map<String, String> mergedValues = new LinkedHashMap<>(inherited.externalValues());
-                Map<String, String> mergedDefaults = new LinkedHashMap<>(inherited.externalDefaults());
-                List<Expression> mergedFilters = new ArrayList<>(inherited.filters());
+            Fragment merge(Fragment inherited) {
+                Map<String, String> mergedValues = new LinkedHashMap<>(inherited.externalValues);
+                Map<String, String> mergedDefaults = new LinkedHashMap<>(inherited.externalDefaults);
+                List<Expression> mergedFilters = new ArrayList<>(inherited.filters);
                 mergedValues.putAll(externalValues);
                 mergedDefaults.putAll(externalDefaults);
                 mergedFilters.addAll(filters);
-                return new ResolvedTemplate(mergedValues, mergedDefaults, mergedFilters);
-            }
-        }
-
-        private static final class ResolvedTemplate {
-            private final Map<String, String> externalValues;
-            private final Map<String, String> externalDefaults;
-            private final List<Expression> filters;
-
-            private ResolvedTemplate(Map<String, String> externalValues,
-                                     Map<String, String> externalDefaults,
-                                     List<Expression> filters) {
-                this.externalValues = copyMap(externalValues);
-                this.externalDefaults = copyMap(externalDefaults);
-                this.filters = List.copyOf(filters);
-            }
-
-            private Map<String, String> externalValues() {
-                return externalValues;
-            }
-
-            private Map<String, String> externalDefaults() {
-                return externalDefaults;
-            }
-
-            private List<Expression> filters() {
-                return filters;
+                return new Fragment(null, null, mergedValues, mergedDefaults, mergedFilters);
             }
         }
     }

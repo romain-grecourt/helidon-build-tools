@@ -31,7 +31,7 @@ import static org.hamcrest.Matchers.is;
 /**
  * Tests {@link TemplateModel}.
  */
-class TemplateModelTest {
+class FragmentModelTest {
 
     @Test
     void testResolveWithNotRootContext() {

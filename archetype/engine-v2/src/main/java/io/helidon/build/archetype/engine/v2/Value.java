@@ -1022,6 +1022,12 @@ public interface Value<T> {
 
         @Override
         @SuppressWarnings("unchecked")
+        public Value<Boolean> asBoolean() {
+            return (Value<Boolean>) this;
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
         public Value<List<String>> asList() {
             return (Value<List<String>>) this;
         }

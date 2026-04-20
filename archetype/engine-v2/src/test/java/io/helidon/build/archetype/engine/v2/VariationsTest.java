@@ -28,6 +28,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import io.helidon.build.archetype.engine.v2.ScriptCompiler.ValidationException;
+import io.helidon.build.archetype.engine.v2.Variations.Request;
 import io.helidon.build.common.VirtualFileSystem;
 import io.helidon.build.common.xml.XMLElement;
 
@@ -50,127 +51,130 @@ class VariationsTest {
     @Test
     void testVariationsList1() {
         Variations expected = loadVariations("variations/expected/list1.xml");
-        Variations actual = variations("variations", "list1.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "list1.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationsList2() {
         Variations expected = loadVariations("variations/expected/list2.xml");
-        Variations actual = variations("variations", "list2.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "list2.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationsList3() {
         Variations expected = loadVariations("variations/expected/list3.xml");
-        Variations actual = variations("variations", "list3.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "list3.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationsEnum1() {
         Variations expected = loadVariations("variations/expected/enum1.xml");
-        Variations actual = variations("variations", "enum1.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "enum1.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationsEnum2() {
         Variations expected = loadVariations("variations/expected/enum2.xml");
-        Variations actual = variations("variations", "enum2.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "enum2.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationsEnum3() {
         Variations expected = loadVariations("variations/expected/enum3.xml");
-        Variations actual = variations("variations", "enum3.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "enum3.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationsBoolean1() {
         Variations expected = loadVariations("variations/expected/boolean1.xml");
-        Variations actual = variations("variations", "boolean1.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "boolean1.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationsBoolean2() {
         Variations expected = loadVariations("variations/expected/boolean2.xml");
-        Variations actual = variations("variations", "boolean2.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "boolean2.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationsBoolean3() {
         Variations expected = loadVariations("variations/expected/boolean3.xml");
-        Variations actual = variations("variations", "boolean3.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "boolean3.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationsBoolean4() {
         Variations expected = loadVariations("variations/expected/boolean4.xml");
-        Variations actual = variations("variations", "boolean4.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "boolean4.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationsBoolean5() {
         Variations expected = loadVariations("variations/expected/boolean5.xml");
-        Variations actual = variations("variations", "boolean5.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "boolean5.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationsBoolean6() {
         Variations expected = loadVariations("variations/expected/boolean6.xml");
-        Variations actual = variations("variations", "boolean6.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "boolean6.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationsBoolean7() {
         Variations expected = loadVariations("variations/expected/boolean7.xml");
-        Variations actual = variations("variations", "boolean7.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "boolean7.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationsBoolean8() {
         Variations expected = loadVariations("variations/expected/boolean8.xml");
-        Variations actual = variations("variations", "boolean8.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "boolean8.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationsBoolean9() {
         Variations expected = loadVariations("variations/expected/boolean9.xml");
-        Variations actual = variations("variations", "boolean9.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "boolean9.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationsBoolean10() {
         Variations expected = loadVariations("variations/expected/boolean10.xml");
-        Variations actual = variations("variations", "boolean10.xml", List.of(),
-                Map.of("flavor", "mp", "app-type", "custom"), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations",
+                "boolean10.xml",
+                Request.builder()
+                        .externalValues(Map.of("flavor", "mp", "app-type", "custom"))
+                        .build());
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationsText1() {
         Variations expected = Variations.of(Map.of("name", "Foo"), Set.of("name"));
-        Variations actual = variations("variations", "text1.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "text1.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationEntriesText1() {
         Variations expected = Variations.of(Map.of("name", "Foo"), Set.of("name"));
-        Variations actual = variations("variations", "text1.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "text1.xml", Request.EMPTY);
         assertThat(actual.toString(), is(expected.toString()));
         assertThat(actual.exhaustive(), is(false));
         assertThat(actual.unboundedInputs(), contains("name"));
@@ -179,7 +183,9 @@ class VariationsTest {
     @Test
     void testVariationEntriesText1WithExternalValueAreExhaustive() {
         Variations expected = Variations.of(Map.of("name", "Bar"), Set.of());
-        Variations actual = variations("variations", "text1.xml", List.of(), Map.of("name", "Bar"), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "text1.xml", Request.builder()
+                .externalValue("name", "Bar")
+                .build());
         assertThat(actual.toString(), is(expected.toString()));
         assertThat(actual.exhaustive(), is(true));
         assertThat(actual.unboundedInputs(), is(Set.of()));
@@ -196,20 +202,20 @@ class VariationsTest {
     @Test
     void testVariationsText2() {
         Variations expected = Variations.of(Map.of("name", "<?>"), Set.of("name"));
-        Variations actual = variations("variations", "text2.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "text2.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationEntriesText2() {
         Variations expected = Variations.of(Map.of("name", "<?>"), Set.of("name"));
-        Variations actual = variations("variations", "text2.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "text2.xml", Request.EMPTY);
         assertThat(actual.toString(), is(expected.toString()));
     }
 
     @Test
     void testVariationEntriesBoolean1AreExhaustive() {
-        Variations actual = variations("variations", "boolean1.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "boolean1.xml", Request.EMPTY);
         assertThat(actual.exhaustive(), is(true));
         assertThat(actual.unboundedInputs(), is(Set.of()));
         assertThat(actual.stream().allMatch(Variations.Entry::exhaustive), is(true));
@@ -238,7 +244,7 @@ class VariationsTest {
 
     @Test
     void testVariationsToStringWithSeparator() {
-        Variations actual = variations("variations", "boolean1.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "boolean1.xml", Request.EMPTY);
         assertThat(actual.toString(" | "), is("colors=false | colors=true"));
     }
 
@@ -277,44 +283,46 @@ class VariationsTest {
     @Test
     void testVariationsSubstitutions() {
         Variations expected = loadVariations("variations/expected/substitutions.xml");
-        Variations actual = variations("variations", "substitutions.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "substitutions.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationsConditionals() {
         Variations expected = loadVariations("variations/expected/conditionals.xml");
-        Variations actual = variations("variations", "conditionals.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "conditionals.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationsNestedConditionalOptionPruning() {
         Variations expected = loadVariations("variations/expected/nested-conditional-option.xml");
-        Variations actual = variations("variations", "nested-conditional-option.xml",
-                List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "nested-conditional-option.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationsPruneInactiveBranchBeforePresetValidation() {
         Variations expected = Variations.of(Map.of("app-type", "oci", "flavor", "mp"), Set.of());
-        Variations actual = variations("variations", "branch-pruning.xml",
-                List.of(), Map.of("flavor", "mp", "app-type", "oci"), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "branch-pruning.xml", Request.builder()
+                .externalValues(Map.of("flavor", "mp", "app-type", "oci"))
+                .build());
         assertThat(actual, is(expected));
     }
 
     @Test
     void testVariationsJoinOrder1() {
         Variations expected = loadVariations("variations/expected/join-order1.xml");
-        Variations actual = variations("variations", "join-order1.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("variations", "join-order1.xml", Request.EMPTY);
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
     @Test
     void testVariationsFailWhenIntermediateCountExceedsMax() {
         IllegalStateException ex = assertThrows(IllegalStateException.class,
-                () -> variations("variations", "boolean1.xml", List.of(), Map.of(), Map.of(), 1));
+                () -> variations("variations", "boolean1.xml", Request.builder()
+                        .maxIntermediate(1)
+                        .build()));
         assertThat(ex.getMessage(),
                 is("Intermediate variation row count 2 exceeds the configured limit of 1 while joining input 'colors'"));
     }
@@ -324,18 +332,15 @@ class VariationsTest {
         Variations expected = Variations.of(
                 entry(Map.of("advanced", "false", "mode", "basic")),
                 entry(Map.of("advanced", "true", "mode", "expert")));
-        Variations actual = variations("variations",
-                "projection-overestimate.xml",
-                List.of(),
-                Map.of(),
-                Map.of(),
-                2);
+        Variations actual = variations("variations", "projection-overestimate.xml", Request.builder()
+                .maxIntermediate(2)
+                .build());
         assertThat(actual, is(expected));
     }
 
     @Test
     void testVariationsE2e() {
-        Variations actual = variations("e2e", "main.xml", List.of(), Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("e2e", "main.xml", Request.EMPTY);
         assertThat(actual.size(), is(65604));
     }
 
@@ -343,7 +348,9 @@ class VariationsTest {
     void testVariationsFilters() {
         Variations expected = loadVariations("variations/expected/filtered.xml");
         List<Expression> filters = filters("variations/filters.xml");
-        Variations actual = variations("e2e", "main.xml", filters, Map.of(), Map.of(), Long.MAX_VALUE);
+        Variations actual = variations("e2e", "main.xml", Request.builder()
+                .filters(filters)
+                .build());
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
@@ -352,19 +359,19 @@ class VariationsTest {
         Variations expected = Variations.of(
                 entry(Map.of("flag", "false", "media", "json", "media.json-lib", "jsonb")),
                 entry(Map.of("flag", "true", "media", "json", "media.json-lib", "jackson")));
-        Variations actual = variations("variations",
-                "derived-local-filter.xml",
-                List.of(Expression.create("${flag} != (${media.json-lib} == 'jackson')")),
-                Map.of(),
-                Map.of(),
-                Long.MAX_VALUE);
+        Variations actual = variations("variations", "derived-local-filter.xml", Request.builder()
+                .expression("${flag} != (${media.json-lib} == 'jackson')")
+                .build());
         assertThat(actual, is(expected));
     }
 
     @Test
     void testVariationsPreferFilterGatesBeforeLowerCostFanOut() {
         List<Expression> filters = filters("variations/filter-aware-join-order-filters.xml");
-        Variations actual = variations("variations", "filter-aware-join-order.xml", filters, Map.of(), Map.of(), 20);
+        Variations actual = variations("variations", "filter-aware-join-order.xml", Request.builder()
+                .maxIntermediate(20)
+                .filters(filters)
+                .build());
         assertThat(actual.size(), is(16));
         assertThat(actual.exhaustive(), is(true));
         assertThat(actual.stream().allMatch(entry -> "false".equals(entry.get("x"))
@@ -407,12 +414,9 @@ class VariationsTest {
                         "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "opentelemetry")),
                 entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
                         "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "zipkin")));
-        Variations actual = variations("variations",
-                "nested-enum-under-fixed-boolean.xml",
-                List.of(),
-                Map.of("flavor", "mp", "metrics", "true", "tracing", "true"),
-                Map.of(),
-                Long.MAX_VALUE);
+        Variations actual = variations("variations", "nested-enum-under-fixed-boolean.xml", Request.builder()
+                .externalValues(Map.of("flavor", "mp", "metrics", "true", "tracing", "true"))
+                .build());
         assertThat(actual, is(expected));
     }
 
@@ -435,27 +439,18 @@ class VariationsTest {
                         "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "opentelemetry")),
                 entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
                         "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "zipkin")));
-        Variations actual = variations("variations/observability-repro",
-                "main.xml",
-                List.of(),
-                Map.of("flavor", "mp", "metrics", "true", "tracing", "true"),
-                Map.of(),
-                Long.MAX_VALUE);
+
+        Variations actual = variations("variations/observability-repro", "main.xml", Request.builder()
+                .externalValues(Map.of("flavor", "mp", "metrics", "true", "tracing", "true"))
+                .build());
         assertThat(actual, is(expected));
     }
 
-    static Variations variations(String path,
-                                 String entrypoint,
-                                 List<Expression> filters,
-                                 Map<String, String> externalValues,
-                                 Map<String, String> externalDefaults,
-                                 long max) {
-
+    static Variations variations(String path, String entrypoint, Request request) {
         Path targetDir = targetDir(VariationsTest.class);
         try (FileSystem fs = VirtualFileSystem.create(targetDir.resolve("test-classes"))) {
             Path cwd = fs.getPath(path);
             Path source = cwd.resolve(entrypoint).toAbsolutePath().normalize();
-            Variations.Request request = new Variations.Request(filters, externalValues, externalDefaults, List.of(), max);
             return new VariationEngine(() -> source, cwd).compute(request);
         } catch (IOException ex) {
             throw new UncheckedIOException(ex.getMessage(), ex);
@@ -475,7 +470,6 @@ class VariationsTest {
         }
     }
 
-    @SuppressWarnings("SameParameterValue")
     static List<Expression> filters(String path) {
         List<Expression> excludes = new ArrayList<>();
         XMLElement root = loadXml(path);

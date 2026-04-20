@@ -21,9 +21,11 @@ import java.io.UncheckedIOException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import io.helidon.build.archetype.engine.v2.Expression;
 import io.helidon.build.archetype.engine.v2.VariationEngine;
 import io.helidon.build.archetype.engine.v2.Variations;
 import io.helidon.build.common.xml.XMLElement;
@@ -152,10 +154,105 @@ class VariationsPlanTest {
     }
 
     @Test
+    void testPlanBuilder() {
+        Variations.Plan plan = Variations.Plan.builder()
+                .id("red")
+                .externalValue("color", "red")
+                .externalDefault("artifactId", "demo-red")
+                .filter(Expression.create("${color} == 'red'"))
+                .build();
+
+        assertThat(plan.id(), is("red"));
+        assertThat(plan.externalValues(), is(Map.of("color", "red")));
+        assertThat(plan.externalDefaults(), is(Map.of("artifactId", "demo-red")));
+        assertThat(plan.filters(), hasSize(1));
+        assertThat(plan.filters().get(0).literal(), containsString("${color}"));
+    }
+
+    @Test
+    void testPlanBuilderBulkMethodsAreAdditive() {
+        Expression red = Expression.create("${color} == 'red'");
+        Expression docker = Expression.create("${docker}");
+        Map<String, String> externalValues = new LinkedHashMap<>();
+        externalValues.put("color", "red");
+        externalValues.put("docker", "false");
+        Map<String, String> externalDefaults = new LinkedHashMap<>();
+        externalDefaults.put("artifactId", "demo-red");
+
+        Variations.Plan plan = Variations.Plan.builder()
+                .id("red")
+                .externalValues(externalValues)
+                .externalValue("name", "demo")
+                .externalDefaults(externalDefaults)
+                .externalDefault("package", "io.demo")
+                .filters(List.of(red))
+                .filter(docker)
+                .build();
+
+        assertThat(plan.externalValues().keySet(), contains("color", "docker", "name"));
+        assertThat(plan.externalDefaults().keySet(), contains("artifactId", "package"));
+        assertThat(plan.filters(), contains(red, docker));
+    }
+
+    @Test
+    void testPlanBuilderRequiresId() {
+        assertThrows(NullPointerException.class, () -> Variations.Plan.builder().build());
+    }
+
+    @Test
+    void testRequestBuilderDefaults() {
+        Variations.Request request = Variations.Request.EMPTY;
+
+        assertThat(request.filters(), is(List.of()));
+        assertThat(request.externalValues(), is(Map.of()));
+        assertThat(request.externalDefaults(), is(Map.of()));
+        assertThat(request.plans(), is(List.of()));
+        assertThat(request.maxIntermediate(), is(Long.MAX_VALUE));
+    }
+
+    @Test
+    void testRequestBuilderBulkMethodsAreAdditive() {
+        Expression red = Expression.create("${color} == 'red'");
+        Expression docker = Expression.create("${docker}");
+        Map<String, String> externalValues = new LinkedHashMap<>();
+        externalValues.put("color", "red");
+        externalValues.put("docker", "false");
+        Map<String, String> externalDefaults = new LinkedHashMap<>();
+        externalDefaults.put("artifactId", "demo-red");
+        Variations.Plan blue = Variations.Plan.builder().id("blue").build();
+        Variations.Plan redPlan = Variations.Plan.builder().id("red").build();
+
+        Variations.Request request = Variations.Request.builder()
+                .filters(List.of(red))
+                .expression("${docker}")
+                .externalValues(externalValues)
+                .externalValue("name", "demo")
+                .externalDefaults(externalDefaults)
+                .externalDefault("package", "io.demo")
+                .plans(List.of(blue))
+                .plan(redPlan)
+                .maxIntermediate(10)
+                .build();
+
+        assertThat(request.filters(), contains(red, docker));
+        assertThat(request.externalValues().keySet(), contains("color", "docker", "name"));
+        assertThat(request.externalDefaults().keySet(), contains("artifactId", "package"));
+        assertThat(request.plans(), contains(blue, redPlan));
+        assertThat(request.maxIntermediate(), is(10L));
+    }
+
+    @Test
+    void testRequestBuilderRejectsNegativeMax() {
+        assertThrows(IllegalArgumentException.class, () -> Variations.Request.builder()
+                .maxIntermediate(-1)
+                .build());
+    }
+
+    @Test
     void testAnalyzeDiagnostics() {
         Path cwd = resource("script").toAbsolutePath().normalize();
         VariationEngine variationEngine = new VariationEngine(() -> cwd.resolve("main.xml"), cwd);
-        Variations.Request request = new Variations.Request(
+        Variations.Request request = request(
                 List.of(),
                 Map.of(),
                 Map.of(),
@@ -233,7 +330,7 @@ class VariationsPlanTest {
     void testAnalyzeSinglePlanHasNoCoverageGap() {
         Path cwd = resource("script").toAbsolutePath().normalize();
         VariationEngine variationEngine = new VariationEngine(() -> cwd.resolve("main.xml"), cwd);
-        Variations.Request request = new Variations.Request(
+        Variations.Request request = request(
                 List.of(),
                 Map.of(),
                 Map.of(),
@@ -278,7 +375,7 @@ class VariationsPlanTest {
     void testComputePlanVariations() {
         Path cwd = resource("script").toAbsolutePath().normalize();
         VariationEngine variationEngine = new VariationEngine(() -> cwd.resolve("main.xml"), cwd);
-        Variations.Request request = new Variations.Request(
+        Variations.Request request = request(
                 List.of(),
                 Map.of(),
                 Map.of(),
@@ -297,7 +394,7 @@ class VariationsPlanTest {
     void testComputeSingleUnsatisfiablePlanFails() {
         Path cwd = resource("script").toAbsolutePath().normalize();
         VariationEngine variationEngine = new VariationEngine(() -> cwd.resolve("main.xml"), cwd);
-        Variations.Request request = new Variations.Request(
+        Variations.Request request = request(
                 List.of(),
                 Map.of(),
                 Map.of(),
@@ -348,5 +445,19 @@ class VariationsPlanTest {
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }
+    }
+
+    private static Variations.Request request(List<Expression> filters,
+                                              Map<String, String> externalValues,
+                                              Map<String, String> externalDefaults,
+                                              List<Variations.Plan> plans,
+                                              long maxIntermediateVariations) {
+        return Variations.Request.builder()
+                .maxIntermediate(maxIntermediateVariations)
+                .filters(filters)
+                .externalValues(externalValues)
+                .externalDefaults(externalDefaults)
+                .plans(plans)
+                .build();
     }
 }

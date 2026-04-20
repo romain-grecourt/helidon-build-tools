@@ -102,7 +102,7 @@ public final class VariationEngine {
                     request.filters(),
                     request.externalValues(),
                     request.externalDefaults(),
-                    request.maxIntermediateVariations())
+                    request.maxIntermediate())
                     .compute();
         }
         if (request.plans().size() == 1) {
@@ -547,16 +547,14 @@ public final class VariationEngine {
         final Map<String, String> externalDefaults;
         final Map<String, String> resolvedExternalValues;
         final Map<String, String> resolvedExternalDefaults;
-        final long maxIntermediateVariations;
+        final long maxIntermediate;
 
-        AbstractComputation(Map<String, String> externalValues,
-                            Map<String, String> externalDefaults,
-                            long maxIntermediateVariations) {
+        AbstractComputation(Map<String, String> externalValues, Map<String, String> externalDefaults, long maxIntermediate) {
             this.externalValues = Collections.unmodifiableMap(new LinkedHashMap<>(externalValues));
             this.externalDefaults = Collections.unmodifiableMap(new LinkedHashMap<>(externalDefaults));
             this.resolvedExternalValues = resolveExternalValues(this.externalValues, this.externalDefaults);
             this.resolvedExternalDefaults = resolveExternalDefaults(this.externalValues, this.externalDefaults);
-            this.maxIntermediateVariations = maxIntermediateVariations;
+            this.maxIntermediate = maxIntermediate;
         }
 
         Variations normalized(List<CandidateRegion> regions, List<Expression> filters) {
@@ -582,8 +580,8 @@ public final class VariationEngine {
         PlainComputation(List<Expression> filters,
                          Map<String, String> externalValues,
                          Map<String, String> externalDefaults,
-                         long maxIntermediateVariations) {
-            super(externalValues, externalDefaults, maxIntermediateVariations);
+                         long maxIntermediate) {
+            super(externalValues, externalDefaults, maxIntermediate);
             this.filters = filters;
         }
 
@@ -594,7 +592,7 @@ public final class VariationEngine {
                     excludedGuard,
                     filters,
                     resolvedExternalValues,
-                    maxIntermediateVariations)
+                    maxIntermediate)
                     .enumerate();
             return normalized(regions, filters);
         }
@@ -605,7 +603,7 @@ public final class VariationEngine {
         private final List<Plan> plans;
 
         PlanComputation(Request request) {
-            super(request.externalValues(), request.externalDefaults(), request.maxIntermediateVariations());
+            super(request.externalValues(), request.externalDefaults(), request.maxIntermediate());
             this.filters = request.filters();
             this.plans = request.plans();
         }
@@ -665,7 +663,7 @@ public final class VariationEngine {
                     combineFilters(filters, compiledPlan.plan.filters()),
                     compiledPlan.externalValues,
                     compiledPlan.externalDefaults,
-                    maxIntermediateVariations)
+                    maxIntermediate)
                     .compute();
             Log.info("Variations: %d", computedPlan.size());
             return computedPlan;
@@ -753,21 +751,21 @@ public final class VariationEngine {
         private final List<Set<String>> filterVariables;
         private final Map<String, String> fixedValues;
         private final List<InputModel> inputs;
-        private final long maxIntermediateVariations;
+        private final long maxIntermediate;
         private final List<CandidateRegion> regions = new ArrayList<>();
 
         RegionEnumerator(Guard initialGuard,
                          Guard excludedGuard,
                          List<Expression> filters,
                          Map<String, String> fixedValues,
-                         long maxIntermediateVariations) {
+                         long maxIntermediate) {
             this.initialGuard = initialGuard;
             this.excludedGuard = excludedGuard;
             this.filters = filters;
             this.filterVariables = Lists.map(this.filters, Expression::variables);
             this.fixedValues = fixedValues;
             this.inputs = orderedInputs(this.filters);
-            this.maxIntermediateVariations = maxIntermediateVariations;
+            this.maxIntermediate = maxIntermediate;
         }
 
         List<CandidateRegion> enumerate() {
@@ -952,11 +950,11 @@ public final class VariationEngine {
 
         void addRegion(Guard guard, Map<String, String> values, Set<String> activeTextInputs, String inputKey) {
             regions.add(new CandidateRegion(guard, values, activeTextInputs));
-            if (regions.size() > maxIntermediateVariations) {
+            if (regions.size() > maxIntermediate) {
                 throw new IllegalStateException(String.format(
                         "Intermediate variation row count %d exceeds the configured limit of %d while joining input '%s'",
                         regions.size(),
-                        maxIntermediateVariations,
+                        maxIntermediate,
                         inputKey));
             }
         }

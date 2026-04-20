@@ -419,8 +419,13 @@ public class IntegrationTestMojo extends AbstractMojo {
             try {
                 Path projectDir = project.getBasedir().toPath();
                 List<Expression> filters = plans.isEmpty() ? defaultFilters(cwd, projectDir) : List.of();
-                Variations.Request request = new Variations.Request(filters, externalValues, externalDefaults, plans,
-                        maxIntermediateVariations);
+                Variations.Request request = Variations.Request.builder()
+                        .maxIntermediate(max)
+                        .filters(filters)
+                        .externalValues(externalValues)
+                        .externalDefaults(externalDefaults)
+                        .plans(plans)
+                        .build();
                 if (plans.size() > 1) {
                     handleDiagnostics(variationEngine.analyze(request));
                 }
