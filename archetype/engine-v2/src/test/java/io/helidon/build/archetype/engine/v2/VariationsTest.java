@@ -22,9 +22,12 @@ import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import io.helidon.build.archetype.engine.v2.ScriptCompiler.ValidationException;
@@ -32,14 +35,18 @@ import io.helidon.build.archetype.engine.v2.Variations.Request;
 import io.helidon.build.common.VirtualFileSystem;
 import io.helidon.build.common.xml.XMLElement;
 
+import org.hamcrest.FeatureMatcher;
+import org.hamcrest.Matcher;
 import org.junit.jupiter.api.Test;
 
 import static io.helidon.build.archetype.engine.v2.ScriptCompiler.EXPR_TEXT_INPUT_CONTROL_FLOW;
 import static io.helidon.build.archetype.engine.v2.Variations.entry;
 import static io.helidon.build.common.test.utils.TestFiles.targetDir;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -156,11 +163,9 @@ class VariationsTest {
     @Test
     void testVariationsBoolean10() {
         Variations expected = loadVariations("variations/expected/boolean10.xml");
-        Variations actual = variations("variations",
-                "boolean10.xml",
-                Request.builder()
-                        .externalValues(Map.of("variant", "advanced", "mode", "tailored"))
-                        .build());
+        Variations actual = variations("variations", "boolean10.xml", Request.builder()
+                .externalValues(Map.of("variant", "advanced", "mode", "tailored"))
+                .build());
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
 
@@ -224,20 +229,20 @@ class VariationsTest {
     @Test
     void testVariationsOfCreatesExhaustiveEntry() {
         Variations actual = Variations.of(Map.of("name", "Foo"), Set.of());
-        assertThat(actual.iterator().next().exhaustive(), is(true));
-        assertThat(actual.toString(), is(Variations.of(Map.of("name", "Foo"), Set.of()).toString()));
+        assertThat(actual, contains(hasProperty("exhaustive", Variations.Entry::exhaustive, is(true))));
+        assertThat(actual, is(Variations.of(Map.of("name", "Foo"), Set.of())));
     }
 
     @Test
     void testVariationEntryFactoryCreatesExhaustiveEntry() {
         Variations.Entry actual = entry(Map.of("name", "Foo"));
         assertThat(actual.exhaustive(), is(true));
-        assertThat(actual, is(Variations.of(Map.of("name", "Foo"), Set.of()).iterator().next()));
+        assertThat(actual, is(Variations.entry(Map.of("name", "Foo"))));
     }
 
     @Test
     void testVariationEntryToStringWithSeparator() {
-        Variations.Entry actual = Variations.of(Map.of("name", "Foo"), Set.of("name")).iterator().next();
+        Variations.Entry actual = Variations.entry(Map.of("name", "Foo"), Set.of("name"));
         assertThat(actual.toString(" "), is("name=Foo unbounded=[name]"));
         assertThat(actual.toString(false, " "), is("name=Foo"));
     }
@@ -270,12 +275,12 @@ class VariationsTest {
     @Test
     void testVariationsUnionRetainsDistinctResolvedValues() {
         Variations actual = Variations.union(List.of(
-                Variations.of(entry(Map.of("name", "Foo", "preset", "red"), Set.of())),
-                Variations.of(entry(Map.of("name", "Foo", "preset", "blue"), Set.of()))));
+                Variations.of(entry(Map.of("name", "Foo", "preset", "red"))),
+                Variations.of(entry(Map.of("name", "Foo", "preset", "blue")))));
 
         Variations expected = Variations.of(
-                entry(Map.of("name", "Foo", "preset", "red"), Set.of()),
-                entry(Map.of("name", "Foo", "preset", "blue"), Set.of()));
+                entry(Map.of("name", "Foo", "preset", "red")),
+                entry(Map.of("name", "Foo", "preset", "blue")));
 
         assertThat(actual, is(expected));
     }
@@ -319,8 +324,8 @@ class VariationsTest {
 
     @Test
     void testVariationsFailWhenIntermediateCountExceedsMax() {
-        IllegalStateException ex = assertThrows(IllegalStateException.class,
-                () -> variations("variations", "boolean1.xml", Request.builder()
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () ->
+                variations("variations", "boolean1.xml", Request.builder()
                         .maxIntermediate(1)
                         .build()));
         assertThat(ex.getMessage(),
@@ -374,25 +379,22 @@ class VariationsTest {
                 .build());
         assertThat(actual.size(), is(16));
         assertThat(actual.exhaustive(), is(true));
-        assertThat(actual.stream().allMatch(entry -> "false".equals(entry.get("x"))
-                && "basic".equals(entry.get("y"))
-                && "false".equals(entry.get("z"))
-                && "base".equals(entry.get("w"))), is(true));
-        Set<String> expectedFanouts = new java.util.TreeSet<>();
-        String[] values = {"a", "b", "c", "d"};
-        expectedFanouts.add("none");
-        for (int bits = 1; bits < 1 << values.length; bits++) {
-            List<String> selected = new ArrayList<>();
-            for (int i = 0; i < values.length; i++) {
-                if ((bits & (1 << i)) != 0) {
-                    selected.add(values[i]);
-                }
-            }
-            expectedFanouts.add(String.join(",", selected));
-        }
-        assertThat(actual.stream()
+        assertThat(actual, hasItem(allOf(List.of(
+                hasProperty("w", (Variations.Entry e) -> e.get("w"), is("base")),
+                hasProperty("x", (Variations.Entry e) -> e.get("x"), is("false")),
+                hasProperty("y", (Variations.Entry e) -> e.get("y"), is("basic")),
+                hasProperty("z", (Variations.Entry e) -> e.get("z"), is("false"))
+        ))));
+        Set<String> expectedFanouts = new TreeSet<>(Arrays.asList(
+                "a", "a,b", "a,b,c", "a,b,c,d", "a,b,d", "a,c", "a,c,d", "a,d",
+                "b", "b,c", "b,c,d", "b,d",
+                "c", "c,d",
+                "d",
+                "none"));
+        Set<String> actualFanouts = actual.stream()
                 .map(entry -> entry.get("fanout"))
-                .collect(Collectors.toCollection(java.util.TreeSet::new)), is(expectedFanouts));
+                .collect(Collectors.toCollection(TreeSet::new));
+        assertThat(actualFanouts, is(expectedFanouts));
     }
 
     @Test
@@ -407,9 +409,7 @@ class VariationsTest {
     @Test
     void testVariationsKeepNestedEnumAcrossSourceAndExecGraph() {
         Variations expected = loadVariations("variations/expected/nested-enum-preserved.xml");
-        Variations actual = variations("variations/source-graph-repro",
-                "main.xml",
-                Request.builder()
+        Variations actual = variations("variations/source-graph-repro", "main.xml", Request.builder()
                         .externalValues(Map.of("variant", "advanced", "feature-a", "true", "feature-b", "true"))
                         .build());
         assertThat(actual, is(expected));
@@ -472,5 +472,14 @@ class VariationsTest {
         } catch (IOException ex) {
             throw new UncheckedIOException(ex.getMessage(), ex);
         }
+    }
+
+    static <T, U> Matcher<T> hasProperty(String name, Function<T, U> extractor, Matcher<U> subMatcher) {
+        return new FeatureMatcher<>(subMatcher, "has property " + name, name) {
+            @Override
+            protected U featureValueOf(T target) {
+                return extractor.apply(target);
+            }
+        };
     }
 }
