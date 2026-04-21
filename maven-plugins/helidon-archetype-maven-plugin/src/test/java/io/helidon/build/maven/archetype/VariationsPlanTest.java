@@ -18,7 +18,7 @@ package io.helidon.build.maven.archetype;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.lang.reflect.Method;
+import java.lang.reflect.Constructor;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -463,13 +463,23 @@ class VariationsPlanTest {
 
     @Test
     void testRedundantPinFindingAccessors() throws Exception {
-        Method method = Variations.Finding.class.getDeclaredMethod(
-                "redundantPin",
+        Constructor<Variations.Finding> constructor = Variations.Finding.class.getDeclaredConstructor(
+                Variations.Finding.Kind.class,
+                Variations.Finding.Severity.class,
+                String.class,
+                String.class,
                 String.class,
                 String.class,
                 String.class);
-        method.setAccessible(true);
-        Variations.Finding redundantPin = (Variations.Finding) method.invoke(null, "basic", "mode", "basic");
+        constructor.setAccessible(true);
+        Variations.Finding redundantPin = constructor.newInstance(
+                Variations.Finding.Kind.REDUNDANT_PIN,
+                Variations.Finding.Severity.WARNING,
+                "basic",
+                null,
+                "mode",
+                "basic",
+                null);
 
         assertThat(redundantPin.kind(), is(Variations.Finding.Kind.REDUNDANT_PIN));
         assertThat(redundantPin.severity(), is(Variations.Finding.Severity.WARNING));

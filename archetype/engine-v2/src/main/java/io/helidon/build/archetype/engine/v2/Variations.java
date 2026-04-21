@@ -969,16 +969,12 @@ public final class Variations extends AbstractSet<Variations.Entry> {
      * Semantic diagnostics for a variation request.
      */
     public static final class Diagnostics {
-        private static final Diagnostics EMPTY = new Diagnostics(List.of());
+        static final Diagnostics EMPTY = new Diagnostics(List.of());
 
         private final List<Finding> findings;
 
         Diagnostics(List<Finding> findings) {
-            this.findings = List.copyOf(requireNonNull(findings, "findings is null"));
-        }
-
-        static Diagnostics empty() {
-            return EMPTY;
+            this.findings = findings;
         }
 
         /**
@@ -1039,77 +1035,16 @@ public final class Variations extends AbstractSet<Variations.Entry> {
         private final String relatedPlanId;
         private final String key;
         private final String value;
-        private final String expression;
+        private final String expr;
 
-        private Finding(Kind kind,
-                        Severity severity,
-                        String planId,
-                        String relatedPlanId,
-                        String key,
-                        String value,
-                        String expression) {
-            this.kind = requireNonNull(kind, "kind is null");
-            this.severity = requireNonNull(severity, "severity is null");
+        Finding(Kind kind, Severity severity, String planId, String relatedPlanId, String key, String value, String expr) {
+            this.kind = kind;
+            this.severity = severity;
             this.planId = planId;
             this.relatedPlanId = relatedPlanId;
             this.key = key;
             this.value = value;
-            this.expression = expression;
-        }
-
-        static Finding unsatisfiablePlan(String planId, String expression) {
-            return new Finding(
-                    Kind.UNSATISFIABLE_PLAN,
-                    Severity.ERROR,
-                    requireNonNull(planId, "planId is null"),
-                    null,
-                    null,
-                    null,
-                    requireNonNull(expression, "expression is null"));
-        }
-
-        static Finding planOverlap(String planId, String relatedPlanId, String expression) {
-            return new Finding(
-                    Kind.PLAN_OVERLAP,
-                    Severity.WARNING,
-                    requireNonNull(planId, "planId is null"),
-                    requireNonNull(relatedPlanId, "relatedPlanId is null"),
-                    null,
-                    null,
-                    requireNonNull(expression, "expression is null"));
-        }
-
-        static Finding redundantPlan(String planId, String relatedPlanId) {
-            return new Finding(
-                    Kind.REDUNDANT_PLAN,
-                    Severity.WARNING,
-                    requireNonNull(planId, "planId is null"),
-                    requireNonNull(relatedPlanId, "relatedPlanId is null"),
-                    null,
-                    null,
-                    null);
-        }
-
-        static Finding redundantPin(String planId, String key, String value) {
-            return new Finding(
-                    Kind.REDUNDANT_PIN,
-                    Severity.WARNING,
-                    requireNonNull(planId, "planId is null"),
-                    null,
-                    requireNonNull(key, "key is null"),
-                    requireNonNull(value, "value is null"),
-                    null);
-        }
-
-        static Finding coverageGap(String expression) {
-            return new Finding(
-                    Kind.COVERAGE_GAP,
-                    Severity.WARNING,
-                    null,
-                    null,
-                    null,
-                    null,
-                    requireNonNull(expression, "expression is null"));
+            this.expr = expr;
         }
 
         /**
@@ -1172,7 +1107,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
          * @return expression when present
          */
         public Optional<String> expression() {
-            return Optional.ofNullable(expression);
+            return Optional.ofNullable(expr);
         }
     }
 }

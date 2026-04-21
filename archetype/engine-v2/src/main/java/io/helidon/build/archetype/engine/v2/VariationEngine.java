@@ -55,6 +55,11 @@ import io.helidon.build.common.Maps;
 import io.helidon.build.common.logging.Log;
 import io.helidon.build.common.logging.LogLevel;
 
+import static io.helidon.build.archetype.engine.v2.Variations.Finding.Kind.COVERAGE_GAP;
+import static io.helidon.build.archetype.engine.v2.Variations.Finding.Kind.PLAN_OVERLAP;
+import static io.helidon.build.archetype.engine.v2.Variations.Finding.Kind.REDUNDANT_PIN;
+import static io.helidon.build.archetype.engine.v2.Variations.Finding.Kind.REDUNDANT_PLAN;
+import static io.helidon.build.archetype.engine.v2.Variations.Finding.Severity.WARNING;
 import static java.util.Objects.requireNonNull;
 
 /**
@@ -68,8 +73,8 @@ public final class VariationEngine {
     private final Flow flow;
     private boolean initialized;
     private Prepared prepared;
-    private Request cachedPlanRequest;
-    private PlanAnalysis cachedPlanAnalysis;
+    private Request request;
+    private PlanAnalysis planAnalysis;
 
     /**
      * Create a new instance.
@@ -111,8 +116,8 @@ public final class VariationEngine {
             return new PlanComputation(request).computeSingle();
         }
         PlanComputation computation = new PlanComputation(request);
-        PlanAnalysis analysis = cachedPlanRequest == request && cachedPlanAnalysis != null
-                ? cachedPlanAnalysis
+        PlanAnalysis analysis = this.request == request && planAnalysis != null
+                ? planAnalysis
                 : computation.analysis();
         cachePlanAnalysis(request, analysis);
         return computation.compute(analysis);
@@ -129,7 +134,7 @@ public final class VariationEngine {
         init();
         if (request.plans().isEmpty()) {
             clearPlanCache();
-            return Diagnostics.empty();
+            return Diagnostics.EMPTY;
         }
         PlanAnalysis analysis = new PlanComputation(request).analysis();
         cachePlanAnalysis(request, analysis);
@@ -148,17 +153,16 @@ public final class VariationEngine {
     }
 
     private void cachePlanAnalysis(Request request, PlanAnalysis analysis) {
-        cachedPlanRequest = request;
-        cachedPlanAnalysis = analysis;
+        this.request = request;
+        planAnalysis = analysis;
     }
 
     private void clearPlanCache() {
-        cachedPlanRequest = null;
-        cachedPlanAnalysis = null;
+        request = null;
+        planAnalysis = null;
     }
 
-    private Map<String, String> resolveExternalValues(Map<String, String> externalValues,
-                                                      Map<String, String> externalDefaults) {
+    private Map<String, String> resolveExternalValues(Map<String, String> externalValues, Map<String, String> externalDefaults) {
         if (externalValues.isEmpty()) {
             return Map.of();
         }
@@ -236,14 +240,14 @@ public final class VariationEngine {
         return info;
     }
 
-    private Guard externalConstraintGuard(Map<String, String> externalValues) {
-        return externalConstraintGuard(externalValues, null, null);
+    private Guard externalConstraint(Map<String, String> externalValues) {
+        return externalConstraint(externalValues, null, null);
     }
 
-    private Guard externalConstraintGuard(Map<String, String> externalValues, String planId, List<Finding> findings) {
+    private Guard externalConstraint(Map<String, String> externalValues, String planId, List<Finding> findings) {
         Guard guard = Guard.TRUE;
         for (Map.Entry<String, String> entry : externalValues.entrySet()) {
-            Guard next = constraintGuard(entry.getKey(), entry.getValue(), planId, findings, guard);
+            Guard next = constraint(entry.getKey(), entry.getValue(), planId, findings, guard);
             if (next != null) {
                 guard = flow.and(guard, next);
             }
@@ -251,31 +255,32 @@ public final class VariationEngine {
         return guard;
     }
 
-    private Guard constraintGuard(String key, String value, String planId, List<Finding> findings, Guard current) {
+    private Guard constraint(String key, String value, String planId, List<Finding> findings, Guard current) {
         InputModel input = prepared.inputsByKey.get(key);
-        Guard next = input != null ? input.constraintGuard(value) : constraintGuard(key, value, symbolInfo(key));
+        Guard next = input != null ? input.constraint(value) : constraint(key, value, symbolInfo(key));
         if (next != null && findings != null && planId != null && subset(current, next)) {
-            findings.add(Finding.redundantPin(planId, key, value));
+            findings.add(new Finding(REDUNDANT_PIN, WARNING, planId, null, key, value, null));
         }
         return next;
     }
 
-    private Guard constraintGuard(String key, String value, SymbolInfo info) {
+    private Guard constraint(String key, String value, SymbolInfo info) {
         if (info == null) {
             return null;
         }
-        Symbol symbol = info.symbol();
-        if (!symbol.guardable() || symbol.tainted() || symbol.domain().kind() == Spec.Kind.OPEN_TEXT) {
+        Symbol sym = info.symbol();
+        Spec domain = sym.domain();
+        if (!sym.guardable() || sym.tainted() || domain.kind() == Spec.Kind.OPEN_TEXT) {
             return null;
         }
-        switch (symbol.domain().kind()) {
+        switch (domain.kind()) {
             case BOOLEAN:
             case CHOICE:
             case FINITE_TEXT:
-                if (!symbol.domain().contains(value)) {
+                if (!domain.contains(value)) {
                     throw new IllegalStateException(String.format("Invalid value '%s' for key '%s'", value, key));
                 }
-                Guard direct = flow.guards().eq(symbol.id(), value);
+                Guard direct = flow.guards().eq(sym.id(), value);
                 Guard availability = info.availability(value);
                 return availability == null ? direct : flow.guards().and(availability, direct);
             case MEMBERSHIP:
@@ -307,11 +312,11 @@ public final class VariationEngine {
         return filters;
     }
 
-    private Expression prune(Expression expression, Map<String, String> externalValues) {
-        if (expression == Expression.TRUE || expression == Expression.FALSE || externalValues.isEmpty()) {
-            return expression;
+    private Expression prune(Expression expr, Map<String, String> externalValues) {
+        if (expr == Expression.TRUE || expr == Expression.FALSE || externalValues.isEmpty()) {
+            return expr;
         }
-        return expression.inline(variable -> {
+        return expr.inline(variable -> {
             String value = externalValues.get(variable);
             return value == null ? null : Value.parse(value, valueType(variable));
         });
@@ -396,15 +401,9 @@ public final class VariationEngine {
         return false;
     }
 
-    private boolean eval(Expression expression, Map<String, String> values) {
-        if (expression == Expression.TRUE) {
-            return true;
-        }
-        if (expression == Expression.FALSE) {
-            return false;
-        }
+    private boolean eval(Expression expr, Map<String, String> values) {
         try {
-            return expression.eval(variable -> {
+            return expr.eval(variable -> {
                 String value = values.get(variable);
                 return value == null ? null : Value.dynamic(value);
             });
@@ -422,11 +421,10 @@ public final class VariationEngine {
                     .externalDefaults(externalDefaults)
                     .pushCwd(cwd);
             variation.forEach((key, value) -> {
-                if (externalValues.containsKey(key)) {
-                    return;
+                if (!externalValues.containsKey(key)) {
+                    Scope scope = context.scope().getOrCreate(key);
+                    scope.value(Value.dynamic(value), ValueKind.USER);
                 }
-                Scope scope = context.scope().getOrCreate(key);
-                scope.value(Value.dynamic(value), ValueKind.USER);
             });
 
             Set<Scope> scopes = new LinkedHashSet<>();
@@ -475,10 +473,10 @@ public final class VariationEngine {
 
     private Map<String, String> orderedValues(Map<String, ScopeValue<?>> effective) {
         Map<String, List<Map.Entry<String, ScopeValue<?>>>> groups = new LinkedHashMap<>();
-        Map<String, Integer> encounterOrder = new HashMap<>();
+        Map<String, Integer> order = new HashMap<>();
         int next = 0;
         for (Map.Entry<String, ScopeValue<?>> entry : effective.entrySet()) {
-            encounterOrder.put(entry.getKey(), next++);
+            order.put(entry.getKey(), next++);
             groups.computeIfAbsent(groupKey(entry.getKey()), ignored -> new ArrayList<>()).add(entry);
         }
         Map<String, String> values = new LinkedHashMap<>();
@@ -501,7 +499,7 @@ public final class VariationEngine {
                 if (result != 0) {
                     return result;
                 }
-                return Integer.compare(encounterOrder.get(left.getKey()), encounterOrder.get(right.getKey()));
+                return Integer.compare(order.get(left.getKey()), order.get(right.getKey()));
             });
             for (Map.Entry<String, ScopeValue<?>> entry : toSort) {
                 values.put(entry.getKey(), Value.toString(entry.getValue()));
@@ -557,14 +555,6 @@ public final class VariationEngine {
         }
 
         Variations normalized(List<CandidateRegion> regions, List<Expression> filters) {
-            return normalized(regions, filters, externalValues, externalDefaults, resolvedExternalDefaults);
-        }
-
-        Variations normalized(List<CandidateRegion> regions,
-                              List<Expression> filters,
-                              Map<String, String> externalValues,
-                              Map<String, String> externalDefaults,
-                              Map<String, String> resolvedExternalDefaults) {
             Collection<Variations.Entry> normalized = regions.stream()
                     .map(region -> materialize(region, filters, externalValues, externalDefaults, resolvedExternalDefaults))
                     .filter(Objects::nonNull)
@@ -585,9 +575,9 @@ public final class VariationEngine {
         }
 
         Variations compute() {
-            Guard initialGuard = externalConstraintGuard(resolvedExternalValues);
+            Guard initial = externalConstraint(resolvedExternalValues);
             Guard excludedGuard = combinedExcludeGuard(filters, resolvedExternalValues);
-            List<CandidateRegion> regions = new RegionEnumerator(initialGuard,
+            List<CandidateRegion> regions = new RegionEnumerator(initial,
                     excludedGuard,
                     filters,
                     resolvedExternalValues,
@@ -644,15 +634,9 @@ public final class VariationEngine {
             planDefaults.putAll(plan.externalDefaults());
             Map<String, String> resolvedPlanValues = resolveExternalValues(planValues, planDefaults);
             List<Finding> redundantPins = new ArrayList<>();
-            Guard pinned = externalConstraintGuard(resolvedPlanValues, plan.id(), redundantPins);
+            Guard pinned = externalConstraint(resolvedPlanValues, plan.id(), redundantPins);
             Guard excluded = combinedExcludeGuard(plan.filters(), resolvedPlanValues);
-            return new CompiledPlan(
-                    plan,
-                    pinned,
-                    excluded,
-                    Collections.unmodifiableMap(planValues),
-                    Collections.unmodifiableMap(planDefaults),
-                    redundantPins);
+            return new CompiledPlan(plan, pinned, excluded, planValues, planDefaults, redundantPins);
         }
 
         Variations computePlan(CompiledPlan compiledPlan) {
@@ -668,84 +652,82 @@ public final class VariationEngine {
             return computedPlan;
         }
 
-        void ensureSatisfiable(CompiledPlan compiledPlan) {
-            Guard included = flow.minus(compiledPlan.pinnedRegion, compiledPlan.excludedRegion);
+        void ensureSatisfiable(CompiledPlan plan) {
+            Guard included = flow.minus(plan.pinned, plan.excluded);
             Guard covered = flow.and(reachableGuard(), included);
             if (!flow.isFalse(covered)) {
                 return;
             }
             throw new IllegalStateException(String.format(
                     "Variation plan '%s' is unsatisfiable: %s",
-                    compiledPlan.plan.id(),
+                    plan.plan.id(),
                     render(included)));
         }
 
         Guard reachableGuard() {
             return flow.minus(
-                    externalConstraintGuard(resolvedExternalValues),
+                    externalConstraint(resolvedExternalValues),
                     combinedExcludeGuard(filters, resolvedExternalValues));
         }
 
-        Diagnostics diagnostics(List<CompiledPlan> compiledPlans) {
+        Diagnostics diagnostics(List<CompiledPlan> plans) {
             Guard reachable = reachableGuard();
-            List<Finding> unsatisfiablePlans = new ArrayList<>();
-            List<Finding> overlaps = new ArrayList<>();
-            List<Finding> redundantPlans = new ArrayList<>();
-            List<Finding> redundantPins = new ArrayList<>();
-            for (CompiledPlan compiledPlan : compiledPlans) {
-                redundantPins.addAll(compiledPlan.findings);
-                Guard included = flow.minus(compiledPlan.pinnedRegion, compiledPlan.excludedRegion);
+            List<Finding> findings = new ArrayList<>();
+            for (CompiledPlan plan : plans) {
+                findings.addAll(plan.findings);
+                Guard included = flow.minus(plan.pinned, plan.excluded);
                 Guard covered = flow.and(reachable, included);
                 if (flow.isFalse(covered)) {
-                    unsatisfiablePlans.add(Finding.unsatisfiablePlan(compiledPlan.plan.id(), render(included)));
+                    findings.add(new Finding(
+                            Finding.Kind.UNSATISFIABLE_PLAN,
+                            Finding.Severity.ERROR,
+                            plan.plan.id(),
+                            null,
+                            null,
+                            null,
+                            render(included)));
                 }
             }
 
-            for (int i = 0; i < compiledPlans.size(); i++) {
-                CompiledPlan left = compiledPlans.get(i);
-                Guard leftGuard = flow.and(reachable, flow.minus(left.pinnedRegion, left.excludedRegion));
-                for (int j = i + 1; j < compiledPlans.size(); j++) {
-                    CompiledPlan right = compiledPlans.get(j);
-                    Guard rightGuard = flow.and(reachable, flow.minus(right.pinnedRegion, right.excludedRegion));
+            for (int i = 0; i < plans.size(); i++) {
+                CompiledPlan left = plans.get(i);
+                Guard leftGuard = flow.and(reachable, flow.minus(left.pinned, left.excluded));
+                for (int j = i + 1; j < plans.size(); j++) {
+                    CompiledPlan right = plans.get(j);
+                    Guard rightGuard = flow.and(reachable, flow.minus(right.pinned, right.excluded));
                     Guard overlapGuard = flow.and(leftGuard, rightGuard);
                     if (!flow.isFalse(overlapGuard)) {
-                        overlaps.add(Finding.planOverlap(left.plan.id(), right.plan.id(), render(overlapGuard)));
+                        String expr = render(overlapGuard);
+                        findings.add(new Finding(PLAN_OVERLAP, WARNING, left.plan.id(), right.plan.id(), null, null, expr));
                     }
                     if (!flow.isFalse(leftGuard) && subset(leftGuard, rightGuard) && !subset(rightGuard, leftGuard)) {
-                        redundantPlans.add(Finding.redundantPlan(left.plan.id(), right.plan.id()));
+                        findings.add(new Finding(REDUNDANT_PLAN, WARNING, left.plan.id(), right.plan.id(), null, null, null));
                     }
                     if (!flow.isFalse(rightGuard) && subset(rightGuard, leftGuard) && !subset(leftGuard, rightGuard)) {
-                        redundantPlans.add(Finding.redundantPlan(right.plan.id(), left.plan.id()));
+                        findings.add(new Finding(REDUNDANT_PLAN, WARNING, right.plan.id(), left.plan.id(), null, null, null));
                     }
                 }
             }
 
             Guard covered = Guard.FALSE;
-            for (CompiledPlan compiledPlan : compiledPlans) {
-                Guard included = flow.and(reachable, flow.minus(compiledPlan.pinnedRegion, compiledPlan.excludedRegion));
+            for (CompiledPlan plan : plans) {
+                Guard included = flow.and(reachable, flow.minus(plan.pinned, plan.excluded));
                 covered = flow.or(covered, included);
             }
-            List<Finding> coverageGaps = List.of();
-            if (compiledPlans.size() > 1) {
+            if (plans.size() > 1) {
                 Guard uncovered = flow.minus(reachable, covered);
                 if (!flow.isFalse(uncovered)) {
-                    coverageGaps = List.of(Finding.coverageGap(render(uncovered)));
+                    String expr = render(uncovered);
+                    findings.add(new Finding(COVERAGE_GAP, WARNING, null, null, null, null, expr));
                 }
             }
-
-            List<Finding> findings = new ArrayList<>();
-            findings.addAll(unsatisfiablePlans);
-            findings.addAll(overlaps);
-            findings.addAll(redundantPlans);
-            findings.addAll(redundantPins);
-            findings.addAll(coverageGaps);
             return new Diagnostics(findings);
         }
     }
 
     private final class RegionEnumerator {
-        private final Guard initialGuard;
-        private final Guard excludedGuard;
+        private final Guard initial;
+        private final Guard excluded;
         private final List<Expression> filters;
         private final List<Set<String>> filterVariables;
         private final Map<String, String> fixedValues;
@@ -753,13 +735,12 @@ public final class VariationEngine {
         private final long maxIntermediate;
         private final List<CandidateRegion> regions = new ArrayList<>();
 
-        RegionEnumerator(Guard initialGuard,
-                         Guard excludedGuard,
+        RegionEnumerator(Guard initial, Guard excluded,
                          List<Expression> filters,
                          Map<String, String> fixedValues,
                          long maxIntermediate) {
-            this.initialGuard = initialGuard;
-            this.excludedGuard = excludedGuard;
+            this.initial = initial;
+            this.excluded = excluded;
             this.filters = filters;
             this.filterVariables = Lists.map(this.filters, Expression::variables);
             this.fixedValues = fixedValues;
@@ -768,8 +749,8 @@ public final class VariationEngine {
         }
 
         List<CandidateRegion> enumerate() {
-            if (!flow.isFalse(initialGuard)) {
-                enumerate(0, initialGuard, new LinkedHashMap<>(), new LinkedHashSet<>());
+            if (!flow.isFalse(initial)) {
+                enumerate(0, initial, new LinkedHashMap<>(), new LinkedHashSet<>());
             }
             return regions;
         }
@@ -779,13 +760,17 @@ public final class VariationEngine {
                 return;
             }
             if (index == inputs.size()) {
-                addRegion(regionGuard, values, activeTextInputs, inputs.isEmpty() ? "<none>" : inputs.get(inputs.size() - 1).key);
+                if (inputs.isEmpty()) {
+                    addRegion(regionGuard, values, activeTextInputs, "<none>");
+                } else {
+                    addRegion(regionGuard, values, activeTextInputs, inputs.get(inputs.size() - 1).key);
+                }
                 return;
             }
 
             InputModel input = inputs.get(index);
-            Guard active = flow.and(regionGuard, input.definitionGuard);
-            Guard inactive = flow.minus(regionGuard, input.definitionGuard);
+            Guard active = flow.and(regionGuard, input.definition);
+            Guard inactive = flow.minus(regionGuard, input.definition);
             if (!flow.isFalse(inactive)) {
                 enumerate(index + 1, inactive, values, activeTextInputs);
             }
@@ -819,7 +804,7 @@ public final class VariationEngine {
             Value<?> exact = input.declaredValue(active);
             if (exact.isPresent()) {
                 String value = input.canonicalFiniteValue(exact);
-                Guard guard = flow.and(active, input.constraintGuard(value));
+                Guard guard = flow.and(active, input.constraint(value));
                 if (!flow.isFalse(guard)) {
                     Map<String, String> nextValues = new LinkedHashMap<>(values);
                     nextValues.put(input.key, value);
@@ -828,7 +813,7 @@ public final class VariationEngine {
                 return;
             }
             for (String option : input.options) {
-                Guard guard = flow.and(active, input.constraintGuard(option));
+                Guard guard = flow.and(active, input.constraint(option));
                 if (flow.isFalse(guard)) {
                     continue;
                 }
@@ -857,7 +842,7 @@ public final class VariationEngine {
 
             String option = input.options.get(optionIndex);
             Guard availability = input.availability(option);
-            Guard contains = flow.guards().contains(input.symbolInfo.symbol().id(), option);
+            Guard contains = flow.guards().contains(input.symInfo.symbol().id(), option);
             if (!flow.isFalse(availability)) {
                 Guard included = flow.and(current, flow.guards().and(availability, contains));
                 if (!flow.isFalse(included)) {
@@ -879,16 +864,16 @@ public final class VariationEngine {
             if (filters.isEmpty()) {
                 return prepared.inputs;
             }
-            Map<String, Integer> references = new HashMap<>();
+            Map<String, Integer> refs = new HashMap<>();
             for (Expression filter : filters) {
                 for (String variable : filter.variables()) {
-                    references.compute(variable, (key, value) -> value == null ? 1 : value + 1);
+                    refs.compute(variable, (key, value) -> value == null ? 1 : value + 1);
                 }
             }
             List<InputModel> ordered = new ArrayList<>(prepared.inputs);
             ordered.sort((left, right) -> {
-                int leftRefs = references.getOrDefault(left.key, 0);
-                int rightRefs = references.getOrDefault(right.key, 0);
+                int leftRefs = refs.getOrDefault(left.key, 0);
+                int rightRefs = refs.getOrDefault(right.key, 0);
                 if ((leftRefs > 0) != (rightRefs > 0)) {
                     return leftRefs > 0 ? -1 : 1;
                 }
@@ -908,7 +893,7 @@ public final class VariationEngine {
         }
 
         boolean excluded(Guard regionGuard, Map<String, String> values) {
-            if (!flow.isFalse(excludedGuard) && subset(regionGuard, excludedGuard)) {
+            if (!flow.isFalse(excluded) && subset(regionGuard, excluded)) {
                 return true;
             }
             if (filters.isEmpty()) {
@@ -1001,17 +986,17 @@ public final class VariationEngine {
     private final class InputModel {
         private final String key;
         private final Kind kind;
-        private final SymbolInfo symbolInfo;
+        private final SymbolInfo symInfo;
         private final List<InputOccurrence> occurrences = new ArrayList<>();
         private final List<String> options = new ArrayList<>();
-        private final Map<String, Guard> availabilityGuards = new HashMap<>();
-        private final Map<String, Guard> constraintGuards = new HashMap<>();
-        private Guard definitionGuard = Guard.FALSE;
+        private final Map<String, Guard> availability = new HashMap<>();
+        private final Map<String, Guard> constraints = new HashMap<>();
+        private Guard definition = Guard.FALSE;
 
-        InputModel(String key, Kind kind, SymbolInfo symbolInfo) {
+        InputModel(String key, Kind kind, SymbolInfo symInfo) {
             this.key = key;
             this.kind = kind;
-            this.symbolInfo = symbolInfo;
+            this.symInfo = symInfo;
             if (kind == Kind.INPUT_BOOLEAN) {
                 options.add("true");
                 options.add("false");
@@ -1022,33 +1007,33 @@ public final class VariationEngine {
             if (!supportsOption(value)) {
                 return Guard.FALSE;
             }
-            if (availabilityGuards.containsKey(value)) {
-                return availabilityGuards.get(value);
+            if (availability.containsKey(value)) {
+                return availability.get(value);
             }
             Guard available = Guard.FALSE;
             for (InputOccurrence occurrence : occurrences) {
                 available = flow.or(available, occurrence.availability(value));
             }
-            availabilityGuards.put(value, available);
+            availability.put(value, available);
             return available;
         }
 
-        Guard constraintGuard(String value) {
+        Guard constraint(String value) {
             switch (kind) {
                 case INPUT_BOOLEAN:
                 case INPUT_ENUM:
                     validateOption(value);
-                    if (constraintGuards.containsKey(value)) {
-                        return constraintGuards.get(value);
+                    if (constraints.containsKey(value)) {
+                        return constraints.get(value);
                     }
                     Guard allowed = Guard.FALSE;
                     for (InputOccurrence occurrence : occurrences) {
-                        Guard next = occurrence.constraintGuard(value);
+                        Guard next = occurrence.constraint(value);
                         if (!flow.isFalse(next)) {
                             allowed = flow.or(allowed, next);
                         }
                     }
-                    constraintGuards.put(value, allowed);
+                    constraints.put(value, allowed);
                     return allowed;
                 case INPUT_LIST:
                     return membershipGuard(value);
@@ -1061,15 +1046,13 @@ public final class VariationEngine {
             if (node.kind() != kind) {
                 throw new IllegalStateException(String.format(
                         "Input '%s' is declared with incompatible kinds: %s and %s",
-                        key,
-                        kind,
-                        node.kind()));
+                        key, kind, node.kind()));
             }
             InputOccurrence occurrence = new InputOccurrence(node);
             occurrences.add(occurrence);
-            availabilityGuards.clear();
-            constraintGuards.clear();
-            definitionGuard = flow.or(definitionGuard, occurrence.definitionGuard);
+            availability.clear();
+            constraints.clear();
+            definition = flow.or(definition, occurrence.definition);
             if (kind == Kind.INPUT_ENUM || kind == Kind.INPUT_LIST) {
                 for (String option : occurrence.options) {
                     if (!options.contains(option)) {
@@ -1133,7 +1116,7 @@ public final class VariationEngine {
         Value<?> declaredValue(Guard regionGuard) {
             Value<?> exact = Value.empty();
             for (InputOccurrence occurrence : occurrences) {
-                Guard active = flow.and(regionGuard, occurrence.definitionGuard);
+                Guard active = flow.and(regionGuard, occurrence.definition);
                 if (flow.isFalse(active)) {
                     continue;
                 }
@@ -1152,7 +1135,7 @@ public final class VariationEngine {
 
         String defaultValue(Guard regionGuard) {
             for (InputOccurrence occurrence : occurrences) {
-                Guard active = flow.and(regionGuard, occurrence.definitionGuard);
+                Guard active = flow.and(regionGuard, occurrence.definition);
                 if (!flow.isFalse(active) && occurrence.defaultValue != null) {
                     return occurrence.defaultValue;
                 }
@@ -1211,13 +1194,13 @@ public final class VariationEngine {
 
         private final class InputOccurrence {
             private final Node node;
-            private final Guard definitionGuard;
+            private final Guard definition;
             private final String[] options;
             private final String defaultValue;
 
             InputOccurrence(Node node) {
                 this.node = node;
-                this.definitionGuard = flow.activeGuard(node.parent());
+                this.definition = flow.activeGuard(node.parent());
                 switch (node.kind()) {
                     case INPUT_BOOLEAN:
                         this.options = new String[] {"true", "false"};
@@ -1238,14 +1221,14 @@ public final class VariationEngine {
                     return Guard.FALSE;
                 }
                 Guards guards = flow.guards();
-                Guard availability = symbolInfo.availability(value);
-                Guard active = availability == null ? definitionGuard : guards.and(definitionGuard, availability);
+                Guard availability = symInfo.availability(value);
+                Guard active = availability == null ? definition : guards.and(definition, availability);
                 return flow.isFalse(active) ? Guard.FALSE : active;
             }
 
-            Guard constraintGuard(String value) {
+            Guard constraint(String value) {
                 Guards guards = flow.guards();
-                Symbol sym = symbolInfo.symbol();
+                Symbol sym = symInfo.symbol();
                 if (!sym.domain().scalar() || !sym.domain().contains(value) || !sym.guardable()) {
                     return Guard.FALSE;
                 }
@@ -1254,8 +1237,8 @@ public final class VariationEngine {
 
             Guard membershipGuard(List<String> selected) {
                 Guards guards = flow.guards();
-                Guard guard = definitionGuard;
-                Symbol sym = symbolInfo.symbol();
+                Guard guard = definition;
+                Symbol sym = symInfo.symbol();
                 Spec domain = sym.domain();
                 for (String option : options) {
                     Guard availability = availability(option);
@@ -1312,21 +1295,21 @@ public final class VariationEngine {
 
     private static final class CompiledPlan {
         private final Plan plan;
-        private final Guard pinnedRegion;
-        private final Guard excludedRegion;
+        private final Guard pinned;
+        private final Guard excluded;
         private final Map<String, String> externalValues;
         private final Map<String, String> externalDefaults;
         private final List<Finding> findings;
 
         CompiledPlan(Plan plan,
-                     Guard pinnedRegion,
-                     Guard excludedRegion,
+                     Guard pinned,
+                     Guard excluded,
                      Map<String, String> externalValues,
                      Map<String, String> externalDefaults,
                      List<Finding> findings) {
             this.plan = plan;
-            this.pinnedRegion = pinnedRegion;
-            this.excludedRegion = excludedRegion;
+            this.pinned = pinned;
+            this.excluded = excluded;
             this.externalValues = externalValues;
             this.externalDefaults = externalDefaults;
             this.findings = findings;
