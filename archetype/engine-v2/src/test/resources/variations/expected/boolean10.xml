@@ -18,13 +18,13 @@
 -->
 <variations>
     <variation>
-        <flavor>mp</flavor>
-        <app-type>custom</app-type>
+        <variant>advanced</variant>
+        <mode>tailored</mode>
         <jpms>false</jpms>
     </variation>
     <variation>
-        <flavor>mp</flavor>
-        <app-type>custom</app-type>
+        <variant>advanced</variant>
+        <mode>tailored</mode>
         <jpms>true</jpms>
     </variation>
 </variations>

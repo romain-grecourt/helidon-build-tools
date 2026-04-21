@@ -159,7 +159,7 @@ class VariationsTest {
         Variations actual = variations("variations",
                 "boolean10.xml",
                 Request.builder()
-                        .externalValues(Map.of("flavor", "mp", "app-type", "custom"))
+                        .externalValues(Map.of("variant", "advanced", "mode", "tailored"))
                         .build());
         assertThat(actual.toString(false), is(expected.toString(false)));
     }
@@ -303,9 +303,9 @@ class VariationsTest {
 
     @Test
     void testVariationsPruneInactiveBranchBeforePresetValidation() {
-        Variations expected = Variations.of(Map.of("app-type", "oci", "flavor", "mp"), Set.of());
+        Variations expected = loadVariations("variations/expected/branch-pruning.xml");
         Variations actual = variations("variations", "branch-pruning.xml", Request.builder()
-                .externalValues(Map.of("flavor", "mp", "app-type", "oci"))
+                .externalValues(Map.of("variant", "advanced", "mode", "hosted"))
                 .build());
         assertThat(actual, is(expected));
     }
@@ -397,52 +397,21 @@ class VariationsTest {
 
     @Test
     void testVariationsKeepNestedEnumWhenParentBooleanIsExternallyFixed() {
-        Variations expected = Variations.of(
-                entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
-                        "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "opentelemetry")),
-                entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
-                        "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "zipkin")),
-                entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
-                        "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "opentelemetry")),
-                entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
-                        "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "zipkin")),
-                entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
-                        "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "opentelemetry")),
-                entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
-                        "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "zipkin")),
-                entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
-                        "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "opentelemetry")),
-                entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
-                        "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "zipkin")));
+        Variations expected = loadVariations("variations/expected/nested-enum-preserved.xml");
         Variations actual = variations("variations", "nested-enum-under-fixed-boolean.xml", Request.builder()
-                .externalValues(Map.of("flavor", "mp", "metrics", "true", "tracing", "true"))
+                .externalValues(Map.of("variant", "advanced", "feature-a", "true", "feature-b", "true"))
                 .build());
         assertThat(actual, is(expected));
     }
 
     @Test
     void testVariationsKeepNestedEnumAcrossSourceAndExecGraph() {
-        Variations expected = Variations.of(
-                entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
-                        "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "opentelemetry")),
-                entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
-                        "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "zipkin")),
-                entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
-                        "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "opentelemetry")),
-                entry(Map.of("flavor", "mp", "jpms", "false", "metrics", "true",
-                        "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "zipkin")),
-                entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
-                        "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "opentelemetry")),
-                entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
-                        "metrics.provider", "microprofile", "tracing", "true", "tracing.provider", "zipkin")),
-                entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
-                        "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "opentelemetry")),
-                entry(Map.of("flavor", "mp", "jpms", "true", "metrics", "true",
-                        "metrics.provider", "micrometer", "tracing", "true", "tracing.provider", "zipkin")));
-
-        Variations actual = variations("variations/observability-repro", "main.xml", Request.builder()
-                .externalValues(Map.of("flavor", "mp", "metrics", "true", "tracing", "true"))
-                .build());
+        Variations expected = loadVariations("variations/expected/nested-enum-preserved.xml");
+        Variations actual = variations("variations/source-graph-repro",
+                "main.xml",
+                Request.builder()
+                        .externalValues(Map.of("variant", "advanced", "feature-a", "true", "feature-b", "true"))
+                        .build());
         assertThat(actual, is(expected));
     }
 

@@ -19,21 +19,14 @@
 <archetype-script xmlns="https://helidon.io/archetype/2.0"
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
-
-    <step name="Selectors">
-        <inputs>
-            <enum id="variant" name="Variant">
-                <option value="basic" name="Basic"/>
-                <option value="advanced" name="Advanced"/>
-            </enum>
-            <enum id="mode" name="Mode">
-                <option value="tailored" name="Tailored"/>
-                <option value="hosted" name="Hosted"/>
-            </enum>
-        </inputs>
-    </step>
-    <presets if="${mode} == 'hosted' &amp;&amp; ${variant} == 'advanced'">
-        <boolean path="jpms">false</boolean>
-    </presets>
-    <exec src="boolean7-packaging.xml" if="${mode} != 'hosted' || ${variant} != 'basic'"/>
+    <output if="${feature-b.channel} == 'gamma'">
+        <model>
+            <value key="feature-b.impl">gamma</value>
+        </model>
+    </output>
+    <output if="${feature-b.channel} == 'delta'">
+        <model>
+            <value key="feature-b.impl">delta</value>
+        </model>
+    </output>
 </archetype-script>

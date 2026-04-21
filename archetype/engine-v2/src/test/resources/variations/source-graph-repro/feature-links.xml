@@ -19,9 +19,7 @@
 <archetype-script xmlns="https://helidon.io/archetype/2.0"
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
-    <output if="${metrics.provider} == 'microprofile'">
-        <model>
-            <value key="metrics.impl">microprofile</value>
-        </model>
-    </output>
+    <exec src="feature-b-outputs.xml" if="${feature-b}"/>
+    <exec src="feature-a-alpha.xml" if="${feature-a}"/>
+    <exec src="feature-a-beta.xml" if="${feature-a}"/>
 </archetype-script>

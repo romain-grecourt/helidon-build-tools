@@ -19,16 +19,9 @@
 <archetype-script xmlns="https://helidon.io/archetype/2.0"
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
-    <source src="common-observability.xml"/>
-    <source src="custom-observability.xml"/>
-    <step name="Packaging">
-        <inputs>
-            <boolean id="jpms" name="JPMS" optional="true" default="false"/>
-        </inputs>
-        <output>
-            <model>
-                <value key="jpms">${jpms}</value>
-            </model>
-        </output>
-    </step>
+    <output if="${feature-a.channel} == 'alpha'">
+        <model>
+            <value key="feature-a.impl">alpha</value>
+        </model>
+    </output>
 </archetype-script>

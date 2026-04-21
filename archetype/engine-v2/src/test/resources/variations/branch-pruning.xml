@@ -20,36 +20,36 @@
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
 
-    <step name="Flavor" optional="true">
+    <step name="Variant" optional="true">
         <inputs>
-            <enum id="flavor"
-                  name="Select a Flavor"
-                  default="se"
+            <enum id="variant"
+                  name="Select a Variant"
+                  default="basic"
                   global="true"
                   optional="true">
-                <option value="se"
-                        name="Helidon SE">
+                <option value="basic"
+                        name="Basic">
                     <inputs>
-                        <enum id="app-type"
-                              name="Select an Application Type"
-                              default="quickstart"
+                        <enum id="mode"
+                              name="Select a Mode"
+                              default="starter"
                               global="true"
                               optional="true">
-                            <option value="quickstart" name="Quickstart"/>
-                            <option value="custom" name="Custom"/>
+                            <option value="starter" name="Starter"/>
+                            <option value="tailored" name="Tailored"/>
                         </enum>
                     </inputs>
                 </option>
-                <option value="mp"
-                        name="Helidon MP">
+                <option value="advanced"
+                        name="Advanced">
                     <inputs>
-                        <enum id="app-type"
-                              name="Select an Application Type"
-                              default="quickstart"
+                        <enum id="mode"
+                              name="Select a Mode"
+                              default="starter"
                               global="true"
                               optional="true">
-                            <option value="quickstart" name="Quickstart"/>
-                            <option value="oci" name="OCI"/>
+                            <option value="starter" name="Starter"/>
+                            <option value="hosted" name="Hosted"/>
                         </enum>
                     </inputs>
                 </option>

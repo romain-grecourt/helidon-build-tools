@@ -19,7 +19,7 @@
 <archetype-script xmlns="https://helidon.io/archetype/2.0"
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
-    <step name="Selectors">
+    <step name="Features" optional="true">
         <inputs>
             <enum id="variant" name="Variant">
                 <option value="basic" name="Basic"/>
@@ -42,7 +42,6 @@
                     </enum>
                 </inputs>
             </boolean>
-            <boolean id="jpms" name="JPMS" optional="true" default="false"/>
         </inputs>
         <output>
             <model>
@@ -51,7 +50,6 @@
                 <value key="feature-a.channel" if="${feature-a} &amp;&amp; ${variant} == 'advanced'">${feature-a.channel}</value>
                 <value key="feature-b" if="${feature-b}">true</value>
                 <value key="feature-b.channel" if="${feature-b}">${feature-b.channel}</value>
-                <value key="jpms">${jpms}</value>
             </model>
         </output>
     </step>

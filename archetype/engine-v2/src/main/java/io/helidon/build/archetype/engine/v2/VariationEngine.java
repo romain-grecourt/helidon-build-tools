@@ -41,6 +41,7 @@ import io.helidon.build.archetype.engine.v2.Domain.Guard;
 import io.helidon.build.archetype.engine.v2.Domain.Guards;
 import io.helidon.build.archetype.engine.v2.Domain.Spec;
 import io.helidon.build.archetype.engine.v2.Domain.Symbol;
+import io.helidon.build.archetype.engine.v2.Flow.SymbolInfo;
 import io.helidon.build.archetype.engine.v2.InputResolver.InvalidInputException;
 import io.helidon.build.archetype.engine.v2.InputResolver.ResolvedKind;
 import io.helidon.build.archetype.engine.v2.Node.Kind;
@@ -213,7 +214,7 @@ public final class VariationEngine {
         if (input != null) {
             return input.kind.valueType();
         }
-        Flow.SymbolInfo info = symbolInfo(key);
+        SymbolInfo info = symbolInfo(key);
         if (info == null) {
             return Value.Type.STRING;
         }
@@ -227,23 +228,21 @@ public final class VariationEngine {
         }
     }
 
-    private Flow.SymbolInfo symbolInfo(String key) {
-        Flow.SymbolInfo info = flow.symbol(key);
+    private SymbolInfo symbolInfo(String key) {
+        SymbolInfo info = flow.symbol(key);
         if (info == null && !key.startsWith("~")) {
             info = flow.symbol("~" + key);
         }
         return info;
     }
 
-    private Guard externalConstraintGuard(Map<String, String> resolvedExternalValues) {
-        return externalConstraintGuard(resolvedExternalValues, null, null);
+    private Guard externalConstraintGuard(Map<String, String> externalValues) {
+        return externalConstraintGuard(externalValues, null, null);
     }
 
-    private Guard externalConstraintGuard(Map<String, String> resolvedExternalValues,
-                                          String planId,
-                                          List<Finding> findings) {
+    private Guard externalConstraintGuard(Map<String, String> externalValues, String planId, List<Finding> findings) {
         Guard guard = Guard.TRUE;
-        for (Map.Entry<String, String> entry : resolvedExternalValues.entrySet()) {
+        for (Map.Entry<String, String> entry : externalValues.entrySet()) {
             Guard next = constraintGuard(entry.getKey(), entry.getValue(), planId, findings, guard);
             if (next != null) {
                 guard = flow.and(guard, next);
@@ -261,7 +260,7 @@ public final class VariationEngine {
         return next;
     }
 
-    private Guard constraintGuard(String key, String value, Flow.SymbolInfo info) {
+    private Guard constraintGuard(String key, String value, SymbolInfo info) {
         if (info == null) {
             return null;
         }
@@ -516,7 +515,7 @@ public final class VariationEngine {
         return index < 0 ? key : key.substring(0, index);
     }
 
-    private Guard exactMembershipGuard(Flow.SymbolInfo info, List<String> values) {
+    private Guard exactMembershipGuard(SymbolInfo info, List<String> values) {
         if (info == null) {
             return Guard.FALSE;
         }
@@ -812,11 +811,11 @@ public final class VariationEngine {
             }
         }
 
-        private void enumerateScalar(InputModel input,
-                                     int index,
-                                     Guard active,
-                                     Map<String, String> values,
-                                     Set<String> activeTextInputs) {
+        void enumerateScalar(InputModel input,
+                             int index,
+                             Guard active,
+                             Map<String, String> values,
+                             Set<String> activeTextInputs) {
             Value<?> exact = input.declaredValue(active);
             if (exact.isPresent()) {
                 String value = input.canonicalFiniteValue(exact);
@@ -839,13 +838,13 @@ public final class VariationEngine {
             }
         }
 
-        private void enumerateList(InputModel input,
-                                   int index,
-                                   int optionIndex,
-                                   Guard current,
-                                   Map<String, String> values,
-                                   Set<String> activeTextInputs,
-                                   List<String> selected) {
+        void enumerateList(InputModel input,
+                           int index,
+                           int optionIndex,
+                           Guard current,
+                           Map<String, String> values,
+                           Set<String> activeTextInputs,
+                           List<String> selected) {
             if (flow.isFalse(current)) {
                 return;
             }
@@ -876,7 +875,7 @@ public final class VariationEngine {
             }
         }
 
-        private List<InputModel> orderedInputs(List<Expression> filters) {
+        List<InputModel> orderedInputs(List<Expression> filters) {
             if (filters.isEmpty()) {
                 return prepared.inputs;
             }
@@ -908,7 +907,7 @@ public final class VariationEngine {
             return ordered;
         }
 
-        private boolean excluded(Guard regionGuard, Map<String, String> values) {
+        boolean excluded(Guard regionGuard, Map<String, String> values) {
             if (!flow.isFalse(excludedGuard) && subset(regionGuard, excludedGuard)) {
                 return true;
             }
@@ -976,7 +975,7 @@ public final class VariationEngine {
             int next = 0;
             for (Node input : node.traverse(Kind::isInput)) {
                 String key = indexer.key(input);
-                Flow.SymbolInfo symbol = symbolInfo(key);
+                SymbolInfo symbol = symbolInfo(key);
                 if (symbol == null) {
                     throw new IllegalStateException("Input is not part of the flow symbol table: " + key);
                 }
@@ -1002,14 +1001,14 @@ public final class VariationEngine {
     private final class InputModel {
         private final String key;
         private final Kind kind;
-        private final Flow.SymbolInfo symbolInfo;
+        private final SymbolInfo symbolInfo;
         private final List<InputOccurrence> occurrences = new ArrayList<>();
         private final List<String> options = new ArrayList<>();
         private final Map<String, Guard> availabilityGuards = new HashMap<>();
         private final Map<String, Guard> constraintGuards = new HashMap<>();
         private Guard definitionGuard = Guard.FALSE;
 
-        InputModel(String key, Kind kind, Flow.SymbolInfo symbolInfo) {
+        InputModel(String key, Kind kind, SymbolInfo symbolInfo) {
             this.key = key;
             this.kind = kind;
             this.symbolInfo = symbolInfo;
