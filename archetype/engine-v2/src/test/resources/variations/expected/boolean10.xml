@@ -20,11 +20,11 @@
     <variation>
         <variant>advanced</variant>
         <mode>tailored</mode>
-        <jpms>false</jpms>
+        <packaged>false</packaged>
     </variation>
     <variation>
         <variant>advanced</variant>
         <mode>tailored</mode>
-        <jpms>true</jpms>
+        <packaged>true</packaged>
     </variation>
 </variations>

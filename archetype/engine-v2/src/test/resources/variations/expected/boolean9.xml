@@ -18,9 +18,9 @@
 -->
 <variations>
     <variation>
-        <jpms>false</jpms>
+        <packaged>false</packaged>
     </variation>
     <variation>
-        <jpms>true</jpms>
+        <packaged>true</packaged>
     </variation>
 </variations>

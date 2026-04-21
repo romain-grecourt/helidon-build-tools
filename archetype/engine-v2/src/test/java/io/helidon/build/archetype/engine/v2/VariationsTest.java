@@ -357,10 +357,10 @@ class VariationsTest {
     @Test
     void testVariationsFiltersCanReferenceNestedInputKeys() {
         Variations expected = Variations.of(
-                entry(Map.of("flag", "false", "media", "json", "media.json-lib", "jsonb")),
-                entry(Map.of("flag", "true", "media", "json", "media.json-lib", "jackson")));
+                entry(Map.of("flag", "false", "format", "structured", "format.format-lib", "binder")),
+                entry(Map.of("flag", "true", "format", "structured", "format.format-lib", "mapper")));
         Variations actual = variations("variations", "derived-local-filter.xml", Request.builder()
-                .expression("${flag} != (${media.json-lib} == 'jackson')")
+                .expression("${flag} != (${format.format-lib} == 'mapper')")
                 .build());
         assertThat(actual, is(expected));
     }

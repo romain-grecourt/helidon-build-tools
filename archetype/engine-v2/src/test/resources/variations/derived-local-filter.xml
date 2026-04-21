@@ -21,12 +21,12 @@
                   xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
     <step name="Selectors">
         <inputs>
-            <enum id="media" name="Media">
-                <option value="json" name="JSON">
+            <enum id="format" name="Format">
+                <option value="structured" name="Structured">
                     <inputs>
-                        <enum id="json-lib" name="JSON Library">
-                            <option value="jackson" name="Jackson"/>
-                            <option value="jsonb" name="JSON-B"/>
+                        <enum id="format-lib" name="Format Library">
+                            <option value="mapper" name="Mapper"/>
+                            <option value="binder" name="Binder"/>
                         </enum>
                     </inputs>
                 </option>

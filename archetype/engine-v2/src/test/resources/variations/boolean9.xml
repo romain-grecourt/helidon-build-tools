@@ -30,8 +30,8 @@
     </output>
     <step name="Packaging">
         <inputs>
-            <boolean id="jpms"
-                     name="Module support (JPMS)"
+            <boolean id="packaged"
+                     name="Packaged"
                      default="false"
                      optional="true">
                 <output>

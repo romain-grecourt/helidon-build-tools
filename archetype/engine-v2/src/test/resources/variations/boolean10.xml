@@ -33,7 +33,7 @@
         </inputs>
     </step>
     <presets if="${mode} == 'hosted' &amp;&amp; ${variant} == 'advanced'">
-        <boolean path="jpms">false</boolean>
+        <boolean path="packaged">false</boolean>
     </presets>
     <exec src="boolean7-packaging.xml" if="${mode} != 'hosted' || ${variant} != 'basic'"/>
 </archetype-script>

@@ -19,7 +19,7 @@
 <variations>
     <variation>
         <variant>advanced</variant>
-        <jpms>false</jpms>
+        <packaged>false</packaged>
         <feature-a>true</feature-a>
         <feature-a.channel>alpha</feature-a.channel>
         <feature-b>true</feature-b>
@@ -27,39 +27,7 @@
     </variation>
     <variation>
         <variant>advanced</variant>
-        <jpms>false</jpms>
-        <feature-a>true</feature-a>
-        <feature-a.channel>alpha</feature-a.channel>
-        <feature-b>true</feature-b>
-        <feature-b.channel>delta</feature-b.channel>
-    </variation>
-    <variation>
-        <variant>advanced</variant>
-        <jpms>false</jpms>
-        <feature-a>true</feature-a>
-        <feature-a.channel>beta</feature-a.channel>
-        <feature-b>true</feature-b>
-        <feature-b.channel>gamma</feature-b.channel>
-    </variation>
-    <variation>
-        <variant>advanced</variant>
-        <jpms>false</jpms>
-        <feature-a>true</feature-a>
-        <feature-a.channel>beta</feature-a.channel>
-        <feature-b>true</feature-b>
-        <feature-b.channel>delta</feature-b.channel>
-    </variation>
-    <variation>
-        <variant>advanced</variant>
-        <jpms>true</jpms>
-        <feature-a>true</feature-a>
-        <feature-a.channel>alpha</feature-a.channel>
-        <feature-b>true</feature-b>
-        <feature-b.channel>gamma</feature-b.channel>
-    </variation>
-    <variation>
-        <variant>advanced</variant>
-        <jpms>true</jpms>
+        <packaged>false</packaged>
         <feature-a>true</feature-a>
         <feature-a.channel>alpha</feature-a.channel>
         <feature-b>true</feature-b>
@@ -67,7 +35,7 @@
     </variation>
     <variation>
         <variant>advanced</variant>
-        <jpms>true</jpms>
+        <packaged>false</packaged>
         <feature-a>true</feature-a>
         <feature-a.channel>beta</feature-a.channel>
         <feature-b>true</feature-b>
@@ -75,7 +43,39 @@
     </variation>
     <variation>
         <variant>advanced</variant>
-        <jpms>true</jpms>
+        <packaged>false</packaged>
+        <feature-a>true</feature-a>
+        <feature-a.channel>beta</feature-a.channel>
+        <feature-b>true</feature-b>
+        <feature-b.channel>delta</feature-b.channel>
+    </variation>
+    <variation>
+        <variant>advanced</variant>
+        <packaged>true</packaged>
+        <feature-a>true</feature-a>
+        <feature-a.channel>alpha</feature-a.channel>
+        <feature-b>true</feature-b>
+        <feature-b.channel>gamma</feature-b.channel>
+    </variation>
+    <variation>
+        <variant>advanced</variant>
+        <packaged>true</packaged>
+        <feature-a>true</feature-a>
+        <feature-a.channel>alpha</feature-a.channel>
+        <feature-b>true</feature-b>
+        <feature-b.channel>delta</feature-b.channel>
+    </variation>
+    <variation>
+        <variant>advanced</variant>
+        <packaged>true</packaged>
+        <feature-a>true</feature-a>
+        <feature-a.channel>beta</feature-a.channel>
+        <feature-b>true</feature-b>
+        <feature-b.channel>gamma</feature-b.channel>
+    </variation>
+    <variation>
+        <variant>advanced</variant>
+        <packaged>true</packaged>
         <feature-a>true</feature-a>
         <feature-a.channel>beta</feature-a.channel>
         <feature-b>true</feature-b>
