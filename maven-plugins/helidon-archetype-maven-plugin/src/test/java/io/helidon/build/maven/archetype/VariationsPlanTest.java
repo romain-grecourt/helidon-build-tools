@@ -107,7 +107,8 @@ class VariationsPlanTest {
                 </plans>
                 """);
 
-        assertThrows(IllegalStateException.class, () -> Variations.Plan.load(root));
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> Variations.Plan.load(root));
+        assertThat(ex.getMessage(), is("Unknown fragment 'missing' referenced by 'red'"));
     }
 
     @Test
@@ -120,7 +121,8 @@ class VariationsPlanTest {
                 </plans>
                 """);
 
-        assertThrows(IllegalStateException.class, () -> Variations.Plan.load(root));
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> Variations.Plan.load(root));
+        assertThat(ex.getMessage(), is("Circular fragment inheritance: a -> b -> a"));
     }
 
     @Test
@@ -151,6 +153,113 @@ class VariationsPlanTest {
 
         assertThat(plans, hasSize(1));
         assertThat(plans.get(0).externalValues().keySet(), contains("one", "two", "three", "four", "five"));
+    }
+
+    @Test
+    void testLoadPreservesOverriddenValueOrder() {
+        XMLElement root = xml("""
+                <plans xmlns="https://helidon.io/archetype-plans/1.0">
+                    <fragment id="base">
+                        <values>
+                            <one>1</one>
+                            <two>2</two>
+                        </values>
+                    </fragment>
+                    <plan id="ordered" extends="base">
+                        <values>
+                            <one>10</one>
+                            <three>3</three>
+                        </values>
+                    </plan>
+                </plans>
+                """);
+
+        List<Variations.Plan> plans = Variations.Plan.load(root);
+
+        assertThat(plans, hasSize(1));
+        assertThat(plans.get(0).externalValues().keySet(), contains("one", "two", "three"));
+        assertThat(plans.get(0).externalValues().get("one"), is("10"));
+    }
+
+    @Test
+    void testLoadPreservesOverriddenDefaultOrder() {
+        XMLElement root = xml("""
+                <plans xmlns="https://helidon.io/archetype-plans/1.0">
+                    <fragment id="base">
+                        <defaults>
+                            <one>1</one>
+                            <two>2</two>
+                        </defaults>
+                    </fragment>
+                    <plan id="ordered" extends="base">
+                        <defaults>
+                            <one>10</one>
+                            <three>3</three>
+                        </defaults>
+                    </plan>
+                </plans>
+                """);
+
+        List<Variations.Plan> plans = Variations.Plan.load(root);
+
+        assertThat(plans, hasSize(1));
+        assertThat(plans.get(0).externalDefaults().keySet(), contains("one", "two", "three"));
+        assertThat(plans.get(0).externalDefaults().get("one"), is("10"));
+    }
+
+    @Test
+    void testLoadPreservesFilterOrder() {
+        XMLElement root = xml("""
+                <plans xmlns="https://helidon.io/archetype-plans/1.0">
+                    <fragment id="base">
+                        <rules>
+                            <exclude if="${base}"/>
+                        </rules>
+                    </fragment>
+                    <fragment id="extra">
+                        <rules>
+                            <exclude if="${extra}"/>
+                        </rules>
+                    </fragment>
+                    <plan id="ordered" extends="base, extra">
+                        <rules>
+                            <exclude if="${local}"/>
+                        </rules>
+                    </plan>
+                </plans>
+                """);
+
+        List<Variations.Plan> plans = Variations.Plan.load(root);
+
+        assertThat(plans, hasSize(1));
+        assertThat(plans.get(0).filters(), hasSize(3));
+        assertThat(plans.get(0).filters().get(0).literal(), containsString("${base}"));
+        assertThat(plans.get(0).filters().get(1).literal(), containsString("${extra}"));
+        assertThat(plans.get(0).filters().get(2).literal(), containsString("${local}"));
+    }
+
+    @Test
+    void testLoadAllowsPlanIdToMatchFragmentId() {
+        XMLElement root = xml("""
+                <plans xmlns="https://helidon.io/archetype-plans/1.0">
+                    <fragment id="shared">
+                        <values>
+                            <one>1</one>
+                        </values>
+                    </fragment>
+                    <plan id="shared" extends="shared">
+                        <values>
+                            <two>2</two>
+                        </values>
+                    </plan>
+                </plans>
+                """);
+
+        List<Variations.Plan> plans = Variations.Plan.load(root);
+
+        assertThat(plans, hasSize(1));
+        assertThat(plans.get(0).externalValues().keySet(), contains("one", "two"));
+        assertThat(plans.get(0).externalValues(), is(Map.of("one", "1", "two", "2")));
     }
 
     @Test

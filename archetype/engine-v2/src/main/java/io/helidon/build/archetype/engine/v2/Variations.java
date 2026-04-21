@@ -22,12 +22,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.AbstractMap;
 import java.util.AbstractSet;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -641,23 +644,26 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             requireNonNull(root, "root is null");
             Map<String, Fragment> fragments = new LinkedHashMap<>();
             int fragmentIndex = 1;
-            for (XMLElement fragment : root.children("fragment")) {
-                Fragment template = template(fragment, "fragment-" + fragmentIndex++, true);
-                if (fragments.putIfAbsent(template.id, template) != null) {
-                    throw new IllegalStateException("Duplicate fragment id: " + template.id);
+            for (XMLElement elt : root.children("fragment")) {
+                String id = elt.attribute("id", null);
+                if (id == null || id.isBlank()) {
+                    throw new IllegalStateException("Fragment is missing required id attribute");
+                }
+                Fragment fragment = fragment(elt, "fragment-" + fragmentIndex++);
+                if (fragments.putIfAbsent(fragment.id, fragment) != null) {
+                    throw new IllegalStateException("Duplicate fragment id: " + fragment.id);
                 }
             }
 
             List<Plan> plans = new ArrayList<>();
-            Map<String, Fragment> resolved = new LinkedHashMap<>();
             int index = 1;
             for (XMLElement plan : root.children("plan")) {
-                Fragment fragment = template(plan, "plan-" + index++, false);
-                Fragment merged = fragment.merge(resolveParents(fragment, fragments, resolved, new ArrayList<>()));
+                Fragment fragment = fragment(plan, "plan-" + index++);
+                resolve(fragment, fragments);
                 Builder builder = builder().id(fragment.id)
-                        .externalValues(merged.externalValues)
-                        .externalDefaults(merged.externalDefaults)
-                        .filters(merged.filters);
+                        .externalValues(fragment.externalValues)
+                        .externalDefaults(fragment.externalDefaults)
+                        .filters(fragment.filters);
                 plans.add(builder.build());
             }
             return plans;
@@ -688,7 +694,16 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             requireNonNull(root, "root is null");
             List<Expression> excludes = new ArrayList<>();
             for (XMLElement elt : root.traverse(it -> it.name().equals("exclude"))) {
-                excludes.add(exclude(root, elt));
+                Expression exclude = Expression.create(elt.attribute("if"));
+                for (XMLElement n = elt.parent(); n != null; n = n.parent()) {
+                    if (n.name().equals("rule")) {
+                        exclude = exclude.and(Expression.create(n.attribute("if")));
+                    }
+                    if (n == root) {
+                        break;
+                    }
+                }
+                excludes.add(exclude);
             }
             return excludes;
         }
@@ -840,108 +855,92 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             }
         }
 
-        private static Map<String, String> readMap(XMLElement root) {
-            Map<String, String> values = new LinkedHashMap<>();
-            for (XMLElement entry : root.children()) {
-                values.put(entry.name(), entry.value());
-            }
-            return values;
-        }
-
-        private static Fragment template(XMLElement element, String defaultId, boolean requireId) {
-            String id = templateId(element, defaultId, requireId);
-            return new Fragment(id,
-                    extendsIds(element),
-                    element.child("values")
-                            .map(Plan::readMap)
-                            .orElse(Map.of()),
-                    element.child("defaults")
-                            .map(Plan::readMap)
-                            .orElse(Map.of()),
-                    element.child("rules")
-                            .map(Plan::loadFilters)
-                            .orElse(List.of()));
-        }
-
-        private static String templateId(XMLElement element, String defaultId, boolean requireId) {
+        private static Fragment fragment(XMLElement element, String defaultId) {
             String id = element.attribute("id", null);
             if (id == null || id.isBlank()) {
-                if (requireId) {
-                    throw new IllegalStateException("Fragment is missing required id attribute");
-                }
-                return defaultId;
+                id = defaultId;
+            } else {
+                id = id.trim();
             }
-            return id.trim();
-        }
-
-        private static List<String> extendsIds(XMLElement element) {
-            String value = element.attribute("extends", "").trim();
-            if (value.isEmpty()) {
-                return List.of();
-            }
-            List<String> ids = new ArrayList<>();
-            for (String token : value.split(",")) {
-                String id = token.trim();
-                if (!id.isEmpty()) {
-                    ids.add(id);
+            String extendsValue = element.attribute("extends", "").trim();
+            List<String> extendsIds = new ArrayList<>();
+            if (!extendsValue.isEmpty()) {
+                for (String token : extendsValue.split(",")) {
+                    String extendsId = token.trim();
+                    if (!extendsId.isEmpty()) {
+                        extendsIds.add(extendsId);
+                    }
                 }
             }
-            return ids;
-        }
-
-        private static Fragment resolveParents(Fragment template,
-                                               Map<String, Fragment> fragments,
-                                               Map<String, Fragment> resolvedFragments,
-                                               List<String> stack) {
             Map<String, String> externalValues = new LinkedHashMap<>();
-            Map<String, String> externalDefaults = new LinkedHashMap<>();
-            List<Expression> filters = new ArrayList<>();
-            for (String fragmentId : template.extendsIds) {
-                Fragment fragment = fragments.get(fragmentId);
-                if (fragment == null) {
-                    throw new IllegalStateException(
-                            String.format("Unknown fragment '%s' referenced by '%s'", fragmentId, template.id));
-                }
-                Fragment resolved = resolve(fragment, fragments, resolvedFragments, stack);
-                externalValues.putAll(resolved.externalValues);
-                externalDefaults.putAll(resolved.externalDefaults);
-                filters.addAll(resolved.filters);
+            for (XMLElement elt : element.child("values").map(XMLElement::children).orElse(List.of())) {
+                externalValues.put(elt.name(), elt.value());
             }
-            return new Fragment(null, null, externalValues, externalDefaults, filters);
+            Map<String, String> externalDefault = new LinkedHashMap<>();
+            for (XMLElement elt : element.child("defaults").map(XMLElement::children).orElse(List.of())) {
+                externalDefault.put(elt.name(), elt.value());
+            }
+            List<Expression> filters = element.child("rules").map(Plan::loadFilters).orElseGet(ArrayList::new);
+            return new Fragment(id, extendsIds, externalValues, externalDefault, filters);
         }
 
-        private static Fragment resolve(Fragment fragment,
-                                        Map<String, Fragment> fragments,
-                                        Map<String, Fragment> resolved,
-                                        List<String> stack) {
-            Fragment cached = resolved.get(fragment.id);
-            if (cached != null) {
-                return cached;
-            }
-            if (stack.contains(fragment.id)) {
-                List<String> cycle = new ArrayList<>(stack);
-                cycle.add(fragment.id);
-                throw new IllegalStateException("Circular fragment inheritance: " + String.join(" -> ", cycle));
-            }
-            stack.add(fragment.id);
-            Fragment inherited = resolveParents(fragment, fragments, resolved, stack);
-            Fragment merged = fragment.merge(inherited);
-            stack.remove(stack.size() - 1);
-            resolved.put(fragment.id, merged);
-            return merged;
-        }
+        private static void resolve(Fragment fragment, Map<String, Fragment> fragments) {
+            Deque<Fragment> stack = new ArrayDeque<>();
+            Set<Fragment> resolving = new LinkedHashSet<>();
+            stack.push(fragment);
+            while (!stack.isEmpty()) {
+                Fragment current = stack.peek();
+                if (current.resolved) {
+                    stack.pop();
+                    continue;
+                }
+                if (resolving.contains(current)) {
+                    Map<String, String> localValues = new LinkedHashMap<>(current.externalValues);
+                    Map<String, String> localDefaults = new LinkedHashMap<>(current.externalDefaults);
+                    List<Expression> localFilters = new ArrayList<>(current.filters);
+                    current.externalValues.clear();
+                    current.externalDefaults.clear();
+                    current.filters.clear();
+                    for (String parentId : current.extendsIds) {
+                        Fragment parent = fragments.get(parentId);
+                        current.externalValues.putAll(parent.externalValues);
+                        current.externalDefaults.putAll(parent.externalDefaults);
+                        current.filters.addAll(parent.filters);
+                    }
+                    current.externalValues.putAll(localValues);
+                    current.externalDefaults.putAll(localDefaults);
+                    current.filters.addAll(localFilters);
+                    current.resolved = true;
+                    resolving.remove(current);
+                    stack.pop();
+                    continue;
+                }
 
-        private static Expression exclude(XMLElement root, XMLElement elt) {
-            Expression exclude = Expression.create(elt.attribute("if"));
-            for (XMLElement n = elt.parent(); n != null; n = n.parent()) {
-                if (n.name().equals("rule")) {
-                    exclude = exclude.and(Expression.create(n.attribute("if")));
-                }
-                if (n == root) {
-                    break;
+                resolving.add(current);
+                for (int i = current.extendsIds.size() - 1; i >= 0; i--) {
+                    String parentId = current.extendsIds.get(i);
+                    Fragment parent = fragments.get(parentId);
+                    if (parent == null) {
+                        throw new IllegalStateException(String.format(
+                                "Unknown fragment '%s' referenced by '%s'",
+                                parentId, current.id));
+                    }
+                    if (resolving.contains(parent)) {
+                        List<String> cycle = new ArrayList<>();
+                        for (Iterator<Fragment> it = stack.descendingIterator(); it.hasNext(); ) {
+                            Fragment candidate = it.next();
+                            if (candidate == parent || !cycle.isEmpty()) {
+                                cycle.add(candidate.id);
+                            }
+                        }
+                        cycle.add(parentId);
+                        throw new IllegalStateException("Circular fragment inheritance: " + String.join(" -> ", cycle));
+                    }
+                    if (!parent.resolved) {
+                        stack.push(parent);
+                    }
                 }
             }
-            return exclude;
         }
 
         private static final class Fragment {
@@ -950,6 +949,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
             private final Map<String, String> externalValues;
             private final Map<String, String> externalDefaults;
             private final List<Expression> filters;
+            private boolean resolved;
 
             Fragment(String id,
                      List<String> extendsIds,
@@ -961,16 +961,6 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                 this.externalValues = externalValues;
                 this.externalDefaults = externalDefaults;
                 this.filters = filters;
-            }
-
-            Fragment merge(Fragment inherited) {
-                Map<String, String> mergedValues = new LinkedHashMap<>(inherited.externalValues);
-                Map<String, String> mergedDefaults = new LinkedHashMap<>(inherited.externalDefaults);
-                List<Expression> mergedFilters = new ArrayList<>(inherited.filters);
-                mergedValues.putAll(externalValues);
-                mergedDefaults.putAll(externalDefaults);
-                mergedFilters.addAll(filters);
-                return new Fragment(null, null, mergedValues, mergedDefaults, mergedFilters);
             }
         }
     }
