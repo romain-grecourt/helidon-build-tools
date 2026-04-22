@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 
 import io.helidon.build.archetype.engine.v2.Context.Scope;
 import io.helidon.build.archetype.engine.v2.Context.ScopeValue;
@@ -321,19 +322,14 @@ public final class VariationEngine {
                                          List<Expression> filters,
                                          Map<String, String> externalValues,
                                          Map<String, String> externalDefaults,
-                                         Map<String, String> resolvedExternalDefaults) {
-        Map<String, String> variation = new LinkedHashMap<>();
-        for (Map.Entry<String, String> entry : region.values.entrySet()) {
-            if (!externalValues.containsKey(entry.getKey())) {
-                variation.put(entry.getKey(), entry.getValue());
-            }
-        }
-        for (String key : region.textInputs) {
-            if (!externalValues.containsKey(key)) {
-                variation.put(key, representativeTextValue(key, region.guard, externalDefaults, resolvedExternalDefaults));
-            }
-        }
-
+                                         Map<String, String> resolvedExternalDefaults,
+                                         Map<List<String>, Map<String, String>> executionInputs) {
+        Map<String, String> variation = executionInput(
+                region,
+                externalValues,
+                externalDefaults,
+                resolvedExternalDefaults,
+                executionInputs);
         Map<String, ScopeValue<?>> effective = execute(variation, externalValues, externalDefaults);
         if (effective.isEmpty()) {
             return null;
@@ -357,6 +353,51 @@ public final class VariationEngine {
                 TreeMap::new);
         String signature = Lists.join(normalized.entrySet(), " ");
         return Variations.entry(values, unbounded, signature);
+    }
+
+    private Map<String, String> executionInput(CandidateRegion region,
+                                               Map<String, String> externalValues,
+                                               Map<String, String> externalDefaults,
+                                               Map<String, String> resolvedExternalDefaults,
+                                               Map<List<String>, Map<String, String>> executionInputs) {
+        List<String> key = executionInputKey(region, externalValues, externalDefaults, resolvedExternalDefaults);
+        return executionInputs.computeIfAbsent(key, this::buildExecutionInput);
+    }
+
+    private List<String> executionInputKey(CandidateRegion region,
+                                           Map<String, String> externalValues,
+                                           Map<String, String> externalDefaults,
+                                           Map<String, String> resolvedExternalDefaults) {
+        List<String> keys = new ArrayList<>(region.values.size() + region.textInputs.size());
+        for (String key : region.values.keySet()) {
+            if (!externalValues.containsKey(key)) {
+                keys.add(key);
+            }
+        }
+        for (String key : region.textInputs) {
+            if (!externalValues.containsKey(key)) {
+                keys.add(key);
+            }
+        }
+        keys.sort(Comparator.comparingInt(index::inputId));
+        List<String> parts = new ArrayList<>(keys.size() * 2);
+        for (String key : keys) {
+            String value = region.values.get(key);
+            if (value == null) {
+                value = representativeTextValue(key, region.guard, externalDefaults, resolvedExternalDefaults);
+            }
+            parts.add(key);
+            parts.add(value);
+        }
+        return List.copyOf(parts);
+    }
+
+    private Map<String, String> buildExecutionInput(List<String> key) {
+        Map<String, String> variation = new LinkedHashMap<>(key.size() / 2);
+        for (int i = 0; i < key.size(); i += 2) {
+            variation.put(key.get(i), key.get(i + 1));
+        }
+        return Map.copyOf(variation);
     }
 
     private String representativeTextValue(String key,
@@ -498,6 +539,7 @@ public final class VariationEngine {
         final Map<String, String> resolvedExternalValues;
         final Map<String, String> resolvedExternalDefaults;
         final long maxIntermediate;
+        final Map<List<String>, Map<String, String>> executionInputs = new ConcurrentHashMap<>();
 
         Computation(Map<String, String> externalValues, Map<String, String> externalDefaults, long maxIntermediate) {
             this.externalValues = new LinkedHashMap<>(externalValues);
@@ -508,13 +550,20 @@ public final class VariationEngine {
         }
 
         Variations normalized(List<CandidateRegion> regions, List<Expression> filters) {
-            Map<String, Variations.Entry> normalized = new HashMap<>();
-            for (CandidateRegion region : regions) {
-                Variations.Entry entry = materialize(region, filters, externalValues, externalDefaults, resolvedExternalDefaults);
-                if (entry != null) {
-                    normalized.merge(entry.signature(), entry, Variations.Entry::merge);
-                }
-            }
+            Map<String, Variations.Entry> normalized = new ConcurrentHashMap<>(regions.size());
+            regions.parallelStream()
+                    .forEach(region -> {
+                        Variations.Entry entry = materialize(
+                                region,
+                                filters,
+                                externalValues,
+                                externalDefaults,
+                                resolvedExternalDefaults,
+                                executionInputs);
+                        if (entry != null) {
+                            normalized.merge(entry.signature(), entry, Variations.Entry::merge);
+                        }
+                    });
             return Variations.of(normalized.values());
         }
     }
