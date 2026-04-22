@@ -128,24 +128,24 @@ final class Domain {
         }
 
         long mask(Value<?> value) {
+            int ordinal;
             switch (kind) {
                 case BOOLEAN:
                 case CHOICE:
-                case FINITE_TEXT: {
+                case FINITE_TEXT:
                     String literal = Value.scalarLiteral(value);
                     if (literal == null) {
                         return 0L;
                     }
-                    int ordinal = ordinal(literal);
+                    ordinal = ordinal(literal);
                     return ordinal < 0 ? 0L : 1L << ordinal;
-                }
                 case MEMBERSHIP:
                     if (value == null || value.type() != Value.Type.LIST) {
                         return 0L;
                     }
                     long mask = 0L;
                     for (String item : new TreeSet<>(value.getList())) {
-                        int ordinal = ordinal(item);
+                        ordinal = ordinal(item);
                         if (ordinal < 0) {
                             return 0L;
                         }
@@ -592,25 +592,24 @@ final class Domain {
         }
 
         Residual fold() {
+            List<Residual> normalized;
             switch (kind) {
                 case OPAQUE:
                     return opaque(expr);
                 case NOT:
                     return not(child.fold());
-                case AND: {
-                    List<Residual> normalized = new ArrayList<>(children.length);
+                case AND:
+                    normalized = new ArrayList<>(children.length);
                     for (Residual child : children) {
                         normalized.add(child.fold());
                     }
                     return and(normalized);
-                }
-                case OR: {
-                    List<Residual> normalized = new ArrayList<>(children.length);
+                case OR:
+                    normalized = new ArrayList<>(children.length);
                     for (Residual child : children) {
                         normalized.add(child.fold());
                     }
                     return or(normalized);
-                }
                 default:
                     return this;
             }
@@ -625,14 +624,17 @@ final class Domain {
         }
 
         Expression expression(IntFunction<String> resolver, Table table) {
+            List<Expression> terms;
+            Symbol sym;
+            String key;
             switch (kind) {
                 case TRUE:
                     return Expression.TRUE;
                 case OPAQUE:
                     return expr;
-                case SCALAR_EQ: {
-                    Symbol sym = table.symbol(id);
-                    String key = resolver.apply(id);
+                case SCALAR_EQ:
+                    sym = table.symbol(id);
+                    key = resolver.apply(id);
                     if (sym.domain.kind == Spec.Kind.BOOLEAN) {
                         if ("true".equals(value)) {
                             return Expression.variable(key);
@@ -642,10 +644,9 @@ final class Domain {
                         }
                     }
                     return Expression.equal(key, value);
-                }
-                case SCALAR_IN: {
-                    Symbol sym = table.symbol(id);
-                    String key = resolver.apply(id);
+                case SCALAR_IN:
+                    sym = table.symbol(id);
+                    key = resolver.apply(id);
                     if (sym.domain.kind == Spec.Kind.BOOLEAN && Long.bitCount(mask) == 1) {
                         String value = sym.value(Long.numberOfTrailingZeros(mask));
                         if ("true".equals(value)) {
@@ -654,28 +655,24 @@ final class Domain {
                         return Expression.variable(key).negate();
                     }
                     return sym.expression(key, mask);
-                }
-                case MEMBERSHIP_CONTAINS_ALL: {
-                    Symbol sym = table.symbol(id);
-                    String key = resolver.apply(id);
-                    List<Expression> terms = new ArrayList<>();
+                case MEMBERSHIP_CONTAINS_ALL:
+                    sym = table.symbol(id);
+                    key = resolver.apply(id);
+                    terms = new ArrayList<>();
                     long remaining = mask;
                     while (remaining != 0L) {
                         terms.add(Expression.contains(key, sym.value(Long.numberOfTrailingZeros(remaining))));
                         remaining &= remaining - 1L;
                     }
                     return Expression.and(terms);
-                }
                 case NOT:
                     return child.expression(resolver, table).negate();
                 case AND:
-                case OR: {
-                    List<Expression> terms = new ArrayList<>(children.length);
+                    terms = new ArrayList<>(children.length);
                     for (Residual child : children) {
                         terms.add(child.expression(resolver, table));
                     }
-                    return kind == Kind.AND ? Expression.and(terms) : Expression.or(terms);
-                }
+                    return Expression.and(terms);
                 default:
                     return Expression.FALSE;
             }
@@ -911,44 +908,45 @@ final class Domain {
                     continue;
                 }
                 Operator op = token.operator();
+                Expression combined;
+                Residual direct;
+                int right;
+                int left;
                 switch (op) {
-                    case NOT: {
+                    case NOT:
                         int index = size - 1;
                         residuals[index] = Residual.not(residuals[index]);
                         ids[index] = -1;
                         literals[index] = null;
                         expressions[index] = expressions[index].negate();
                         break;
-                    }
-                    case AND: {
-                        int right = --size;
-                        int left = --size;
+                    case AND:
+                        right = --size;
+                        left = --size;
                         residuals[left] = Residual.and(List.of(residuals[left], residuals[right]));
                         ids[left] = -1;
                         literals[left] = null;
                         expressions[left] = expressions[left].and(expressions[right]);
                         size = left + 1;
                         break;
-                    }
-                    case OR: {
-                        int right = --size;
-                        int left = --size;
+                    case OR:
+                        right = --size;
+                        left = --size;
                         residuals[left] = Residual.or(List.of(residuals[left], residuals[right]));
                         ids[left] = -1;
                         literals[left] = null;
                         expressions[left] = expressions[left].or(expressions[right]);
                         size = left + 1;
                         break;
-                    }
                     case EQUAL:
-                    case NOT_EQUAL: {
-                        int right = --size;
-                        int left = --size;
-                        Residual direct = compareResidual(ids[left], literals[right]);
+                    case NOT_EQUAL:
+                        right = --size;
+                        left = --size;
+                        direct = compareResidual(ids[left], literals[right]);
                         if (direct == null) {
                             direct = compareResidual(ids[right], literals[left]);
                         }
-                        Expression combined = Expression.create(expressions[left], op, expressions[right]);
+                        combined = Expression.create(expressions[left], op, expressions[right]);
                         if (direct == null) {
                             residuals[left] = Residual.opaque(combined);
                         } else {
@@ -959,22 +957,20 @@ final class Domain {
                         expressions[left] = combined;
                         size = left + 1;
                         break;
-                    }
-                    case CONTAINS: {
-                        int right = --size;
-                        int left = --size;
-                        Residual direct = containsResidual(ids[left], literals[right]);
+                    case CONTAINS:
+                        right = --size;
+                        left = --size;
+                        direct = containsResidual(ids[left], literals[right]);
                         if (direct == null) {
                             direct = scalarInResidual(ids[right], literals[left]);
                         }
-                        Expression combined = Expression.create(expressions[left], Operator.CONTAINS, expressions[right]);
+                        combined = Expression.create(expressions[left], Operator.CONTAINS, expressions[right]);
                         residuals[left] = direct == null ? Residual.opaque(combined) : direct;
                         ids[left] = -1;
                         literals[left] = null;
                         expressions[left] = combined;
                         size = left + 1;
                         break;
-                    }
                     default:
                         return Residual.opaque(normalized);
                 }
@@ -1507,7 +1503,7 @@ final class Domain {
             int[] nextIds = new int[ids.length + other.ids.length];
             long[] nextMasks = new long[(ids.length + other.ids.length) * 2];
             int n = 0;
-            for (int l = 0, r = 0; l < ids.length || r < other.ids.length; ) {
+            for (int l = 0, r = 0; l < ids.length || r < other.ids.length;) {
                 if (r == other.ids.length || l < ids.length && ids[l] < other.ids[r]) {
                     int lo = l * 2;
                     set(nextIds, nextMasks, n, ids[l], masks[lo], masks[lo + 1]);
@@ -1585,7 +1581,7 @@ final class Domain {
             int[] nextIds = new int[ids.length + other.ids.length];
             long[] nextMasks = new long[(ids.length + other.ids.length) * 2];
             int n = 0;
-            for (int l = 0, r = 0; l < ids.length || r < other.ids.length; ) {
+            for (int l = 0, r = 0; l < ids.length || r < other.ids.length;) {
                 int id;
                 long leftMask;
                 long rightMask;
@@ -1710,14 +1706,13 @@ final class Domain {
                 int offset = i * 2;
                 long allowed = masks[offset];
                 switch (sym.domain.kind) {
-                    case BOOLEAN: {
+                    case BOOLEAN:
                         if (allowed == sym.domain.mask("true")) {
                             expr = expr.and(Expression.variable(key));
                         } else if (allowed == sym.domain.mask("false")) {
                             expr = expr.and(Expression.variable(key).negate());
                         }
                         break;
-                    }
                     case CHOICE:
                     case FINITE_TEXT:
                         expr = expr.and(sym.expression(key, allowed));

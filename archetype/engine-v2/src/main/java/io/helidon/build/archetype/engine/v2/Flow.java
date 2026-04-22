@@ -26,19 +26,19 @@ import java.util.Set;
 import java.util.TreeSet;
 
 import io.helidon.build.archetype.engine.v2.Context.Scope;
+import io.helidon.build.archetype.engine.v2.Domain.Fact;
 import io.helidon.build.archetype.engine.v2.Domain.Guard;
 import io.helidon.build.archetype.engine.v2.Domain.GuardedValue;
 import io.helidon.build.archetype.engine.v2.Domain.Guards;
 import io.helidon.build.archetype.engine.v2.Domain.LatticeValue;
 import io.helidon.build.archetype.engine.v2.Domain.Spec;
 import io.helidon.build.archetype.engine.v2.Domain.Symbol;
-import io.helidon.build.archetype.engine.v2.Domain.Fact;
 import io.helidon.build.archetype.engine.v2.Expression.Operator;
 import io.helidon.build.archetype.engine.v2.Expression.Token;
-import io.helidon.build.archetype.engine.v2.IrAnalyzer.IrState;
 import io.helidon.build.archetype.engine.v2.Ir.Block;
 import io.helidon.build.archetype.engine.v2.Ir.Op;
 import io.helidon.build.archetype.engine.v2.Ir.Terminator;
+import io.helidon.build.archetype.engine.v2.IrAnalyzer.IrState;
 import io.helidon.build.archetype.engine.v2.Node.Kind;
 
 import static java.util.Objects.requireNonNull;
@@ -380,23 +380,22 @@ final class Flow {
             for (int id = 0; id < ops.length; id++) {
                 IrState before = analyzer.beforeState(id);
                 Op op = ops[id];
+                SymbolInfo info;
                 switch (op.kind()) {
-                    case DECLARE_INPUT: {
-                        SymbolInfo info = symbolInfos[op.symbolId()];
+                    case DECLARE_INPUT:
+                        info = symbolInfos[op.symbolId()];
                         info.addDefinition(before.path(), guards);
                         if (info.sym.domain().kind() == Spec.Kind.BOOLEAN) {
                             info.addAvailability("true", before.path(), guards);
                             info.addAvailability("false", before.path(), guards);
                         }
                         break;
-                    }
-                    case DECLARE_OPTION: {
-                        SymbolInfo info = symbolInfos[op.symbolId()];
+                    case DECLARE_OPTION:
+                        info = symbolInfos[op.symbolId()];
                         info.addAvailability(op.source().value().getString(), before.path(), guards);
                         break;
-                    }
-                    case DEFINE_VALUE: {
-                        SymbolInfo info = symbolInfos[op.symbolId()];
+                    case DEFINE_VALUE:
+                        info = symbolInfos[op.symbolId()];
                         if (before.path().equals(Guard.FALSE)) {
                             break;
                         }
@@ -408,7 +407,6 @@ final class Flow {
                         info.addDefinition(fact.guard(), guards);
                         recordAvailability(info, fact);
                         break;
-                    }
                     default:
                         // no-op
                 }
@@ -576,19 +574,20 @@ final class Flow {
                     stack.addLast(new ReferenceOperand(null, null, token.operand()));
                     continue;
                 }
+                ReferenceOperand right;
+                ReferenceOperand left;
                 switch (token.operator()) {
-                    case NOT: {
+                    case NOT:
                         Guard negated = booleanGuard(stack.removeLast(), state);
                         if (negated == null) {
                             return null;
                         }
                         stack.addLast(new ReferenceOperand(guards.not(negated), null, null));
                         break;
-                    }
                     case AND:
-                    case OR: {
-                        ReferenceOperand right = stack.removeLast();
-                        ReferenceOperand left = stack.removeLast();
+                    case OR:
+                        right = stack.removeLast();
+                        left = stack.removeLast();
                         Guard rightGuard = booleanGuard(right, state);
                         Guard leftGuard = booleanGuard(left, state);
                         if (leftGuard == null || rightGuard == null) {
@@ -598,11 +597,10 @@ final class Flow {
                                 ? guards.and(leftGuard, rightGuard)
                                 : guards.or(leftGuard, rightGuard), null, null));
                         break;
-                    }
                     case EQUAL:
-                    case NOT_EQUAL: {
-                        ReferenceOperand right = stack.removeLast();
-                        ReferenceOperand left = stack.removeLast();
+                    case NOT_EQUAL:
+                        right = stack.removeLast();
+                        left = stack.removeLast();
                         Guard equality = equalityGuard(left, right, state);
                         if (equality == null) {
                             return null;
@@ -613,17 +611,15 @@ final class Flow {
                             stack.addLast(new ReferenceOperand(guards.not(equality), null, null));
                         }
                         break;
-                    }
-                    case CONTAINS: {
-                        ReferenceOperand right = stack.removeLast();
-                        ReferenceOperand left = stack.removeLast();
+                    case CONTAINS:
+                        right = stack.removeLast();
+                        left = stack.removeLast();
                         Guard contains = containsGuard(left, right, state);
                         if (contains == null) {
                             return null;
                         }
                         stack.addLast(new ReferenceOperand(contains, null, null));
                         break;
-                    }
                     default:
                         return null;
                 }

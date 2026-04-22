@@ -534,12 +534,12 @@ public final class VariationEngine {
     }
 
     private abstract class Computation {
-        final Map<String, String> externalValues;
-        final Map<String, String> externalDefaults;
-        final Map<String, String> resolvedExternalValues;
-        final Map<String, String> resolvedExternalDefaults;
-        final long maxIntermediate;
-        final Map<List<String>, Map<String, String>> executionInputs = new ConcurrentHashMap<>();
+        private final Map<String, String> externalValues;
+        private final Map<String, String> externalDefaults;
+        private final Map<String, String> resolvedExternalValues;
+        private final Map<String, String> resolvedExternalDefaults;
+        private final long maxIntermediate;
+        private final Map<List<String>, Map<String, String>> executionInputs = new ConcurrentHashMap<>();
 
         Computation(Map<String, String> externalValues, Map<String, String> externalDefaults, long maxIntermediate) {
             this.externalValues = new LinkedHashMap<>(externalValues);
@@ -547,6 +547,22 @@ public final class VariationEngine {
             this.resolvedExternalValues = resolveExternalValues(this.externalValues, this.externalDefaults);
             this.resolvedExternalDefaults = resolveExternalDefaults(this.externalValues, this.externalDefaults);
             this.maxIntermediate = maxIntermediate;
+        }
+
+        Map<String, String> externalValues() {
+            return externalValues;
+        }
+
+        Map<String, String> externalDefaults() {
+            return externalDefaults;
+        }
+
+        Map<String, String> resolvedExternalValues() {
+            return resolvedExternalValues;
+        }
+
+        long maxIntermediate() {
+            return maxIntermediate;
         }
 
         Variations normalized(List<CandidateRegion> regions, List<Expression> filters) {
@@ -580,12 +596,12 @@ public final class VariationEngine {
         }
 
         Variations compute() {
-            Guard initial = externalConstraint(resolvedExternalValues);
-            Guard excluded = combinedExclude(filters, resolvedExternalValues);
+            Guard initial = externalConstraint(resolvedExternalValues());
+            Guard excluded = combinedExclude(filters, resolvedExternalValues());
             RegionEnumerator enumerator = new RegionEnumerator(initial, excluded,
                     filters,
-                    resolvedExternalValues,
-                    maxIntermediate);
+                    resolvedExternalValues(),
+                    maxIntermediate());
             return normalized(enumerator.enumerate(), filters);
         }
     }
@@ -646,16 +662,16 @@ public final class VariationEngine {
                     combineFilters(filters, plan.plan.filters()),
                     plan.externalValues,
                     plan.externalDefaults,
-                    maxIntermediate)
+                    maxIntermediate())
                     .compute();
             Log.info("Variations: %d", computed.size());
             return computed;
         }
 
         CompiledPlan plan(Plan plan) {
-            Map<String, String> values = new LinkedHashMap<>(externalValues);
+            Map<String, String> values = new LinkedHashMap<>(externalValues());
             values.putAll(plan.externalValues());
-            Map<String, String> defaults = new LinkedHashMap<>(externalDefaults);
+            Map<String, String> defaults = new LinkedHashMap<>(externalDefaults());
             defaults.putAll(plan.externalDefaults());
             Map<String, String> resolvedValues = resolveExternalValues(values, defaults);
             List<Finding> redundantPins = new ArrayList<>();
@@ -666,8 +682,8 @@ public final class VariationEngine {
 
         Guard reachable() {
             return flow.minus(
-                    externalConstraint(resolvedExternalValues),
-                    combinedExclude(filters, resolvedExternalValues));
+                    externalConstraint(resolvedExternalValues()),
+                    combinedExclude(filters, resolvedExternalValues()));
         }
 
         Diagnostics diagnostics(List<CompiledPlan> plans) {

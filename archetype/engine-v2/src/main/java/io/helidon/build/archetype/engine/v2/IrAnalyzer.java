@@ -164,8 +164,9 @@ final class IrAnalyzer {
 
     private EnvAnalysis transfer(int id, Guard currentGuard, EnvAnalysis state) {
         Op op = ir.ops()[id];
+        FactAnalysis fact;
         switch (op.kind()) {
-            case DECLARE_INPUT: {
+            case DECLARE_INPUT:
                 Coverage defined = coverage(op.blockId());
                 LatticeValue lattice = LatticeValue.top(ir.table().symbol(op.symbolId()).domain());
                 FactAnalysis declared = new FactAnalysis(defined, lattice);
@@ -173,14 +174,12 @@ final class IrAnalyzer {
                 if (existing == null) {
                     return define(state, op.symbolId(), declared);
                 }
-                FactAnalysis fact = mergeFact(op.symbolId(), existing, declared);
+                fact = mergeFact(op.symbolId(), existing, declared);
                 return define(state, op.symbolId(), fact);
-            }
-            case DEFINE_VALUE: {
+            case DEFINE_VALUE:
                 Symbol sym = ir.table().symbol(op.symbolId());
-                FactAnalysis fact = evaluateFact(id, currentGuard, sym, state);
+                fact = evaluateFact(id, currentGuard, sym, state);
                 return define(state, op.symbolId(), fact);
-            }
             default:
                 return state;
         }
@@ -399,13 +398,12 @@ final class IrAnalyzer {
 
     private static LatticeValue literalValue(Spec spec, Value<?> literal) {
         switch (literal.type()) {
-            case BOOLEAN: {
+            case BOOLEAN:
                 String scalar = String.valueOf(literal.getBoolean());
                 if (spec.scalar() && spec.contains(scalar)) {
                     return LatticeValue.finiteScalar(spec.mask(scalar));
                 }
                 return spec.kind() == Spec.Kind.OPEN_TEXT ? LatticeValue.openText(scalar) : LatticeValue.top(spec);
-            }
             case STRING:
                 if (spec.scalar() && spec.contains(literal.getString())) {
                     return LatticeValue.finiteScalar(spec.mask(literal.getString()));
@@ -506,6 +504,11 @@ final class IrAnalyzer {
                    && lattice.equals(other.lattice)
                    && exact.equals(other.exact);
         }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(defined, lattice, exact, fact);
+        }
     }
 
     private static final class ExactValues {
@@ -530,6 +533,11 @@ final class IrAnalyzer {
             ExactValues other = (ExactValues) o;
             return coverage.equals(other.coverage) && values.equals(other.values);
         }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(coverage, values);
+        }
     }
 
     private static final class CoveredValue {
@@ -551,6 +559,11 @@ final class IrAnalyzer {
             }
             CoveredValue other = (CoveredValue) o;
             return coverage.equals(other.coverage) && Value.isEqual(value, other.value);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(Value.hash(value), coverage);
         }
     }
 
@@ -632,6 +645,11 @@ final class IrAnalyzer {
             }
             Coverage other = (Coverage) o;
             return Arrays.equals(ids, other.ids);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(Arrays.hashCode(ids), guard);
         }
     }
 }

@@ -927,7 +927,7 @@ public final class Variations extends AbstractSet<Variations.Entry> {
                     }
                     if (resolving.contains(parent)) {
                         List<String> cycle = new ArrayList<>();
-                        for (Iterator<Fragment> it = stack.descendingIterator(); it.hasNext(); ) {
+                        for (Iterator<Fragment> it = stack.descendingIterator(); it.hasNext();) {
                             Fragment candidate = it.next();
                             if (candidate == parent || !cycle.isEmpty()) {
                                 cycle.add(candidate.id);
@@ -1014,10 +1014,29 @@ public final class Variations extends AbstractSet<Variations.Entry> {
          * Finding kind.
          */
         public enum Kind {
+            /**
+             * The plan cannot match any reachable variation region.
+             */
             UNSATISFIABLE_PLAN,
+
+            /**
+             * The plan overlaps another plan over at least one reachable region.
+             */
             PLAN_OVERLAP,
+
+            /**
+             * The plan does not add coverage beyond earlier plans.
+             */
             REDUNDANT_PLAN,
+
+            /**
+             * A pinned input value is already implied by the enclosing plan region.
+             */
             REDUNDANT_PIN,
+
+            /**
+             * Some reachable region is not covered by any plan.
+             */
             COVERAGE_GAP
         }
 
@@ -1025,7 +1044,14 @@ public final class Variations extends AbstractSet<Variations.Entry> {
          * Finding severity.
          */
         public enum Severity {
+            /**
+             * The finding represents a hard failure.
+             */
             ERROR,
+
+            /**
+             * The finding represents a non-fatal diagnostic.
+             */
             WARNING
         }
 

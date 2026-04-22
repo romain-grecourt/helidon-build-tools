@@ -45,8 +45,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import io.helidon.build.archetype.engine.v2.Context.Scope;
-import io.helidon.build.archetype.engine.v2.Domain.Guard;
 import io.helidon.build.archetype.engine.v2.Domain.Fact;
+import io.helidon.build.archetype.engine.v2.Domain.Guard;
 import io.helidon.build.archetype.engine.v2.Domain.GuardedValue;
 import io.helidon.build.archetype.engine.v2.Expression.Operator;
 import io.helidon.build.archetype.engine.v2.Expression.Token;
@@ -1581,7 +1581,12 @@ public class ScriptCompiler {
                     return null;
                 }
                 if (flow.isFalse(bound)) {
-                    Guard exact = symbol == null ? fact.exactGuard(flow.guards()) : fact.supportedExactGuard(symbol, flow.guards());
+                    Guard exact;
+                    if (symbol == null) {
+                        exact = fact.exactGuard(flow.guards());
+                    } else {
+                        exact = fact.supportedExactGuard(symbol, flow.guards());
+                    }
                     if (defined == null || flow.isFalse(exact) || !flow.contains(exact, defined)) {
                         return null;
                     }

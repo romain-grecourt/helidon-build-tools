@@ -372,7 +372,7 @@ final class Ir {
                         addSymbol(nodeScope, node);
                         break;
                     case PRESET_LIST:
-                    case VARIABLE_LIST: {
+                    case VARIABLE_LIST:
                         String key = nodeScope.definitionKey(node.attribute("path").getString());
                         SymbolSeed declared = declaredInputSymbols.get(key);
                         if (declared != null) {
@@ -381,7 +381,6 @@ final class Ir {
                             addSymbol(key, Spec.OPEN_TEXT, false, false);
                         }
                         break;
-                    }
                     default:
                         break;
                 }
@@ -452,10 +451,9 @@ final class Ir {
             int id = table.findId(inputScope.key());
             append(blockId, Op.Kind.DECLARE_INPUT, node, id, null);
             switch (node.kind()) {
-                case INPUT_BOOLEAN: {
+                case INPUT_BOOLEAN:
                     Guard guard = directBooleanGuard(table, guards, inputScope.key());
                     return lowerGuardedChildren(node, blockId, controlId, guard, node.children(), inputScope);
-                }
                 case INPUT_ENUM:
                 case INPUT_LIST:
                 default:
@@ -710,51 +708,50 @@ final class Ir {
                     stack.addLast(new ConditionOperand(null, null, token.operand()));
                     continue;
                 }
+                ConditionOperand right;
+                ConditionOperand left;
+                Guard direct;
                 switch (token.operator()) {
-                    case NOT: {
+                    case NOT:
                         ConditionOperand operand = stack.removeLast();
-                        Guard direct = asGuard(operand);
+                        direct = asGuard(operand);
                         if (direct == null) {
                             return guards.residualGuard(expression);
                         }
                         stack.addLast(new ConditionOperand(guards.not(direct), null, null));
                         break;
-                    }
                     case AND:
-                    case OR: {
-                        Guard right = asGuard(stack.removeLast());
-                        Guard left = asGuard(stack.removeLast());
-                        if (left == null || right == null) {
+                    case OR:
+                        Guard rightGuard = asGuard(stack.removeLast());
+                        Guard leftGuard = asGuard(stack.removeLast());
+                        if (leftGuard == null || rightGuard == null) {
                             return guards.residualGuard(expression);
                         }
                         if (token.operator() == Operator.OR) {
-                            stack.addLast(new ConditionOperand(guards.or(left, right), null, null));
+                            stack.addLast(new ConditionOperand(guards.or(leftGuard, rightGuard), null, null));
                         } else {
-                            stack.addLast(new ConditionOperand(guards.and(left, right), null, null));
+                            stack.addLast(new ConditionOperand(guards.and(leftGuard, rightGuard), null, null));
                         }
                         break;
-                    }
                     case EQUAL:
-                    case NOT_EQUAL: {
-                        ConditionOperand right = stack.removeLast();
-                        ConditionOperand left = stack.removeLast();
-                        Guard direct = compare(left, right, token.operator() == Operator.EQUAL);
+                    case NOT_EQUAL:
+                        right = stack.removeLast();
+                        left = stack.removeLast();
+                        direct = compare(left, right, token.operator() == Operator.EQUAL);
                         if (direct == null) {
                             return guards.residualGuard(expression);
                         }
                         stack.addLast(new ConditionOperand(direct, null, null));
                         break;
-                    }
-                    case CONTAINS: {
-                        ConditionOperand right = stack.removeLast();
-                        ConditionOperand left = stack.removeLast();
-                        Guard direct = contains(left, right);
+                    case CONTAINS:
+                        right = stack.removeLast();
+                        left = stack.removeLast();
+                        direct = contains(left, right);
                         if (direct == null) {
                             return guards.residualGuard(expression);
                         }
                         stack.addLast(new ConditionOperand(direct, null, null));
                         break;
-                    }
                     default:
                         return guards.residualGuard(expression);
                 }
