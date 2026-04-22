@@ -52,7 +52,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 /**
  * Tests {@link TemplateSupport}.
  */
-class FragmentSupportTest {
+class TemplateSupportTest {
 
     @Test
     void testSimpleValue() {

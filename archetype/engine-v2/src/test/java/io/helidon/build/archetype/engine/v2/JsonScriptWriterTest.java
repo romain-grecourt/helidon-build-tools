@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.StringWriter;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -86,13 +87,13 @@ class JsonScriptWriterTest {
                 condition("['', 'adc', 'def'] contains ['', 'adc', 'def']", step("Step" + i++)),
                 condition("true == ${def}", step("Step" + i)));
 
-        assertThat(toJson(node), is(expected("writer/expressions.json")));
+        assertThat(toJson(node), is(expected("writer/json/expressions.json")));
     }
 
     @Test
     void testValidations() {
         Node script = script(validations(validation("validation1", regex("^foo"))));
-        assertThat(toJson(script), is(expected("writer/validations.json")));
+        assertThat(toJson(script), is(expected("writer/json/validations.json")));
     }
 
     @Test
@@ -103,7 +104,7 @@ class JsonScriptWriterTest {
                         variableEnum("variable-enum1", "value1"),
                         variableText("variable-text1", "value1"),
                         variableList("variable-list1", List.of("value1"))));
-        assertThat(toJson(script), is(expected("writer/variables.json")));
+        assertThat(toJson(script), is(expected("writer/json/variables.json")));
     }
 
     @Test
@@ -114,7 +115,7 @@ class JsonScriptWriterTest {
                         presetEnum("preset-enum1", "value1"),
                         presetText("preset-text1", "value1"),
                         presetList("preset-list1", List.of("value1"))));
-        assertThat(toJson(script), is(expected("writer/presets.json")));
+        assertThat(toJson(script), is(expected("writer/json/presets.json")));
     }
 
     @Test
@@ -122,7 +123,7 @@ class JsonScriptWriterTest {
         Node block = script();
         block.script().methods().put("method1", method("method1",
                 output(model(modelList("model-list1", modelValue("value1"))))));
-        assertThat(toJson(block), is(expected("writer/methods.json")));
+        assertThat(toJson(block), is(expected("writer/json/methods.json")));
     }
 
     @Test
@@ -130,11 +131,12 @@ class JsonScriptWriterTest {
         Node script = script(
                 step("Step1", b -> b.attribute("help", "Help1"),
                         inputs(
-                                condition("${foo}", inputEnum("enum1", b -> b.attribute("default", "option1"),
+                                condition("${foo}",
+                                        inputEnum("enum1", b -> b.attribute("default", "option1"),
                                         inputOption("Option1", "option1"),
                                         inputOption("Option2", "option2"))),
                                 inputText("text1").attribute("default", "Default1"))));
-        assertThat(toJson(script), is(expected("writer/inputs.json")));
+        assertThat(toJson(script), is(expected("writer/json/inputs.json")));
     }
 
     @Test
@@ -170,7 +172,7 @@ class JsonScriptWriterTest {
         assertThat(projected.traverse(Node.Kind.PRESET_TEXT::equals).iterator().hasNext(), is(true));
     }
 
-    private static String toJson(Node node) {
+    static String toJson(Node node) {
         StringWriter writer = new StringWriter();
         try (JsonScriptWriter json = new JsonScriptWriter(writer, true)) {
             json.writeScript(node);
@@ -178,15 +180,16 @@ class JsonScriptWriterTest {
         return normalize(writer.toString());
     }
 
-    private static String expected(String path) {
+    static String expected(String path) {
         try {
-            return normalize(Files.readString(testResourcePath(JsonScriptWriterTest.class, "json-writer/" + path)));
+            Path file = testResourcePath(JsonScriptWriterTest.class, path);
+            return normalize(Files.readString(file));
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }
     }
 
-    private static String normalize(String value) {
+    static String normalize(String value) {
         return value.replace("\r\n", "\n").replace("\r", "\n");
     }
 }
