@@ -17,6 +17,7 @@ package io.helidon.build.archetype.engine.v2;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -200,9 +201,9 @@ public final class VariationEngine {
     }
 
     private Value.Type valueType(String key) {
-        InputState input = index.inputsByKey.get(key);
+        InputState input = index.inputs.get(key);
         if (input != null) {
-            return input.kind.valueType();
+            return input.node.kind().valueType();
         }
         SymbolInfo info = symbolInfo(key);
         if (info == null) {
@@ -242,7 +243,7 @@ public final class VariationEngine {
     }
 
     private Guard constraint(String key, String value, String planId, List<Finding> findings, Guard current) {
-        InputState input = index.inputsByKey.get(key);
+        InputState input = index.inputs.get(key);
         Guard next = input != null ? input.constraint(value) : constraint(key, value, symbolInfo(key));
         if (next != null && findings != null && planId != null && subset(current, next)) {
             findings.add(new Finding(REDUNDANT_PIN, WARNING, planId, null, key, value, null));
@@ -270,7 +271,7 @@ public final class VariationEngine {
                 Guard availability = info.availability(value);
                 return availability == null ? direct : flow.guards().and(availability, direct);
             case MEMBERSHIP:
-                return exactMembershipGuard(info, Value.parseList(value).orElse(List.of()));
+                return exactMembership(info, Value.parseList(value).orElse(List.of()));
             default:
                 return null;
         }
@@ -345,7 +346,7 @@ public final class VariationEngine {
 
         Set<String> unbounded = new TreeSet<>();
         for (Map.Entry<String, ScopeValue<?>> entry : effective.entrySet()) {
-            if (index.textInputs.contains(entry.getKey()) && entry.getValue().kind() != ValueKind.EXTERNAL) {
+            if (entry.getValue().kind() != ValueKind.EXTERNAL && index.input(entry.getKey()).node.kind() == Kind.INPUT_TEXT) {
                 unbounded.add(entry.getKey());
             }
         }
@@ -362,7 +363,7 @@ public final class VariationEngine {
                                            Guard regionGuard,
                                            Map<String, String> externalDefaults,
                                            Map<String, String> resolvedExternalDefaults) {
-        InputState input = index.inputsByKey.get(key);
+        InputState input = index.inputs.get(key);
         if (input == null) {
             return "<?>";
         }
@@ -458,48 +459,14 @@ public final class VariationEngine {
     }
 
     private Map<String, String> orderedValues(Map<String, ScopeValue<?>> effective) {
-        Map<String, List<Map.Entry<String, ScopeValue<?>>>> groups = new LinkedHashMap<>();
-        Map<String, Integer> order = new HashMap<>();
-        int next = 0;
+        Map<String, String> values = new TreeMap<>(Comparator.comparingInt(index::inputId));
         for (Map.Entry<String, ScopeValue<?>> entry : effective.entrySet()) {
-            order.put(entry.getKey(), next++);
-            groups.computeIfAbsent(groupKey(entry.getKey()), ignored -> new ArrayList<>()).add(entry);
-        }
-        Map<String, String> values = new LinkedHashMap<>();
-        for (List<Map.Entry<String, ScopeValue<?>>> group : groups.values()) {
-            for (Map.Entry<String, ScopeValue<?>> entry : group) {
-                if (entry.getKey().indexOf('.') < 0) {
-                    values.put(entry.getKey(), Value.toString(entry.getValue()));
-                }
-            }
-            List<Map.Entry<String, ScopeValue<?>>> toSort = new ArrayList<>();
-            for (Map.Entry<String, ScopeValue<?>> entry : group) {
-                if (entry.getKey().indexOf('.') >= 0) {
-                    toSort.add(entry);
-                }
-            }
-            toSort.sort((left, right) -> {
-                int result = Integer.compare(
-                        index.inputOrder.getOrDefault(left.getKey(), Integer.MAX_VALUE),
-                        index.inputOrder.getOrDefault(right.getKey(), Integer.MAX_VALUE));
-                if (result != 0) {
-                    return result;
-                }
-                return Integer.compare(order.get(left.getKey()), order.get(right.getKey()));
-            });
-            for (Map.Entry<String, ScopeValue<?>> entry : toSort) {
-                values.put(entry.getKey(), Value.toString(entry.getValue()));
-            }
+            values.put(entry.getKey(), Value.toString(entry.getValue()));
         }
         return values;
     }
 
-    private String groupKey(String key) {
-        int index = key.indexOf('.');
-        return index < 0 ? key : key.substring(0, index);
-    }
-
-    private Guard exactMembershipGuard(SymbolInfo info, List<String> values) {
+    private Guard exactMembership(SymbolInfo info, List<String> values) {
         if (info == null) {
             return Guard.FALSE;
         }
@@ -617,21 +584,23 @@ public final class VariationEngine {
                         finding.expression().orElseThrow()));
             }
             List<Variations> computed = new ArrayList<>();
-            analysis.plans.forEach(compiledPlan -> computed.add(compute(compiledPlan)));
+            for (CompiledPlan plan : analysis.plans) {
+                computed.add(compute(plan));
+            }
             return Variations.union(computed);
         }
 
         Variations compute(CompiledPlan plan) {
             Log.info("");
             Log.info("Computing plan %s...", plan.plan.id());
-            Variations computedPlan = new PlainComputation(
+            Variations computed = new PlainComputation(
                     combineFilters(filters, plan.plan.filters()),
                     plan.externalValues,
                     plan.externalDefaults,
                     maxIntermediate)
                     .compute();
-            Log.info("Variations: %d", computedPlan.size());
-            return computedPlan;
+            Log.info("Variations: %d", computed.size());
+            return computed;
         }
 
         CompiledPlan plan(Plan plan) {
@@ -732,44 +701,44 @@ public final class VariationEngine {
             return regions;
         }
 
-        void enumerate(int index, Guard regionGuard, Map<String, String> values, Set<String> activeTextInputs) {
-            if (flow.isFalse(regionGuard) || excluded(regionGuard, values)) {
+        void enumerate(int index, Guard region, Map<String, String> values, Set<String> textInputs) {
+            if (flow.isFalse(region) || excluded(region, values)) {
                 return;
             }
             if (index == inputs.size()) {
                 if (inputs.isEmpty()) {
-                    addRegion(regionGuard, values, activeTextInputs, "<none>");
+                    addRegion(region, values, textInputs, "<none>");
                 } else {
-                    addRegion(regionGuard, values, activeTextInputs, inputs.get(inputs.size() - 1).key);
+                    addRegion(region, values, textInputs, inputs.get(inputs.size() - 1).key);
                 }
                 return;
             }
 
             InputState input = inputs.get(index);
-            Guard active = flow.and(regionGuard, input.definition);
-            Guard inactive = flow.minus(regionGuard, input.definition);
+            Guard active = flow.and(region, input.definition);
+            Guard inactive = flow.minus(region, input.definition);
             if (!flow.isFalse(inactive)) {
-                enumerate(index + 1, inactive, values, activeTextInputs);
+                enumerate(index + 1, inactive, values, textInputs);
             }
             if (flow.isFalse(active)) {
                 return;
             }
 
-            switch (input.kind) {
+            switch (input.node.kind()) {
                 case INPUT_TEXT:
-                    Set<String> nextText = new LinkedHashSet<>(activeTextInputs);
+                    Set<String> nextText = new LinkedHashSet<>(textInputs);
                     nextText.add(input.key);
                     enumerate(index + 1, active, values, nextText);
                     break;
                 case INPUT_BOOLEAN:
                 case INPUT_ENUM:
-                    enumerateScalar(input, index, active, values, activeTextInputs);
+                    enumerateScalar(input, index, active, values, textInputs);
                     break;
                 case INPUT_LIST:
-                    enumerateList(input, index, 0, active, values, activeTextInputs, new ArrayList<>());
+                    enumerateList(input, index, 0, active, values, textInputs, new ArrayList<>());
                     break;
                 default:
-                    enumerate(index + 1, active, values, activeTextInputs);
+                    enumerate(index + 1, active, values, textInputs);
             }
         }
 
@@ -777,7 +746,7 @@ public final class VariationEngine {
                              int index,
                              Guard active,
                              Map<String, String> values,
-                             Set<String> activeTextInputs) {
+                             Set<String> textInputs) {
             Value<?> exact = input.declaredValue(active);
             if (exact.isPresent()) {
                 String value = input.canonicalFiniteValue(exact);
@@ -785,7 +754,7 @@ public final class VariationEngine {
                 if (!flow.isFalse(guard)) {
                     Map<String, String> nextValues = new LinkedHashMap<>(values);
                     nextValues.put(input.key, value);
-                    enumerate(index + 1, guard, nextValues, activeTextInputs);
+                    enumerate(index + 1, guard, nextValues, textInputs);
                 }
                 return;
             }
@@ -796,7 +765,7 @@ public final class VariationEngine {
                 }
                 Map<String, String> nextValues = new LinkedHashMap<>(values);
                 nextValues.put(input.key, option);
-                enumerate(index + 1, guard, nextValues, activeTextInputs);
+                enumerate(index + 1, guard, nextValues, textInputs);
             }
         }
 
@@ -805,7 +774,7 @@ public final class VariationEngine {
                            int optionIndex,
                            Guard current,
                            Map<String, String> values,
-                           Set<String> activeTextInputs,
+                           Set<String> textInputs,
                            List<String> selected) {
             if (flow.isFalse(current)) {
                 return;
@@ -813,7 +782,7 @@ public final class VariationEngine {
             if (optionIndex == input.options.size()) {
                 Map<String, String> nextValues = new LinkedHashMap<>(values);
                 nextValues.put(input.key, input.canonicalList(selected));
-                enumerate(index + 1, current, nextValues, activeTextInputs);
+                enumerate(index + 1, current, nextValues, textInputs);
                 return;
             }
 
@@ -825,7 +794,7 @@ public final class VariationEngine {
                 if (!flow.isFalse(included)) {
                     List<String> nextSelected = new ArrayList<>(selected);
                     nextSelected.add(option);
-                    enumerateList(input, index, optionIndex + 1, included, values, activeTextInputs, nextSelected);
+                    enumerateList(input, index, optionIndex + 1, included, values, textInputs, nextSelected);
                 }
             }
 
@@ -833,13 +802,13 @@ public final class VariationEngine {
                     ? current
                     : flow.and(current, flow.guards().or(flow.guards().not(availability), flow.guards().not(contains)));
             if (!flow.isFalse(excluded)) {
-                enumerateList(input, index, optionIndex + 1, excluded, values, activeTextInputs, selected);
+                enumerateList(input, index, optionIndex + 1, excluded, values, textInputs, selected);
             }
         }
 
         List<InputState> orderedInputs(List<Expression> filters) {
             if (filters.isEmpty()) {
-                return index.inputs;
+                return new ArrayList<>(index.inputs.values());
             }
             Map<String, Integer> refs = new HashMap<>();
             for (Expression filter : filters) {
@@ -847,7 +816,7 @@ public final class VariationEngine {
                     refs.compute(variable, (key, value) -> value == null ? 1 : value + 1);
                 }
             }
-            List<InputState> ordered = new ArrayList<>(index.inputs);
+            List<InputState> ordered = new ArrayList<>(index.inputs.values());
             ordered.sort((left, right) -> {
                 int leftRefs = refs.getOrDefault(left.key, 0);
                 int rightRefs = refs.getOrDefault(right.key, 0);
@@ -862,9 +831,7 @@ public final class VariationEngine {
                 if (result != 0) {
                     return result;
                 }
-                return Integer.compare(
-                        index.inputOrder.getOrDefault(left.key, Integer.MAX_VALUE),
-                        index.inputOrder.getOrDefault(right.key, Integer.MAX_VALUE));
+                return Integer.compare(index.inputId(left.key), index.inputId(right.key));
             });
             return ordered;
         }
@@ -909,8 +876,8 @@ public final class VariationEngine {
             return true;
         }
 
-        void addRegion(Guard guard, Map<String, String> values, Set<String> activeTextInputs, String inputKey) {
-            regions.add(new CandidateRegion(guard, values, activeTextInputs));
+        void addRegion(Guard guard, Map<String, String> values, Set<String> textInputs, String inputKey) {
+            regions.add(new CandidateRegion(guard, values, textInputs));
             if (regions.size() > maxIntermediate) {
                 throw new IllegalStateException(String.format(
                         "Intermediate variation row count %d exceeds the configured limit of %d while joining input '%s'",
@@ -923,38 +890,41 @@ public final class VariationEngine {
 
     private final class InputIndex {
         private final Node node;
-        private final List<InputState> inputs = new ArrayList<>();
-        private final Map<String, InputState> inputsByKey = new LinkedHashMap<>();
-        private final Set<String> textInputs = new LinkedHashSet<>();
-        private final Map<String, Integer> inputOrder = new LinkedHashMap<>();
+        private final Map<String, InputState> inputs = new LinkedHashMap<>();
 
         InputIndex(Node node, ScriptIndexer indexer) {
             this.node = node;
-            int next = 0;
             for (Node input : node.traverse(Kind::isInput)) {
                 String key = indexer.key(input);
-                SymbolInfo symbol = symbolInfo(key);
-                if (symbol == null) {
+                SymbolInfo symInfo = symbolInfo(key);
+                if (symInfo == null) {
                     throw new IllegalStateException("Input is not part of the flow symbol table: " + key);
                 }
-                InputState state = inputsByKey.get(key);
+                InputState state = inputs.get(key);
                 if (state == null) {
-                    state = new InputState(key, input.kind(), symbol);
-                    inputs.add(state);
-                    inputsByKey.put(key, state);
-                    inputOrder.put(key, next++);
-                    if (input.kind() == Kind.INPUT_TEXT) {
-                        textInputs.add(key);
-                    }
+                    state = new InputState(input, key, symInfo);
+                    inputs.put(key, state);
                 }
-                state.addOccurrence(input);
+                state.addSite(input);
             }
+        }
+
+        InputState input(String key) {
+            InputState state = inputs.get(key);
+            if (state == null) {
+                throw new IllegalStateException("Missing input for key: " + key);
+            }
+            return state;
+        }
+
+        int inputId(String key) {
+            return input(key).node.id();
         }
     }
 
     private final class InputState {
+        private final Node node;
         private final String key;
-        private final Kind kind;
         private final SymbolInfo symInfo;
         private final List<InputSite> sites = new ArrayList<>();
         private final List<String> options = new ArrayList<>();
@@ -962,11 +932,11 @@ public final class VariationEngine {
         private final Map<String, Guard> constraints = new HashMap<>();
         private Guard definition = Guard.FALSE;
 
-        InputState(String key, Kind kind, SymbolInfo symInfo) {
+        InputState(Node node, String key, SymbolInfo symInfo) {
+            this.node = node;
             this.key = key;
-            this.kind = kind;
             this.symInfo = symInfo;
-            if (kind == Kind.INPUT_BOOLEAN) {
+            if (node.kind() == Kind.INPUT_BOOLEAN) {
                 options.add("true");
                 options.add("false");
             }
@@ -988,7 +958,7 @@ public final class VariationEngine {
         }
 
         Guard constraint(String value) {
-            switch (kind) {
+            switch (node.kind()) {
                 case INPUT_BOOLEAN:
                 case INPUT_ENUM:
                     validateOption(value);
@@ -1011,18 +981,18 @@ public final class VariationEngine {
             }
         }
 
-        void addOccurrence(Node node) {
-            if (node.kind() != kind) {
+        void addSite(Node node) {
+            if (node.kind() != this.node.kind()) {
                 throw new IllegalStateException(String.format(
                         "Input '%s' is declared with incompatible kinds: %s and %s",
-                        key, kind, node.kind()));
+                        key, this.node.kind(), node.kind()));
             }
             InputSite site = new InputSite(node);
             sites.add(site);
             availability.clear();
             constraints.clear();
             definition = flow.or(definition, site.definition);
-            if (kind == Kind.INPUT_ENUM || kind == Kind.INPUT_LIST) {
+            if (this.node.kind() == Kind.INPUT_ENUM || this.node.kind() == Kind.INPUT_LIST) {
                 for (String option : site.options) {
                     if (!options.contains(option)) {
                         options.add(option);
@@ -1032,7 +1002,7 @@ public final class VariationEngine {
         }
 
         String canonicalFiniteValue(Value<?> value) {
-            switch (kind) {
+            switch (node.kind()) {
                 case INPUT_BOOLEAN:
                     return String.valueOf(value.asBoolean().orElse(false));
                 case INPUT_ENUM:
@@ -1043,12 +1013,12 @@ public final class VariationEngine {
                 case INPUT_LIST:
                     return canonicalList(value.asList().orElse(List.of()));
                 default:
-                    throw new IllegalStateException("Unsupported finite input kind: " + kind);
+                    throw new IllegalStateException("Unsupported finite input kind: " + node.kind());
             }
         }
 
         long branchCount() {
-            switch (kind) {
+            switch (node.kind()) {
                 case INPUT_TEXT:
                     return 1;
                 case INPUT_LIST:
@@ -1112,7 +1082,7 @@ public final class VariationEngine {
         }
 
         void validateOption(String value) {
-            if (kind != Kind.INPUT_LIST || !"none".equals(value)) {
+            if (node.kind() != Kind.INPUT_LIST || !"none".equals(value)) {
                 for (String option : options) {
                     if (option.equals(value)) {
                         return;
