@@ -729,8 +729,8 @@ class ExpressionTest {
     void testAndOrWithExpressionLists() {
         assertThat(Expression.and((List<Expression>) null), is(Expression.TRUE));
         assertThat(Expression.or((List<Expression>) null), is(Expression.FALSE));
-        assertThat(Expression.and(List.<Expression>of()), is(Expression.TRUE));
-        assertThat(Expression.or(List.<Expression>of()), is(Expression.FALSE));
+        assertThat(Expression.and(List.of()), is(Expression.TRUE));
+        assertThat(Expression.or(List.of()), is(Expression.FALSE));
         assertThat(Expression.and(List.of(expr("${a}"), expr("${b} || ${c}"))),
                 is(expr("${a} && (${b} || ${c})")));
         assertThat(Expression.or(List.of(expr("${a} && ${b}"), expr("${c}"))),

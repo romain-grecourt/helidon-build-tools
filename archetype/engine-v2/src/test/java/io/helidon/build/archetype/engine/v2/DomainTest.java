@@ -267,7 +267,7 @@ class DomainTest {
         assertThat(ex.getMessage(), containsString("Unknown guard id"));
     }
 
-    private static Table table(Symbol... symbols) {
+    static Table table(Symbol... symbols) {
         List<Symbol> values = List.of(symbols);
         Map<String, Integer> ids = new LinkedHashMap<>();
         for (Symbol symbol : values) {
@@ -276,7 +276,8 @@ class DomainTest {
         return new Table(values, ids);
     }
 
-    private static Symbol symbol(int id, String name, Spec spec, boolean guardable, boolean tainted) {
+    @SuppressWarnings("SameParameterValue")
+    static Symbol symbol(int id, String name, Spec spec, boolean guardable, boolean tainted) {
         return new Symbol(id, name, spec, guardable, tainted);
     }
 }

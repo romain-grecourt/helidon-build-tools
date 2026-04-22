@@ -52,8 +52,8 @@ class FlowTest {
         Symbol enabled = symbol(flow, "enabled");
         Symbol flavor = symbol(flow, "flavor");
         Symbol features = symbol(flow, "features");
-        Node setup = findStep(script, "setup");
-        Node pom = findFile(script, "pom.xml");
+        Node setup = findNode(script, Node.Kind.STEP, "name", "setup");
+        Node pom = findNode(script, Node.Kind.FILE, "target", "pom.xml");
 
         assertThat(enabled.domain().kind(), is(Spec.Kind.BOOLEAN));
         assertThat(flavor.domain().kind(), is(Spec.Kind.CHOICE));
@@ -98,7 +98,8 @@ class FlowTest {
 
         Symbol enabled = symbol(flow, "enabled");
         Symbol flavor = symbol(flow, "flavor");
-        IrAnalyzer.IrState before = flow.before(findStep(script, "Observe"));
+        Node step = findNode(script, Node.Kind.STEP, "name", "Observe");
+        IrAnalyzer.IrState before = flow.before(step);
         Fact fact = before.env().get(flavor.id());
         Map<String, Guard> exactByValue = exactGuards(fact);
 
@@ -122,7 +123,8 @@ class FlowTest {
         Symbol primary = symbol(flow, "primary");
         Symbol secondary = symbol(flow, "secondary");
         Symbol flavor = symbol(flow, "flavor");
-        IrAnalyzer.IrState before = flow.before(findStep(script, "Observe"));
+        Node step = findNode(script, Node.Kind.STEP, "name", "Observe");
+        IrAnalyzer.IrState before = flow.before(step);
         Fact fact = before.env().get(flavor.id());
         Map<String, Guard> exactByValue = exactGuards(fact);
 
@@ -152,7 +154,8 @@ class FlowTest {
         flow.process(script);
 
         Symbol flag = symbol(flow, "flag");
-        Fact fact = flow.before(findStep(script, "Observe")).env().get(flag.id());
+        Node step = findNode(script, Node.Kind.STEP, "name", "Observe");
+        Fact fact = flow.before(step).env().get(flag.id());
 
         assertThat(fact.values().size(), is(1));
         assertThat(Value.scalarLiteral(fact.values().get(0).value()), is("true"));
@@ -190,9 +193,9 @@ class FlowTest {
 
         Symbol enabled = symbol(flow, "enabled");
         Symbol flavor = symbol(flow, "flavor");
-        Node enabledFlag = findNodeByPath(script, Node.Kind.VARIABLE_BOOLEAN, "enabled-flag");
-        Node mpFlag = findNodeByPath(script, Node.Kind.VARIABLE_BOOLEAN, "mp-flag");
-        Node seFlag = findNodeByPath(script, Node.Kind.VARIABLE_BOOLEAN, "se-flag");
+        Node enabledFlag = findNode(script, Node.Kind.VARIABLE_BOOLEAN, "path", "enabled-flag");
+        Node mpFlag = findNode(script, Node.Kind.VARIABLE_BOOLEAN, "path", "mp-flag");
+        Node seFlag = findNode(script, Node.Kind.VARIABLE_BOOLEAN, "path", "se-flag");
 
         assertThat(flow.guards().equivalent(flow.activeGuard(enabledFlag), flow.guards().eq(enabled.id(), "true")), is(true));
         assertThat(flow.guards().equivalent(flow.activeGuard(mpFlag), flow.guards().eq(flavor.id(), "mp")), is(true));
@@ -209,9 +212,9 @@ class FlowTest {
 
         Symbol enabled = symbol(flow, "enabled");
         Symbol flavor = symbol(flow, "flavor");
-        Node enabledInput = findInput(script, Node.Kind.INPUT_BOOLEAN, "enabled");
-        Node mpOption = findOption(script, "mp");
-        Node seOption = findOption(script, "se");
+        Node enabledInput = findNode(script, Node.Kind.INPUTS, "id", "enabled");
+        Node mpOption = findNode(script, Node.Kind.INPUT_OPTION, "value", "mp");
+        Node seOption = findNode(script, Node.Kind.INPUT_OPTION, "value", "se");
 
         assertThat(flow.guards().equivalent(flow.activeGuard(enabledInput), flow.guards().eq(enabled.id(), "true")), is(true));
         assertThat(flow.guards().equivalent(flow.activeGuard(mpOption), flow.guards().eq(flavor.id(), "mp")), is(true));
@@ -322,49 +325,15 @@ class FlowTest {
         throw new IllegalArgumentException("Missing condition: " + expression);
     }
 
-    static Node findStep(Node script, String name) {
-        for (Node node : script.traverse(Node.Kind.STEP::equals)) {
-            if (name.equals(node.attribute("name").getString())) {
-                return node;
-            }
-        }
-        throw new IllegalArgumentException("Missing step: " + name);
-    }
-
-    static Node findFile(Node script, String target) {
-        for (Node node : script.traverse(Node.Kind.FILE::equals)) {
-            if (target.equals(node.attribute("target").getString())) {
-                return node;
-            }
-        }
-        throw new IllegalArgumentException("Missing file: " + target);
-    }
-
-    static Node findInput(Node script, Node.Kind kind, String id) {
+    static Node findNode(Node script, Node.Kind kind, String attr, String value) {
         for (Node node : script.traverse(kind::equals)) {
-            if (id.equals(node.attribute("id").getString())) {
+            if (value.equals(node.attribute(attr).getString())) {
                 return node;
             }
         }
-        throw new IllegalArgumentException("Missing " + kind + " id: " + id);
-    }
-
-    static Node findOption(Node script, String value) {
-        for (Node node : script.traverse(Node.Kind.INPUT_OPTION::equals)) {
-            if (value.equals(node.value().getString())) {
-                return node;
-            }
-        }
-        throw new IllegalArgumentException("Missing option: " + value);
-    }
-
-    static Node findNodeByPath(Node script, Node.Kind kind, String path) {
-        for (Node node : script.traverse(kind::equals)) {
-            if (path.equals(node.attribute("path").getString())) {
-                return node;
-            }
-        }
-        throw new IllegalArgumentException("Missing " + kind + " path: " + path);
+        throw new IllegalArgumentException(String.format(
+                "Missing %s %s: %s",
+                kind, attr, value));
     }
 
     static Symbol symbol(Flow flow, String name) {
