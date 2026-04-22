@@ -515,6 +515,7 @@ compare_project_snapshots() {
         return 0
     fi
 
+    # shellcheck disable=SC2094
     while IFS= read -r relative; do
         if cmp -s "${orig_dir}/${relative}" "${actual_dir}/${relative}"; then
             continue
@@ -527,19 +528,23 @@ compare_project_snapshots() {
         fi
         status=$?
         if [ "${status}" -ne 1 ]; then
+            # shellcheck disable=SC2094
             rm -f "${orig_files}" "${actual_files}" "${diff_file}"
             return "${status}"
         fi
         if log_has_text "${diff_file}"; then
             printf "File: %s\n" "${relative}" >> "${log_file}" || {
+                # shellcheck disable=SC2094
                 rm -f "${orig_files}" "${actual_files}" "${diff_file}"
                 return 1
             }
             cat "${diff_file}" >> "${log_file}" || {
+                # shellcheck disable=SC2094
                 rm -f "${orig_files}" "${actual_files}" "${diff_file}"
                 return 1
             }
             printf "\n" >> "${log_file}" || {
+                # shellcheck disable=SC2094
                 rm -f "${orig_files}" "${actual_files}" "${diff_file}"
                 return 1
             }
