@@ -30,20 +30,8 @@
     <step name="App Type" optional="true">
         <inputs>
             <enum id="app-type" global="true" default="quickstart" optional="true">
-                <option value="quickstart">
-                    <presets>
-                        <boolean path="~metrics">true</boolean>
-                        <enum path="~metrics.provider">microprofile</enum>
-                        <boolean path="~metrics.builtin">true</boolean>
-                    </presets>
-                </option>
-                <option value="database">
-                    <presets>
-                        <boolean path="~metrics">true</boolean>
-                        <enum path="~metrics.provider">microprofile</enum>
-                        <boolean path="~metrics.builtin">true</boolean>
-                    </presets>
-                </option>
+                <option value="quickstart"/>
+                <option value="database"/>
                 <option value="custom"/>
             </enum>
         </inputs>

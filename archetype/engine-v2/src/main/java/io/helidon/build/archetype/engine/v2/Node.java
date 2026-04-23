@@ -1170,8 +1170,7 @@ public interface Node {
                     siblings.addAll(nodes);
                 }
                 for (Node child : nodes) {
-                    child.parent(parent);
-                    child.script(script);
+                    Nodes.parent(child, parent);
                 }
                 nodes.clear();
             }

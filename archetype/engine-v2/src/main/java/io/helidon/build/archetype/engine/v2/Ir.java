@@ -287,8 +287,7 @@ final class Ir {
 
     private static final class Lowerer {
         private final Scope scope;
-        private final Map<String, SymbolSeed> symbolSeeds = new LinkedHashMap<>();
-        private final Map<String, SymbolSeed> declaredInputSymbols = new LinkedHashMap<>();
+        private final Map<String, SymbolSeed> symbols = new LinkedHashMap<>();
         private final List<Control> controls = new ArrayList<>();
         private final List<Block> blocks = new ArrayList<>();
         private final List<Op> ops = new ArrayList<>();
@@ -303,10 +302,10 @@ final class Ir {
         Ir lower(Node root) {
             collectDeclaredInputs(root, scope);
             collectSymbols(root, scope);
-            List<Symbol> symbols = new ArrayList<>(symbolSeeds.size());
+            List<Symbol> symbols = new ArrayList<>(this.symbols.size());
             Map<String, Integer> ids = new LinkedHashMap<>();
             int id = 0;
-            for (SymbolSeed seed : symbolSeeds.values()) {
+            for (SymbolSeed seed : this.symbols.values()) {
                 symbols.add(new Symbol(id, seed.name, seed.spec, seed.guardable, seed.tainted));
                 ids.put(seed.name, id);
                 id++;
@@ -332,26 +331,6 @@ final class Ir {
                 Scope childScope = childScope(nodeScope, node);
                 switch (node.kind()) {
                     case INPUT_BOOLEAN:
-                        addDeclaredInput(childScope.key(), Spec.BOOLEAN, true, false);
-                        break;
-                    case INPUT_ENUM:
-                    case INPUT_LIST:
-                        addDeclaredInput(childScope.key(), inputSpec(node), optionValues(node).length != 0, false);
-                        break;
-                    case INPUT_TEXT:
-                        addDeclaredInput(childScope.key(), Spec.OPEN_TEXT, false, true);
-                        break;
-                    default:
-                        break;
-                }
-            });
-        }
-
-        void collectSymbols(Node root, Scope scope) {
-            traverse(root, scope, (node, nodeScope) -> {
-                Scope childScope = childScope(nodeScope, node);
-                switch (node.kind()) {
-                    case INPUT_BOOLEAN:
                         addSymbol(childScope.key(), Spec.BOOLEAN, true, false);
                         break;
                     case INPUT_ENUM:
@@ -361,22 +340,32 @@ final class Ir {
                     case INPUT_TEXT:
                         addSymbol(childScope.key(), Spec.OPEN_TEXT, false, true);
                         break;
+                    default:
+                        break;
+                }
+            });
+        }
+
+        void collectSymbols(Node root, Scope scope) {
+            traverse(root, scope, (node, nodeScope) -> {
+                switch (node.kind()) {
                     case PRESET_BOOLEAN:
                     case VARIABLE_BOOLEAN:
-                        addSymbol(nodeScope.definitionKey(node.attribute("path").getString()), Spec.BOOLEAN, true, false);
+                        addSymbol(definitionKey(nodeScope, node.attribute("path").getString()), Spec.BOOLEAN, true, false);
                         break;
                     case PRESET_ENUM:
                     case VARIABLE_ENUM:
                     case PRESET_TEXT:
                     case VARIABLE_TEXT:
-                        addSymbol(nodeScope, node);
+                        SymbolSeed seed = symbolSeed(nodeScope, node);
+                        addSymbol(seed.name, seed.spec, seed.guardable, seed.tainted);
                         break;
                     case PRESET_LIST:
                     case VARIABLE_LIST:
-                        String key = nodeScope.definitionKey(node.attribute("path").getString());
-                        SymbolSeed declared = declaredInputSymbols.get(key);
-                        if (declared != null) {
-                            addSymbol(key, declared.spec, declared.guardable, declared.tainted);
+                        String key = definitionKey(nodeScope, node.attribute("path").getString());
+                        SymbolSeed sym = scope.get("~" + key) == Scope.EMPTY ? null : symbols.get(key);
+                        if (sym != null) {
+                            addSymbol(key, sym.spec, sym.guardable, sym.tainted);
                         } else {
                             addSymbol(key, Spec.OPEN_TEXT, false, false);
                         }
@@ -403,9 +392,9 @@ final class Ir {
             }
         }
 
-        void addDeclaredInput(String name, Spec spec, boolean guardable, boolean tainted) {
-            SymbolSeed seed = new SymbolSeed(name, spec, guardable, tainted);
-            declaredInputSymbols.merge(name, seed, SymbolSeed::merge);
+        String definitionKey(Scope scope, String path) {
+            String key = scope.key("~" + Context.Key.normalize(path));
+            return key.startsWith("~") ? key.substring(1) : key;
         }
 
         int lowerChildren(List<Node> nodes, int blockId, int controlId, Scope scope) {
@@ -518,19 +507,14 @@ final class Ir {
 
         void addSymbol(String name, Spec spec, boolean guardable, boolean tainted) {
             SymbolSeed seed = new SymbolSeed(name, spec, guardable, tainted);
-            symbolSeeds.merge(name, seed, SymbolSeed::merge);
-        }
-
-        void addSymbol(Scope scope, Node node) {
-            SymbolSeed seed = symbolSeed(scope, node);
-            addSymbol(seed.name, seed.spec, seed.guardable, seed.tainted);
+            symbols.merge(name, seed, SymbolSeed::merge);
         }
 
         SymbolSeed symbolSeed(Scope scope, Node node) {
-            String key = scope.definitionKey(node.attribute("path").getString());
-            SymbolSeed declared = declaredInputSymbols.get(key);
-            if (declared != null) {
-                return declared;
+            String key = definitionKey(scope, node.attribute("path").getString());
+            SymbolSeed sym = scope.get("~" + key) == Scope.EMPTY ? null : symbols.get(key);
+            if (sym != null) {
+                return sym;
             }
             switch (node.kind()) {
                 case PRESET_ENUM:

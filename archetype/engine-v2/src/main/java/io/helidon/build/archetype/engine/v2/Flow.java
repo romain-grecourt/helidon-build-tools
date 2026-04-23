@@ -123,7 +123,11 @@ final class Flow {
     }
 
     Guard conditionGuard(Expression expression) {
-        return ir.lowerCondition(scope, requireNonNull(expression, "expression is null"));
+        return conditionGuard(scope, expression);
+    }
+
+    Guard conditionGuard(Scope scope, Expression expression) {
+        return ir.lowerCondition(requireNonNull(scope, "scope is null"), requireNonNull(expression, "expression is null"));
     }
 
     Value<?> declaredValue(Node node, String key) {
@@ -218,6 +222,20 @@ final class Flow {
         return left != null && right != null && ir.guards().equivalent(left, right);
     }
 
+    Guard directEquality(String key, Value<?> value) {
+        String scalar = Value.scalarLiteral(value);
+        if (scalar == null) {
+            throw new IllegalStateException("Expected scalar value for direct equality: " + value);
+        }
+        SymbolInfo info = scalarSymbolInfo(key);
+        if (info == null) {
+            throw new IllegalStateException("Missing scalar symbol for key: " + key);
+        }
+        return info.sym.domain().contains(scalar)
+                ? available(info, scalar, ir.guards().eq(info.sym.id(), scalar))
+                : Guard.FALSE;
+    }
+
     private NodeFacts facts(Node node) {
         if (node != null) {
             NodeFacts facts = nodeFacts.get(node);
@@ -238,6 +256,23 @@ final class Flow {
             id = ir.table().findId("~" + key);
         }
         return id < 0 ? null : before.env().get(id);
+    }
+
+    private SymbolInfo scalarSymbolInfo(String key) {
+        SymbolInfo info = symbol(key);
+        if (info == null) {
+            return null;
+        }
+        Symbol symbol = info.sym;
+        if (!symbol.guardable() || symbol.tainted()) {
+            return null;
+        }
+        return symbol.domain().scalar() ? info : null;
+    }
+
+    private Guard available(SymbolInfo info, String value, Guard direct) {
+        Guard availability = info.availability(value);
+        return availability == null ? Guard.FALSE : ir.guards().and(availability, direct);
     }
 
     private Value<?> value(Fact fact, Guard required, Value.Type type) {

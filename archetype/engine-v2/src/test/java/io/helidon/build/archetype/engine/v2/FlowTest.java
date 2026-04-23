@@ -32,6 +32,15 @@ import org.junit.jupiter.api.Test;
 
 import static io.helidon.build.archetype.engine.v2.Domain.Guard.FALSE;
 import static io.helidon.build.archetype.engine.v2.Domain.Guard.TRUE;
+import static io.helidon.build.archetype.engine.v2.Node.Kind.CONDITION;
+import static io.helidon.build.archetype.engine.v2.Node.Kind.FILE;
+import static io.helidon.build.archetype.engine.v2.Node.Kind.INPUT_BOOLEAN;
+import static io.helidon.build.archetype.engine.v2.Node.Kind.INPUT_ENUM;
+import static io.helidon.build.archetype.engine.v2.Node.Kind.INPUT_OPTION;
+import static io.helidon.build.archetype.engine.v2.Node.Kind.PRESET_TEXT;
+import static io.helidon.build.archetype.engine.v2.Node.Kind.STEP;
+import static io.helidon.build.archetype.engine.v2.Node.Kind.VARIABLE_BOOLEAN;
+import static io.helidon.build.archetype.engine.v2.Nodes.find;
 import static io.helidon.build.common.test.utils.TestFiles.testResourcePath;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
@@ -52,8 +61,8 @@ class FlowTest {
         Symbol enabled = symbol(flow, "enabled");
         Symbol flavor = symbol(flow, "flavor");
         Symbol features = symbol(flow, "features");
-        Node setup = findNode(script, Node.Kind.STEP, "name", "setup");
-        Node pom = findNode(script, Node.Kind.FILE, "target", "pom.xml");
+        Node setup = find(script, STEP::equals, "name", "setup");
+        Node pom = find(script, FILE::equals, "target", "pom.xml");
 
         assertThat(enabled.domain().kind(), is(Spec.Kind.BOOLEAN));
         assertThat(flavor.domain().kind(), is(Spec.Kind.CHOICE));
@@ -98,7 +107,7 @@ class FlowTest {
 
         Symbol enabled = symbol(flow, "enabled");
         Symbol flavor = symbol(flow, "flavor");
-        Node step = findNode(script, Node.Kind.STEP, "name", "Observe");
+        Node step = find(script, STEP::equals, "name", "Observe");
         IrAnalyzer.IrState before = flow.before(step);
         Fact fact = before.env().get(flavor.id());
         Map<String, Guard> exactByValue = exactGuards(fact);
@@ -123,7 +132,7 @@ class FlowTest {
         Symbol primary = symbol(flow, "primary");
         Symbol secondary = symbol(flow, "secondary");
         Symbol flavor = symbol(flow, "flavor");
-        Node step = findNode(script, Node.Kind.STEP, "name", "Observe");
+        Node step = find(script, STEP::equals, "name", "Observe");
         IrAnalyzer.IrState before = flow.before(step);
         Fact fact = before.env().get(flavor.id());
         Map<String, Guard> exactByValue = exactGuards(fact);
@@ -154,7 +163,7 @@ class FlowTest {
         flow.process(script);
 
         Symbol flag = symbol(flow, "flag");
-        Node step = findNode(script, Node.Kind.STEP, "name", "Observe");
+        Node step = find(script, STEP::equals, "name", "Observe");
         Fact fact = flow.before(step).env().get(flag.id());
 
         assertThat(fact.values().size(), is(1));
@@ -170,7 +179,7 @@ class FlowTest {
         Flow flow = new Flow(scope);
         flow.process(script);
 
-        Node condition = findCondition(script, "${enabled} && ${flag}");
+        Node condition = find(script, CONDITION::equals, n -> "${enabled} && ${flag}".equals(n.expression().literal()));
         IrAnalyzer.IrState before = flow.before(condition);
         Symbol flag = symbol(flow, "flag");
         Fact fact = before.env().get(flag.id());
@@ -193,9 +202,9 @@ class FlowTest {
 
         Symbol enabled = symbol(flow, "enabled");
         Symbol flavor = symbol(flow, "flavor");
-        Node enabledFlag = findNode(script, Node.Kind.VARIABLE_BOOLEAN, "path", "enabled-flag");
-        Node mpFlag = findNode(script, Node.Kind.VARIABLE_BOOLEAN, "path", "mp-flag");
-        Node seFlag = findNode(script, Node.Kind.VARIABLE_BOOLEAN, "path", "se-flag");
+        Node enabledFlag = find(script, VARIABLE_BOOLEAN::equals, "path", "enabled-flag");
+        Node mpFlag = find(script, VARIABLE_BOOLEAN::equals, "path", "mp-flag");
+        Node seFlag = find(script, VARIABLE_BOOLEAN::equals, "path", "se-flag");
 
         assertThat(flow.guards().equivalent(flow.activeGuard(enabledFlag), flow.guards().eq(enabled.id(), "true")), is(true));
         assertThat(flow.guards().equivalent(flow.activeGuard(mpFlag), flow.guards().eq(flavor.id(), "mp")), is(true));
@@ -212,9 +221,9 @@ class FlowTest {
 
         Symbol enabled = symbol(flow, "enabled");
         Symbol flavor = symbol(flow, "flavor");
-        Node enabledInput = findNode(script, Node.Kind.INPUTS, "id", "enabled");
-        Node mpOption = findNode(script, Node.Kind.INPUT_OPTION, "value", "mp");
-        Node seOption = findNode(script, Node.Kind.INPUT_OPTION, "value", "se");
+        Node enabledInput = find(script, INPUT_BOOLEAN::equals, "id", "enabled");
+        Node mpOption = find(script, INPUT_OPTION::equals, "mp");
+        Node seOption = find(script, INPUT_OPTION::equals, "se");
 
         assertThat(flow.guards().equivalent(flow.activeGuard(enabledInput), flow.guards().eq(enabled.id(), "true")), is(true));
         assertThat(flow.guards().equivalent(flow.activeGuard(mpOption), flow.guards().eq(flavor.id(), "mp")), is(true));
@@ -222,15 +231,20 @@ class FlowTest {
     }
 
     @Test
-    void testIrLoweringKeepsDeclaredChoiceForTextPresetAndFallbackVariable() {
+    void testIrLoweringKeepsDeclaredChoiceWhenPresetPrecedesMatchingInput() {
         Context.Scope scope = new Context().scope();
         Node script = load("flow/declared-choice-text-preset.xml");
+        List<Node> nodes = script.collect();
 
         Flow flow = new Flow(scope);
         flow.process(script);
+        Node preset = find(script, PRESET_TEXT::equals, "path", "media.json-lib");
+        Node jsonLibInput = find(script, INPUT_ENUM::equals, "id", "json-lib");
         Symbol symbol = symbol(flow, "media.json-lib");
-        Node impossible = findCondition(script, "${media} contains 'json' && ${media.json-lib} == 'jsonp'");
+        Node impossible = find(script, CONDITION::equals,
+                n -> "${media} contains 'json' && ${media.json-lib} == 'jsonp'".equals(n.expression().literal()));
 
+        assertThat(nodes.indexOf(preset) < nodes.indexOf(jsonLibInput), is(true));
         assertThat(symbol.domain().kind(), is(Spec.Kind.CHOICE));
         assertThat(Arrays.asList(symbol.domain().values()), is(List.of("jackson", "jsonb")));
         assertThat(symbol.guardable(), is(true));
@@ -246,7 +260,7 @@ class FlowTest {
         Flow flow = new Flow(scope);
         flow.process(script);
         Symbol symbol = symbol(flow, "json-lib");
-        Node impossible = findCondition(script, "${json-lib} == 'jsonp'");
+        Node impossible = find(script, CONDITION::equals, n -> "${json-lib} == 'jsonp'".equals(n.expression().literal()));
 
         assertThat(symbol.domain().kind(), is(Spec.Kind.FINITE_TEXT));
         assertThat(Arrays.asList(symbol.domain().values()), is(List.of("jackson", "jsonb")));
@@ -262,8 +276,10 @@ class FlowTest {
 
         Flow flow = new Flow(scope);
         flow.process(script);
-        Node allowed = findCondition(script, "['jsonb','jackson'] contains ${json-lib}");
-        Node impossible = findCondition(script, "['jsonp'] contains ${json-lib}");
+        Node allowed = find(script, CONDITION::equals,
+                n -> "['jsonb','jackson'] contains ${json-lib}".equals(n.expression().literal()));
+        Node impossible = find(script, CONDITION::equals,
+                n -> "['jsonp'] contains ${json-lib}".equals(n.expression().literal()));
 
         assertThat(flow.guards().equivalent(flow.activeGuard(allowed), TRUE), is(true));
         assertThat(flow.guards().equivalent(flow.activeGuard(impossible), FALSE), is(true));
@@ -277,8 +293,10 @@ class FlowTest {
         Flow flow = new Flow(scope);
         flow.process(script);
         int features = symbol(flow, "features").id();
-        Node required = findCondition(script, "${features} contains ['grpc','rest']");
-        Node impossible = findCondition(script, "${features} contains ['rest','websocket']");
+        Node required = find(script, CONDITION::equals,
+                n -> "${features} contains ['grpc','rest']".equals(n.expression().literal()));
+        Node impossible = find(script, CONDITION::equals,
+                n -> "${features} contains ['rest','websocket']".equals(n.expression().literal()));
         Guard expected = flow.guards().containsAll(features, Set.of("grpc", "rest"));
 
         assertThat(flow.guards().equivalent(flow.activeGuard(required), expected), is(true));
@@ -292,7 +310,8 @@ class FlowTest {
 
         Flow flow = new Flow(scope);
         flow.process(script);
-        Node condition = findCondition(script, "['json'] contains true");
+        Node condition = find(script, CONDITION::equals,
+                n -> "['json'] contains true".equals(n.expression().literal()));
 
         assertThat(flow.activeGuard(condition).equals(TRUE), is(false));
         assertThat(flow.activeGuard(condition).equals(FALSE), is(false));
@@ -305,7 +324,8 @@ class FlowTest {
 
         Flow flow = new Flow(scope);
         flow.process(script);
-        Node condition = findCondition(script, "${enabled} && ${name} == 'blue'");
+        Node condition = find(script, CONDITION::equals,
+                n -> "${enabled} && ${name} == 'blue'".equals(n.expression().literal()));
 
         assertThat(flow.activeGuard(condition).equals(TRUE), is(false));
         assertThat(flow.activeGuard(condition).equals(FALSE), is(false));
@@ -314,26 +334,6 @@ class FlowTest {
 
     static Node load(String path) {
         return Script.load(testResourcePath(FlowTest.class, path));
-    }
-
-    static Node findCondition(Node script, String expression) {
-        for (Node node : script.traverse(Node.Kind.CONDITION::equals)) {
-            if (expression.equals(node.expression().literal())) {
-                return node;
-            }
-        }
-        throw new IllegalArgumentException("Missing condition: " + expression);
-    }
-
-    static Node findNode(Node script, Node.Kind kind, String attr, String value) {
-        for (Node node : script.traverse(kind::equals)) {
-            if (value.equals(node.attribute(attr).getString())) {
-                return node;
-            }
-        }
-        throw new IllegalArgumentException(String.format(
-                "Missing %s %s: %s",
-                kind, attr, value));
     }
 
     static Symbol symbol(Flow flow, String name) {

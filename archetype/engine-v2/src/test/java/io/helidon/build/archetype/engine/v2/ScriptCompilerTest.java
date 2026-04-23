@@ -21,6 +21,7 @@ import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 
 import io.helidon.build.archetype.engine.v2.ScriptCompiler.ValidationException;
@@ -57,6 +58,7 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.sameInstance;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -328,6 +330,231 @@ class ScriptCompilerTest {
         Path outputDir = compile("compiler/observability-sibling-presets", "main.xml");
         assertThat(normalizeXml(outputDir.resolve("main.xml")),
                 is(normalizeXml("compiler/expected/observability-sibling-presets.xml")));
+    }
+
+    @Test
+    void testCompilerPrunesDeadObservabilitySiblingPresets() {
+        ScriptCompiler.Image image = compileImage("compiler/observability-sibling-presets", "main.xml");
+        assertThat(image.node().collect(Node.Kind::isPreset).isEmpty(), is(true));
+    }
+
+    @Test
+    void testCompilerKeepsRootRefVariableUsedByNestedDefault() {
+        Path cwd = targetDir(ScriptCompilerTest.class).toAbsolutePath().normalize();
+        ScriptCompiler.Image image = compileImage(new Script.Source() {
+            @Override
+            public Node readScript(boolean readOnly, Script.Loader loader) {
+                return Nodes.script(
+                        Nodes.variables(Nodes.variableText("shared", "value")),
+                        Nodes.step("Prompt",
+                                Nodes.inputs(
+                                        Nodes.inputBoolean("outer",
+                                                Nodes.inputText("name", b -> b.attribute("default", "${shared}"))))));
+            }
+
+            @Override
+            public Path path() {
+                return cwd.resolve("programmatic-root-ref.xml");
+            }
+        }, cwd);
+
+        List<Node> variables = image.node().collect(Node.Kind::isVariable);
+
+        assertThat(variables.size(), is(1));
+        assertThat(variables.get(0).attribute("path").getString(), is("~shared"));
+    }
+
+    @Test
+    void testCompilerPrunesDeadStateAndEmptyWrappers() {
+        Path cwd = targetDir(ScriptCompilerTest.class).toAbsolutePath().normalize();
+        ScriptCompiler.Image image = compileImage(new Script.Source() {
+            @Override
+            public Node readScript(boolean readOnly, Script.Loader loader) {
+                return Nodes.script(
+                        Nodes.variables(Nodes.variableText("unused", "value")),
+                        Nodes.step("Prompt",
+                                Nodes.inputs(
+                                        Nodes.inputBoolean("flag"),
+                                        Nodes.inputText("name", b -> b.attribute("default", "${live}"))),
+                                Nodes.condition("${flag}", Nodes.variables(Nodes.variableText("dead", "value"))),
+                                Nodes.variables(Nodes.variableText("live", "value"))));
+            }
+
+            @Override
+            public Path path() {
+                return cwd.resolve("programmatic-dead-state.xml");
+            }
+        }, cwd);
+
+        List<Node> variables = image.node().collect(Node.Kind::isVariable);
+
+        assertThat(variables.size(), is(1));
+        assertThat(image.node().collect(Node.Kind.CONDITION::equals).isEmpty(), is(true));
+        assertThat(variables.get(0).attribute("path").getString(), is("~live"));
+    }
+
+    @Test
+    void testCompilerPrunesDeadEnumOptionState() {
+        Path cwd = targetDir(ScriptCompilerTest.class).toAbsolutePath().normalize();
+        ScriptCompiler.Image image = compileImage(new Script.Source() {
+            @Override
+            public Node readScript(boolean readOnly, Script.Loader loader) {
+                return Nodes.script(
+                        Nodes.step("Prompt",
+                                Nodes.inputs(
+                                        Nodes.inputEnum("mode",
+                                                Nodes.inputOption("First", "first",
+                                                        Nodes.variables(Nodes.variableText("dead", "value"))),
+                                                Nodes.inputOption("Second", "second",
+                                                        Nodes.inputText("name", b -> b.attribute("default", "${dead}")))))));
+            }
+
+            @Override
+            public Path path() {
+                return cwd.resolve("programmatic-dead-option-state.xml");
+            }
+        }, cwd);
+
+        assertThat(image.node().collect(Node.Kind::isVariable).isEmpty(), is(true));
+    }
+
+    @Test
+    void testCompilerFactorsDuplicateVariableBundles() {
+        Path cwd = targetDir(ScriptCompilerTest.class).toAbsolutePath().normalize();
+        ScriptCompiler.Image image = compileImage(new Script.Source() {
+            @Override
+            public Node readScript(boolean readOnly, Script.Loader loader) {
+                return Nodes.script(
+                        Nodes.step("Prompt",
+                                Nodes.inputs(
+                                        Nodes.inputEnum("mode",
+                                                Nodes.inputOption("First", "first",
+                                                        Nodes.variables(
+                                                                Nodes.variableText("alpha", "one"),
+                                                                Nodes.variableText("beta", "${alpha}"),
+                                                                Nodes.variableText("gamma", "${alpha}")),
+                                                        Nodes.inputText("first-visible", b -> b.attribute("default", "${beta}${gamma}"))),
+                                                Nodes.inputOption("Second", "second",
+                                                        Nodes.variables(
+                                                                Nodes.variableText("alpha", "one"),
+                                                                Nodes.variableText("beta", "${alpha}"),
+                                                                Nodes.variableText("gamma", "${alpha}")),
+                                                        Nodes.inputText("second-visible", b -> b.attribute("default", "${beta}${gamma}")))))));
+            }
+
+            @Override
+            public Path path() {
+                return cwd.resolve("programmatic-factoring.xml");
+            }
+        }, cwd);
+        Node factored = image.node().script().methods().get("1");
+
+        assertThat(image.node().script().methods().size(), is(1));
+        assertThat(image.node().collect(Node.Kind.CALL::equals).size(), is(2));
+        assertThat(factored.children().size(), is(1));
+        assertThat(factored.children().get(0).kind(), is(Node.Kind.VARIABLES));
+        assertThat(factored.script(), sameInstance(image.node().script()));
+        assertThat(factored.collect().stream().allMatch(node -> node.script() == image.node().script()), is(true));
+    }
+
+    @Test
+    void testCompilerFactorsFirstSeenCandidateWhenSavingsTie() {
+        Path cwd = targetDir(ScriptCompilerTest.class).toAbsolutePath().normalize();
+        ScriptCompiler.Image image = compileImage(new Script.Source() {
+            @Override
+            public Node readScript(boolean readOnly, Script.Loader loader) {
+                return Nodes.script(
+                        Nodes.step("Prompt",
+                                Nodes.inputs(
+                                        Nodes.inputEnum("mode",
+                                                Nodes.inputOption("First", "first",
+                                                        Nodes.variables(
+                                                                Nodes.variableText("alpha", "one"),
+                                                                Nodes.variableText("beta", "${alpha}"),
+                                                                Nodes.variableText("gamma", "${alpha}")),
+                                                        Nodes.inputText("first-visible", b -> b.attribute("default", "${beta}${gamma}"))),
+                                                Nodes.inputOption("Second", "second",
+                                                        Nodes.variables(
+                                                                Nodes.variableText("alpha", "one"),
+                                                                Nodes.variableText("beta", "${alpha}"),
+                                                                Nodes.variableText("gamma", "${alpha}")),
+                                                        Nodes.inputText("second-visible", b -> b.attribute("default", "${beta}${gamma}"))),
+                                                Nodes.inputOption("Third", "third",
+                                                        Nodes.variables(
+                                                                Nodes.variableText("delta", "one"),
+                                                                Nodes.variableText("epsilon", "${delta}"),
+                                                                Nodes.variableText("zeta", "${delta}")),
+                                                        Nodes.inputText("third-visible", b -> b.attribute("default", "${epsilon}${zeta}"))),
+                                                Nodes.inputOption("Fourth", "fourth",
+                                                        Nodes.variables(
+                                                                Nodes.variableText("delta", "one"),
+                                                                Nodes.variableText("epsilon", "${delta}"),
+                                                                Nodes.variableText("zeta", "${delta}")),
+                                                        Nodes.inputText("fourth-visible", b -> b.attribute("default", "${epsilon}${zeta}")))))));
+            }
+
+            @Override
+            public Path path() {
+                return cwd.resolve("programmatic-factoring-tie.xml");
+            }
+        }, cwd);
+        Node firstMethod = image.node().script().methods().get("1");
+        List<String> variablePaths = firstMethod.collect(Node.Kind::isVariable).stream()
+                .map(node -> node.attribute("path").getString())
+                .collect(Collectors.toList());
+
+        assertThat(image.node().script().methods().size(), is(2));
+        assertThat(variablePaths, is(List.of("~alpha", "~beta", "~gamma")));
+    }
+
+    @Test
+    void testCompilerFactorsFirstSeenCandidateWhenLaterTieMaturesEarlier() {
+        Path cwd = targetDir(ScriptCompilerTest.class).toAbsolutePath().normalize();
+        ScriptCompiler.Image image = compileImage(new Script.Source() {
+            @Override
+            public Node readScript(boolean readOnly, Script.Loader loader) {
+                return Nodes.script(
+                        Nodes.step("Prompt",
+                                Nodes.inputs(
+                                        Nodes.inputEnum("mode",
+                                                Nodes.inputOption("First", "first",
+                                                        Nodes.variables(
+                                                                Nodes.variableText("alpha", "one"),
+                                                                Nodes.variableText("beta", "${alpha}"),
+                                                                Nodes.variableText("gamma", "${alpha}")),
+                                                        Nodes.inputText("first-visible", b -> b.attribute("default", "${beta}${gamma}"))),
+                                                Nodes.inputOption("Second", "second",
+                                                        Nodes.variables(
+                                                                Nodes.variableText("delta", "one"),
+                                                                Nodes.variableText("epsilon", "${delta}"),
+                                                                Nodes.variableText("zeta", "${delta}")),
+                                                        Nodes.inputText("second-visible", b -> b.attribute("default", "${epsilon}${zeta}"))),
+                                                Nodes.inputOption("Third", "third",
+                                                        Nodes.variables(
+                                                                Nodes.variableText("delta", "one"),
+                                                                Nodes.variableText("epsilon", "${delta}"),
+                                                                Nodes.variableText("zeta", "${delta}")),
+                                                        Nodes.inputText("third-visible", b -> b.attribute("default", "${epsilon}${zeta}"))),
+                                                Nodes.inputOption("Fourth", "fourth",
+                                                        Nodes.variables(
+                                                                Nodes.variableText("alpha", "one"),
+                                                                Nodes.variableText("beta", "${alpha}"),
+                                                                Nodes.variableText("gamma", "${alpha}")),
+                                                        Nodes.inputText("fourth-visible", b -> b.attribute("default", "${beta}${gamma}")))))));
+            }
+
+            @Override
+            public Path path() {
+                return cwd.resolve("programmatic-factoring-interleaved-tie.xml");
+            }
+        }, cwd);
+        Node firstMethod = image.node().script().methods().get("1");
+        List<String> variablePaths = firstMethod.collect(Node.Kind::isVariable).stream()
+                .map(node -> node.attribute("path").getString())
+                .collect(Collectors.toList());
+
+        assertThat(image.node().script().methods().size(), is(2));
+        assertThat(variablePaths, is(List.of("~alpha", "~beta", "~gamma")));
     }
 
     @Test
@@ -799,14 +1026,31 @@ class ScriptCompilerTest {
         }
     }
 
+    static ScriptCompiler.Image compileImage(String path, String entrypoint, ScriptCompiler.Options... features) {
+        Path targetDir = targetDir(ScriptCompilerTest.class);
+        try (FileSystem fs = VirtualFileSystem.create(targetDir.resolve("test-classes"))) {
+            Path cwd = fs.getPath(path);
+            Path source = cwd.resolve(entrypoint).toAbsolutePath().normalize();
+            return compileImage(Script.Source.of(source), cwd, features);
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex.getMessage(), ex);
+        }
+    }
+
     private static Path compile(Script.Source source,
                                 Path cwd,
                                 ScriptCompiler.Options... features) {
         Path targetDir = targetDir(ScriptCompilerTest.class);
-        ScriptCompiler compiler = new ScriptCompiler(source, cwd);
         Path outputDir = unique(targetDir.resolve("compiler-ut"), fileName(cwd));
-        compiler.compile(List.of(features)).write(outputDir);
+        compileImage(source, cwd, features).write(outputDir);
         return outputDir;
+    }
+
+    private static ScriptCompiler.Image compileImage(Script.Source source,
+                                                     Path cwd,
+                                                     ScriptCompiler.Options... features) {
+        ScriptCompiler compiler = new ScriptCompiler(source, cwd);
+        return compiler.compile(List.of(features));
     }
 
     static final Pattern XML_COMMENT = Pattern.compile("[^\\S\\r\\n]*<!--[^>]*-->\n", Pattern.DOTALL);

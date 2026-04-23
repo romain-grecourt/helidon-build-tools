@@ -17,8 +17,8 @@
 
 -->
 <archetype-script xmlns="https://helidon.io/archetype/2.0"
-        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
     <step name="Step1">
         <inputs>
             <list id="i1" name="Input1" default="o1">
@@ -32,9 +32,6 @@
                 <option name="Option2" value="o2"/>
             </list>
         </inputs>
-        <variables>
-            <text path="~v1">v1</text>
-        </variables>
         <inputs>
             <text id="i3" name="Input3" if="${i1} contains &apos;o1&apos;"/>
         </inputs>

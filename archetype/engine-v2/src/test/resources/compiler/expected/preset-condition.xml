@@ -17,26 +17,14 @@
 
 -->
 <archetype-script xmlns="https://helidon.io/archetype/2.0"
-        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
     <step name="App Type">
         <inputs>
             <enum id="app-type" name="App Type" global="true">
-                <option name="Quickstart" value="quickstart">
-                    <variables>
-                        <boolean path="~db">false</boolean>
-                    </variables>
-                </option>
-                <option name="Database" value="database">
-                    <variables>
-                        <boolean path="~db">true</boolean>
-                    </variables>
-                </option>
-                <option name="Custom" value="custom">
-                    <variables>
-                        <boolean path="~db">false</boolean>
-                    </variables>
-                </option>
+                <option name="Quickstart" value="quickstart"/>
+                <option name="Database" value="database"/>
+                <option name="Custom" value="custom"/>
             </enum>
         </inputs>
     </step>

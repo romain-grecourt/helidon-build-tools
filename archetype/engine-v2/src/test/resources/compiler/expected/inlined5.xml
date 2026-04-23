@@ -17,12 +17,8 @@
 
 -->
 <archetype-script xmlns="https://helidon.io/archetype/2.0"
-        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
-    <variables>
-        <boolean path="~var1">true</boolean>
-        <boolean path="~var2">true</boolean>
-    </variables>
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  xsi:schemaLocation="https://helidon.io/archetype/2.0 https://helidon.io/xsd/archetype-2.0.xsd">
     <step name="Step1">
         <inputs>
             <boolean id="i1" name="Input1"/>

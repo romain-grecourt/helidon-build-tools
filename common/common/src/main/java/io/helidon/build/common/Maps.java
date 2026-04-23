@@ -30,6 +30,7 @@ import java.util.function.BinaryOperator;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.function.ToIntFunction;
 
 import static java.util.stream.Collectors.toMap;
 
@@ -535,6 +536,26 @@ public class Maps {
         } catch (RuntimeException ignored) {
             return false;
         }
+    }
+
+    /**
+     * Compute a map hash code using custom key and value hashers.
+     *
+     * @param map map
+     * @param keyHash key hasher
+     * @param valueHash value hasher
+     * @param <K> key type
+     * @param <V> value type
+     * @return hash code
+     */
+    public static <K, V> int hashCode(Map<K, V> map, ToIntFunction<K> keyHash, ToIntFunction<V> valueHash) {
+        int hash = 0;
+        for (Map.Entry<K, V> e : map.entrySet()) {
+            K key = e.getKey();
+            V value = e.getValue();
+            hash += 31 * (key == null ? 0 : keyHash.applyAsInt(key)) + (value == null ? 0 : valueHash.applyAsInt(value));
+        }
+        return hash;
     }
 
     /**

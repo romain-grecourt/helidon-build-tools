@@ -26,6 +26,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static io.helidon.build.archetype.engine.v2.Nodes.condition;
+import static io.helidon.build.archetype.engine.v2.Nodes.call;
 import static io.helidon.build.archetype.engine.v2.Nodes.inputBoolean;
 import static io.helidon.build.archetype.engine.v2.Nodes.inputEnum;
 import static io.helidon.build.archetype.engine.v2.Nodes.inputOption;
@@ -154,22 +155,16 @@ class JsonScriptWriterTest {
     }
 
     @Test
-    void testInputsCompatProjectionDropsOutputAndMethods() {
-        Node source = script(
-                presets(presetText("preset", "value")),
-                step("Prompt",
-                        inputs(inputText("name")),
-                        output(model(modelValue("secret")))));
-        source.script().methods().put("method1", method("method1",
-                output(model(modelValue("ignored")))));
+    void testMethodConditionsUseExpressionIds() {
+        Node script = script(call("method1"));
+        script.script().methods().put("method1", method("method1",
+                condition("${flag}", step("Nested", inputs(inputText("name"))))));
 
-        Node projected = Nodes.project(source, Nodes.Projection.INPUTS_COMPAT);
+        String json = toJson(script);
 
-        assertThat(projected.script().methods().isEmpty(), is(true));
-        assertThat(projected.traverse(Node.Kind.OUTPUT::equals).iterator().hasNext(), is(false));
-        assertThat(projected.traverse(Node.Kind.MODEL::equals).iterator().hasNext(), is(false));
-        assertThat(projected.traverse(Node.Kind.INPUT_TEXT::equals).iterator().hasNext(), is(true));
-        assertThat(projected.traverse(Node.Kind.PRESET_TEXT::equals).iterator().hasNext(), is(true));
+        assertThat(json, containsString("\"expressions\""));
+        assertThat(json, containsString("\"value\": \"flag\""));
+        assertThat(json, containsString("\"if\": \"1\""));
     }
 
     static String toJson(Node node) {

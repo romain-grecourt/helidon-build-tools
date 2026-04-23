@@ -28,6 +28,7 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -70,6 +71,8 @@ import static java.util.Objects.requireNonNull;
  * Script compiler.
  */
 public class ScriptCompiler {
+
+    private static final int POST_PROCESS_METHOD_SIZE_THRESHOLD = 4;
 
     /**
      * Compiler validation exception.
@@ -299,7 +302,7 @@ public class ScriptCompiler {
     private void projectSourceGuards() {
         for (Node node : sourceNode.traverse()) {
             Guard renderGuard = node == sourceNode
-                    ? Guard.TRUE
+                    ? TRUE
                     : requireNonNull(activeGuardsByNode.get(node.parent()),
                             "Missing parent active guard for source node: " + node.kind() + "#" + node.id());
             renderGuardsByNode.put(node, renderGuard);
@@ -373,6 +376,7 @@ public class ScriptCompiler {
             }
             image.node.visit(new StubsVisitor(mirrors, reachableBlocks, conditionRefs));
             image.node.visit(new DedupVisitor(mirrors));
+            new PostProcessor().process(image);
         }
     }
 
@@ -2278,7 +2282,7 @@ public class ScriptCompiler {
                 Node directive = func.apply("blobs", ids);
                 Node includes = Nodes.includes();
                 for (FileObject f : group) {
-                    Expression expr = f.condition();
+                    Expression expr = f.condition;
                     if (expr != Expression.FALSE) {
                         Node include = Nodes.include(f.checksum);
                         Node wrappedInclude = include.wrap(expr);
@@ -2300,7 +2304,7 @@ public class ScriptCompiler {
             for (String id : ids) {
                 Map<List<FileOp>, Guard> idOps = fileOps.getOrDefault(id, Map.of());
                 ops.add(Lists.map(idOps.entrySet(),
-                        e -> new FileOps(e.getKey(), e.getValue(), flow.expression(e.getValue()).literal())));
+                        e -> new FileOps(e.getKey(), e.getValue(), flow.expression(e.getValue()))));
             }
             return ops;
         }
@@ -2314,7 +2318,7 @@ public class ScriptCompiler {
             for (int i = 1; i < list.size(); i++) {
                 reach = flow.and(reach, list.get(i).reach);
             }
-            return new FileOps(ops, reach, flow.expression(reach).literal());
+            return new FileOps(ops, reach, flow.expression(reach));
         }
 
         List<Node> renderModels() {
@@ -2948,7 +2952,7 @@ public class ScriptCompiler {
             private final Scope scope;
             private final Map<String, Fact> facts;
 
-            private StubSpec(Type type, String key, Guard missing, Guard base, Scope scope, Map<String, Fact> facts) {
+            StubSpec(Type type, String key, Guard missing, Guard base, Scope scope, Map<String, Fact> facts) {
                 this.type = type;
                 this.key = key;
                 this.missing = missing;
@@ -2957,15 +2961,15 @@ public class ScriptCompiler {
                 this.facts = facts;
             }
 
-            private String path() {
+            String path() {
                 return "~" + key;
             }
 
-            private StubSpec withMissing(Guard nextMissing) {
+            StubSpec withMissing(Guard nextMissing) {
                 return new StubSpec(type, key, nextMissing, base, scope, facts);
             }
 
-            private Node render() {
+            Node render() {
                 Expression residual = residualExpression(missing, base, scope);
                 Expression expr = nestedBooleanStubExpression(key, missing, base, scope, facts);
                 if (expr == null) {
@@ -2988,14 +2992,14 @@ public class ScriptCompiler {
             private StubSpec stub;
             private Node node;
 
-            private StubState(StubSpec stub, Node node) {
+            StubState(StubSpec stub, Node node) {
                 this.stub = stub;
                 this.node = node;
             }
 
-            private boolean merge(StubSpec other,
-                                  Map<String, Set<List<Token>>> existingInContainer,
-                                  Map<String, Set<List<Token>>> existingInBlock) {
+            boolean merge(StubSpec other,
+                          Map<String, Set<List<Token>>> existingInContainer,
+                          Map<String, Set<List<Token>>> existingInBlock) {
                 Guard merged = flow.or(stub.missing, other.missing);
                 if (flow.equivalent(merged, stub.missing)) {
                     return true;
@@ -3155,7 +3159,7 @@ public class ScriptCompiler {
                 }
                 enumParentsByInput.computeIfAbsent(input, key -> new LinkedHashSet<>()).add(parent);
             }
-            for (Map.Entry<Node, Set<Node>> entry : enumParentsByInput.entrySet()) {
+            for (Entry<Node, Set<Node>> entry : enumParentsByInput.entrySet()) {
                 if (coversAllEnumOptions(entry.getKey(), entry.getValue())) {
                     anchors.add(entry.getKey());
                 } else {
@@ -3192,6 +3196,419 @@ public class ScriptCompiler {
         }
     }
 
+    private static final class PostProcessor {
+
+        void process(Image image) {
+            Node root = image.node;
+            pruneDeadState(image);
+            factorMethods(root);
+        }
+
+        void pruneDeadState(Image image) {
+            Node root = image.node;
+            boolean changed;
+            do {
+                Usage usage = Usage.of(image);
+                changed = false;
+                for (Declaration declaration : usage.declarations) {
+                    if (usage.isDead(declaration)) {
+                        declaration.node.remove();
+                        changed = true;
+                    }
+                }
+                if (pruneEmptyNodes(root)) {
+                    changed = true;
+                }
+            } while (changed);
+        }
+
+        boolean pruneEmptyNodes(Node root) {
+            boolean changed = false;
+            List<Node> nodes = root.collect();
+            for (int i = nodes.size() - 1; i >= 0; i--) {
+                Node node = nodes.get(i);
+                if (node == root || node.parent() == null || node.index() < 0) {
+                    continue;
+                }
+                if (node.kind() == Kind.CONDITION && node.children().isEmpty()) {
+                    node.remove();
+                    changed = true;
+                    continue;
+                }
+                if (isEmptyContainer(node)) {
+                    node.remove();
+                    changed = true;
+                }
+            }
+            return changed;
+        }
+
+        boolean isEmptyContainer(Node node) {
+            switch (node.kind()) {
+                case INPUTS:
+                case PRESETS:
+                case VALIDATIONS:
+                case VARIABLES:
+                    return node.children().isEmpty();
+                default:
+                    return false;
+            }
+        }
+
+        void factorMethods(Node root) {
+            Script script = root.script();
+            Map<String, Node> methods = script.methods();
+            int next = methods.size() + 1;
+            while (true) {
+                FactorGroup factor = bestFactor(root);
+                if (factor == null) {
+                    return;
+                }
+                String name = String.valueOf(next++);
+                Node method = Nodes.attach(script, Nodes.method(name, factor.prototype.deepCopy()));
+                methods.put(name, method);
+                for (Node site : factor.sites) {
+                    site.replace(Nodes.call(name));
+                }
+            }
+        }
+
+        FactorGroup bestFactor(Node root) {
+            List<Node> nodes = root.collect();
+            Map<Node, NodeKey> keys = new IdentityHashMap<>(nodes.size());
+            Map<NodeKey, FactorGroup> factors = new LinkedHashMap<>();
+            FactorGroup best = null;
+            long gain = 0;
+            for (ListIterator<Node> it = nodes.listIterator(nodes.size()); it.hasPrevious(); ) {
+                Node node = it.previous();
+                int order = it.nextIndex();
+                int size = 1;
+                List<NodeKey> children = new ArrayList<>(node.children().size());
+                for (Node child : node.children()) {
+                    NodeKey childKey = keys.get(child);
+                    if (childKey == null) {
+                        throw new IllegalStateException("Missing node key for child: " + child);
+                    }
+                    children.add(childKey);
+                    size += childKey.size;
+                }
+                NodeKey key = new NodeKey(node, children, size);
+                keys.put(node, key);
+                if (isFactorRoot(node, size)) {
+                    FactorGroup factor = factors.get(key);
+                    if (factor == null) {
+                        factor = new FactorGroup(node, size, order);
+                        factors.put(key, factor);
+                    } else {
+                        factor.prototype = node;
+                        factor.order = order;
+                    }
+                    factor.sites.add(node);
+                    if (factor.sites.size() > 1) {
+                        long g = (long) factor.size * (factor.sites.size() - 1L);
+                        if (best == null || g > gain || (g == gain
+                                && (factor.size > best.size || (factor.size == best.size && factor.order < best.order)))) {
+                            best = factor;
+                            gain = g;
+                        }
+                    }
+                }
+            }
+            return best;
+        }
+
+        boolean isFactorRoot(Node node, int size) {
+            if (size < POST_PROCESS_METHOD_SIZE_THRESHOLD) {
+                return false;
+            }
+            switch (node.kind()) {
+                case CALL:
+                case CONDITION:
+                case METHOD:
+                case SCRIPT:
+                case STEP:
+                    return false;
+                default:
+                    return true;
+            }
+        }
+
+        static final class Usage {
+            private final Map<String, byte[]> blobs;
+            private final Context ctx = new Context();
+            private final Flow flow = new Flow(ctx.scope());
+            private final Map<String, List<Guard>> consumers = new LinkedHashMap<>();
+            private final List<Declaration> declarations = new ArrayList<>();
+            private final Map<Node, Scope> scopes = new IdentityHashMap<>();
+
+            Usage(Map<String, byte[]> blobs) {
+                this.blobs = blobs;
+            }
+
+            static Usage of(Image image) {
+                Usage usage = new Usage(image.blobs);
+                usage.registerScopes(image.node);
+                usage.flow.process(image.node);
+                usage.scanUsage(image.node);
+                usage.expandDynamicDeclarationConsumers();
+                return usage;
+            }
+
+            boolean isDead(Declaration declaration) {
+                List<Guard> activations = consumers.getOrDefault(declaration.path, List.of());
+                for (Guard activation : activations) {
+                    if (!flow.isFalse(flow.and(declaration.activation, activation))) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            void registerScopes(Node root) {
+                scopes.put(root, ctx.scope());
+                for (Node node : root.traverse()) {
+                    Scope scope = scope(node);
+                    if (node.kind().isPreset() || node.kind().isVariable()) {
+                        scope.getOrCreate(node.attribute("path").getString());
+                    }
+                    Scope childScope = node.kind().isInput() ? scope.getOrCreate(node) : scope;
+                    for (Node child : node.children()) {
+                        scopes.put(child, childScope);
+                    }
+                }
+            }
+
+            void scanUsage(Node root) {
+                Map<Node, Guard> activations = new IdentityHashMap<>();
+                activations.put(root, TRUE);
+                for (Node node : root.traverse()) {
+                    Scope scope = scope(node);
+                    Guard activation = activation(node, activations);
+                    if (node.kind().isPreset() || node.kind().isVariable()) {
+                        declarations.add(new Declaration(
+                                node,
+                                scope.getOrCreate(node.attribute("path").getString()).key(),
+                                activation,
+                                scope,
+                                node.value()));
+                    } else {
+                        addRuntimeConsumers(node, scope, activation);
+                        activation = childActivation(node, scope, activation);
+                    }
+                    for (Node child : node.children()) {
+                        activations.put(child, activation);
+                    }
+                }
+            }
+
+            Scope scope(Node node) {
+                Scope scope = scopes.get(node);
+                if (scope == null) {
+                    throw new IllegalStateException("Missing scope for node: " + node);
+                }
+                return scope;
+            }
+
+            Guard activation(Node node, Map<Node, Guard> activations) {
+                Guard activation = activations.get(node);
+                if (activation == null) {
+                    throw new IllegalStateException("Missing activation for node: " + node);
+                }
+                return activation;
+            }
+
+            Guard childActivation(Node node, Scope scope, Guard activation) {
+                switch (node.kind()) {
+                    case CONDITION:
+                        for (String variable : node.expression().variables()) {
+                            addConsumer(scope.key(variable), activation);
+                        }
+                        return flow.and(activation, flow.conditionGuard(scope, node.expression()));
+                    case INPUT_BOOLEAN:
+                    case INPUT_ENUM:
+                    case INPUT_LIST:
+                    case INPUT_TEXT:
+                        Scope childScope = node.kind().isInput() ? scope.getOrCreate(node) : scope;
+                        addConsumer(childScope.key(), activation);
+                        return activation;
+                    case INPUT_OPTION:
+                        Node input = node.ancestor(Kind::isInput).orElse(null);
+                        if (input != null && input.kind() == Kind.INPUT_ENUM) {
+                            return flow.and(activation, flow.directEquality(scope.key(), node.value()));
+                        }
+                        return activation;
+                    default:
+                        return activation;
+                }
+            }
+
+            void addRuntimeConsumers(Node node, Scope scope, Guard activation) {
+                switch (node.kind()) {
+                    case INPUT_BOOLEAN:
+                    case INPUT_ENUM:
+                    case INPUT_LIST:
+                    case INPUT_TEXT:
+                        addValueConsumers(node.attribute("default"), scope, activation);
+                        break;
+                    case INPUT_OPTION:
+                        addValueConsumers(node.value(), scope, activation);
+                        break;
+                    case MODEL_VALUE:
+                        addModelValueConsumers(node, scope, activation);
+                        break;
+                    case REPLACE:
+                        addValueConsumers(node.attribute("replacement"), scope, activation);
+                        break;
+                    default:
+                }
+            }
+
+            void addModelValueConsumers(Node node, Scope scope, Guard activation) {
+                if (!node.attribute("template").isPresent()) {
+                    String file = node.attribute("file").asString().orElse(null);
+                    if (file != null) {
+                        if (file.startsWith("blobs/")) {
+                            byte[] blob = blobs.get(file.substring("blobs/".length()));
+                            if (blob != null) {
+                                addInterpolationConsumers(new String(blob, StandardCharsets.UTF_8), scope, activation);
+                            }
+                        }
+                    } else {
+                        addValueConsumers(node.value(), scope, activation);
+                    }
+                }
+            }
+
+            void expandDynamicDeclarationConsumers() {
+                boolean changed;
+                do {
+                    changed = false;
+                    for (Declaration declaration : declarations) {
+                        if (declaration.expanded || isDead(declaration)) {
+                            continue;
+                        }
+                        if (addValueConsumers(declaration.value, declaration.scope, declaration.activation)) {
+                            changed = true;
+                        }
+                        declaration.expanded = true;
+                    }
+                } while (changed);
+            }
+
+            boolean addValueConsumers(Value<?> value, Scope scope, Guard activation) {
+                if (value == null || value.isEmpty()) {
+                    return false;
+                }
+                boolean changed = false;
+                switch (value.type()) {
+                    case DYNAMIC:
+                    case STRING:
+                        changed = addInterpolationConsumers(value.getString(), scope, activation);
+                        break;
+                    case LIST:
+                        for (String item : value.getList()) {
+                            if (addInterpolationConsumers(item, scope, activation)) {
+                                changed = true;
+                            }
+                        }
+                        break;
+                    default:
+                }
+                return changed;
+            }
+
+            boolean addInterpolationConsumers(String value, Scope scope, Guard activation) {
+                if (value == null || value.indexOf('$') < 0) {
+                    return false;
+                }
+                boolean[] changed = {false};
+                PropertyEvaluator.evaluate(value, variable -> {
+                    if (addConsumer(scope.key(variable), activation)) {
+                        changed[0] = true;
+                    }
+                    return "";
+                });
+                return changed[0];
+            }
+
+            boolean addConsumer(String path, Guard activation) {
+                List<Guard> activations = consumers.computeIfAbsent(path, key -> new ArrayList<>());
+                for (Guard current : activations) {
+                    if (current.equals(activation)) {
+                        return false;
+                    }
+                }
+                activations.add(activation);
+                return true;
+            }
+        }
+
+        static final class Declaration {
+            private final Node node;
+            private final String path;
+            private final Guard activation;
+            private final Scope scope;
+            private final Value<?> value;
+            private boolean expanded;
+
+            Declaration(Node node, String path, Guard activation, Scope scope, Value<?> value) {
+                this.node = node;
+                this.path = path;
+                this.activation = activation;
+                this.scope = scope;
+                this.value = value;
+            }
+        }
+
+        static final class FactorGroup {
+            private Node prototype;
+            private final int size;
+            private int order;
+            private final List<Node> sites = new ArrayList<>();
+
+            FactorGroup(Node prototype, int size, int order) {
+                this.size = size;
+                this.prototype = prototype;
+                this.order = order;
+            }
+        }
+
+        static final class NodeKey {
+            private final Node node;
+            private final List<NodeKey> children;
+            private final int size;
+
+            NodeKey(Node node, List<NodeKey> children, int size) {
+                this.node = node;
+                this.children = children;
+                this.size = size;
+            }
+
+            @Override
+            public boolean equals(Object o) {
+                if (!(o instanceof NodeKey)) {
+                    return false;
+                }
+                NodeKey other = (NodeKey) o;
+                return node.kind() == other.node.kind()
+                       && Objects.equals(node.expression(), other.node.expression())
+                       && Maps.equals(node.attributes(), other.node.attributes(), Value::isStrictEqual)
+                       && Value.isStrictEqual(node.value(), other.node.value())
+                       && Objects.equals(children, other.children);
+            }
+
+            @Override
+            public int hashCode() {
+                int hash = node.kind().hashCode();
+                hash = 31 * hash + Objects.hashCode(node.expression());
+                hash = 31 * hash + Maps.hashCode(node.attributes(), String::hashCode, Value::hash);
+                hash = 31 * hash + Value.hash(node.value());
+                hash = 31 * hash + children.hashCode();
+                return hash;
+            }
+        }
+    }
+
     private static final class FileObject implements Comparable<FileObject> {
         private final String checksum;
         private final List<FileOp> ops;
@@ -3199,21 +3616,13 @@ public class ScriptCompiler {
 
         FileObject(String checksum, List<FileOp> ops, Expression condition) {
             this.checksum = checksum;
-            this.ops = List.copyOf(ops);
+            this.ops = ops;
             this.condition = condition;
-        }
-
-        Expression condition() {
-            return condition;
-        }
-
-        List<Expression.Token> conditionTokens() {
-            return condition.tokens();
         }
 
         @Override
         public int compareTo(FileObject o) {
-            int r = Lists.compare(conditionTokens(), o.conditionTokens());
+            int r = condition.compareTo(o.condition);
             if (r == 0) {
                 r = checksum.compareTo(o.checksum);
                 if (r == 0) {
@@ -3231,30 +3640,30 @@ public class ScriptCompiler {
             FileObject other = (FileObject) o;
             return Objects.equals(checksum, other.checksum)
                    && Objects.equals(ops, other.ops)
-                   && Objects.equals(conditionTokens(), other.conditionTokens());
+                   && Objects.equals(condition, other.condition);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(checksum, ops, Objects.hash(conditionTokens()));
+            return Objects.hash(checksum, ops, condition);
         }
     }
 
     private static final class FileOps implements Comparable<FileOps> {
         private static final Pattern VAR_PATTERN = Pattern.compile("\\$\\{[^}]+}");
         private final Guard reach;
-        private final String reachLiteral;
+        private final Expression reachExpression;
         private final List<FileOp> ops;
 
-        FileOps(List<FileOp> ops, Guard reach, String reachLiteral) {
+        FileOps(List<FileOp> ops, Guard reach, Expression reachExpression) {
             this.reach = reach;
-            this.reachLiteral = reachLiteral;
-            this.ops = List.copyOf(ops);
+            this.reachExpression = reachExpression;
+            this.ops = ops;
         }
 
         @Override
         public int compareTo(FileOps o) {
-            int r = reachLiteral.compareTo(o.reachLiteral);
+            int r = reachExpression.compareTo(o.reachExpression);
             if (r == 0) {
                 r = Lists.compare(ops, o.ops);
             }
@@ -3267,13 +3676,13 @@ public class ScriptCompiler {
                 return false;
             }
             FileOps other = (FileOps) o;
-            return Objects.equals(reach, other.reach)
+            return Objects.equals(reachExpression, other.reachExpression)
                    && Objects.equals(ops, other.ops);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(reach, ops);
+            return Objects.hash(reachExpression, ops);
         }
 
         List<FileOp> resolve(String id, String path) {
@@ -3297,7 +3706,7 @@ public class ScriptCompiler {
 
         boolean isFoldable() {
             boolean interpolated = false;
-            ListIterator<FileOp> it = ops.listIterator();
+            Iterator<FileOp> it = ops.iterator();
             while (it.hasNext()) {
                 FileOp op = it.next();
                 if (op.replacement.contains("${")) {

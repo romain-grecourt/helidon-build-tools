@@ -15,12 +15,11 @@
  */
 package io.helidon.build.archetype.engine.v2;
 
-import java.io.InputStream;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.ListIterator;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -33,16 +32,6 @@ import io.helidon.build.common.Maps;
  * {@link Node} utility methods.
  */
 public class Nodes {
-
-    /**
-     * Node projections.
-     */
-    public enum Projection {
-        /**
-         * Keep only the input-flow compatible runtime view.
-         */
-        INPUTS_COMPAT
-    }
 
     private Nodes() {
     }
@@ -777,29 +766,23 @@ public class Nodes {
         Script script = new Script(new HashMap<>());
         Node.Builder node = Node.builder(Kind.SCRIPT).script(script);
         for (Node child : children) {
-            child.parent(node);
-            child.script(script);
-            node.children().add(child);
+            node.children().add(parent(child, node));
         }
         return node;
     }
 
     /**
-     * Project a node into a filtered view.
+     * Attach a script to a node subtree.
      *
-     * @param node       node
-     * @param projection projection
-     * @return projected node
+     * @param script script
+     * @param node   node
+     * @return node
      */
-    public static Node project(Node node, Projection projection) {
-        Objects.requireNonNull(node, "node is null");
-        Objects.requireNonNull(projection, "projection is null");
-        switch (projection) {
-            case INPUTS_COMPAT:
-                return projectInputsCompat(node);
-            default:
-                throw new IllegalStateException("Unsupported projection: " + projection);
+    public static Node attach(Script script, Node node) {
+        for (Node current : node.traverse()) {
+            current.script(script);
         }
+        return node;
     }
 
     /**
@@ -851,7 +834,7 @@ public class Nodes {
     public static Node parent(Node node, Node parent) {
         node.parent(parent);
         if (parent != null) {
-            node.script(parent.script());
+            attach(parent.script(), node);
         }
         return node;
     }
@@ -881,98 +864,6 @@ public class Nodes {
             node.children().add(child);
         }
         return node;
-    }
-
-    private static Node projectInputsCompat(Node node) {
-        if (node.kind() != Kind.SCRIPT) {
-            throw new IllegalArgumentException("Projection root must be a script node");
-        }
-        Script sourceScript = node.script();
-        Script.Source source = new Script.Source() {
-            @Override
-            public InputStream inputStream() {
-                return sourceScript.inputStream();
-            }
-
-            @Override
-            public java.nio.file.Path path() {
-                return sourceScript.path();
-            }
-        };
-        Script script = new Script(sourceScript.loader(), source, new LinkedHashMap<>());
-        Node projected = projectNode(node, script);
-        if (projected == null) {
-            projected = Node.builder(Kind.SCRIPT).script(script);
-        }
-        for (Node n : projected.traverse()) {
-            n.script(script);
-        }
-        return projected;
-    }
-
-    private static Node projectNode(Node node, Script script) {
-        if (!keepInInputsCompat(node)) {
-            return null;
-        }
-        Node copy = node.copy();
-        copy.parent(null);
-        copy.script(script);
-        for (Node child : node.children()) {
-            Node projected = projectNode(child, script);
-            if (projected != null) {
-                copy.append(projected);
-            }
-        }
-        if (node.kind() == Kind.CONDITION && copy.children().isEmpty()) {
-            return null;
-        }
-        if (pruneEmptyInInputsCompat(copy)) {
-            return null;
-        }
-        return copy;
-    }
-
-    private static boolean keepInInputsCompat(Node node) {
-        switch (node.kind()) {
-            case SCRIPT:
-            case CONDITION:
-            case STEP:
-            case INPUTS:
-            case INPUT_OPTION:
-            case INPUT_TEXT:
-            case INPUT_BOOLEAN:
-            case INPUT_ENUM:
-            case INPUT_LIST:
-            case PRESETS:
-            case PRESET_TEXT:
-            case PRESET_BOOLEAN:
-            case PRESET_ENUM:
-            case PRESET_LIST:
-            case VARIABLES:
-            case VARIABLE_TEXT:
-            case VARIABLE_BOOLEAN:
-            case VARIABLE_ENUM:
-            case VARIABLE_LIST:
-            case VALIDATION:
-            case VALIDATIONS:
-            case REGEX:
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    private static boolean pruneEmptyInInputsCompat(Node node) {
-        switch (node.kind()) {
-            case STEP:
-            case INPUTS:
-            case PRESETS:
-            case VARIABLES:
-            case VALIDATIONS:
-                return node.children().isEmpty();
-            default:
-                return false;
-        }
     }
 
     /**
@@ -1055,5 +946,22 @@ public class Nodes {
                 node.kind(),
                 Maps.mapValue(node.attributes(), v -> Value.toString(v)),
                 Value.toString(node.value()));
+    }
+
+    static Node find(Node script, Predicate<Node.Kind> predicate1, Predicate<Node> predicate2) {
+        for (Node node : script.traverse(predicate1)) {
+            if (predicate2.test(node)) {
+                return node;
+            }
+        }
+        throw new NoSuchElementException("Node node found");
+    }
+
+    static Node find(Node script, Predicate<Node.Kind> predicate, String value) {
+        return find(script, predicate, n -> value.equals(n.value().asString().orElse(null)));
+    }
+
+    static Node find(Node script, Predicate<Node.Kind> predicate, String attr, String value) {
+        return find(script, predicate, n -> value.equals(n.attribute(attr).asString().orElse(null)));
     }
 }

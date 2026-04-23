@@ -63,6 +63,11 @@ public final class JsonScriptWriter implements Script.Writer {
         for (Node node : scriptNode.traverse(Kind.CONDITION::equals)) {
             expressions.computeIfAbsent(node.expression(), k -> String.valueOf(expressions.size() + 1));
         }
+        for (Node method : scriptNode.script().methods().values()) {
+            for (Node node : method.traverse(Kind.CONDITION::equals)) {
+                expressions.computeIfAbsent(node.expression(), k -> String.valueOf(expressions.size() + 1));
+            }
+        }
 
         if (!expressions.isEmpty()) {
             Map<String, Object> tokens = new LinkedHashMap<>();
