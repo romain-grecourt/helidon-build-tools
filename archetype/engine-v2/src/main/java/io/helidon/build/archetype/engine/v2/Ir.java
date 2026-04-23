@@ -17,7 +17,7 @@ package io.helidon.build.archetype.engine.v2;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
@@ -287,7 +287,7 @@ final class Ir {
 
     private static final class Lowerer {
         private final Scope scope;
-        private final Map<String, SymbolSeed> symbols = new LinkedHashMap<>();
+        private final Map<String, Symbol> symbols = new LinkedHashMap<>();
         private final List<Control> controls = new ArrayList<>();
         private final List<Block> blocks = new ArrayList<>();
         private final List<Op> ops = new ArrayList<>();
@@ -305,9 +305,9 @@ final class Ir {
             List<Symbol> symbols = new ArrayList<>(this.symbols.size());
             Map<String, Integer> ids = new LinkedHashMap<>();
             int id = 0;
-            for (SymbolSeed seed : this.symbols.values()) {
-                symbols.add(new Symbol(id, seed.name, seed.spec, seed.guardable, seed.tainted));
-                ids.put(seed.name, id);
+            for (Symbol seed : this.symbols.values()) {
+                symbols.add(new Symbol(id, seed.name(), seed.domain(), seed.guardable(), seed.tainted()));
+                ids.put(seed.name(), id);
                 id++;
             }
             table = new Table(symbols, ids);
@@ -357,15 +357,14 @@ final class Ir {
                     case VARIABLE_ENUM:
                     case PRESET_TEXT:
                     case VARIABLE_TEXT:
-                        SymbolSeed seed = symbolSeed(nodeScope, node);
-                        addSymbol(seed.name, seed.spec, seed.guardable, seed.tainted);
+                        addSymbol(symbolSeed(nodeScope, node));
                         break;
                     case PRESET_LIST:
                     case VARIABLE_LIST:
                         String key = definitionKey(nodeScope, node.attribute("path").getString());
-                        SymbolSeed sym = scope.get("~" + key) == Scope.EMPTY ? null : symbols.get(key);
+                        Symbol sym = scope.get("~" + key) == Scope.EMPTY ? null : symbols.get(key);
                         if (sym != null) {
-                            addSymbol(key, sym.spec, sym.guardable, sym.tainted);
+                            addSymbol(sym);
                         } else {
                             addSymbol(key, Spec.OPEN_TEXT, false, false);
                         }
@@ -506,13 +505,53 @@ final class Ir {
         }
 
         void addSymbol(String name, Spec spec, boolean guardable, boolean tainted) {
-            SymbolSeed seed = new SymbolSeed(name, spec, guardable, tainted);
-            symbols.merge(name, seed, SymbolSeed::merge);
+            addSymbol(new Symbol(-1, name, spec, guardable, tainted));
         }
 
-        SymbolSeed symbolSeed(Scope scope, Node node) {
+        void addSymbol(Symbol symbol) {
+            symbols.merge(symbol.name(), symbol, Lowerer::mergeSymbol);
+        }
+
+        static Symbol mergeSymbol(Symbol left, Symbol right) {
+            if (!left.name().equals(right.name())) {
+                throw new IllegalArgumentException("Cannot merge different symbols");
+            }
+            String name = left.name();
+            Spec.Kind leftKind = left.domain().kind();
+            Spec.Kind rightKind = right.domain().kind();
+            boolean tainted = left.tainted() || right.tainted();
+            boolean guardable = left.guardable() && right.guardable();
+            if (left.domain().kind() == Spec.Kind.OPEN_TEXT || rightKind == Spec.Kind.OPEN_TEXT) {
+                return new Symbol(-1, name, Spec.OPEN_TEXT, false, tainted);
+            }
+            if (leftKind == Spec.Kind.MEMBERSHIP || rightKind == Spec.Kind.MEMBERSHIP) {
+                if (leftKind != Spec.Kind.MEMBERSHIP || rightKind != Spec.Kind.MEMBERSHIP) {
+                    return new Symbol(-1, name, Spec.OPEN_TEXT, false, tainted);
+                }
+                Set<String> values = new TreeSet<>();
+                Collections.addAll(values, left.domain().values());
+                Collections.addAll(values, right.domain().values());
+                Spec domain = new Spec(Spec.Kind.MEMBERSHIP, values.toArray(String[]::new));
+                return new Symbol(-1, name, domain, guardable, tainted);
+            }
+            if (leftKind == Spec.Kind.BOOLEAN || rightKind == Spec.Kind.BOOLEAN) {
+                return leftKind == Spec.Kind.BOOLEAN && rightKind == Spec.Kind.BOOLEAN
+                        ? new Symbol(-1, name, Spec.BOOLEAN, guardable, tainted)
+                        : new Symbol(-1, name, Spec.OPEN_TEXT, false, tainted);
+            }
+            Set<String> values = new TreeSet<>();
+            Collections.addAll(values, left.domain().values());
+            Collections.addAll(values, right.domain().values());
+            Spec.Kind kind = leftKind == Spec.Kind.CHOICE || rightKind == Spec.Kind.CHOICE
+                    ? Spec.Kind.CHOICE
+                    : Spec.Kind.FINITE_TEXT;
+            Spec domain = new Spec(kind, values.toArray(String[]::new));
+            return new Symbol(-1, name, domain, guardable, tainted);
+        }
+
+        Symbol symbolSeed(Scope scope, Node node) {
             String key = definitionKey(scope, node.attribute("path").getString());
-            SymbolSeed sym = scope.get("~" + key) == Scope.EMPTY ? null : symbols.get(key);
+            Symbol sym = scope.get("~" + key) == Scope.EMPTY ? null : symbols.get(key);
             if (sym != null) {
                 return sym;
             }
@@ -527,15 +566,15 @@ final class Ir {
                 default:
                     break;
             }
-            return new SymbolSeed(key, Spec.OPEN_TEXT, false, false);
+            return new Symbol(-1, key, Spec.OPEN_TEXT, false, false);
         }
 
-        SymbolSeed symbolSeed(String key, Value<?> value) {
+        Symbol symbolSeed(String key, Value<?> value) {
             String literal = literalScalar(value);
             if (literal == null) {
-                return new SymbolSeed(key, Spec.OPEN_TEXT, false, true);
+                return new Symbol(-1, key, Spec.OPEN_TEXT, false, true);
             }
-            return new SymbolSeed(key, new Spec(Spec.Kind.FINITE_TEXT, literal), true, false);
+            return new Symbol(-1, key, new Spec(Spec.Kind.FINITE_TEXT, literal), true, false);
         }
 
         String literalScalar(Value<?> value) {
@@ -600,54 +639,6 @@ final class Ir {
                 return new Spec(Spec.Kind.CHOICE, values);
             }
             return new Spec(Spec.Kind.MEMBERSHIP, values);
-        }
-    }
-
-    private static final class SymbolSeed {
-        private final String name;
-        private final Spec spec;
-        private final boolean guardable;
-        private final boolean tainted;
-
-        SymbolSeed(String name, Spec spec, boolean guardable, boolean tainted) {
-            this.name = name;
-            this.spec = spec;
-            this.guardable = guardable;
-            this.tainted = tainted;
-        }
-
-        SymbolSeed merge(SymbolSeed other) {
-            if (!name.equals(other.name)) {
-                throw new IllegalArgumentException("Cannot merge different symbols");
-            }
-            Spec.Kind kind = spec.kind();
-            Spec.Kind otherKind = other.spec.kind();
-            if (kind == Spec.Kind.OPEN_TEXT || otherKind == Spec.Kind.OPEN_TEXT) {
-                return new SymbolSeed(name, Spec.OPEN_TEXT, false, tainted || other.tainted);
-            }
-            if (kind == Spec.Kind.MEMBERSHIP || otherKind == Spec.Kind.MEMBERSHIP) {
-                if (kind != Spec.Kind.MEMBERSHIP || otherKind != Spec.Kind.MEMBERSHIP) {
-                    return new SymbolSeed(name, Spec.OPEN_TEXT, false, tainted || other.tainted);
-                }
-                Set<String> choices = new TreeSet<>(Arrays.asList(spec.values()));
-                choices.addAll(Arrays.asList(other.spec.values()));
-                String[] values = choices.toArray(String[]::new);
-                Spec merged = new Spec(Spec.Kind.MEMBERSHIP, values);
-                return new SymbolSeed(name, merged, guardable && other.guardable, tainted || other.tainted);
-            }
-            if (kind == Spec.Kind.BOOLEAN || otherKind == Spec.Kind.BOOLEAN) {
-                if (kind == Spec.Kind.BOOLEAN && otherKind == Spec.Kind.BOOLEAN) {
-                    return new SymbolSeed(name, Spec.BOOLEAN, guardable && other.guardable, tainted || other.tainted);
-                }
-                return new SymbolSeed(name, Spec.OPEN_TEXT, false, tainted || other.tainted);
-            }
-            Set<String> choices = new TreeSet<>(Arrays.asList(spec.values()));
-            choices.addAll(Arrays.asList(other.spec.values()));
-            String[] values = choices.toArray(String[]::new);
-            Spec merged = kind == Spec.Kind.CHOICE || otherKind == Spec.Kind.CHOICE
-                    ? new Spec(Spec.Kind.CHOICE, values)
-                    : new Spec(Spec.Kind.FINITE_TEXT, values);
-            return new SymbolSeed(name, merged, guardable && other.guardable, tainted || other.tainted);
         }
     }
 

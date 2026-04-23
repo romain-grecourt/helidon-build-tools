@@ -270,6 +270,52 @@ class FlowTest {
     }
 
     @Test
+    void testIrLoweringMergesDuplicateDeclaredInputDomains() {
+        Context.Scope scope = new Context().scope();
+        Node membership = Nodes.condition("${features} contains ['grpc','rest','metrics']", Nodes.step("Membership"));
+        Node mixed = Nodes.condition("${mixed} contains ['grpc']", Nodes.step("Mixed"));
+        Node script = Nodes.script(
+                Nodes.inputs(
+                        Nodes.inputBoolean("enabled"),
+                        Nodes.inputBoolean("enabled"),
+                        Nodes.inputList(
+                                "features",
+                                Nodes.inputOption("grpc", "grpc"),
+                                Nodes.inputOption("rest", "rest")),
+                        Nodes.inputList(
+                                "features",
+                                Nodes.inputOption("metrics", "metrics"),
+                                Nodes.inputOption("rest", "rest")),
+                        Nodes.inputList("mixed", Nodes.inputOption("grpc", "grpc")),
+                        Nodes.inputText("mixed")),
+                membership,
+                mixed);
+
+        Flow flow = new Flow(scope);
+        flow.process(script);
+        Symbol enabled = symbol(flow, "enabled");
+        Symbol features = symbol(flow, "features");
+        Symbol mixedSymbol = symbol(flow, "mixed");
+
+        assertThat(enabled.domain().kind(), is(Spec.Kind.BOOLEAN));
+        assertThat(enabled.guardable(), is(true));
+        assertThat(enabled.tainted(), is(false));
+        assertThat(features.domain().kind(), is(Spec.Kind.MEMBERSHIP));
+        assertThat(Arrays.asList(features.domain().values()), is(List.of("grpc", "metrics", "rest")));
+        assertThat(features.guardable(), is(true));
+        assertThat(features.tainted(), is(false));
+        assertThat(mixedSymbol.domain(), is(Spec.OPEN_TEXT));
+        assertThat(mixedSymbol.guardable(), is(false));
+        assertThat(mixedSymbol.tainted(), is(true));
+        assertThat(flow.guards().equivalent(
+                flow.activeGuard(membership),
+                flow.guards().containsAll(features.id(), Set.of("grpc", "rest", "metrics"))), is(true));
+        assertThat(flow.activeGuard(mixed).equals(TRUE), is(false));
+        assertThat(flow.activeGuard(mixed).equals(FALSE), is(false));
+        assertThat(flow.activationCondition(mixed).literal(), is("${mixed} contains ['grpc']"));
+    }
+
+    @Test
     void testIrLoweringHandlesLiteralListContainsFiniteScalarSymbol() {
         Context.Scope scope = new Context().scope();
         Node script = load("flow/literal-list-contains-finite-scalar.xml");
