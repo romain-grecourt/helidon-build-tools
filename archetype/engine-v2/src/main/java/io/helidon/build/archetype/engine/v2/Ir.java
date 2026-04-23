@@ -313,9 +313,10 @@ final class Ir {
             table = new Table(symbols, ids);
             guards = new Guards(table);
 
-            int entryBlock = newBlock(0);
-            int exitBlock = lowerChildren(root.children(), entryBlock, 0, scope);
-            terminateIfMissing(exitBlock, Terminator.Kind.RETURN, root, -1);
+            int entryBlockId = newBlock(0);
+            LowerVisitor visitor = new LowerVisitor(this, root, scope, entryBlockId);
+            root.visit(visitor);
+            terminateIfMissing(visitor.exitBlockId, Terminator.Kind.RETURN, root, -1);
 
             for (int blockId = 0; blockId < blocks.size(); blockId++) {
                 Block block = block(blockId);
@@ -328,7 +329,7 @@ final class Ir {
 
         void collectDeclaredInputs(Node root, Scope scope) {
             traverse(root, scope, (node, nodeScope) -> {
-                Scope childScope = childScope(nodeScope, node);
+                Scope childScope = node.kind().isInput() ? nodeScope.getOrCreate(node) : nodeScope;
                 switch (node.kind()) {
                     case INPUT_BOOLEAN:
                         addSymbol(childScope.key(), Spec.BOOLEAN, true, false);
@@ -384,7 +385,7 @@ final class Ir {
                     throw new IllegalStateException("Missing scope for node: " + node);
                 }
                 visitor.accept(node, scope);
-                Scope childScope = childScope(scope, node);
+                Scope childScope = node.kind().isInput() ? scope.getOrCreate(node) : scope;
                 for (Node child : node.children()) {
                     scopes.put(child, childScope);
                 }
@@ -396,103 +397,8 @@ final class Ir {
             return key.startsWith("~") ? key.substring(1) : key;
         }
 
-        int lowerChildren(List<Node> nodes, int blockId, int controlId, Scope scope) {
-            int current = blockId;
-            for (Node node : nodes) {
-                current = lower(node, current, controlId, scope);
-            }
-            return current;
-        }
-
-        int lower(Node node, int blockId, int controlId, Scope scope) {
-            switch (node.kind()) {
-                case INPUT_BOOLEAN:
-                case INPUT_ENUM:
-                case INPUT_LIST:
-                case INPUT_TEXT:
-                    return lowerInput(node, blockId, controlId, scope);
-                case PRESET_BOOLEAN:
-                case PRESET_ENUM:
-                case PRESET_LIST:
-                case PRESET_TEXT:
-                case VARIABLE_BOOLEAN:
-                case VARIABLE_ENUM:
-                case VARIABLE_LIST:
-                case VARIABLE_TEXT:
-                    return lowerDefinition(node, blockId, controlId, scope);
-                case CONDITION:
-                    return lowerCondition(node, blockId, controlId, scope);
-                case STEP:
-                case FILE:
-                case MODEL:
-                    append(blockId, Op.Kind.EMIT, node, -1, null);
-                    return lowerChildren(node.children(), blockId, controlId, scope);
-                case INPUT_OPTION:
-                    return lowerOption(node, blockId, controlId, scope);
-                default:
-                    return lowerChildren(node.children(), blockId, controlId, scope);
-            }
-        }
-
-        int lowerInput(Node node, int blockId, int controlId, Scope scope) {
-            Scope inputScope = scope.getOrCreate(node);
-            int id = table.findId(inputScope.key());
-            append(blockId, Op.Kind.DECLARE_INPUT, node, id, null);
-            switch (node.kind()) {
-                case INPUT_BOOLEAN:
-                    Guard guard = directBooleanGuard(table, guards, inputScope.key());
-                    return lowerGuardedChildren(node, blockId, controlId, guard, node.children(), inputScope);
-                case INPUT_ENUM:
-                case INPUT_LIST:
-                default:
-                    return lowerChildren(node.children(), blockId, controlId, inputScope);
-            }
-        }
-
-        int lowerOption(Node node, int blockId, int controlId, Scope scope) {
-            Node input = node.ancestor(Kind::isInput).orElseThrow(() ->
-                    new IllegalStateException("Option without input parent: " + node));
-            int id = table.findId(scope.key());
-            if (id < 0) {
-                throw new IllegalStateException("Missing option symbol for scope: " + scope.key());
-            }
-            append(blockId, Op.Kind.DECLARE_OPTION, node, id, null);
-            Guard guard = optionGuard(input, node, scope);
-            return lowerGuardedChildren(node, blockId, controlId, guard, node.children(), scope);
-        }
-
-        int lowerDefinition(Node node, int blockId, int controlId, Scope scope) {
-            int id = table.findId(scope.definitionKey(node.attribute("path").getString()));
-            if (id >= 0) {
-                Expression expr = new Expression(List.of(Token.of(node.value())), true);
-                append(blockId, Op.Kind.DEFINE_VALUE, node, id, expr);
-            }
-            return lowerChildren(node.children(), blockId, controlId, scope);
-        }
-
-        int lowerCondition(Node node, int blockId, int controlId, Scope scope) {
-            Guard guard = guard(node.expression(), scope);
-            return lowerGuardedChildren(node, blockId, controlId, guard, node.children(), scope);
-        }
-
         Guard optionGuard(Node input, Node option, Scope scope) {
             return directOptionGuard(table, guards, scope.key(), input, option);
-        }
-
-        int lowerGuardedChildren(Node node, int blockId, int controlId, Guard guard, List<Node> children, Scope scope) {
-            if (children.isEmpty()) {
-                return blockId;
-            }
-            int trueId = nextControl(controlId, guard);
-            int falseId = nextControl(controlId, guards.not(guard));
-            int trueBlock = newBlock(trueId);
-            int falseBlock = newBlock(falseId);
-            int joinBlock = newBlock(controlId);
-            terminate(blockId, node, trueBlock, falseBlock);
-            int trueExit = lowerChildren(children, trueBlock, trueId, scope);
-            terminateIfMissing(trueExit, Terminator.Kind.GOTO, node, joinBlock);
-            terminateIfMissing(falseBlock, Terminator.Kind.GOTO, node, joinBlock);
-            return joinBlock;
         }
 
         Guard guard(Expression expression, Scope scope) {
@@ -560,21 +466,16 @@ final class Ir {
                 case VARIABLE_ENUM:
                 case PRESET_TEXT:
                 case VARIABLE_TEXT:
-                    return symbolSeed(key, node.value());
+                    String literal = literalScalar(node.value());
+                    if (literal == null) {
+                        return new Symbol(-1, key, Spec.OPEN_TEXT, false, true);
+                    }
+                    return new Symbol(-1, key, new Spec(Spec.Kind.FINITE_TEXT, literal), true, false);
                 case PRESET_LIST:
                 case VARIABLE_LIST:
                 default:
-                    break;
+                    return new Symbol(-1, key, Spec.OPEN_TEXT, false, false);
             }
-            return new Symbol(-1, key, Spec.OPEN_TEXT, false, false);
-        }
-
-        Symbol symbolSeed(String key, Value<?> value) {
-            String literal = literalScalar(value);
-            if (literal == null) {
-                return new Symbol(-1, key, Spec.OPEN_TEXT, false, true);
-            }
-            return new Symbol(-1, key, new Spec(Spec.Kind.FINITE_TEXT, literal), true, false);
         }
 
         String literalScalar(Value<?> value) {
@@ -618,10 +519,6 @@ final class Ir {
             return blocks.get(blockId);
         }
 
-        static Scope childScope(Scope scope, Node node) {
-            return node.kind().isInput() ? scope.getOrCreate(node) : scope;
-        }
-
         static String[] optionValues(Node input) {
             Set<String> values = new TreeSet<>();
             for (Node option : Nodes.options(input)) {
@@ -639,6 +536,139 @@ final class Ir {
                 return new Spec(Spec.Kind.CHOICE, values);
             }
             return new Spec(Spec.Kind.MEMBERSHIP, values);
+        }
+    }
+
+    private static final class LowerContext {
+        private final Scope scope;
+        private final int controlId;
+        private int exitBlockId;
+        private boolean guarded;
+        private int falseBlockId = -1;
+        private int joinBlockId = -1;
+
+        LowerContext(Scope scope, int controlId, int entryBlockId) {
+            this.scope = scope;
+            this.controlId = controlId;
+            this.exitBlockId = entryBlockId;
+        }
+
+        void guard(int falseBlockId, int joinBlockId) {
+            this.guarded = true;
+            this.falseBlockId = falseBlockId;
+            this.joinBlockId = joinBlockId;
+        }
+    }
+
+    private static final class LowerVisitor implements Node.Visitor {
+        private final Lowerer lowerer;
+        private final Node root;
+        private final Scope rootScope;
+        private final int entryBlockId;
+        private final Deque<LowerContext> contexts = new ArrayDeque<>();
+        private int exitBlockId = -1;
+
+        LowerVisitor(Lowerer lowerer, Node root, Scope rootScope, int entryBlockId) {
+            this.lowerer = lowerer;
+            this.root = root;
+            this.rootScope = rootScope;
+            this.entryBlockId = entryBlockId;
+        }
+
+        @Override
+        public boolean visit(Node node) {
+            if (node == root) {
+                contexts.push(new LowerContext(rootScope, 0, entryBlockId));
+            } else {
+                contexts.push(lower(node, contexts.getFirst()));
+            }
+            return true;
+        }
+
+        @Override
+        public void postVisit(Node node) {
+            int exitBlockId;
+            LowerContext context = contexts.removeFirst();
+            if (context.guarded) {
+                lowerer.terminateIfMissing(context.exitBlockId, Terminator.Kind.GOTO, node, context.joinBlockId);
+                lowerer.terminateIfMissing(context.falseBlockId, Terminator.Kind.GOTO, node, context.joinBlockId);
+                exitBlockId = context.joinBlockId;
+            } else {
+                exitBlockId = context.exitBlockId;
+            }
+            if (contexts.isEmpty()) {
+                this.exitBlockId = exitBlockId;
+            } else {
+                LowerContext parent = contexts.peekFirst();
+                parent.exitBlockId = exitBlockId;
+            }
+        }
+
+        LowerContext lower(Node node, LowerContext parent) {
+            int blockId = parent.exitBlockId;
+            int controlId = parent.controlId;
+            Scope scope = parent.scope;
+            int id;
+            Guard guard;
+            switch (node.kind()) {
+                case INPUT_BOOLEAN:
+                case INPUT_ENUM:
+                case INPUT_LIST:
+                case INPUT_TEXT:
+                    Scope inputScope = scope.getOrCreate(node);
+                    id = lowerer.table.findId(inputScope.key());
+                    lowerer.append(blockId, Op.Kind.DECLARE_INPUT, node, id, null);
+                    if (node.kind() == Kind.INPUT_BOOLEAN) {
+                        guard = directBooleanGuard(lowerer.table, lowerer.guards, inputScope.key());
+                        return guarded(node, inputScope, blockId, controlId, guard);
+                    }
+                    return new LowerContext(inputScope, controlId, blockId);
+                case PRESET_BOOLEAN:
+                case PRESET_ENUM:
+                case PRESET_LIST:
+                case PRESET_TEXT:
+                case VARIABLE_BOOLEAN:
+                case VARIABLE_ENUM:
+                case VARIABLE_LIST:
+                case VARIABLE_TEXT:
+                    id = lowerer.table.findId(scope.definitionKey(node.attribute("path").getString()));
+                    if (id >= 0) {
+                        Expression expr = new Expression(List.of(Token.of(node.value())), true);
+                        lowerer.append(blockId, Op.Kind.DEFINE_VALUE, node, id, expr);
+                    }
+                    return new LowerContext(scope, controlId, blockId);
+                case CONDITION:
+                    guard = lowerer.guard(node.expression(), scope);
+                    return guarded(node, scope, blockId, controlId, guard);
+                case STEP:
+                case FILE:
+                case MODEL:
+                    lowerer.append(blockId, Op.Kind.EMIT, node, -1, null);
+                    return new LowerContext(scope, controlId, blockId);
+                case INPUT_OPTION:
+                    Node input = node.ancestor(Kind::isInput).orElseThrow();
+                    id = lowerer.table.findId(scope.key());
+                    lowerer.append(blockId, Op.Kind.DECLARE_OPTION, node, id, null);
+                    guard = lowerer.optionGuard(input, node, scope);
+                    return guarded(node, scope, blockId, controlId, guard);
+                default:
+                    return new LowerContext(scope, controlId, blockId);
+            }
+        }
+
+        LowerContext guarded(Node node, Scope scope, int blockId, int controlId, Guard guard) {
+            if (node.children().isEmpty()) {
+                return new LowerContext(scope, controlId, blockId);
+            }
+            int trueId = lowerer.nextControl(controlId, guard);
+            int falseId = lowerer.nextControl(controlId, lowerer.guards.not(guard));
+            int trueBlock = lowerer.newBlock(trueId);
+            int falseBlock = lowerer.newBlock(falseId);
+            int joinBlock = lowerer.newBlock(controlId);
+            lowerer.terminate(blockId, node, trueBlock, falseBlock);
+            LowerContext context = new LowerContext(scope, trueId, trueBlock);
+            context.guard(falseBlock, joinBlock);
+            return context;
         }
     }
 
