@@ -1,6 +1,6 @@
 <!--
 
-    Copyright (c) 2024 Oracle and/or its affiliates.
+    Copyright (c) 2024, 2026 Oracle and/or its affiliates.
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -47,6 +47,13 @@
                                                 </variable>
                                             </variables>
                                         </iterators>
+                                    </unpack>
+                                    <unpack url="https://repo1.maven.org/maven2/io/helidon/helidon-project/3.2.10/helidon-project-3.2.10-site.jar"
+                                            includes="apidocs/**"
+                                            target="apidocs/3.2.10">
+                                        <mappers>
+                                            <mapper match="^apidocs/(.*)$" replace="$1"/>
+                                        </mappers>
                                     </unpack>
                                 </unpacks>
                             </directory>

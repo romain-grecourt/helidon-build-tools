@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package io.helidon.build.maven.stager;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -38,14 +39,16 @@ final class UnpackTask extends StagingTask {
     private final String url;
     private final String includes;
     private final String excludes;
+    private final List<Mapper> mappers;
 
-    UnpackTask(ActionIterators iterators, Map<String, String> attrs) {
+    UnpackTask(ActionIterators iterators, List<Mapper> mappers, Map<String, String> attrs) {
         super(ELEMENT_NAME, null, iterators, attrs);
         this.url = Strings.requireValid(attrs.get("url"), "url is required");
         this.ext = Strings.requireValid(Optional.ofNullable(attrs.get("ext"))
                 .orElseGet(() -> fileExt(url)), "ext is required");
         this.includes = attrs.get("includes");
         this.excludes = attrs.get("excludes");
+        this.mappers = mappers;
     }
 
     /**
@@ -75,6 +78,15 @@ final class UnpackTask extends StagingTask {
         return includes;
     }
 
+    /**
+     * Get the mappers.
+     *
+     * @return mappers, never {@code null}
+     */
+    List<Mapper> mappers() {
+        return mappers;
+    }
+
     @Override
     protected CompletableFuture<Void> execBody(StagingContext ctx, Path dir, Map<String, String> vars) {
         return execBodyWithTimeout(ctx, dir, vars);
@@ -90,6 +102,6 @@ final class UnpackTask extends StagingTask {
         Path targetDir = dir.resolve(resolvedTarget).normalize();
         ctx.logInfo("Unpacking %s to %s", tempFile, targetDir);
         ctx.ensureDirectory(targetDir);
-        ctx.unpack(tempFile, targetDir, excludes, includes);
+        ctx.unpack(tempFile, targetDir, excludes, includes, mappers, vars);
     }
 }
