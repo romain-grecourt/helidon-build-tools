@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, 2024 Oracle and/or its affiliates.
+ * Copyright (c) 2023, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,8 +37,6 @@ final class ListFilesTask extends StagingTask implements TextAction {
 
     private static final Set<FileVisitOption> FILE_VISIT_OPTIONS = Set.of(FileVisitOption.FOLLOW_LINKS);
 
-    static final String ELEMENT_NAME = "list-files";
-
     private final List<String> includes;
     private final List<String> excludes;
     private final List<Substitution> substitutions;
@@ -52,7 +50,7 @@ final class ListFilesTask extends StagingTask implements TextAction {
                   List<Substitution> substitutions,
                   Map<String, String> attrs) {
 
-        super(ELEMENT_NAME, null, iterators, attrs);
+        super("list-files", null, iterators, attrs);
         this.includes = Lists.map(includes, Include::value);
         this.excludes = Lists.map(excludes, Exclude::value);
         this.substitutions = substitutions;
@@ -63,18 +61,6 @@ final class ListFilesTask extends StagingTask implements TextAction {
     @Override
     public String text(Map<String, String> vars) {
         return results.getOrDefault(vars, "");
-    }
-
-    List<String> includes() {
-        return includes;
-    }
-
-    List<String> excludes() {
-        return excludes;
-    }
-
-    List<Substitution> substitutions() {
-        return substitutions;
     }
 
     @Override
@@ -90,6 +76,22 @@ final class ListFilesTask extends StagingTask implements TextAction {
             sb.append(entry).append("\n");
         }
         results.put(vars, sb.toString());
+    }
+
+    String dir() {
+        return dirName;
+    }
+
+    List<String> includes() {
+        return includes;
+    }
+
+    List<String> excludes() {
+        return excludes;
+    }
+
+    List<Substitution> substitutions() {
+        return substitutions;
     }
 
     private boolean filter(Path p, BasicFileAttributes attrs) {

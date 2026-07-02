@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,6 @@
  */
 package io.helidon.build.archetype.engine.v1;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -54,29 +50,13 @@ public final class ArchetypeCatalog {
     }
 
     /**
-     * Create an archetype descriptor instance from a file.
+     * Create an archetype descriptor.
      *
-     * @param file the file
-     * @return ArchetypeCatalog
-     * @throws IOException on error
-     */
-    public static ArchetypeCatalog read(Path file) throws IOException {
-        return read(Files.newInputStream(file));
-    }
-
-    /**
-     * Create an archetype descriptor instance from an input stream.
-     *
-     * @param is input stream
+     * @param elt elt
      * @return ArchetypeCatalog
      */
-    public static ArchetypeCatalog read(InputStream is) {
-        try {
-            XMLElement element = XMLElement.parse(is);
-            return new ArchetypeCatalog(element);
-        } catch (IOException ex) {
-            throw new RuntimeException(ex);
-        }
+    public static ArchetypeCatalog create(XMLElement elt) {
+        return new ArchetypeCatalog(elt);
     }
 
     /**

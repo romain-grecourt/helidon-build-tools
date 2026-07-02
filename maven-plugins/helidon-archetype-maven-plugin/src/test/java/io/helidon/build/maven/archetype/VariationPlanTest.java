@@ -15,11 +15,7 @@
  */
 package io.helidon.build.maven.archetype;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Path;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +27,7 @@ import io.helidon.build.common.xml.XMLElement;
 import org.junit.jupiter.api.Test;
 
 import static io.helidon.build.common.test.utils.TestFiles.testResourcePath;
+import static io.helidon.build.common.xml.XMLElement.read;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
@@ -69,7 +66,7 @@ class VariationPlanTest {
 
     @Test
     void testLoadRejectsFragmentWithoutId() {
-        XMLElement root = xml("""
+        XMLElement root = read("""
                 <plans xmlns="https://helidon.io/archetype-plans/1.0">
                     <fragment>
                         <values>
@@ -85,7 +82,7 @@ class VariationPlanTest {
 
     @Test
     void testLoadRejectsDuplicateFragments() {
-        XMLElement root = xml("""
+        XMLElement root = read("""
                 <plans xmlns="https://helidon.io/archetype-plans/1.0">
                     <fragment id="color/red"/>
                     <fragment id="color/red"/>
@@ -98,7 +95,7 @@ class VariationPlanTest {
 
     @Test
     void testLoadRejectsUnknownFragmentReference() {
-        XMLElement root = xml("""
+        XMLElement root = read("""
                 <plans xmlns="https://helidon.io/archetype-plans/1.0">
                     <plan id="red" extends="missing"/>
                 </plans>
@@ -109,7 +106,7 @@ class VariationPlanTest {
 
     @Test
     void testLoadRejectsCircularFragmentInheritance() {
-        XMLElement root = xml("""
+        XMLElement root = read("""
                 <plans xmlns="https://helidon.io/archetype-plans/1.0">
                     <fragment id="a" extends="b"/>
                     <fragment id="b" extends="a"/>
@@ -122,7 +119,7 @@ class VariationPlanTest {
 
     @Test
     void testLoadPreservesInheritedValueOrder() {
-        XMLElement root = xml("""
+        XMLElement root = read("""
                 <plans xmlns="https://helidon.io/archetype-plans/1.0">
                     <fragment id="base">
                         <values>
@@ -175,13 +172,5 @@ class VariationPlanTest {
 
     private static Path resource(String path) {
         return testResourcePath(VariationPlanTest.class, "variation-plans/" + path);
-    }
-
-    private static XMLElement xml(String value) {
-        try {
-            return XMLElement.parse(new ByteArrayInputStream(value.getBytes(StandardCharsets.UTF_8)));
-        } catch (IOException ex) {
-            throw new UncheckedIOException(ex);
-        }
     }
 }

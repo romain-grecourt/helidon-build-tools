@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2025, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.startsWith;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
@@ -151,11 +152,64 @@ class XMLReaderTest {
         assertThat(ex.getMessage(), is("Invalid element"));
     }
 
-    // TODO test readText()
+    @Test
+    void testReadText() throws IOException {
+        assertThat(readText("<elt>plain text</elt>"), is("plain text"));
+    }
+
+    @Test
+    void testReadTextCdata() throws IOException {
+        assertThat(readText("<elt><![CDATA[\n  <value>&amp;</value>\n]]></elt>"),
+                   is("\n  <value>&amp;</value>\n"));
+    }
+
+    @Test
+    void testReadTextEmpty() throws IOException {
+        assertThat(readText("<elt/>"), is(nullValue()));
+        assertThat(readText("<elt> \n    </elt>"), is(nullValue()));
+    }
+
+    @Test
+    void testReadElementReadOnly() throws IOException {
+        XMLElement element = readElement("<root id=\"1\"><child>text</child></root>", true);
+
+        assertThrows(UnsupportedOperationException.class, () -> element.attributes().put("key", "value"));
+        assertThrows(UnsupportedOperationException.class, () -> element.children().add(XMLElement.builder().name("next")));
+        assertThrows(UnsupportedOperationException.class, () -> element.parent(XMLElement.builder().name("parent")));
+        assertThrows(IllegalStateException.class, () -> element.value("new value"));
+    }
+
+    @Test
+    void testReadElementMutable() throws IOException {
+        XMLElement element = readElement("<root id=\"1\"><child>text</child></root>", false);
+        XMLElement parent = XMLElement.builder().name("parent");
+        XMLElement child = XMLElement.builder().name("next");
+
+        assertDoesNotThrow(() -> element.attributes().put("key", "value"));
+        assertDoesNotThrow(() -> element.children().add(child));
+        assertDoesNotThrow(() -> element.parent(parent));
+        assertDoesNotThrow(() -> element.value("new value"));
+
+        assertThat(element.attributes().get("key"), is("value"));
+        assertThat(element.children().get(1), is(child));
+        assertThat(element.parent(), is(parent));
+        assertThat(element.value(), is("new value"));
+    }
 
     static XMLElement readElement(String str) throws IOException {
+        return readElement(str, true);
+    }
+
+    static XMLElement readElement(String str, boolean readOnly) throws IOException {
         try (XMLReader reader = new XMLReader(new ByteArrayInputStream(str.getBytes(UTF_8)))) {
-            return reader.readElement();
+            return reader.readElement(readOnly);
+        }
+    }
+
+    static String readText(String str) throws IOException {
+        try (XMLReader reader = new XMLReader(new ByteArrayInputStream(str.getBytes(UTF_8)))) {
+            reader.readName();
+            return reader.readText();
         }
     }
 }

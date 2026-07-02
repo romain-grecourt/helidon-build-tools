@@ -1,0 +1,60 @@
+<!--
+
+    Copyright (c) 2026 Oracle and/or its affiliates.
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
+
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>io.helidon.build-tools.stager.tests</groupId>
+    <artifactId>pom-config</artifactId>
+    <version>@project.version@</version>
+    <name>Test Stager POM config preprocessing</name>
+    <packaging>pom</packaging>
+
+    <build>
+        <finalName>pom-config-final-name</finalName>
+        <plugins>
+            <plugin>
+                <groupId>io.helidon.build-tools</groupId>
+                <artifactId>helidon-stager-maven-plugin</artifactId>
+                <version>${project.version}</version>
+                <configuration>
+                    <properties>
+                        <property name="stage.path" value="${project.build.directory}/stage"/>
+                        <property name="fragments.dir" value="stager-fragments"/>
+                        <property name="major" value="4"/>
+                        <property name="version" value="${major}.0.0"/>
+                    </properties>
+                    <variables>
+                        <variable name="channel">
+                            <value>stable</value>
+                            <value>preview</value>
+                        </variable>
+                    </variables>
+                    <include src="${fragments.dir}/stager.xml"/>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>stage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

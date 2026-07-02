@@ -33,8 +33,6 @@ import static io.helidon.build.maven.stager.DownloadTask.download;
  */
 final class UnpackTask extends StagingTask {
 
-    static final String ELEMENT_NAME = "unpack";
-
     private final String ext;
     private final String url;
     private final String includes;
@@ -42,49 +40,13 @@ final class UnpackTask extends StagingTask {
     private final List<Mapper> mappers;
 
     UnpackTask(ActionIterators iterators, List<Mapper> mappers, Map<String, String> attrs) {
-        super(ELEMENT_NAME, null, iterators, attrs);
+        super("unpack", null, iterators, attrs);
         this.url = Strings.requireValid(attrs.get("url"), "url is required");
         this.ext = Strings.requireValid(Optional.ofNullable(attrs.get("ext"))
                 .orElseGet(() -> fileExt(url)), "ext is required");
         this.includes = attrs.get("includes");
         this.excludes = attrs.get("excludes");
         this.mappers = mappers;
-    }
-
-    /**
-     * Get the url.
-     *
-     * @return url, never {@code null}
-     */
-    String url() {
-        return url;
-    }
-
-    /**
-     * Get the excludes.
-     *
-     * @return excludes, may be {@code null}
-     */
-    String excludes() {
-        return excludes;
-    }
-
-    /**
-     * Get the includes.
-     *
-     * @return includes, may be {@code null}
-     */
-    String includes() {
-        return includes;
-    }
-
-    /**
-     * Get the mappers.
-     *
-     * @return mappers, never {@code null}
-     */
-    List<Mapper> mappers() {
-        return mappers;
     }
 
     @Override
@@ -103,5 +65,21 @@ final class UnpackTask extends StagingTask {
         ctx.logInfo("Unpacking %s to %s", tempFile, targetDir);
         ctx.ensureDirectory(targetDir);
         ctx.unpack(tempFile, targetDir, excludes, includes, mappers, vars);
+    }
+
+    String url() {
+        return url;
+    }
+
+    String excludes() {
+        return excludes;
+    }
+
+    String includes() {
+        return includes;
+    }
+
+    List<Mapper> mappers() {
+        return mappers;
     }
 }

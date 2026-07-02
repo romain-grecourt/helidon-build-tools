@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,33 +27,13 @@ import java.util.concurrent.CompletableFuture;
 @SuppressWarnings("unused")
 class ArchiveTask extends StagingTask {
 
-    static final String ELEMENT_NAME = "archive";
-
     private final String includes;
     private final String excludes;
 
     ArchiveTask(ActionIterators iterators, List<StagingAction> nested, Map<String, String> attrs) {
-        super(ELEMENT_NAME, nested, iterators, attrs);
+        super("archive", nested, iterators, attrs);
         this.includes = attrs.get("includes");
         this.excludes = attrs.get("excludes");
-    }
-
-    /**
-     * Get the includes.
-     *
-     * @return includes, may be {@code null}
-     */
-    String includes() {
-        return includes;
-    }
-
-    /**
-     * Get the excludes.
-     *
-     * @return excludes, may be {@code null}
-     */
-    String excludes() {
-        return excludes;
     }
 
     @Override
@@ -74,6 +54,14 @@ class ArchiveTask extends StagingTask {
         ctx.logInfo("Creating archive %s", resolvedTarget);
         return super.execTask(ctx, stageDir, vars)
                     .thenRun(() -> archive(ctx, stageDir, targetFile, vars));
+    }
+
+    String includes() {
+        return includes;
+    }
+
+    String excludes() {
+        return excludes;
     }
 
     private void archive(StagingContext ctx, Path source, Path targetFile, Map<String, String> variables) {

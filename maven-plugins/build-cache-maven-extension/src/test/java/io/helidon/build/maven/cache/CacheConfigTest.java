@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,10 @@
  */
 package io.helidon.build.maven.cache;
 
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import io.helidon.build.common.test.utils.TestFiles;
 import io.helidon.build.common.xml.XMLElement;
@@ -39,15 +38,15 @@ import static org.hamcrest.Matchers.is;
 class CacheConfigTest {
 
     @Test
-    void testConfig() throws Exception {
+    void testConfig() {
         Path configFile = TestFiles.testResourcePath(CacheConfigTest.class, "cache-config.xml");
-        XMLElement elt = XMLElement.parse(Files.newInputStream(configFile));
+        XMLElement elt = XMLElement.read(configFile);
         CacheConfig config = new CacheConfig(elt, toProperties(Map.of()), toProperties(Map.of()));
 
         assertThat(config.enabled(), is(true));
         assertThat(config.record(), is(true));
         assertThat(config.loadSuffixes(), is(List.of("foo", "bar")));
-        assertThat(config.recordSuffix().orElse(null), is("foo"));
+        assertThat(config.recordSuffix(), is(Optional.of("foo")));
         assertThat(config.enableChecksums(), is(true));
         assertThat(config.includeAllChecksums(), is(true));
 
@@ -80,9 +79,9 @@ class CacheConfigTest {
     }
 
     @Test
-    void testConfigOverride() throws IOException {
+    void testConfigOverride() {
         Path configFile = TestFiles.testResourcePath(CacheConfigTest.class, "cache-config.xml");
-        XMLElement elt = XMLElement.parse(Files.newInputStream(configFile));
+        XMLElement elt = XMLElement.read(configFile);
         CacheConfig config = new CacheConfig(elt, toProperties(Map.of(
                 "cache.enabled", "false",
                 "cache.record", "false",
@@ -93,6 +92,6 @@ class CacheConfigTest {
         assertThat(config.enabled(), is(false));
         assertThat(config.record(), is(false));
         assertThat(config.loadSuffixes(), is(List.of("one", "two")));
-        assertThat(config.recordSuffix().orElse(null), is("three"));
+        assertThat(config.recordSuffix(), is(Optional.of("three")));
     }
 }

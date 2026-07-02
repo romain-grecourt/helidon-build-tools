@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,9 +22,8 @@ import java.util.Map;
 /**
  * Internal model for a list of variables.
  */
-final class Variables extends LinkedList<Variable> implements StagingElement {
+final class Variables extends LinkedList<Variable> implements StagingElement, Joinable {
 
-    static final String ELEMENT_NAME = "variables";
     private final boolean join;
 
     Variables() {
@@ -38,15 +37,11 @@ final class Variables extends LinkedList<Variable> implements StagingElement {
 
     @Override
     public String elementName() {
-        return ELEMENT_NAME;
+        return "variables";
     }
 
-    /**
-     * Indicate if the variables should be iterated sequentially.
-     *
-     * @return {@code true} if sequential, {@code false} otherwise
-     */
-    boolean join() {
-        return false;
+    @Override
+    public boolean join() {
+        return join;
     }
 }

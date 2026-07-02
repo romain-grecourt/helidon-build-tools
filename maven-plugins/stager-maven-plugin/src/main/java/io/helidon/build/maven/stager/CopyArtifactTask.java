@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,22 +29,12 @@ import io.helidon.build.common.Maps;
 final class CopyArtifactTask extends StagingTask {
 
     private static final String DEFAULT_TARGET = "{artifactId}-{version}.{type}";
-    static final String ELEMENT_NAME = "copy-artifact";
 
     private final ArtifactGAV gav;
 
     CopyArtifactTask(ActionIterators iterators, Map<String, String> attrs) {
-        super(ELEMENT_NAME, null, iterators, Maps.computeIfAbsent(attrs, Map.of("target", t -> DEFAULT_TARGET)));
+        super("copy-artifact", null, iterators, Maps.computeIfAbsent(attrs, Map.of("target", t -> DEFAULT_TARGET)));
         this.gav = new ArtifactGAV(attrs);
-    }
-
-    /**
-     * Get the GAV.
-     *
-     * @return GAV, never {@code null}
-     */
-    ArtifactGAV gav() {
-        return gav;
     }
 
     @Override
@@ -57,6 +47,10 @@ final class CopyArtifactTask extends StagingTask {
         Path targetFile = dir.resolve(resolveTarget);
         ctx.ensureDirectory(targetFile.getParent());
         Files.copy(artifact, targetFile, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    ArtifactGAV gav() {
+        return gav;
     }
 
     private ArtifactGAV resolveGAV(Map<String, String> variables) {

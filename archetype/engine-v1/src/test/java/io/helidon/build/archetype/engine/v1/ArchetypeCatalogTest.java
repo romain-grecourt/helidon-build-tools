@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,8 @@ import org.junit.jupiter.api.Test;
 import java.io.InputStream;
 import java.util.List;
 
+import io.helidon.build.common.xml.XMLElement;
+
 import static org.hamcrest.CoreMatchers.hasItems;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -35,7 +37,7 @@ class ArchetypeCatalogTest {
         InputStream is = ArchetypeCatalogTest.class.getResourceAsStream("catalog.xml");
         assertThat(is, is(notNullValue()));
 
-        ArchetypeCatalog catalog = ArchetypeCatalog.read(is);
+        ArchetypeCatalog catalog = ArchetypeCatalog.create(XMLElement.read(is, "catalog.xml", true));
         assertThat(catalog.modelVersion(), is(ArchetypeCatalog.MODEL_VERSION));
         assertThat(catalog.name(), is("test"));
         assertThat(catalog.groupId(), is("io.helidon.archetypes"));

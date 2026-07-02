@@ -1,0 +1,1130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Copyright (c) 2026 Oracle and/or its affiliates.
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+        targetNamespace="https://helidon.io/stager/1.0"
+        xmlns:p="https://helidon.io/stager/1.0"
+        elementFormDefault="qualified">
+
+    <xs:element name="stager">
+        <xs:annotation>
+            <xs:documentation source="description">
+                Root element for standalone Helidon Stager Maven Plugin configuration.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="properties" type="p:properties-type" minOccurs="0" maxOccurs="unbounded">
+                    <xs:annotation>
+                        <xs:documentation source="description">
+                            Container for properties available to ${...} interpolation before staging tasks are created.
+                        </xs:documentation>
+                    </xs:annotation>
+                </xs:element>
+                <xs:element name="variables" type="p:variables-type" minOccurs="0" maxOccurs="unbounded">
+                    <xs:annotation>
+                        <xs:documentation source="description">
+                            Variables shared by all effective directory task definitions.
+                        </xs:documentation>
+                    </xs:annotation>
+                </xs:element>
+                <xs:group ref="p:preprocessor-include" minOccurs="0" maxOccurs="unbounded"/>
+                <xs:element name="directories" type="p:directories-type" minOccurs="0" maxOccurs="unbounded">
+                    <xs:annotation>
+                        <xs:documentation source="description">
+                            Top-level container for directory staging tasks.
+                        </xs:documentation>
+                    </xs:annotation>
+                </xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:complexType name="properties-type">
+        <xs:annotation>
+            <xs:documentation source="description">
+                Properties available to ${...} interpolation before staging tasks are created.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="property" type="p:property-type" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Single property name and value for configuration interpolation.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="property-type">
+        <xs:attribute name="name" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Property name referenced by ${...} expressions.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="value" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Property value used for interpolation.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:group name="preprocessor-include">
+        <xs:choice>
+            <xs:element name="include" type="p:include-directive-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Include another standalone stager XML file before staging tasks are created.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:choice>
+    </xs:group>
+
+    <xs:complexType name="include-directive-type">
+        <xs:attribute name="src" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Path to another stager XML file, resolved relative to the including file unless absolute.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="directories-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:element name="variables" type="p:variables-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Variables shared by nested directory task definitions.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="directory" type="p:directory-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Generate a directory using nested actions.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="directories" type="p:directories-wrapper-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Container for directory tasks.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:choice>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes nested joinable actions sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:group name="nested-actions">
+        <xs:choice>
+            <xs:element name="variables" type="p:variables-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Variables shared by nested task definitions.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="directory" type="p:directory-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Generate a directory using nested actions.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="archive" type="p:archive-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Generate an archive from nested tasks.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="download" type="p:download-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Download a file to a target location.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="copy-artifact" type="p:copy-artifact-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Copy a resolved Maven artifact to a target location.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="file" type="p:file-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Generate or copy a file to a target location.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="symlink" type="p:symlink-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Create a symbolic link.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="template" type="p:template-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Render a Mustache template to a target file.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="unpack" type="p:unpack-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Download and unpack an archive to a target directory.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="unpack-artifact" type="p:unpack-artifact-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Unpack a resolved Maven artifact to a target directory.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="list-files" type="p:list-files-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        List files in a directory and emit the result as text.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="directories" type="p:directories-wrapper-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Container for directory tasks.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="archives" type="p:archives-wrapper-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Container for archive tasks.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="downloads" type="p:downloads-wrapper-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Container for download tasks.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="copy-artifacts" type="p:copy-artifacts-wrapper-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Container for copy-artifact tasks.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="files" type="p:files-wrapper-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Container for file tasks.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="symlinks" type="p:symlinks-wrapper-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Container for symlink tasks.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="templates" type="p:templates-wrapper-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Container for template tasks.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="unpacks" type="p:unpacks-wrapper-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Container for unpack tasks.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="unpack-artifacts" type="p:unpack-artifacts-wrapper-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Container for unpack-artifact tasks.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:choice>
+    </xs:group>
+
+    <xs:group name="iterator-content">
+        <xs:choice>
+            <xs:element name="iterators" type="p:iterators-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Iterators nested under a task to create loops over {name} variable substitutions.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:choice>
+    </xs:group>
+
+    <xs:group name="mapper-content">
+        <xs:choice>
+            <xs:element name="mapper" type="p:mapper-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Archive entry path mapper applied while unpacking.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="mappers" type="p:mappers-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Container for archive entry path mappers applied while unpacking.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:choice>
+    </xs:group>
+
+    <xs:group name="list-files-content">
+        <xs:choice>
+            <xs:element name="iterators" type="p:iterators-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Iterators nested under list-files to create loops over {name} variable substitutions.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="include" type="p:text-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Include pattern for list-files filtering.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="includes" type="p:includes-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Container for include patterns used by list-files.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="exclude" type="p:text-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Exclude pattern for list-files filtering.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="excludes" type="p:excludes-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Container for exclude patterns used by list-files.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="substitution" type="p:substitution-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Text substitution applied to each list-files result entry.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="substitutions" type="p:substitutions-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Container for substitutions applied to each list-files result entry.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:choice>
+    </xs:group>
+
+    <xs:complexType name="text-type" mixed="true"/>
+
+    <xs:complexType name="variables-type">
+        <xs:sequence>
+            <xs:element name="variable" type="p:variable-type" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Variable definition with a name and a value or list of values.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:sequence>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes variable-driven work sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="iterator-variables-type">
+        <xs:sequence>
+            <xs:element name="variable" type="p:iterator-variable-type" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Iterator variable whose values are substituted using {name} syntax in task definitions.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:sequence>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Iterates the variables sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="variable-type">
+        <xs:sequence>
+            <xs:element name="value" type="p:value-type" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        One value for the variable.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:sequence>
+        <xs:attribute name="name" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Variable name used by templates or task definitions.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="value" type="xs:string">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Inline variable value used instead of nested value elements.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="iterator-variable-type">
+        <xs:sequence>
+            <xs:element name="value" type="p:value-type" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        One value for the iterator variable.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:sequence>
+        <xs:attribute name="name" type="xs:string">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Iterator variable name referenced with {name} syntax in task definitions.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="ref" type="xs:string">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Reference to an existing variable definition.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="value" type="xs:string">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Inline iterator variable value used instead of nested value elements.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="value-type" mixed="true">
+        <xs:sequence>
+            <xs:element name="variable" type="p:variable-type" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Nested variable used to create a map value.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="iterators-type">
+        <xs:sequence>
+            <xs:element name="variables" type="p:iterator-variables-type" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Iterator variables; multiple variables form a matrix of value combinations.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:sequence>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes iterator-driven task invocations sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="directory-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:group ref="p:nested-actions"/>
+        </xs:choice>
+        <xs:attribute name="target" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Directory path to create relative to the current staging directory.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="archive-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:group ref="p:iterator-content"/>
+            <xs:group ref="p:nested-actions"/>
+        </xs:choice>
+        <xs:attribute name="target" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Archive file path to create relative to the current staging directory.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="includes" type="xs:string">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Include patterns selecting staged entries to add to the archive.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="excludes" type="xs:string">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Exclude patterns removing staged entries from the archive.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes nested joinable actions sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="download-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:group ref="p:iterator-content"/>
+        </xs:choice>
+        <xs:attribute name="target" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    File path where the downloaded content is written.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="url" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    URL of the file to download.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes iterator-driven task invocations sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="copy-artifact-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:group ref="p:iterator-content"/>
+        </xs:choice>
+        <xs:attribute name="groupId" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Maven artifact groupId.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="artifactId" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Maven artifact artifactId.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="version" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Maven artifact version.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="type" type="xs:string">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Maven artifact type; defaults to jar.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="classifier" type="xs:string">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Optional Maven artifact classifier.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="target" type="xs:string">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    File path where the artifact is copied; defaults to {artifactId}-{version}.{type}.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes iterator-driven task invocations sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="file-type" mixed="true">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:group ref="p:iterator-content"/>
+            <xs:element name="list-files" type="p:list-files-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        List files and write the resulting text into this file.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:choice>
+        <xs:attribute name="target" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    File path to create or copy to.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="source" type="xs:string">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Source file path to copy; omitted when creating text file content.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes iterator-driven task invocations sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="symlink-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:group ref="p:iterator-content"/>
+        </xs:choice>
+        <xs:attribute name="target" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Symbolic link path to create.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="source" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Source path the symbolic link points to.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes iterator-driven task invocations sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="template-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:group ref="p:iterator-content"/>
+            <xs:element name="variables" type="p:variables-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Variables defining values referenced by the Mustache template.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:choice>
+        <xs:attribute name="target" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    File path where the rendered template is written.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="source" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Source Mustache template file path.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes iterator-driven task invocations sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="unpack-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:group ref="p:iterator-content"/>
+            <xs:group ref="p:mapper-content"/>
+        </xs:choice>
+        <xs:attribute name="target" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Directory path where the downloaded archive is unpacked.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="url" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    URL of the archive to download and unpack.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="ext" type="xs:string">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Archive file extension; defaults to the extension inferred from url.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="includes" type="xs:string">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Include patterns selecting archive entries to unpack.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="excludes" type="xs:string">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Exclude patterns removing archive entries from unpacking.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes iterator-driven task invocations sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="unpack-artifact-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:group ref="p:iterator-content"/>
+            <xs:group ref="p:mapper-content"/>
+        </xs:choice>
+        <xs:attribute name="groupId" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Maven artifact groupId.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="artifactId" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Maven artifact artifactId.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="version" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Maven artifact version.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="type" type="xs:string">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Maven artifact type; defaults to jar.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="classifier" type="xs:string">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Optional Maven artifact classifier.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="target" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Directory path where the artifact is unpacked.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="includes" type="xs:string">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Include patterns selecting artifact archive entries to unpack.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="excludes" type="xs:string">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Exclude patterns removing artifact archive entries from unpacking.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes iterator-driven task invocations sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="list-files-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:group ref="p:list-files-content"/>
+        </xs:choice>
+        <xs:attribute name="dir" type="xs:string">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Directory to list files from; defaults to the current directory (.).
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes iterator-driven task invocations sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="mapper-type">
+        <xs:attribute name="match" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Archive entry path text to match.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="replace" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Replacement archive entry path text.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="mappers-type">
+        <xs:sequence>
+            <xs:element name="mapper" type="p:mapper-type" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Archive entry path mapper applied while unpacking.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="includes-type">
+        <xs:sequence>
+            <xs:element name="include" type="p:text-type" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Include pattern for list-files filtering.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="excludes-type">
+        <xs:sequence>
+            <xs:element name="exclude" type="p:text-type" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Exclude pattern for list-files filtering.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="substitution-type">
+        <xs:attribute name="match" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Text or regular expression to match in each list-files result entry.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="replace" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Replacement text for the matched list-files result entry text.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="regex" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Treats match as a regular expression when true; defaults to true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="substitutions-type">
+        <xs:sequence>
+            <xs:element name="substitution" type="p:substitution-type" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Text substitution applied to each list-files result entry.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="directories-wrapper-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:element name="directory" type="p:directory-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Generate a directory using nested actions.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:choice>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes nested joinable actions sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="archives-wrapper-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:element name="archive" type="p:archive-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Generate an archive from nested tasks; archive can also contain tasks.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:choice>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes nested joinable actions sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="downloads-wrapper-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:element name="download" type="p:download-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Download a file to a target location.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:choice>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes nested joinable actions sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="copy-artifacts-wrapper-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:element name="copy-artifact" type="p:copy-artifact-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Copy a resolved Maven artifact to a target location.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:choice>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes nested joinable actions sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="files-wrapper-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:element name="file" type="p:file-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Generate or copy a file to a target location.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:choice>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes nested joinable actions sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="symlinks-wrapper-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:element name="symlink" type="p:symlink-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Create a symbolic link.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:choice>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes nested joinable actions sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="templates-wrapper-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:element name="template" type="p:template-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Render a Mustache template to a target file.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:choice>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes nested joinable actions sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="unpacks-wrapper-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:element name="unpack" type="p:unpack-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Download and unpack an archive to a target directory.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:choice>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes nested joinable actions sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="unpack-artifacts-wrapper-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:element name="unpack-artifact" type="p:unpack-artifact-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Unpack a resolved Maven artifact to a target directory.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:choice>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes nested joinable actions sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+</xs:schema>

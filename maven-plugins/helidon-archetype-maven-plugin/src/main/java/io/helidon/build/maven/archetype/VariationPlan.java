@@ -15,9 +15,6 @@
  */
 package io.helidon.build.maven.archetype;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -52,19 +49,15 @@ final class VariationPlan {
         if (!Files.exists(file)) {
             throw new IllegalStateException("Variation plans file does not exist: " + file);
         }
-        try (InputStream is = Files.newInputStream(file)) {
-            XMLElement root = XMLElement.parse(is);
-            if (!root.name().equals("plans")) {
-                throw new IllegalStateException("Unexpected variation plans root element: " + root.name());
-            }
-            List<VariationPlan> plans = load(root);
-            if (plans.isEmpty()) {
-                throw new IllegalStateException("Variation plans file does not contain any <plan> elements: " + file);
-            }
-            return plans;
-        } catch (IOException ex) {
-            throw new UncheckedIOException(ex);
+        XMLElement root = XMLElement.read(file);
+        if (!root.name().equals("plans")) {
+            throw new IllegalStateException("Unexpected variation plans root element: " + root.name());
         }
+        List<VariationPlan> plans = load(root);
+        if (plans.isEmpty()) {
+            throw new IllegalStateException("Variation plans file does not contain any <plan> elements: " + file);
+        }
+        return plans;
     }
 
     static List<VariationPlan> load(XMLElement root) {

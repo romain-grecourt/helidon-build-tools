@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,39 +29,13 @@ import java.util.Map;
  */
 final class FileTask extends StagingTask {
 
-    static final String ELEMENT_NAME = "file";
-
     private final String content;
     private final String source;
 
     FileTask(ActionIterators iterators, List<TextAction> nested, Map<String, String> attrs, String content) {
-        super(ELEMENT_NAME, nested, iterators, attrs);
+        super("file", nested, iterators, attrs);
         this.content = content;
         this.source = attrs.get("source");
-    }
-
-    /**
-     * Get the source.
-     *
-     * @return source, may be {@code null}
-     */
-    String source() {
-        return source;
-    }
-
-    /**
-     * Get the content.
-     *
-     * @return content, may be {@code null}
-     */
-    String content() {
-        return content;
-    }
-
-    @Override
-    @SuppressWarnings("unchecked")
-    List<TextAction> tasks() {
-        return (List<TextAction>) super.tasks();
     }
 
     @Override
@@ -84,11 +58,31 @@ final class FileTask extends StagingTask {
                 Files.writeString(targetFile, resolvedContent, StandardOpenOption.CREATE);
             } else {
                 try (BufferedWriter writer = Files.newBufferedWriter(targetFile)) {
-                    for (TextAction task : tasks()) {
-                        writer.write(task.text(vars));
+                    for (StagingAction task : tasks()) {
+                        if (task instanceof TextAction textAction) {
+                            writer.write(textAction.text(vars));
+                        }
                     }
                 }
             }
         }
+    }
+
+    /**
+     * Get the source.
+     *
+     * @return source, may be {@code null}
+     */
+    String source() {
+        return source;
+    }
+
+    /**
+     * Get the content.
+     *
+     * @return content, may be {@code null}
+     */
+    String content() {
+        return content;
     }
 }

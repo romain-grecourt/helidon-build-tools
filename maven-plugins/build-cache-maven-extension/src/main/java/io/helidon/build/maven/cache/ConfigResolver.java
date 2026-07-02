@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2024 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import java.util.Optional;
 import javax.inject.Inject;
 import javax.inject.Named;
 
+import io.helidon.build.common.maven.plugin.Xpp3DomAdapter;
 import io.helidon.build.common.xml.XMLElement;
 
 import org.apache.maven.SessionScoped;
@@ -97,7 +98,7 @@ public class ConfigResolver {
 
     private XMLElement resolve0(MojoExecution execution, MavenSession session) {
         ExpressionEvaluator evaluator = new ExpressionEvaluator(session, execution);
-        XMLElement config = ConfigHelper.toXMLElement(execution.getConfiguration());
+        XMLElement config = Xpp3DomAdapter.create(execution.getConfiguration());
         config.visit(new XMLElement.Visitor() {
             @Override
             public void visitElement(XMLElement elt) {

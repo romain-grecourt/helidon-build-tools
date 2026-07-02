@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,10 +26,8 @@ import java.util.concurrent.CompletionStage;
  */
 class StagingDirectory extends StagingTask {
 
-    static final String ELEMENT_NAME = "directory";
-
     StagingDirectory(List<StagingAction> nested, Map<String, String> attrs) {
-        super(ELEMENT_NAME, nested, null, attrs);
+        super("directory", nested, null, attrs);
     }
 
     @Override

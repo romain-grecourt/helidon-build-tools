@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, 2024 Oracle and/or its affiliates.
+ * Copyright (c) 2023, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,8 +27,6 @@ import io.helidon.build.common.Strings;
  */
 final class Substitution implements StagingElement {
 
-    static final String ELEMENT_NAME = "substitution";
-
     private final String match;
     private final String replace;
     private final boolean regex;
@@ -37,6 +35,11 @@ final class Substitution implements StagingElement {
         match = Strings.requireValid(attrs.get("match"), "match is required");
         replace = Strings.requireValid(attrs.get("replace"), "replace is required");
         regex = Boolean.parseBoolean(attrs.getOrDefault("regex", "true"));
+    }
+
+    @Override
+    public String elementName() {
+        return "substitution";
     }
 
     String match() {
@@ -51,13 +54,8 @@ final class Substitution implements StagingElement {
         return regex;
     }
 
-    @Override
-    public String elementName() {
-        return ELEMENT_NAME;
-    }
-
     BiFunction<String, Map<String, String>, String> function() {
-          return this::substitute;
+        return this::substitute;
     }
 
     String substitute(String str, Map<String, String> vars) {

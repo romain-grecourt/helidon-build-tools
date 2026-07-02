@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,22 +36,11 @@ import static io.helidon.build.common.FileUtils.measuredSize;
  */
 final class DownloadTask extends StagingTask {
 
-    static final String ELEMENT_NAME = "download";
-
     private final String url;
 
     DownloadTask(ActionIterators iterators, Map<String, String> attrs) {
-        super(ELEMENT_NAME, null, iterators, attrs);
+        super("download", null, iterators, attrs);
         this.url = Strings.requireValid(attrs.get("url"), "url is required");
-    }
-
-    /**
-     * Get the url.
-     *
-     * @return url, never {@code null}
-     */
-    String url() {
-        return url;
     }
 
     @Override
@@ -66,6 +55,10 @@ final class DownloadTask extends StagingTask {
         ctx.ensureDirectory(file.getParent());
         URL url = new URL(resolveVar(this.url, vars));
         download(ctx, url, file);
+    }
+
+    String url() {
+        return url;
     }
 
     /**

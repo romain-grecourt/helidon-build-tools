@@ -53,20 +53,19 @@ class ProjectsTestIT {
         try (FileSystem fs = newZipFileSystem(archive)) {
             Path file = fs.getPath("/").resolve("versions.json");
             assertThat(file, fileExists());
-            assertThat(normalizeNewLines(readString(file)),
-                       is("""
-                                  {
-                                      "versions": [
-                                          "3.0.0-SNAPSHOT",
-                                          "2.5.0",
-                                          "2.4.2",
-                                          "2.4.0",
-                                          "2.0.1",
-                                          "2.0.0"
-                                      ],
-                                      "latest": "3.0.0-SNAPSHOT"
-                                  }
-                                  """));
+            assertThat(normalizeNewLines(readString(file)), is("""
+                    {
+                        "versions": [
+                            "3.0.0-SNAPSHOT",
+                            "2.5.0",
+                            "2.4.2",
+                            "2.4.0",
+                            "2.0.1",
+                            "2.0.0"
+                        ],
+                        "latest": "3.0.0-SNAPSHOT"
+                    }
+                    """));
         }
     }
 
@@ -78,45 +77,43 @@ class ProjectsTestIT {
 
         Path file1 = stageDir.resolve("versions1.json");
         assertThat(file1, fileExists());
-        assertThat(normalizeNewLines(readString(file1)),
-                   is("""
-                              {
-                                  "versions": [
-                                      "3.0.0-SNAPSHOT",
-                                      "2.5.0",
-                                      "2.4.2",
-                                      "2.4.0",
-                                      "2.0.1",
-                                      "2.0.0"
-                                  ],
-                                  "preview-versions": [
-                                      {
-                                          "order": 199,
-                                          "version": "4.0.0-M1"
-                                      },
-                                      {
-                                          "order": 200,
-                                          "version": "4.0.0-ALPHA6"
-                                      }
-                                  ],
-                                  "latest": "3.0.0-SNAPSHOT"
-                              }
-                              """));
+        assertThat(normalizeNewLines(readString(file1)), is("""
+                {
+                    "versions": [
+                        "3.0.0-SNAPSHOT",
+                        "2.5.0",
+                        "2.4.2",
+                        "2.4.0",
+                        "2.0.1",
+                        "2.0.0"
+                    ],
+                    "preview-versions": [
+                        {
+                            "order": 199,
+                            "version": "4.0.0-M1"
+                        },
+                        {
+                            "order": 200,
+                            "version": "4.0.0-ALPHA6"
+                        }
+                    ],
+                    "latest": "3.0.0-SNAPSHOT"
+                }
+                """));
 
         Path file2 = stageDir.resolve("versions2.json");
         assertThat(file2, fileExists());
-        assertThat(normalizeNewLines(readString(file2)),
-                   is("""
-                              {
-                                  "versions": [
-                                      "4.0.0-SNAPSHOT",
-                                      "3.0.0"
-                                  ],
-                                  "preview-versions": [
-                                  ],
-                                  "latest": "4.0.0-SNAPSHOT"
-                              }
-                              """));
+        assertThat(normalizeNewLines(readString(file2)), is("""
+                {
+                    "versions": [
+                        "4.0.0-SNAPSHOT",
+                        "3.0.0"
+                    ],
+                    "preview-versions": [
+                    ],
+                    "latest": "4.0.0-SNAPSHOT"
+                }
+                """));
     }
 
     @ParameterizedTest
@@ -174,6 +171,49 @@ class ProjectsTestIT {
                 "docs/v3",
                 "docs/v3/apidocs"
         ));
+    }
+
+    @ParameterizedTest
+    @ConfigurationParameterSource("basedir")
+    void testConfigFile(String basedir) throws IOException {
+        Path stageDir = Path.of(basedir).resolve("target/stage");
+        assertThat(stageDir, fileExists());
+
+        Path file = stageDir.resolve("4.0.0/info.txt");
+        assertThat(file, fileExists());
+        assertThat(readString(file), is("Version 4.0.0"));
+    }
+
+    @ParameterizedTest
+    @ConfigurationParameterSource("basedir")
+    void testCliConfigFile(String basedir) throws IOException {
+        Path baseDir = Path.of(basedir);
+        assertThat(Files.notExists(baseDir.resolve("pom.xml")), is(true));
+
+        Path stageDir = baseDir.resolve("target/stage");
+        assertThat(stageDir, fileExists());
+
+        Path file = stageDir.resolve("4.0.0/info.txt");
+        assertThat(file, fileExists());
+        assertThat(readString(file), is("Version 4.0.0"));
+    }
+
+    @ParameterizedTest
+    @ConfigurationParameterSource("basedir")
+    void testPomConfig(String basedir) throws IOException {
+        Path stageDir = Path.of(basedir).resolve("target/stage");
+        assertThat(stageDir, fileExists());
+
+        Path file = stageDir.resolve("4.0.0/info.txt");
+        assertThat(file, fileExists());
+        assertThat(readString(file), is("Version 4.0.0"));
+
+        Path finalName = stageDir.resolve("pom-config-final-name/name.txt");
+        assertThat(finalName, fileExists());
+        assertThat(readString(finalName), is("pom-config-final-name"));
+
+        assertThat(stageDir.resolve("4.0.0/stable/marker.txt"), fileExists());
+        assertThat(stageDir.resolve("4.0.0/preview/marker.txt"), fileExists());
     }
 
     @ParameterizedTest

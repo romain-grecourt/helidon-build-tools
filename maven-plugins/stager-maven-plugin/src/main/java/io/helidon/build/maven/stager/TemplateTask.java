@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,33 +36,13 @@ import static java.util.stream.Collectors.toMap;
  */
 final class TemplateTask extends StagingTask {
 
-    static final String ELEMENT_NAME = "template";
-
     private final String source;
-    private final Map<String, Object> templateVariables;
+    private final List<Variable> variables;
 
     TemplateTask(ActionIterators iterators, Map<String, String> attrs, List<Variable> variables) {
-        super(ELEMENT_NAME, null, iterators, attrs);
+        super("template", null, iterators, attrs);
         this.source = Strings.requireValid(attrs.get("source"), "source is required");
-        this.templateVariables = variables.stream().collect(toMap(Variable::name, TemplateTask::mapValue));
-    }
-
-    /**
-     * Get the source.
-     *
-     * @return source, never {@code null}
-     */
-    String source() {
-        return source;
-    }
-
-    /**
-     * Get the variables.
-     *
-     * @return map of variable values, never {@code null}
-     */
-    Map<String, Object> templateVariables() {
-        return templateVariables;
+        this.variables = variables;
     }
 
     @Override
@@ -78,10 +58,20 @@ final class TemplateTask extends StagingTask {
         try (Reader reader = Files.newBufferedReader(sourceFile);
              Writer writer = Files.newBufferedWriter(targetFile,
                      StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
+
+            Map<String, Object> scope = variables.stream().collect(toMap(Variable::name, TemplateTask::mapValue));
             new DefaultMustacheFactory().compile(reader, resolvedSource)
-                                        .execute(writer, templateVariables)
+                                        .execute(writer, scope)
                                         .flush();
         }
+    }
+
+    String source() {
+        return source;
+    }
+
+    List<Variable> variables() {
+        return variables;
     }
 
     private static Object mapValue(Variable variable) {

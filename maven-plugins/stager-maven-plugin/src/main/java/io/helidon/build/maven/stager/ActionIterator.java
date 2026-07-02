@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -74,15 +74,6 @@ final class ActionIterator implements Iterator<Map<String, String>>, Joinable {
         this.variables = Maps.putAll(it.variables, variables);
     }
 
-    /**
-     * Make a copy of this iterator that includes the given variables.
-     *
-     * @param variables variables
-     */
-    ActionIterator forVariables(Map<String, String> variables) {
-        return new ActionIterator(this, variables);
-    }
-
     @Override
     public boolean join() {
         return join;
@@ -113,5 +104,14 @@ final class ActionIterator implements Iterator<Map<String, String>>, Joinable {
             next.put(entries[idx].getKey(), val);
         }
         return next;
+    }
+
+    /**
+     * Make a copy of this iterator that includes the given variables.
+     *
+     * @param variables variables
+     */
+    ActionIterator forVariables(Map<String, String> variables) {
+        return new ActionIterator(this, variables);
     }
 }

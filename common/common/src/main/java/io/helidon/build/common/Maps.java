@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -440,17 +440,18 @@ public class Maps {
     }
 
     /**
-     * Compute non-existing keys in a map.
+     * Compute non-existing keys in a new {@link LinkedHashMap}.
      *
-     * @param map      map to update
+     * @param map      input map
      * @param mappings map of keys to mapping functions
      * @param <K>      key type
      * @param <V>      value type
-     * @return map
+     * @return new map
      */
     public static <K, V> Map<K, V> computeIfAbsent(Map<K, V> map, Map<K, Function<K, V>> mappings) {
-        mappings.forEach(map::computeIfAbsent);
-        return map;
+        Map<K, V> result = new LinkedHashMap<>(map);
+        mappings.forEach(result::computeIfAbsent);
+        return result;
     }
 
     /**

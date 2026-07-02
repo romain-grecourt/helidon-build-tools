@@ -24,11 +24,14 @@ import io.helidon.build.common.Strings;
  */
 record Mapper(String match, String replace) implements StagingElement {
 
-    static final String ELEMENT_NAME = "mapper";
-
     Mapper(Map<String, String> attrs) {
         this(Strings.requireValid(attrs.get("match"), "match is required"),
                 Strings.requireValid(attrs.get("replace"), "replace is required"));
+    }
+
+    @Override
+    public String elementName() {
+        return "mapper";
     }
 
     String match(Map<String, String> vars) {
@@ -37,10 +40,5 @@ record Mapper(String match, String replace) implements StagingElement {
 
     String replace(Map<String, String> vars) {
         return StagingTask.resolveVar(replace, vars);
-    }
-
-    @Override
-    public String elementName() {
-        return ELEMENT_NAME;
     }
 }

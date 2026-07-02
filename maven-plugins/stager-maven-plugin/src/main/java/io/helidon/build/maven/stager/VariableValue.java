@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,8 +31,6 @@ import io.helidon.build.common.Strings;
  */
 interface VariableValue extends StagingElement {
 
-    String ELEMENT_NAME = "value";
-
     /**
      * Convert this value to a plain object.
      *
@@ -42,7 +40,7 @@ interface VariableValue extends StagingElement {
 
     @Override
     default String elementName() {
-        return ELEMENT_NAME;
+        return "value";
     }
 
     /**
@@ -82,7 +80,9 @@ interface VariableValue extends StagingElement {
 
         @Override
         public List<Object> unwrap() {
-            return value.stream().map(VariableValue::unwrap).collect(Collectors.toList());
+            return value.stream()
+                    .map(VariableValue::unwrap)
+                    .collect(Collectors.toList());
         }
     }
 
@@ -106,7 +106,8 @@ interface VariableValue extends StagingElement {
 
         @Override
         public Map<String, Object> unwrap() {
-            return value.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().unwrap()));
+            return value.entrySet().stream()
+                    .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().unwrap()));
         }
     }
 }

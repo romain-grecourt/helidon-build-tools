@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,6 @@
  */
 package io.helidon.build.maven.cache;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -94,16 +92,12 @@ public class CacheConfigManager {
     }
 
     private CacheConfig initCacheConfig() {
-        try {
-            Path configFile = root().resolve(".mvn/cache-config.xml");
-            if (Files.exists(configFile)) {
-                XMLElement elt = XMLElement.parse(Files.newInputStream(configFile));
-                return new CacheConfig(elt, session.getSystemProperties(), session.getUserProperties());
-            }
-            return CacheConfig.EMPTY;
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+        Path configFile = root().resolve(".mvn/cache-config.xml");
+        if (Files.exists(configFile)) {
+            XMLElement elt = XMLElement.read(configFile);
+            return new CacheConfig(elt, session.getSystemProperties(), session.getUserProperties());
         }
+        return CacheConfig.EMPTY;
     }
 
     private ReactorRule initReactorRule() {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ import java.util.Map;
  */
 final class ActionIterators extends LinkedList<ActionIterator> implements StagingElement, Joinable {
 
-    static final String ELEMENT_NAME = "iterators";
     private final boolean join;
 
     ActionIterators(List<ActionIterator> iterators, Map<String, String> attrs) {
@@ -35,7 +34,7 @@ final class ActionIterators extends LinkedList<ActionIterator> implements Stagin
 
     @Override
     public String elementName() {
-        return ELEMENT_NAME;
+        return "iterators";
     }
 
     @Override

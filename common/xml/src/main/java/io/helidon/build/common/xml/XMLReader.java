@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2025, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Predicate;
 
+import io.helidon.build.common.xml.XMLElement.Location;
 import io.helidon.build.common.xml.XMLElement.XMLElementImpl;
 import io.helidon.build.common.xml.XMLParser.Event;
 
@@ -80,36 +81,45 @@ public class XMLReader implements AutoCloseable {
     /**
      * Read a DOM element.
      *
+     * @param readOnly {@code true} to create a read-only document, {@code false} otherwise
      * @return XMLElement, never null
      * @throws XMLException if an error occurs
      */
-    public XMLElement readElement() {
+    public XMLElement readElement(boolean readOnly) {
         XMLElement.Builder builder = null;
-        XMLElementImpl node = null;
-        XMLElementImpl first = null;
-        XMLElementImpl last = null;
+        XMLElement node = null;
+        XMLElement first = null;
+        XMLElement last = null;
         StringBuilder sb = new StringBuilder();
         while (parser.hasNext()) {
             Event event = parser.next();
+            String name;
             switch (event) {
                 case ELT_START:
                     sb.setLength(0);
+                    name = parser.value();
+                    Location location = location();
                     builder = XMLElement.builder()
                             .parent(builder)
-                            .name(parser.value())
-                            .attributes(readAttributes());
-                    node = new XMLElementImpl(node, builder);
+                            .name(name)
+                            .attributes(readAttributes())
+                            .location(location);
+                    if (readOnly) {
+                        node = new XMLElementImpl((XMLElementImpl) node, builder);
+                    } else {
+                        node = builder;
+                    }
                     if (first == null) {
                         first = node;
                     }
                     if (builder.parent() != null) {
                         builder.parent().children().add(node);
                     }
-                    break;
+                break;
                 case SELF_CLOSE:
                 case ELT_CLOSE:
                     if (event == Event.ELT_CLOSE) {
-                        String name = parser.value();
+                        name = parser.value();
                         if (node == null || !name.equals(node.name())) {
                             throw unexpectedElement(name);
                         }
@@ -117,7 +127,7 @@ public class XMLReader implements AutoCloseable {
                     if (node != null) {
                         node.value(sb.toString());
                         sb.setLength(0);
-                        XMLElementImpl parent = node.parent();
+                        XMLElement parent = node.parent();
                         if (parent == null) {
                             last = node;
                         }
@@ -239,7 +249,7 @@ public class XMLReader implements AutoCloseable {
                 case TEXT:
                     parser.skip();
                     value = parser.value();
-                    if (!value.isEmpty() && !cdata) {
+                    if (!value.isBlank() && !cdata) {
                         if (sb == null) {
                             sb = new StringBuilder();
                         }
@@ -263,6 +273,10 @@ public class XMLReader implements AutoCloseable {
             }
         }
         throw new IllegalStateException("Unexpected EOF");
+    }
+
+    private Location location() {
+        return new Location(source, parser.lineNumber(), parser.colNumber());
     }
 
     private XMLException unexpectedElement(String elt) {
