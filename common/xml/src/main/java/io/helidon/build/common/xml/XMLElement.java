@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringWriter;
 import java.io.UncheckedIOException;
+import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
@@ -363,7 +364,7 @@ public interface XMLElement {
      * @return XMLElement, never null
      */
     static XMLElement read(Path file) {
-        return read(file, file.getFileName().toString(), true);
+        return read(file, Objects.toString(file.getFileName(), file.toString()), true);
     }
 
     /**
@@ -401,7 +402,7 @@ public interface XMLElement {
      * @return XMLElement, never null
      */
     static XMLElement read(String str, String source, boolean readOnly) {
-        return read(new ByteArrayInputStream(str.getBytes()), source, readOnly);
+        return read(new ByteArrayInputStream(str.getBytes(Charset.defaultCharset())), source, readOnly);
     }
 
     /**
