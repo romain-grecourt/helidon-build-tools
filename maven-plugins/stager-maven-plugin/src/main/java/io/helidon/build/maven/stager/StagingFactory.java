@@ -200,6 +200,9 @@ final class StagingFactory implements XMLElement.Visitor {
         if (!values.isEmpty()) {
             return new Variable(name, new VariableValue.ListValue(values));
         }
+        if (text == null) {
+            return new Variable(name, new VariableValue.EmptyValue(name));
+        }
         return new Variable(name, new VariableValue.SimpleValue(text));
     }
 

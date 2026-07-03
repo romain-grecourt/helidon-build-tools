@@ -203,6 +203,12 @@ definition wins. Because `<include>` appears after caller `<variables>` and befo
 `<directories>`, caller root variables override included fallback variables with the same name.
 Template-local and iterator-local variables are not part of this global precedence rule.
 
+Included files may declare optional fallback variables without a value, for example
+`<variable name="preview-versions"/>`. These empty variables are intended for iterator inputs:
+when an iterator references an empty variable, it contributes no values and the task runs zero
+times. Empty variables are not substituted as empty strings; using one as a normal template or
+task value fails unless the including configuration already supplied a valued definition.
+
 `${...}` interpolation uses stager `<properties>` before Maven expressions. Properties are collected
 during include processing. For duplicate stager property names, the later processed property value is
 used for subsequent interpolation. This means included properties can override earlier caller

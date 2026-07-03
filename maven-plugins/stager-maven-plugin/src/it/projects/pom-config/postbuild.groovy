@@ -19,7 +19,7 @@ import io.helidon.build.maven.stager.ProjectsTestIT
 
 //noinspection GroovyAssignabilityCheck,GrUnresolvedAccess
 JUnitLauncher.builder()
-        .select(ProjectsTestIT.class, "testPomConfig", String.class)
+        .select(ProjectsTestIT.class, "testInlineConfig", String.class)
         .parameter("basedir", basedir.getAbsolutePath())
         .reportsDir(basedir)
         .outputFile(new File(basedir, "test.log"))

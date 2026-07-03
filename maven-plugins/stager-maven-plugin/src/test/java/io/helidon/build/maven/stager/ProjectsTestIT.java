@@ -200,7 +200,7 @@ class ProjectsTestIT {
 
     @ParameterizedTest
     @ConfigurationParameterSource("basedir")
-    void testPomConfig(String basedir) throws IOException {
+    void testInlineConfig(String basedir) throws IOException {
         Path stageDir = Path.of(basedir).resolve("target/stage");
         assertThat(stageDir, fileExists());
 

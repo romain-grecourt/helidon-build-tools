@@ -44,6 +44,9 @@ final class ActionIterator implements Iterator<Map<String, String>>, Joinable {
         for (Variable variable : variables) {
             List<String> values = new LinkedList<>();
             iteratorVariables.put(variable.name(), values);
+            if (variable.value() instanceof VariableValue.EmptyValue) {
+                continue;
+            }
             Object unwrappedValue = variable.value().unwrap();
             if (unwrappedValue instanceof String) {
                 values.add((String) unwrappedValue);

@@ -28,6 +28,7 @@ import io.helidon.build.common.Strings;
  *
  * @see VariableValue.SimpleValue
  * @see VariableValue.ListValue
+ * @see VariableValue.EmptyValue
  */
 interface VariableValue extends StagingElement {
 
@@ -41,6 +42,23 @@ interface VariableValue extends StagingElement {
     @Override
     default String elementName() {
         return "value";
+    }
+
+    /**
+     * Empty variable value.
+     */
+    class EmptyValue implements VariableValue {
+
+        private final String name;
+
+        EmptyValue(String name) {
+            this.name = Strings.requireValid(name, "name is required");
+        }
+
+        @Override
+        public Object unwrap() {
+            throw new IllegalStateException("Variable '" + name + "' does not have a value");
+        }
     }
 
     /**

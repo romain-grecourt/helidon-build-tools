@@ -87,7 +87,7 @@ class ConfigProcessorTest {
     }
 
     @Test
-    void testStagingFactoryWithStandaloneElement() {
+    void testDirectDirectoryConfig() {
         XMLElement config = process("""
                 <configuration>
                     <directories>
@@ -140,7 +140,7 @@ class ConfigProcessorTest {
     }
 
     @Test
-    void testRootStandaloneIncludeRelativeToConfigFile() throws Exception {
+    void testRootIncludeRelativePath() throws Exception {
         Path main = write("config/stager.xml", """
                 <stager>
                     <include src="fragments/stager.xml"/>
@@ -205,7 +205,7 @@ class ConfigProcessorTest {
     }
 
     @Test
-    void testVariablesAreMergedIntoSingleBlock() throws Exception {
+    void testMergeVariables() throws Exception {
         Path main = write("stager.xml", """
                 <stager>
                     <variables>
@@ -251,7 +251,7 @@ class ConfigProcessorTest {
     }
 
     @Test
-    void testEmptyVariableBlocksAreOmitted() {
+    void testOmitEmptyVariableBlocks() {
         XMLElement config = process("""
                 <configuration>
                     <variables/>
@@ -267,7 +267,7 @@ class ConfigProcessorTest {
     }
 
     @Test
-    void testIncludingVariableWinsOverIncludedFallback() throws Exception {
+    void testCallerVariableWins() throws Exception {
         Path main = write("stager.xml", """
                 <stager>
                     <variables>
@@ -302,7 +302,7 @@ class ConfigProcessorTest {
     }
 
     @Test
-    void testIncludedFallbackVariableIsMergedWhenIncludingVariableIsMissing() throws Exception {
+    void testIncludedFallback() throws Exception {
         Path main = write("stager.xml", """
                 <stager>
                     <include src="fragments/fallback.xml"/>
@@ -334,7 +334,87 @@ class ConfigProcessorTest {
     }
 
     @Test
-    void testUnknownRootChildrenDoNotAffectKnownElementOrder() throws Exception {
+    void testIncludedEmptyFallback() throws Exception {
+        Path main = write("stager.xml", """
+                <stager>
+                    <include src="fragments/fallback.xml"/>
+                    <directories>
+                        <directory target="target/stage"/>
+                    </directories>
+                </stager>
+                """);
+        write("fragments/fallback.xml", """
+                <stager>
+                    <variables>
+                        <variable name="version"/>
+                    </variables>
+                </stager>
+                """);
+
+        XMLElement config = process(main, Map.of());
+        assertThat(config.childrenAt("variables", "variable"), contains(List.of(
+                hasProperty("attributes", XMLElement::attributes, is(Map.of("name", "version")))
+        )));
+    }
+
+    @Test
+    void testValueOverridesEmptyFallback() throws Exception {
+        Path main = write("stager.xml", """
+                <stager>
+                    <variables>
+                        <variable name="version" value="caller"/>
+                    </variables>
+                    <include src="fragments/fallback.xml"/>
+                    <directories>
+                        <directory target="target/stage"/>
+                    </directories>
+                </stager>
+                """);
+        write("fragments/fallback.xml", """
+                <stager>
+                    <variables>
+                        <variable name="version"/>
+                    </variables>
+                </stager>
+                """);
+
+        XMLElement config = process(main, Map.of());
+        assertThat(config.childrenAt("variables", "variable"), contains(List.of(
+                hasProperty("attributes", XMLElement::attributes, is(Map.of(
+                        "name", "version",
+                        "value", "caller")))
+        )));
+    }
+
+    @Test
+    void testEmptyOverridesValueFallback() throws Exception {
+        Path main = write("stager.xml", """
+                <stager>
+                    <variables>
+                        <variable name="version"/>
+                    </variables>
+                    <include src="fragments/fallback.xml"/>
+                    <directories>
+                        <directory target="target/stage"/>
+                    </directories>
+                </stager>
+                """);
+        write("fragments/fallback.xml", """
+                <stager>
+                    <variables>
+                        <variable name="version" value="fallback"/>
+                    </variables>
+                </stager>
+                """);
+
+        XMLElement config = process(main, Map.of());
+        assertThat(config.childrenAt("variables", "variable"), contains(List.of(
+                hasProperty("attributes", XMLElement::attributes, is(Map.of("name", "version")))
+        )));
+    }
+
+    @Test
+    void testUnknownRootChildrenIgnored() throws Exception {
         write("fragments/stager.xml", """
                 <stager/>
                 """);
@@ -362,7 +442,7 @@ class ConfigProcessorTest {
     }
 
     @Test
-    void testPomRootIncludeFullStagerFile() throws Exception {
+    void testConfigIncludeStagerFile() throws Exception {
         write("fragments/stager.xml", """
                 <stager>
                     <properties>
@@ -396,7 +476,7 @@ class ConfigProcessorTest {
     }
 
     @Test
-    void testRootIncludeArbitraryWrapperFile() throws Exception {
+    void testRootIncludeWrapperFile() throws Exception {
         Path main = write("stager.xml", """
                 <stager>
                     <include src="fragments/wrapper.xml"/>
@@ -435,7 +515,7 @@ class ConfigProcessorTest {
     }
 
     @Test
-    void testTaskIncludeWithSourceAttributeRemainsTaskElement() {
+    void testTaskIncludeWithSrc() {
         XMLElement config = process("""
                 <configuration>
                     <directories>
@@ -454,7 +534,7 @@ class ConfigProcessorTest {
     }
 
     @Test
-    void testIncludedTaskIncludeWithSourceAttributeRemainsTaskElement() throws Exception {
+    void testIncludedTaskIncludeWithSrc() throws Exception {
         Path main = write("stager.xml", """
                 <stager>
                     <include src="fragments/wrapper.xml"/>
@@ -516,7 +596,7 @@ class ConfigProcessorTest {
     }
 
     @Test
-    void testListFilesIncludeWithSourceAttributeRemainsTextFilter() {
+    void testListFilesIncludeWithSrc() {
         XMLElement config = process("""
                 <configuration>
                     <directories>
@@ -569,7 +649,7 @@ class ConfigProcessorTest {
     }
 
     @Test
-    void testNestedArbitraryWrapperIncludesResolveRelativeToDeclaringFile() throws Exception {
+    void testNestedWrapperIncludePath() throws Exception {
         Path main = write("root.xml", """
                 <stager>
                     <include src="fragments/level1/wrapper.xml"/>
@@ -606,7 +686,7 @@ class ConfigProcessorTest {
     }
 
     @Test
-    void testNestedFullStagerIncludesResolveRelativeToDeclaringFile() throws Exception {
+    void testNestedStagerIncludePath() throws Exception {
         Path main = write("root.xml", """
                 <stager>
                     <include src="fragments/level1/stager.xml"/>
@@ -681,7 +761,7 @@ class ConfigProcessorTest {
     }
 
     @Test
-    void testPomMissingIncludeFailsWithSource() {
+    void testConfigMissingIncludeFails() {
         IllegalStateException ex = assertThrows(IllegalStateException.class,
                 () -> process("""
                         <configuration>
@@ -693,7 +773,7 @@ class ConfigProcessorTest {
     }
 
     @Test
-    void testPomIncludeCycleFailsWithChain() throws Exception {
+    void testConfigIncludeCycleFails() throws Exception {
         write("a.xml", """
                 <stager>
                     <include src="b.xml"/>
@@ -729,7 +809,7 @@ class ConfigProcessorTest {
     }
 
     @Test
-    void testPomRootDocumentOrderValidationIgnoresSourceLineOrder() throws Exception {
+    void testDocumentOrderUsesTreeOrder() throws Exception {
         write("fragments/stager.xml", """
                 <stager/>
                 """);
@@ -778,7 +858,7 @@ class ConfigProcessorTest {
     }
 
     @Test
-    void testIncludedArbitraryWrapperFileInvalidOrderFails() throws Exception {
+    void testWrapperInvalidOrderFails() throws Exception {
         Path main = write("stager.xml", """
                 <stager>
                     <include src="fragments/wrapper.xml"/>
@@ -798,7 +878,7 @@ class ConfigProcessorTest {
     }
 
     @Test
-    void testIncludedFullStagerFileInvalidOrderFails() throws Exception {
+    void testStagerInvalidOrderFails() throws Exception {
         Path main = write("stager.xml", """
                 <stager>
                     <include src="fragments/stager.xml"/>

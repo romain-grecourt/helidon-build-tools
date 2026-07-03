@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
  */
 package io.helidon.build.maven.stager;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.LinkedList;
@@ -34,16 +36,22 @@ import io.helidon.build.common.Unchecked;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.hasItems;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Tests {@link StagingTask}.
  */
 class StagingTaskTest {
+
+    @TempDir
+    private Path tempDir;
 
     @Test
     void testIterator() {
@@ -85,6 +93,46 @@ class StagingTaskTest {
                 "foo2-bar2-bob1", "foo2-bar2-bob2", "foo2-bar2-bob3", "foo2-bar2-bob4",
                 "foo3-bar1-bob1", "foo3-bar1-bob2", "foo3-bar1-bob3", "foo3-bar1-bob4",
                 "foo3-bar2-bob1", "foo3-bar2-bob2", "foo3-bar2-bob3", "foo3-bar2-bob4"));
+    }
+
+    @Test
+    void testTemplateEmptyVariable() throws Exception {
+        Files.writeString(tempDir.resolve("template.mustache"), "{{version}}");
+        Path outputDir = tempDir.resolve("stage");
+        TemplateTask task = new TemplateTask(null,
+                Map.of("source", "template.mustache", "target", "index.txt"),
+                List.of(new Variable("version", new VariableValue.EmptyValue("version"))));
+        StagingContext context = new StagingContext() {
+
+            @Override
+            public Path resolve(String path) {
+                return tempDir.resolve(path);
+            }
+
+            @Override
+            public void ensureDirectory(Path directory) {
+                try {
+                    Files.createDirectories(directory);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+
+            @Override
+            public Executor executor() {
+                return new CurrentThreadExecutorService();
+            }
+        };
+
+        ExecutionException ex = assertThrows(ExecutionException.class,
+                () -> task.execute(context, outputDir, Map.of()).toCompletableFuture().get());
+
+        assertThat(ex.getCause(), is(instanceOf(IllegalStateException.class)));
+        assertThat(ex.getCause().getMessage(), containsString("version"));
+        Path target = outputDir.resolve("index.txt");
+        if (Files.exists(target)) {
+            assertThat(Files.readString(target), is(""));
+        }
     }
 
     @Test

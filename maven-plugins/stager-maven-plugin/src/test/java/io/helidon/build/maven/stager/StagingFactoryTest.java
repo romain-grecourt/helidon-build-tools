@@ -70,6 +70,60 @@ class StagingFactoryTest {
         )))));
     }
 
+    @Test
+    void testEmptyIteratorVariable() {
+        StagingTasks root = create("""
+                <configuration>
+                    <variables>
+                        <variable name="version"/>
+                    </variables>
+                    <directories>
+                        <directory target="target/stage">
+                            <files>
+                                <file target="{version}">
+                                    <iterators>
+                                        <variables>
+                                            <variable ref="version"/>
+                                        </variables>
+                                    </iterators>
+                                </file>
+                            </files>
+                        </directory>
+                    </directories>
+                </configuration>
+                """);
+
+        FileTask file = firstFile(root);
+        assertThat(iterators(file), is(List.of(List.of())));
+    }
+
+    @Test
+    void testStringIteratorVariable() {
+        StagingTasks root = create("""
+                <configuration>
+                    <variables>
+                        <variable name="version" value="1.0.0"/>
+                    </variables>
+                    <directories>
+                        <directory target="target/stage">
+                            <files>
+                                <file target="{version}">
+                                    <iterators>
+                                        <variables>
+                                            <variable ref="version"/>
+                                        </variables>
+                                    </iterators>
+                                </file>
+                            </files>
+                        </directory>
+                    </directories>
+                </configuration>
+                """);
+
+        FileTask file = firstFile(root);
+        assertThat(iterators(file), is(List.of(List.of(Map.of("version", "1.0.0")))));
+    }
+
     static Matcher<StagingElement> isUnpackArtifacts() {
         return isElement(StagingTasks.class, hasProperty("tasks", StagingTasks::tasks, contains(List.of(
                 isElement(UnpackArtifactTask.class,
@@ -297,6 +351,18 @@ class StagingFactoryTest {
             lists.add(list);
         }
         return lists;
+    }
+
+    private StagingTasks create(String str) {
+        XMLElement rawConfig = XMLElement.read(str, "unknown", false);
+        XMLElement config = ConfigProcessor.process(rawConfig, tempDir, k -> null);
+        return StagingFactory.create(config);
+    }
+
+    private static FileTask firstFile(StagingTasks root) {
+        StagingDirectory directory = (StagingDirectory) root.tasks().get(0);
+        StagingTasks files = (StagingTasks) directory.tasks().get(0);
+        return (FileTask) files.tasks().get(0);
     }
 
     @SafeVarargs

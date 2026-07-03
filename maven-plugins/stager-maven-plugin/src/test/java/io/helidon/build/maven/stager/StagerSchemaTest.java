@@ -56,7 +56,7 @@ class StagerSchemaTest {
     }
 
     @Test
-    void testValidateStagingFactoryFixture() {
+    void testValidateFactoryFixture() {
         assertDoesNotThrow(() -> validateResource("test-config.xml"));
     }
 
@@ -66,22 +66,22 @@ class StagerSchemaTest {
     }
 
     @Test
-    void testValidateUnknownElementNegative() {
+    void testValidateUnknownElementFails() {
         assertThrows(SAXException.class, () -> validate("stager-unknown-element.xml"));
     }
 
     @Test
-    void testValidateMissingDownloadUrlNegative() {
+    void testValidateMissingDownloadUrlFails() {
         assertThrows(SAXException.class, () -> validate("stager-missing-download-url.xml"));
     }
 
     @Test
-    void testValidateNestedIncludeNegative() {
+    void testValidateNestedIncludeFails() {
         assertThrows(SAXException.class, () -> validate("stager-nested-include-invalid.xml"));
     }
 
     @Test
-    void testValidateOutOfOrderNegative() {
+    void testValidateOutOfOrderFails() {
         assertThrows(SAXException.class, () -> validate("stager-out-of-order.xml"));
     }
 
