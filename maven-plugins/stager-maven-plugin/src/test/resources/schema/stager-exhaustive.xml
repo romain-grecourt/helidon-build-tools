@@ -17,6 +17,7 @@
 
 -->
 <stager xmlns="https://helidon.io/stager/1.0">
+    <include src="fragments/stager.xml"/>
     <properties>
         <property name="stage.path" value="target/stage"/>
         <property name="version" value="1.0.0"/>
@@ -24,7 +25,6 @@
     <variables>
         <variable name="channel" value="stable"/>
     </variables>
-    <include src="fragments/stager.xml"/>
     <directories>
         <variables>
             <variable name="version">

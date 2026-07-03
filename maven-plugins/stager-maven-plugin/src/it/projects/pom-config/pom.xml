@@ -24,7 +24,6 @@
     <version>@project.version@</version>
     <name>Test Stager POM config preprocessing</name>
     <packaging>pom</packaging>
-
     <build>
         <finalName>pom-config-final-name</finalName>
         <plugins>
@@ -33,9 +32,9 @@
                 <artifactId>helidon-stager-maven-plugin</artifactId>
                 <version>${project.version}</version>
                 <configuration>
+                    <include src="stager-fragments/stager.xml"/>
                     <properties>
                         <property name="stage.path" value="${project.build.directory}/stage"/>
-                        <property name="fragments.dir" value="stager-fragments"/>
                         <property name="major" value="4"/>
                         <property name="version" value="${major}.0.0"/>
                     </properties>
@@ -45,7 +44,6 @@
                             <value>preview</value>
                         </variable>
                     </variables>
-                    <include src="${fragments.dir}/stager.xml"/>
                 </configuration>
                 <executions>
                     <execution>

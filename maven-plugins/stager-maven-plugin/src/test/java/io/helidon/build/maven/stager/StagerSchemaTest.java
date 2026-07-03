@@ -86,6 +86,16 @@ class StagerSchemaTest {
     }
 
     @Test
+    void testValidatePropertiesBeforeIncludeFails() {
+        assertThrows(SAXException.class, () -> validate("stager-properties-before-include.xml"));
+    }
+
+    @Test
+    void testValidateIncludeAfterVariablesFails() {
+        assertThrows(SAXException.class, () -> validate("stager-include-after-variables.xml"));
+    }
+
+    @Test
     void testElementsAndAttributesHaveDocumentation() throws Exception {
         try (InputStream is = Files.newInputStream(targetDir(StagerSchemaTest.class)
                      .resolve("classes/schema/stager-1.0.xsd"))) {

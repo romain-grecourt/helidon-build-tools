@@ -32,19 +32,19 @@ Scalar parameters are mapped to user properties of the form `stager.PROPERTY`, e
 #### Stager Configuration
 
 A stager XML configuration file is rooted at `<stager>` and supports top-level children in this
-order: `<properties>`, `<variables>`, `<include src="..."/>`, then `<directories>`.
+order: `<include src="..."/>`, `<properties>`, `<variables>`, then `<directories>`.
 
 ```xml
 <stager xmlns="https://helidon.io/stager/1.0"
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:schemaLocation="https://helidon.io/stager/1.0 https://helidon.io/xsd/stager-1.0.xsd">
+    <include src="stager-common.xml"/>
     <properties>
         <property name="docs.1.version" value="1.2.3"/>
     </properties>
     <variables>
         <variable name="channel" value="stable"/>
     </variables>
-    <include src="stager-common.xml"/>
     <directories>
         <!-- directory is a container of tasks -->
         <directory target="${project.build.directory}/stage">
@@ -187,20 +187,21 @@ This is a text file.
 
 ##### Includes
 
-Use `<include src="..."/>` as a top-level stager configuration directive after `<variables>` and
-before `<directories>`. The referenced file is another stager XML configuration file. Its
+Use `<include src="..."/>` as a top-level stager configuration directive before `<properties>`,
+`<variables>`, and `<directories>`. The referenced file is another stager XML configuration file. Its
 `<stager>` children are inserted where the directive appears.
 
 Include paths are resolved relative to the declaring file unless the path is absolute.
 An include declared directly in the POM is resolved relative to the project base
 directory; nested includes from XML files are resolved relative to the XML file that declares them.
-Only `${...}` properties are interpolated in `src`; task variables such as `{version}` are resolved
-later during task execution.
+
+The `src` value is treated as a literal path during include expansion.
 
 Root-level `<variables>` and direct `<directories><variables>` are merged into the effective global
-configuration. When duplicate global `<variable name="...">` entries are encountered, the first
-definition wins. Because `<include>` appears after caller `<variables>` and before caller
-`<directories>`, caller root variables override included fallback variables with the same name.
+configuration. Root-level variables are collected before direct `<directories><variables>`;
+within that collection order, duplicate global `<variable name="...">` entries use the last
+definition. Because `<include>` appears before caller `<variables>` and `<directories>`, caller
+variables override included fallback variables with the same name.
 Template-local and iterator-local variables are not part of this global precedence rule.
 
 Included files may declare optional fallback variables without a value, for example
@@ -209,10 +210,11 @@ when an iterator references an empty variable, it contributes no values and the 
 times. Empty variables are not substituted as empty strings; using one as a normal template or
 task value fails unless the including configuration already supplied a valued definition.
 
-`${...}` interpolation uses stager `<properties>` before Maven expressions. Properties are collected
-during include processing. For duplicate stager property names, the later processed property value is
-used for subsequent interpolation. This means included properties can override earlier caller
-properties for content processed after the include is loaded.
+After includes are expanded, `${...}` interpolation runs once across the expanded configuration.
+
+Stager `<properties>` are resolved before Maven expressions. For duplicate stager property names,
+the last definition in the expanded configuration wins. This means caller properties declared after
+includes override included fallback properties.
 
 Missing files and circular chains fail the goal and report the path that could not be loaded.
 
@@ -240,18 +242,18 @@ The `list-files` `<include>` element is still a pattern element, not a file incl
 
 The same logical stager children are declared directly under the plugin `<configuration>` element
 when configuration is kept in `pom.xml`. Do not wrap POM configuration in a `<stager>` element.
-The supported order is `<properties>`, `<variables>`, `<include src="..."/>`, then
+The supported order is `<include src="..."/>`, `<properties>`, `<variables>`, then
 `<directories>`.
 
 ```xml
 <configuration>
+    <include src="stager-common.xml"/>
     <properties>
         <property name="stage.path" value="${project.build.directory}/stage"/>
     </properties>
     <variables>
         <variable name="channel" value="stable"/>
     </variables>
-    <include src="stager-common.xml"/>
     <directories>
         <directory target="${stage.path}">
             <files>
@@ -300,13 +302,13 @@ property and global variable precedence.
         <artifactId>helidon-stager-maven-plugin</artifactId>
         <version>${project.version}</version>
         <configuration>
+            <include src="stager-common.xml"/>
             <properties>
                 <property name="stage.path" value="${project.build.directory}/stage"/>
             </properties>
             <variables>
                 <variable name="channel" value="stable"/>
             </variables>
-            <include src="stager-common.xml"/>
             <directories>
                 <directory target="${stage.path}">
                     <files>
@@ -327,13 +329,13 @@ The `stage` goal can also read stager configuration from `stager.xml`:
 <stager xmlns="https://helidon.io/stager/1.0"
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:schemaLocation="https://helidon.io/stager/1.0 https://helidon.io/xsd/stager-1.0.xsd">
+    <include src="stager-common.xml"/>
     <properties>
         <property name="stage.path" value="${project.build.directory}/stage"/>
     </properties>
     <variables>
         <variable name="channel" value="stable"/>
     </variables>
-    <include src="stager-common.xml"/>
     <directories>
         <directory target="${stage.path}">
             <files>

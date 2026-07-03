@@ -140,6 +140,88 @@ class ConfigProcessorTest {
     }
 
     @Test
+    void testCallerPropertyAfterIncludeOverridesIncludedProperty() throws Exception {
+        Path main = write("stager.xml", """
+                <stager>
+                    <include src="fragments/stager.xml"/>
+                    <properties>
+                        <property name="stage.path" value="target/caller"/>
+                    </properties>
+                    <directories>
+                        <directory target="${stage.path}/main"/>
+                    </directories>
+                </stager>
+                """);
+        write("fragments/stager.xml", """
+                <stager>
+                    <properties>
+                        <property name="stage.path" value="target/included"/>
+                    </properties>
+                    <directories>
+                        <directory target="${stage.path}/included"/>
+                    </directories>
+                </stager>
+                """);
+
+        XMLElement config = process(main, Map.of());
+
+        assertThat(config.childrenAt("directory"), contains(List.of(
+                hasProperty("attributes", XMLElement::attributes, is(Map.of("target", "target/caller/included"))),
+                hasProperty("attributes", XMLElement::attributes, is(Map.of("target", "target/caller/main")))
+        )));
+    }
+
+    @Test
+    void testLaterIncludeOverridesEarlierIncludeDefaults() throws Exception {
+        Path main = write("stager.xml", """
+                <stager>
+                    <include src="fragments/one.xml"/>
+                    <include src="fragments/two.xml"/>
+                    <directories>
+                        <directory target="${stage.path}/{channel}/main"/>
+                    </directories>
+                </stager>
+                """);
+        write("fragments/one.xml", """
+                <stager>
+                    <properties>
+                        <property name="stage.path" value="target/one"/>
+                    </properties>
+                    <variables>
+                        <variable name="channel" value="one"/>
+                    </variables>
+                    <directories>
+                        <directory target="${stage.path}/{channel}/one"/>
+                    </directories>
+                </stager>
+                """);
+        write("fragments/two.xml", """
+                <stager>
+                    <properties>
+                        <property name="stage.path" value="target/two"/>
+                    </properties>
+                    <variables>
+                        <variable name="channel" value="two"/>
+                    </variables>
+                    <directories>
+                        <directory target="${stage.path}/{channel}/two"/>
+                    </directories>
+                </stager>
+                """);
+
+        XMLElement config = process(main, Map.of());
+
+        assertThat(config.childrenAt("variables", "variable"), contains(List.of(
+                hasProperty("attributes", XMLElement::attributes, is(Map.of("name", "channel", "value", "two")))
+        )));
+        assertThat(config.childrenAt("directory"), contains(List.of(
+                hasProperty("attributes", XMLElement::attributes, is(Map.of("target", "target/two/{channel}/one"))),
+                hasProperty("attributes", XMLElement::attributes, is(Map.of("target", "target/two/{channel}/two"))),
+                hasProperty("attributes", XMLElement::attributes, is(Map.of("target", "target/two/{channel}/main")))
+        )));
+    }
+
+    @Test
     void testRootIncludeRelativePath() throws Exception {
         Path main = write("config/stager.xml", """
                 <stager>
@@ -167,13 +249,13 @@ class ConfigProcessorTest {
     void testValidRootOrder() throws Exception {
         Path main = write("stager.xml", """
                 <stager>
+                    <include src="fragments/stager.xml"/>
                     <properties>
                         <property name="stage.path" value="target/stage"/>
                     </properties>
                     <variables>
                         <variable name="channel" value="stable"/>
                     </variables>
-                    <include src="fragments/stager.xml"/>
                     <directories>
                         <directory target="${stage.path}/{channel}/main"/>
                     </directories>
@@ -208,10 +290,10 @@ class ConfigProcessorTest {
     void testMergeVariables() throws Exception {
         Path main = write("stager.xml", """
                 <stager>
+                    <include src="fragments/stager.xml"/>
                     <variables>
                         <variable name="root" value="caller"/>
                     </variables>
-                    <include src="fragments/stager.xml"/>
                     <directories>
                         <variables>
                             <variable name="directories" value="caller"/>
@@ -238,8 +320,8 @@ class ConfigProcessorTest {
 
         assertThat(config.children("variables"), hasSize(1));
         assertThat(config.childrenAt("variables", "variable"), contains(List.of(
-                hasProperty("attributes", XMLElement::attributes, is(Map.of("name", "root", "value", "caller"))),
                 hasProperty("attributes", XMLElement::attributes, is(Map.of("name", "included-root", "value", "fallback"))),
+                hasProperty("attributes", XMLElement::attributes, is(Map.of("name", "root", "value", "caller"))),
                 hasProperty("attributes", XMLElement::attributes,
                         is(Map.of("name", "included-directories", "value", "fallback"))),
                 hasProperty("attributes", XMLElement::attributes, is(Map.of("name", "directories", "value", "caller")))
@@ -270,10 +352,10 @@ class ConfigProcessorTest {
     void testCallerVariableWins() throws Exception {
         Path main = write("stager.xml", """
                 <stager>
+                    <include src="fragments/fallback.xml"/>
                     <variables>
                         <variable name="version" value="caller"/>
                     </variables>
-                    <include src="fragments/fallback.xml"/>
                     <directories>
                         <directory target="target/stage">
                             <template source="template.mustache" target="index.txt">
@@ -361,10 +443,10 @@ class ConfigProcessorTest {
     void testValueOverridesEmptyFallback() throws Exception {
         Path main = write("stager.xml", """
                 <stager>
+                    <include src="fragments/fallback.xml"/>
                     <variables>
                         <variable name="version" value="caller"/>
                     </variables>
-                    <include src="fragments/fallback.xml"/>
                     <directories>
                         <directory target="target/stage"/>
                     </directories>
@@ -390,10 +472,10 @@ class ConfigProcessorTest {
     void testEmptyOverridesValueFallback() throws Exception {
         Path main = write("stager.xml", """
                 <stager>
+                    <include src="fragments/fallback.xml"/>
                     <variables>
                         <variable name="version"/>
                     </variables>
-                    <include src="fragments/fallback.xml"/>
                     <directories>
                         <directory target="target/stage"/>
                     </directories>
@@ -422,13 +504,13 @@ class ConfigProcessorTest {
         XMLElement config = process("""
                 <configuration>
                     <unknown/>
+                    <include src="fragments/stager.xml"/>
                     <properties>
                         <property name="stage.path" value="target/stage"/>
                     </properties>
                     <variables>
                         <variable name="channel" value="stable"/>
                     </variables>
-                    <include src="fragments/stager.xml"/>
                     <directories>
                         <directory target="${stage.path}/{channel}"/>
                     </directories>
@@ -459,11 +541,10 @@ class ConfigProcessorTest {
                 """);
         XMLElement config = process("""
                 <configuration>
+                    <include src="fragments/stager.xml"/>
                     <properties>
-                        <property name="fragments.dir" value="fragments"/>
                         <property name="message" value="content"/>
                     </properties>
-                    <include src="${fragments.dir}/stager.xml"/>
                 </configuration>
                 """, Map.of());
 
@@ -472,6 +553,47 @@ class ConfigProcessorTest {
                 hasProperty("name", XMLElement::name, is("file")),
                 hasProperty("attributes", XMLElement::attributes, is(Map.of("target", "index.txt"))),
                 hasProperty("value", XMLElement::value, is("content"))
+        ))));
+    }
+
+    @Test
+    void testIncludeSourceDoesNotUseProperties() throws Exception {
+        write("fragments/stager.xml", """
+                <stager/>
+                """);
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> process("""
+                        <configuration>
+                            <include src="${fragments.dir}/stager.xml"/>
+                            <properties>
+                                <property name="fragments.dir" value="fragments"/>
+                            </properties>
+                        </configuration>
+                        """, Map.of("fragments.dir", "fragments")));
+
+        assertThat(ex.getMessage(), containsString("Missing or unreadable include '${fragments.dir}/stager.xml'"));
+    }
+
+    @Test
+    void testIncludeSourceWithExpressionCharactersIsLiteral() throws Exception {
+        write("${fragments.dir}/stager.xml", """
+                <stager>
+                    <directories>
+                        <directory target="target/literal"/>
+                    </directories>
+                </stager>
+                """);
+
+        XMLElement config = process("""
+                <configuration>
+                    <include src="${fragments.dir}/stager.xml"/>
+                </configuration>
+                """, Map.of("fragments.dir", "fragments"));
+
+        assertThat(config.childrenAt("directory"), contains(List.of(allOf(
+                hasProperty("name", XMLElement::name, is("directory")),
+                hasProperty("attributes", XMLElement::attributes, is(Map.of("target", "target/literal")))
         ))));
     }
 
@@ -518,9 +640,12 @@ class ConfigProcessorTest {
     void testTaskIncludeWithSrc() {
         XMLElement config = process("""
                 <configuration>
+                    <properties>
+                        <property name="task.fragment" value="task-fragment.xml"/>
+                    </properties>
                     <directories>
                         <directory target="target/stage">
-                            <include src="task-fragment.xml"/>
+                            <include src="${task.fragment}"/>
                         </directory>
                     </directories>
                 </configuration>
@@ -599,12 +724,16 @@ class ConfigProcessorTest {
     void testListFilesIncludeWithSrc() {
         XMLElement config = process("""
                 <configuration>
+                    <properties>
+                        <property name="filter.file" value="filter.txt"/>
+                        <property name="filter.pattern" value="**/*.html"/>
+                    </properties>
                     <directories>
                         <directory target="target/stage">
                             <files>
                                 <file target="sitemap.txt">
                                     <list-files dir="docs">
-                                        <include src="filter.txt">**/*.html</include>
+                                        <include src="${filter.file}">${filter.pattern}</include>
                                     </list-files>
                                 </file>
                             </files>
@@ -723,6 +852,29 @@ class ConfigProcessorTest {
     }
 
     @Test
+    void testAbsoluteIncludePath() throws Exception {
+        Path fragment = write("fragments/stager.xml", """
+                <stager>
+                    <directories>
+                        <directory target="target/absolute"/>
+                    </directories>
+                </stager>
+                """);
+        Path main = write("stager.xml", """
+                <stager>
+                    <include src="%s"/>
+                </stager>
+                """.formatted(fragment));
+
+        XMLElement config = process(main, Map.of());
+
+        assertThat(config.childrenAt("directory"), contains(List.of(allOf(
+                hasProperty("name", XMLElement::name, is("directory")),
+                hasProperty("attributes", XMLElement::attributes, is(Map.of("target", "target/absolute")))
+        ))));
+    }
+
+    @Test
     void testIncludeCycleFails() throws Exception {
         Path main = write("stager.xml", """
                 <stager>
@@ -832,16 +984,29 @@ class ConfigProcessorTest {
     }
 
     @Test
-    void testVariablesAfterIncludeFails() {
+    void testPropertiesBeforeIncludeFails() {
         IllegalStateException ex = assertThrows(IllegalStateException.class,
                 () -> process("""
                         <configuration>
+                            <properties/>
                             <include src="fragments/stager.xml"/>
-                            <variables/>
                         </configuration>
                         """, Map.of()));
 
-        assertThat(ex.getMessage(), containsString("<variables> must appear before <include>"));
+        assertThat(ex.getMessage(), containsString("<include> must appear before <properties>"));
+    }
+
+    @Test
+    void testVariablesBeforeIncludeFails() {
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> process("""
+                        <configuration>
+                            <variables/>
+                            <include src="fragments/stager.xml"/>
+                        </configuration>
+                        """, Map.of()));
+
+        assertThat(ex.getMessage(), containsString("<include> must appear before <variables>"));
     }
 
     @Test

@@ -20,12 +20,10 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
-import java.util.HashMap;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -65,31 +63,36 @@ final class ConfigProcessor {
         // use a copy
         XMLElement config = XMLElement.builder(root);
 
-        // pre-process with a single traversal
-        config.visit(new IncludeVisitor(config));
+        // pre-process includes
+        config.visit(new IncludeVisitor());
 
-        // collect all variables
+        // interpolate properties
+        interpolate(config);
+
+        // build the final config
+        XMLElement.Builder directories = XMLElement.builder().name("directories");
+
+        // merge variables
         List<XMLElement> variables = new ArrayList<>();
         variables.addAll(config.childrenAt("variables", "variable"));
         variables.addAll(config.childrenAt("directories", "variables", "variable"));
+        Map<String, XMLElement> mergedVariables = new LinkedHashMap<>();
+        for (XMLElement e : variables) {
+            mergedVariables.put(e.attribute("name"), e);
+        }
 
-        // merge variables
-        XMLElement.Builder directories = XMLElement.builder().name("directories");
+        // add variables
         if (!variables.isEmpty()) {
             XMLElement.Builder merged = XMLElement.builder().name("variables");
-            Set<String> variableNames = new HashSet<>();
-            for (XMLElement variable : variables) {
-                String name = variable.attributes().get("name");
-                if (name == null || variableNames.add(name)) {
-                    variable.parent(merged);
-                    merged.children().add(variable);
-                }
+            for (XMLElement variable : mergedVariables.values()) {
+                variable.parent(merged);
+                merged.children().add(variable);
             }
             merged.parent(directories);
             directories.children().add(merged);
         }
 
-        // merge directories
+        // inline directories
         for (XMLElement directory : config.childrenAt("directories", "directory")) {
             directory.parent(directories);
             directories.children().add(directory);
@@ -102,9 +105,9 @@ final class ConfigProcessor {
         String previousName = null;
         for (XMLElement child : root.children()) {
             int order = switch (child.name()) {
-                case "properties" -> 0;
-                case "variables" -> 1;
-                case "include" -> 2;
+                case "include" -> 0;
+                case "properties" -> 1;
+                case "variables" -> 2;
                 case "directories" -> 3;
                 default -> -1;
             };
@@ -120,36 +123,41 @@ final class ConfigProcessor {
         }
     }
 
+    private void interpolate(XMLElement config) {
+        // collect properties
+        Map<String, String> properties = new LinkedHashMap<>();
+        for (XMLElement property : config.childrenAt("properties", "property")) {
+            properties.put(property.attribute("name"), property.attribute("value"));
+        }
+
+        SubstitutionVariables substitution = SubstitutionVariables.of(NotFoundAction.AsIs, k -> {
+            String value = properties.get(k);
+            if (value == null) {
+                value = propertyResolver.apply(k);
+            }
+            return value;
+        });
+        config.visit(new XMLElement.Visitor() {
+            @Override
+            public void visitElement(XMLElement elt) {
+                elt.value(substitution.resolve(elt.value()));
+                elt.attributes().replaceAll((key, value) -> substitution.resolve(value));
+            }
+        });
+    }
+
     private class IncludeVisitor implements XMLElement.Visitor {
 
-        private final SubstitutionVariables substitution;
         private final Deque<IncludeFrame> includeFrames = new ArrayDeque<>();
-        private final Map<String, String> properties = new HashMap<>();
-
-        IncludeVisitor(XMLElement config) {
-            this.substitution = SubstitutionVariables.of(NotFoundAction.AsIs, k -> {
-                String value = properties.get(k);
-                if (value == null) {
-                    value = propertyResolver.apply(k);
-                }
-                return value;
-            });
-            addProperties(config);
-        }
 
         @Override
         public void visitElement(XMLElement elt) {
-            // interpolate
-            elt.value(substitution.resolve(elt.value()));
-            elt.attributes().replaceAll((key, value) -> substitution.resolve(value));
-
             // pre-process includes
             if (isInclude(elt)) {
                 String source = resolveSource(elt);
                 Path file = resolveFile(source, elt);
                 XMLElement resolved = XMLElement.read(file, source, false);
                 validate(resolved);
-                addProperties(resolved);
 
                 // add resolved elements as children of the "include" node
                 // include node is "inlined" during post visit
@@ -184,8 +192,7 @@ final class ConfigProcessor {
                 throw new IllegalStateException(
                         "Missing required 'src' attribute for include in " + elt.location());
             }
-            String resolvedSrc = substitution.resolve(src);
-            Path path = includePath(resolvedSrc);
+            Path path = includePath(src);
             if (includeFrames.stream().anyMatch(it -> it.path.equals(path))) {
                 throw new IllegalStateException(
                         "Include cycle detected: %s -> %s"
@@ -227,12 +234,6 @@ final class ConfigProcessor {
             return includeFrames.stream()
                     .map(it -> it.elt.location().toString())
                     .collect(Collectors.joining(" -> "));
-        }
-
-        void addProperties(XMLElement elt) {
-            for (XMLElement property : elt.childrenAt("properties", "property")) {
-                properties.put(property.attribute("name"), property.attribute("value"));
-            }
         }
 
         static boolean isInclude(XMLElement elt) {
