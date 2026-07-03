@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
+import io.helidon.build.common.Strings;
 import io.helidon.build.common.xml.XMLElement;
 
 import org.hamcrest.FeatureMatcher;
@@ -572,7 +573,8 @@ class ConfigProcessorTest {
                         </configuration>
                         """, Map.of("fragments.dir", "fragments")));
 
-        assertThat(ex.getMessage(), containsString("Missing or unreadable include '${fragments.dir}/stager.xml'"));
+        assertThat(Strings.normalizePath(ex.getMessage()),
+                containsString("Missing or unreadable include '${fragments.dir}/stager.xml'"));
     }
 
     @Test
