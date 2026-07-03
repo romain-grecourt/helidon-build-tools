@@ -120,7 +120,7 @@ final class StagingFactory implements XMLElement.Visitor {
         };
         if (element instanceof Variables variables) {
             for (Variable variable : variables) {
-                scope.parent.variables.put(variable.name(), variable);
+                scope.parent.variables.putIfAbsent(variable.name(), variable);
             }
         }
         List<StagingElement> siblings = mappings.computeIfAbsent(parent, n -> new ArrayList<>());

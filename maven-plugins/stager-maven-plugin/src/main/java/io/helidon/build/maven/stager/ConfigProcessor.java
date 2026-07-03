@@ -18,11 +18,14 @@ package io.helidon.build.maven.stager;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -65,16 +68,28 @@ final class ConfigProcessor {
         // pre-process with a single traversal
         config.visit(new IncludeVisitor(config));
 
-        // merge all top-level elements
+        // collect all variables
+        List<XMLElement> variables = new ArrayList<>();
+        variables.addAll(config.childrenAt("variables", "variable"));
+        variables.addAll(config.childrenAt("directories", "variables", "variable"));
+
+        // merge variables
         XMLElement.Builder directories = XMLElement.builder().name("directories");
-        for (XMLElement variables : config.childrenAt("variables")) {
-            variables.parent(directories);
-            directories.children().add(variables);
+        if (!variables.isEmpty()) {
+            XMLElement.Builder merged = XMLElement.builder().name("variables");
+            Set<String> variableNames = new HashSet<>();
+            for (XMLElement variable : variables) {
+                String name = variable.attributes().get("name");
+                if (name == null || variableNames.add(name)) {
+                    variable.parent(merged);
+                    merged.children().add(variable);
+                }
+            }
+            merged.parent(directories);
+            directories.children().add(merged);
         }
-        for (XMLElement variables : config.childrenAt("directories", "variables")) {
-            variables.parent(directories);
-            directories.children().add(variables);
-        }
+
+        // merge directories
         for (XMLElement directory : config.childrenAt("directories", "directory")) {
             directory.parent(directories);
             directories.children().add(directory);

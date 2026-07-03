@@ -197,6 +197,17 @@ directory; nested includes from XML files are resolved relative to the XML file 
 Only `${...}` properties are interpolated in `src`; task variables such as `{version}` are resolved
 later during task execution.
 
+Root-level `<variables>` and direct `<directories><variables>` are merged into the effective global
+configuration. When duplicate global `<variable name="...">` entries are encountered, the first
+definition wins. Because `<include>` appears after caller `<variables>` and before caller
+`<directories>`, caller root variables override included fallback variables with the same name.
+Template-local and iterator-local variables are not part of this global precedence rule.
+
+`${...}` interpolation uses stager `<properties>` before Maven expressions. Properties are collected
+during include processing. For duplicate stager property names, the later processed property value is
+used for subsequent interpolation. This means included properties can override earlier caller
+properties for content processed after the include is loaded.
+
 Missing files and circular chains fail the goal and report the path that could not be loaded.
 
 The `list-files` `<include>` element is still a pattern element, not a file inclusion directive:
@@ -248,7 +259,8 @@ The supported order is `<properties>`, `<variables>`, `<include src="..."/>`, th
 XML attributes and text in stager configuration are interpolated before task execution. `${...}`
 expressions are resolved from stager `<properties>` first, then Maven expressions. Expressions that
 cannot be resolved are left unchanged. Recursive property values are supported. Task variables such
-as `{version}` are resolved during task execution.
+as `{version}` are resolved during task execution. See [Includes](#includes) for include-specific
+property and global variable precedence.
 
 ##### ExecutorConfig
 

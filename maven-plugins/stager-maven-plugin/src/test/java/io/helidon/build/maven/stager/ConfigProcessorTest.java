@@ -34,6 +34,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -200,6 +201,135 @@ class ConfigProcessorTest {
                         hasProperty("attributes", XMLElement::attributes,
                                 is(Map.of("target", "target/stage/{channel}/main")))
                 )
+        )));
+    }
+
+    @Test
+    void testVariablesAreMergedIntoSingleBlock() throws Exception {
+        Path main = write("stager.xml", """
+                <stager>
+                    <variables>
+                        <variable name="root" value="caller"/>
+                    </variables>
+                    <include src="fragments/stager.xml"/>
+                    <directories>
+                        <variables>
+                            <variable name="directories" value="caller"/>
+                        </variables>
+                        <directory target="target/main"/>
+                    </directories>
+                </stager>
+                """);
+        write("fragments/stager.xml", """
+                <stager>
+                    <variables>
+                        <variable name="included-root" value="fallback"/>
+                    </variables>
+                    <directories>
+                        <variables>
+                            <variable name="included-directories" value="fallback"/>
+                        </variables>
+                        <directory target="target/included"/>
+                    </directories>
+                </stager>
+                """);
+
+        XMLElement config = process(main, Map.of());
+
+        assertThat(config.children("variables"), hasSize(1));
+        assertThat(config.childrenAt("variables", "variable"), contains(List.of(
+                hasProperty("attributes", XMLElement::attributes, is(Map.of("name", "root", "value", "caller"))),
+                hasProperty("attributes", XMLElement::attributes, is(Map.of("name", "included-root", "value", "fallback"))),
+                hasProperty("attributes", XMLElement::attributes,
+                        is(Map.of("name", "included-directories", "value", "fallback"))),
+                hasProperty("attributes", XMLElement::attributes, is(Map.of("name", "directories", "value", "caller")))
+        )));
+        assertThat(config.childrenAt("directory"), contains(List.of(
+                hasProperty("attributes", XMLElement::attributes, is(Map.of("target", "target/included"))),
+                hasProperty("attributes", XMLElement::attributes, is(Map.of("target", "target/main")))
+        )));
+    }
+
+    @Test
+    void testEmptyVariableBlocksAreOmitted() {
+        XMLElement config = process("""
+                <configuration>
+                    <variables/>
+                    <directories>
+                        <variables/>
+                        <directory target="target/stage"/>
+                    </directories>
+                </configuration>
+                """, Map.of());
+
+        assertThat(config.children("variables"), hasSize(0));
+        assertThat(config.childrenAt("directory"), hasSize(1));
+    }
+
+    @Test
+    void testIncludingVariableWinsOverIncludedFallback() throws Exception {
+        Path main = write("stager.xml", """
+                <stager>
+                    <variables>
+                        <variable name="version" value="caller"/>
+                    </variables>
+                    <include src="fragments/fallback.xml"/>
+                    <directories>
+                        <directory target="target/stage">
+                            <template source="template.mustache" target="index.txt">
+                                <variables>
+                                    <variable ref="version"/>
+                                </variables>
+                            </template>
+                        </directory>
+                    </directories>
+                </stager>
+                """);
+        write("fragments/fallback.xml", """
+                <stager>
+                    <variables>
+                        <variable name="version" value="fallback"/>
+                    </variables>
+                </stager>
+                """);
+
+        XMLElement config = process(main, Map.of());
+        assertThat(config.childrenAt("variables", "variable"), contains(List.of(
+                hasProperty("attributes", XMLElement::attributes, is(Map.of(
+                        "name", "version",
+                        "value", "caller")))
+        )));
+    }
+
+    @Test
+    void testIncludedFallbackVariableIsMergedWhenIncludingVariableIsMissing() throws Exception {
+        Path main = write("stager.xml", """
+                <stager>
+                    <include src="fragments/fallback.xml"/>
+                    <directories>
+                        <directory target="target/stage">
+                            <template source="template.mustache" target="index.txt">
+                                <variables>
+                                    <variable ref="version"/>
+                                </variables>
+                            </template>
+                        </directory>
+                    </directories>
+                </stager>
+                """);
+        write("fragments/fallback.xml", """
+                <stager>
+                    <variables>
+                        <variable name="version" value="fallback"/>
+                    </variables>
+                </stager>
+                """);
+
+        XMLElement config = process(main, Map.of());
+        assertThat(config.childrenAt("variables", "variable"), contains(List.of(
+                hasProperty("attributes", XMLElement::attributes, is(Map.of(
+                        "name", "version",
+                        "value", "fallback")))
         )));
     }
 
