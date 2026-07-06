@@ -136,6 +136,59 @@ class StagingTaskTest {
     }
 
     @Test
+    void testTemplateReplaceHelper() throws Exception {
+        List<Variable> variables = List.of(
+                new Variable("version", new VariableValue.SimpleValue("4.0.0-SNAPSHOT")),
+                new Variable("suffix", new VariableValue.SimpleValue("-SNAPSHOT")),
+                new Variable("qualifier", new VariableValue.SimpleValue("-RC1")),
+                new Variable("release", new VariableValue.MapValue(List.of(
+                        new Variable("version", new VariableValue.SimpleValue("5.0.0-SNAPSHOT"))))));
+        String output = executeTemplate("""
+                version={{replace version "-SNAPSHOT" "-dev"}}
+                release={{replace version "-SNAPSHOT" ""}}
+                dynamic={{replace version suffix qualifier}}
+                literal={{replace "4.0.0-SNAPSHOT" "-SNAPSHOT" ""}}
+                dotted={{replace release.version "-SNAPSHOT" ""}}
+                missing={{replace missing "-SNAPSHOT" ""}}
+                escaped={{replace "4.0.0-\\"SNAPSHOT\\"" "\\\"SNAPSHOT\\"" "dev"}}
+                """, variables);
+
+        assertThat(output, is("""
+                version=4.0.0-dev
+                release=4.0.0
+                dynamic=4.0.0-RC1
+                literal=4.0.0
+                dotted=5.0.0
+                missing=
+                escaped=4.0.0-dev
+                """));
+    }
+
+    @Test
+    void testTemplateReplaceHelperRequiresThreeArguments() throws Exception {
+        Files.writeString(tempDir.resolve("template.mustache"), "{{replace version \"-SNAPSHOT\"}}");
+        Path outputDir = tempDir.resolve("stage");
+        TemplateTask task = new TemplateTask(null,
+                Map.of("source", "template.mustache", "target", "index.txt"),
+                List.of(new Variable("version", new VariableValue.SimpleValue("4.0.0-SNAPSHOT"))));
+
+        ExecutionException ex = assertThrows(ExecutionException.class,
+                () -> task.execute(templateContext(), outputDir, Map.of()).toCompletableFuture().get());
+
+        assertThat(ex.getCause().getCause().getMessage(), containsString("replace requires exactly 3 arguments"));
+    }
+
+    @Test
+    void testTemplateReplaceHelperRejectsExtraArguments() {
+        List<Variable> variables = List.of(new Variable("version", new VariableValue.SimpleValue("4.0.0-SNAPSHOT")));
+
+        ExecutionException ex = assertThrows(ExecutionException.class,
+                () -> executeTemplate("{{replace version \"-SNAPSHOT\" \"\" extra}}", variables));
+
+        assertThat(ex.getCause().getCause().getMessage(), containsString("replace requires exactly 3 arguments"));
+    }
+
+    @Test
     void testHandleRetry() throws InterruptedException {
         StagingTask task = new StagingTask() {
 
@@ -283,7 +336,7 @@ class StagingTaskTest {
         assertThat(list, is(List.of(1, 2)));
     }
 
-    private static StagingTask withFailedSubTask(Function<Throwable, Void> exceptionally, StagingTask subTask1) {
+    static StagingTask withFailedSubTask(Function<Throwable, Void> exceptionally, StagingTask subTask1) {
         return new StagingTask(null, List.of(subTask1, new StagingTask() {
 
             @Override
@@ -296,6 +349,42 @@ class StagingTaskTest {
                 throw new IllegalStateException();
             }
         }), null, null);
+    }
+
+    @SuppressWarnings("SameParameterValue")
+    String executeTemplate(String template, List<Variable> variables) throws Exception {
+        Files.writeString(tempDir.resolve("template.mustache"), template);
+        Path outputDir = tempDir.resolve("stage");
+        TemplateTask task = new TemplateTask(null,
+                Map.of("source", "template.mustache", "target", "index.txt"),
+                variables);
+
+        task.execute(templateContext(), outputDir, Map.of()).toCompletableFuture().get();
+        return Files.readString(outputDir.resolve("index.txt"));
+    }
+
+    StagingContext templateContext() {
+        return new StagingContext() {
+
+            @Override
+            public Path resolve(String path) {
+                return tempDir.resolve(path);
+            }
+
+            @Override
+            public void ensureDirectory(Path directory) {
+                try {
+                    Files.createDirectories(directory);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+
+            @Override
+            public Executor executor() {
+                return new CurrentThreadExecutorService();
+            }
+        };
     }
 
     static void sleep(int seconds) {

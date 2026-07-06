@@ -97,7 +97,8 @@ class ProjectsTestIT {
                             "version": "4.0.0-ALPHA6"
                         }
                     ],
-                    "latest": "3.0.0-SNAPSHOT"
+                    "latest": "3.0.0-SNAPSHOT",
+                    "latest-release": "3.0.0"
                 }
                 """));
 
@@ -111,7 +112,8 @@ class ProjectsTestIT {
                     ],
                     "preview-versions": [
                     ],
-                    "latest": "4.0.0-SNAPSHOT"
+                    "latest": "4.0.0-SNAPSHOT",
+                    "latest-release": "4.0.0"
                 }
                 """));
     }
