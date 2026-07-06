@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,26 +27,11 @@ import io.helidon.build.common.Strings;
  */
 final class SymlinkTask extends StagingTask {
 
-    static final String ELEMENT_NAME = "symlink";
-
     private final String source;
 
     SymlinkTask(ActionIterators iterators, Map<String, String> attrs) {
-        super(ELEMENT_NAME, null, iterators, attrs);
+        super("symlink", null, iterators, attrs);
         this.source = Strings.requireValid(attrs.get("source"), "source is required");
-    }
-
-    /**
-     * Get the symlink source.
-     * @return source, never {@code null}
-     */
-    String source() {
-        return source;
-    }
-
-    @Override
-    public String elementName() {
-        return ELEMENT_NAME;
     }
 
     @Override
@@ -56,5 +41,9 @@ final class SymlinkTask extends StagingTask {
         ctx.logInfo("Creating symlink source: %s, target: %s", link, linkTarget);
         ctx.ensureDirectory(link.getParent());
         Files.createSymbolicLink(link, linkTarget);
+    }
+
+    String source() {
+        return source;
     }
 }

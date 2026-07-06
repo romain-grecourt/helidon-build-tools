@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -65,40 +65,9 @@ class StagingTask implements StagingAction {
         this.join = Boolean.parseBoolean(this.attrs.get("join"));
     }
 
-    /**
-     * Get the element name.
-     *
-     * @return name
-     */
+    @Override
     public String elementName() {
         return elementName;
-    }
-
-    /**
-     * Get the nested tasks.
-     *
-     * @return tasks, never {@code null}
-     */
-    List<? extends StagingAction> tasks() {
-        return nested;
-    }
-
-    /**
-     * Get the task iterators.
-     *
-     * @return task iterators, may be {@code null}
-     */
-    ActionIterators iterators() {
-        return iterators;
-    }
-
-    /**
-     * Get the target.
-     *
-     * @return target, never {@code nul}
-     */
-    String target() {
-        return target;
     }
 
     @Override
@@ -303,6 +272,18 @@ class StagingTask implements StagingAction {
                                                            int maxAttempts) {
 
         return handleRetry(() -> supplier.get().orTimeout(timeout, TimeUnit.MILLISECONDS), ctx, 1, maxAttempts);
+    }
+
+    List<? extends StagingAction> tasks() {
+        return nested;
+    }
+
+    ActionIterators iterators() {
+        return iterators;
+    }
+
+    String target() {
+        return target;
     }
 
     private static <T> CompletableFuture<Void> allOf(List<T> items,

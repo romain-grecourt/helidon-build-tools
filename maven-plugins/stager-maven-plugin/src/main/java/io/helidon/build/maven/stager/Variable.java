@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,13 +19,11 @@ import io.helidon.build.common.Strings;
 
 /**
  * Variable model.
+ *
+ * @param name  name
+ * @param value value
  */
-class Variable implements StagingElement {
-
-    static final String ELEMENT_NAME = "variable";
-
-    private final String name;
-    private final VariableValue value;
+record Variable(String name, VariableValue value) implements StagingElement {
 
     Variable(String name, VariableValue value) {
         this.name = Strings.requireValid(name, "name is required");
@@ -35,26 +33,8 @@ class Variable implements StagingElement {
         this.value = value;
     }
 
-    /**
-     * Get the variable name.
-     *
-     * @return name
-     */
-    String name() {
-        return name;
-    }
-
-    /**
-     * Get the variable value.
-     *
-     * @return value
-     */
-    VariableValue value() {
-        return value;
-    }
-
     @Override
     public String elementName() {
-        return ELEMENT_NAME;
+        return "variable";
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2024 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -82,7 +82,7 @@ class ProjectsTestIT {
         Path mavenMetadataFile = artifactDir.resolve("maven-metadata.xml");
         assertThat(mavenMetadataFile, fileExists());
 
-        XMLElement elt = XMLElement.parse(Files.newInputStream(mavenMetadataFile));
+        XMLElement elt = XMLElement.read(mavenMetadataFile);
         String timestamp = elt.childAt("versioning", "snapshot", "timestamp")
                 .map(XMLElement::value)
                 .orElseThrow(() -> new IllegalStateException("Unable to get timestamp"));

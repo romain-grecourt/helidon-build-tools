@@ -25,55 +25,17 @@ import java.util.Map;
  */
 final class UnpackArtifactTask extends StagingTask {
 
-    static final String ELEMENT_NAME = "unpack-artifact";
-
     private final ArtifactGAV gav;
     private final String includes;
     private final String excludes;
     private final List<Mapper> mappers;
 
     UnpackArtifactTask(ActionIterators iterators, List<Mapper> mappers, Map<String, String> attrs) {
-        super(ELEMENT_NAME, null, iterators, attrs);
+        super("unpack-artifact", null, iterators, attrs);
         this.gav = new ArtifactGAV(attrs);
         this.includes = attrs.get("includes");
         this.excludes = attrs.get("excludes");
         this.mappers = mappers;
-    }
-
-    /**
-     * Get the GAV.
-     *
-     * @return GAV, never {@code null}
-     */
-    ArtifactGAV gav() {
-        return gav;
-    }
-
-    /**
-     * Get the excludes.
-     *
-     * @return excludes, may be {@code null}
-     */
-    String excludes() {
-        return excludes;
-    }
-
-    /**
-     * Get the includes.
-     *
-     * @return includes, may be {@code null}
-     */
-    String includes() {
-        return includes;
-    }
-
-    /**
-     * Get the mappers.
-     *
-     * @return mappers, never {@code null}
-     */
-    List<Mapper> mappers() {
-        return mappers;
     }
 
     @Override
@@ -86,5 +48,21 @@ final class UnpackArtifactTask extends StagingTask {
         ctx.logInfo("Unpacking %s to %s", artifact, targetDir);
         ctx.ensureDirectory(targetDir);
         ctx.unpack(artifact, targetDir, excludes, includes, mappers, resolvedVars);
+    }
+
+    ArtifactGAV gav() {
+        return gav;
+    }
+
+    String excludes() {
+        return excludes;
+    }
+
+    String includes() {
+        return includes;
+    }
+
+    List<Mapper> mappers() {
+        return mappers;
     }
 }

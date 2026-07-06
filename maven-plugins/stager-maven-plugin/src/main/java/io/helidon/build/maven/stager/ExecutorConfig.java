@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2022, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -91,27 +91,22 @@ public class ExecutorConfig {
      * @return ExecutorService
      */
     public ExecutorService select() {
-        switch (kind) {
-            case DEFAULT:
-                return new CurrentThreadExecutorService();
-            case CACHED:
-                return Executors.newCachedThreadPool();
-            case SINGLE:
-                return Executors.newSingleThreadExecutor();
-            case FIXED:
-                return Executors.newFixedThreadPool(getParameter("nThreads", 5));
-            case SCHEDULED:
-                return Executors.newScheduledThreadPool(getParameter("corePoolSize", 5));
-            case SINGLESCHEDULED:
-                return Executors.newSingleThreadScheduledExecutor();
-            case WORKSTEALINGPOOL:
+        return switch (kind) {
+            case DEFAULT -> new CurrentThreadExecutorService();
+            case CACHED -> Executors.newCachedThreadPool();
+            case SINGLE -> Executors.newSingleThreadExecutor();
+            case FIXED -> Executors.newFixedThreadPool(getParameter("nThreads", 5));
+            case SCHEDULED -> Executors.newScheduledThreadPool(getParameter("corePoolSize", 5));
+            case SINGLESCHEDULED -> Executors.newSingleThreadScheduledExecutor();
+            case WORKSTEALINGPOOL -> {
                 int parallelism = getParameter("parallelism", -1);
-                return parallelism == -1
+                yield parallelism == -1
                         ? Executors.newWorkStealingPool()
                         : Executors.newWorkStealingPool(parallelism);
-            default:
-                throw new IllegalArgumentException("Executor kind must be one of " + Arrays.toString(ExecutorKind.values()));
-        }
+            }
+            default -> throw new IllegalArgumentException(
+                    "Executor kind must be one of " + Arrays.toString(ExecutorKind.values()));
+        };
     }
 
     private int getParameter(String key, int defaultValue) {
@@ -124,7 +119,7 @@ public class ExecutorConfig {
     /**
      * Executor kind.
      */
-    enum ExecutorKind {
+    public enum ExecutorKind {
         /**
          * Uses the current thread (no parallelism).
          */

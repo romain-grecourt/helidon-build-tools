@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,7 @@
  */
 package io.helidon.build.cli.impl;
 
-import java.io.IOException;
 import java.io.PrintStream;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -43,6 +41,7 @@ import io.helidon.build.common.logging.Log;
 import io.helidon.build.common.logging.LogFormatter;
 import io.helidon.build.common.logging.LogLevel;
 import io.helidon.build.common.maven.MavenVersion;
+import io.helidon.build.common.xml.XMLElement;
 
 import static io.helidon.build.cli.impl.CommandRequirements.requireHelidonVersionDir;
 import static io.helidon.build.common.FileUtils.lastModifiedTime;
@@ -391,11 +390,8 @@ public class Metadata {
      * @throws UpdateFailed if the metadata update failed
      */
     public ArchetypeCatalog catalogOf(MavenVersion helidonVersion) throws UpdateFailed {
-        try {
-            return ArchetypeCatalog.read(versionedFile(helidonVersion, CATALOG_FILE_NAME, false));
-        } catch (IOException ex) {
-            throw new UncheckedIOException(ex);
-        }
+        Path catalogFile = versionedFile(helidonVersion, CATALOG_FILE_NAME, false);
+        return ArchetypeCatalog.create(XMLElement.read(catalogFile));
     }
 
     /**

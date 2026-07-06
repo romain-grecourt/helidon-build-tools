@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2023, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,7 @@
 
 package io.helidon.build.cli.common;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -59,10 +57,8 @@ public class ArchetypesData {
      */
     public static ArchetypesData load(Path versionsFile) {
         try {
-            InputStream is = Files.newInputStream(versionsFile);
-            XMLElement elt = XMLElement.parse(is);
-            return new ArchetypesData(elt);
-        } catch (IOException ex) {
+            return new ArchetypesData(XMLElement.read(versionsFile));
+        } catch (UncheckedIOException ex) {
             return ArchetypesData.EMPTY;
         }
     }

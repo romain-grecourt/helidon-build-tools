@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2021, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,6 @@ import java.util.stream.Stream;
 import io.helidon.build.common.Lists;
 import io.helidon.build.common.Strings;
 import io.helidon.build.common.xml.XMLElement;
-import io.helidon.build.common.xml.XMLException;
 import io.helidon.build.common.xml.XMLGenerator;
 
 import org.apache.maven.execution.MavenSession;
@@ -145,10 +144,8 @@ final class ProjectState {
      * @param project       maven project
      * @param stateFileName state file name
      * @return state if state file exists, or {@code null}
-     * @throws IOException  if an IO error occurs
-     * @throws XMLException if a parsing error occurs
      */
-    static ProjectState load(MavenProject project, String stateFileName) throws IOException, XMLException {
+    static ProjectState load(MavenProject project, String stateFileName) {
         return load(project.getModel().getProjectDirectory().toPath()
                 .resolve(project.getModel().getBuild().getDirectory())
                 .resolve(stateFileName));
@@ -159,15 +156,13 @@ final class ProjectState {
      *
      * @param stateFile state file
      * @return state if state file exists, or {@code null}
-     * @throws IOException  if an IO error occurs
-     * @throws XMLException if a parsing error occurs
      */
-    static ProjectState load(Path stateFile) throws IOException, XMLException {
+    static ProjectState load(Path stateFile) {
         if (!Files.exists(stateFile)) {
             return null;
         }
         Properties properties = new Properties();
-        XMLElement rootElt = XMLElement.parse(Files.newInputStream(stateFile));
+        XMLElement rootElt = XMLElement.read(stateFile);
         for (XMLElement elt : rootElt.childrenAt("properties", "property")) {
             String name = elt.attribute("name", null);
             String value = elt.attribute("value", null);

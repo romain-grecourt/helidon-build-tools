@@ -14,164 +14,261 @@ This goal binds to the `package` phase by default.
 
 ### Parameters
 
-| Property       | Type                   | Default Value | Description                                               |
-|----------------|------------------------|---------------|-----------------------------------------------------------|
-| skip           | boolean                | `false`       | Skip execution of this goal                               |
-| directories    | List<StagingDirectory> |               | see [StagingDirectory](#StagingDirectory)                 |
-| maxRetries     | int                    | `5`           | configuration for the tasks that support retries          |
-| taskTimeout    | int                    | `-1.`         | configuration (in ms) for the tasks that support timeouts |
-| connectTimeout | int                    | `-1`          | configuration (in ms) for the download task               |
-| executor       | ExecutorConfig         |               | see [ExecutorConfig](#ExecutorConfig)                     |
+| Property       | Type                          | Default Value | Description                                               |
+|----------------|-------------------------------|---------------|-----------------------------------------------------------|
+| skip           | boolean                       | `false`       | Skip execution of this goal                               |
+| properties     | PlexusConfiguration (raw XML) |               | see [POM configuration](#pom-configuration)               |
+| variables      | PlexusConfiguration (raw XML) |               | see [POM configuration](#pom-configuration)               |
+| include        | PlexusConfiguration (raw XML) |               | see [POM configuration](#pom-configuration)               |
+| directories    | PlexusConfiguration (raw XML) |               | see [POM configuration](#pom-configuration)               |
+| configFile     | File                          |               | stager XML configuration file                             |
+| maxRetries     | int                           | `5`           | configuration for the tasks that support retries          |
+| taskTimeout    | int                           | `-1.`         | configuration (in ms) for the tasks that support timeouts |
+| connectTimeout | int                           | `-1`          | configuration (in ms) for the download task               |
+| executor       | ExecutorConfig                |               | see [ExecutorConfig](#ExecutorConfig)                     |
 
-The above parameters are mapped to user properties of the form `stager.PROPERTY`, e.g. `-Dstager.skip=true`.
+Scalar parameters are mapped to user properties of the form `stager.PROPERTY`, e.g. `-Dstager.skip=true`.
 
-#### StagingDirectory
+#### Stager Configuration
+
+A stager XML configuration file is rooted at `<stager>` and supports top-level children in this
+order: `<include src="..."/>`, `<properties>`, `<variables>`, then `<directories>`.
 
 ```xml
-<!-- directory is a container of tasks -->
-<directory target="${project.build.directory}/stage">
+<stager xmlns="https://helidon.io/stager/1.0"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="https://helidon.io/stager/1.0 https://helidon.io/xsd/stager-1.0.xsd">
+    <include src="stager-common.xml"/>
+    <properties>
+        <property name="docs.1.version" value="1.2.3"/>
+    </properties>
+    <variables>
+        <variable name="channel" value="stable"/>
+    </variables>
+    <directories>
+        <!-- directory is a container of tasks -->
+        <directory target="${project.build.directory}/stage">
 
-    <!-- unpack-artifacts is a container of unpack-artifact tasks -->
-    <unpack-artifacts>
+            <!-- unpack-artifacts is a container of unpack-artifact tasks -->
+            <unpack-artifacts>
 
-        <!-- a task to download and unpack an artifact (.jar, .zip) -->
-        <unpack-artifact
-                groupId="com.acme"
-                artifactId="acme-docs"
-                version="{version}"
-                excludes="META-INF/**"
-                target="docs/{version}"
-        >
-            <!-- iterators can be nested under any task to create a loop -->
-            <iterators>
-                <variables>
-                    <!-- the version variable is referenced using {version} in the task definition -->
-                    <variable name="version">
-                        <value>${docs.1.version}</value>
-                    </variable>
-                </variables>
-            </iterators>
-        </unpack-artifact>
-        <!-- ... -->
-    </unpack-artifacts>
+                <!-- a task to download and unpack an artifact (.jar, .zip) -->
+                <unpack-artifact
+                        groupId="com.acme"
+                        artifactId="acme-docs"
+                        version="{version}"
+                        excludes="META-INF/**"
+                        target="docs/{version}">
+                    <!-- iterators can be nested under any task to create a loop -->
+                    <iterators>
+                        <variables>
+                            <!-- the version variable is referenced using {version} in the task definition -->
+                            <variable name="version">
+                                <value>${docs.1.version}</value>
+                            </variable>
+                        </variables>
+                    </iterators>
+                </unpack-artifact>
+                <!-- ... -->
+            </unpack-artifacts>
 
-    <!-- unpacks is a container of unpack tasks -->
-    <unpacks>
+            <!-- unpacks is a container of unpack tasks -->
+            <unpacks>
 
-        <!-- a task to download and unpack a file (.jar, .zip) -->
-        <unpack-artifact
-                url="https://download.acme.com/{version}/acme-site.jar"
-                target="docs/{version}"
-        >
-            <!-- iterators can be nested under any task to create a loop -->
-            <iterators>
-                <variables>
-                    <!-- the version variable is referenced using {version} in the task definition -->
-                    <variable name="version">
-                        <value>1.2.3</value>
-                    </variable>
-                </variables>
-            </iterators>
-        </unpack-artifact>
-        <!-- ... -->
-    </unpacks>
+                <!-- a task to download and unpack a file (.jar, .zip) -->
+                <unpack url="https://download.acme.com/{version}/acme-site.jar"
+                        target="docs/{version}">
+                    <!-- iterators can be nested under any task to create a loop -->
+                    <iterators>
+                        <variables>
+                            <!-- the version variable is referenced using {version} in the task definition -->
+                            <variable name="version">
+                                <value>1.2.3</value>
+                            </variable>
+                        </variables>
+                    </iterators>
+                </unpack>
+                <!-- ... -->
+            </unpacks>
 
-    <!-- downloads is a container of download tasks -->
-    <downloads>
+            <!-- downloads is a container of download tasks -->
+            <downloads>
 
-        <!-- a task to download files -->
-        <download
-                url="https://download.acme.com/{version}/cli-{platform}-amd64"
-                target="cli/{version}/{platform}/acme"
-        >
-            <iterators>
-                <variables>
-                    <!--
-                     defining more than one variable creates a matrix
-                     I.e. darwin-1.0.0, darwin-2.0.0, linux-1.0.0, linux-2.0.0
-                    -->
-                    <variable name="platform">
-                        <value>darwin</value>
-                        <value>linux</value>
-                    </variable>
-                    <variable name="version">
-                        <value>1.0.0</value>
-                        <value>2.0.0</value>
-                    </variable>
-                </variables>
-            </iterators>
-        </download>
-        <!-- ... -->
-    </downloads>
+                <!-- a task to download files -->
+                <download url="https://download.acme.com/{version}/cli-{platform}-amd64"
+                        target="cli/{version}/{platform}/acme">
+                    <iterators>
+                        <variables>
+                            <!--
+                             defining more than one variable creates a matrix
+                             I.e. darwin-1.0.0, darwin-2.0.0, linux-1.0.0, linux-2.0.0
+                            -->
+                            <variable name="platform">
+                                <value>darwin</value>
+                                <value>linux</value>
+                            </variable>
+                            <variable name="version">
+                                <value>1.0.0</value>
+                                <value>2.0.0</value>
+                            </variable>
+                        </variables>
+                    </iterators>
+                </download>
+                <!-- ... -->
+            </downloads>
 
-    <!-- archives is a container of archive tasks -->
-    <archives>
+            <!-- archives is a container of archive tasks -->
+            <archives>
 
-        <!--
-            archive is a task to create a zip archive, and a container of tasks (similar to directory)
-         -->
-        <archive target="data/{version}/data.zip">
+                <!--
+                    archive is a task to create a zip archive, and a container of tasks (similar to directory)
+                 -->
+                <archive target="data/{version}/data.zip">
 
-            <!-- put any task here to add content to the archive -->
-        </archive>
-        <!-- ... -->
-    </archives>
+                    <!-- put any task here to add content to the archive -->
+                </archive>
+                <!-- ... -->
+            </archives>
 
-    <!-- templates is a container of template tasks -->
-    <templates>
+            <!-- templates is a container of template tasks -->
+            <templates>
 
-        <!-- a task to render a handlebar template (mustache) -->
-        <template
-                source="index.html.hbs"
-                target="docs/index.html"
-        >
-            <!-- variables can be used to define variables referenced in the template -->
-            <variables>
-                <variable name="location" value="./latest/index.html"/>
-                <variable name="title" value="Acme Documentation"/>
-                <variable name="description" value="Acme Documentation"/>
-                <variable name="og-url" value="https://acme.com/docs"/>
-                <variable name="og-description" value="Documentation"/>
-            </variables>
-        </template>
-        <!-- ... -->
-    </templates>
+                <!-- a task to render a handlebar template (mustache) -->
+                <template source="index.html.hbs" target="docs/index.html">
+                    <!-- variables can be used to define variables referenced in the template -->
+                    <variables>
+                        <variable name="location" value="./latest/index.html"/>
+                        <variable name="title" value="Acme Documentation"/>
+                        <variable name="description" value="Acme Documentation"/>
+                        <variable name="og-url" value="https://acme.com/docs"/>
+                        <variable name="og-description" value="Documentation"/>
+                    </variables>
+                </template>
+                <!-- ... -->
+            </templates>
 
-    <!-- files is a container of file tasks -->
-    <files>
-        <!-- a file task can be used to create text files -->
-        <file target="cli-data/latest"><![CDATA[
+            <!-- files is a container of file tasks -->
+            <files>
+                <!-- a file task can be used to create text files -->
+                <file target="cli-data/latest"><![CDATA[
 This is a text file.
 ]]></file>
-    <!-- ... -->
-    </files>
+                <!-- ... -->
+            </files>
 
-    <!-- symlinks is a container of symlink tasks -->
-    <symlinks>
+            <!-- symlinks is a container of symlink tasks -->
+            <symlinks>
 
-        <!-- symlink is a task to create a symlink -->
-        <symlink
-                source="docs/${docs.latest.version}"
-                target="docs/latest"
-        />
-        <!-- ... -->
-    </symlinks>
+                <!-- symlink is a task to create a symlink -->
+                <symlink
+                        source="docs/${docs.latest.version}"
+                        target="docs/latest"
+                />
+                <!-- ... -->
+            </symlinks>
 
-    <!-- copy-artifacts is a container of copy-artifact tasks -->
-    <copy-artifacts>
+            <!-- copy-artifacts is a container of copy-artifact tasks -->
+            <copy-artifacts>
 
-        <!-- download any Maven artifact to a given location -->
-        <copy-artifact
-                groupId="com.acme"
-                artifactId="acme-engine"
-                classifier="schema"
-                type="xsd"
-                version="1.0.0"
-                target="xsd/engine-1.0.xsd"
-        />
-    </copy-artifacts>
-</directory>
+                <!-- download any Maven artifact to a given location -->
+                <copy-artifact
+                        groupId="com.acme"
+                        artifactId="acme-engine"
+                        classifier="schema"
+                        type="xsd"
+                        version="1.0.0"
+                        target="xsd/engine-1.0.xsd"
+                />
+            </copy-artifacts>
+        </directory>
+    </directories>
+</stager>
 ```
+
+##### Includes
+
+Use `<include src="..."/>` as a top-level stager configuration directive before `<properties>`,
+`<variables>`, and `<directories>`. The referenced file is another stager XML configuration file. Its
+`<stager>` children are inserted where the directive appears.
+
+Include paths are resolved relative to the declaring file unless the path is absolute.
+An include declared directly in the POM is resolved relative to the project base
+directory; nested includes from XML files are resolved relative to the XML file that declares them.
+
+The `src` value is treated as a literal path during include expansion.
+
+Root-level `<variables>` and direct `<directories><variables>` are merged into the effective global
+configuration. Root-level variables are collected before direct `<directories><variables>`;
+within that collection order, duplicate global `<variable name="...">` entries use the last
+definition. Because `<include>` appears before caller `<variables>` and `<directories>`, caller
+variables override included fallback variables with the same name.
+Template-local and iterator-local variables are not part of this global precedence rule.
+
+Included files may declare optional fallback variables without a value, for example
+`<variable name="preview-versions"/>`. These empty variables are intended for iterator inputs:
+when an iterator references an empty variable, it contributes no values and the task runs zero
+times. Empty variables are not substituted as empty strings; using one as a normal template or
+task value fails unless the including configuration already supplied a valued definition.
+
+After includes are expanded, `${...}` interpolation runs once across the expanded configuration.
+
+Stager `<properties>` are resolved before Maven expressions. For duplicate stager property names,
+the last definition in the expanded configuration wins. This means caller properties declared after
+includes override included fallback properties.
+
+Missing files and circular chains fail the goal and report the path that could not be loaded.
+
+The `list-files` `<include>` element is still a pattern element, not a file inclusion directive:
+
+```xml
+<stager xmlns="https://helidon.io/stager/1.0"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="https://helidon.io/stager/1.0 https://helidon.io/xsd/stager-1.0.xsd">
+    <directories>
+        <directory target="${stage.path}">
+            <files>
+                <file target="sitemap.txt">
+                    <list-files dir="docs">
+                        <include>**/*.html</include>
+                    </list-files>
+                </file>
+            </files>
+        </directory>
+    </directories>
+</stager>
+```
+
+##### POM configuration
+
+The same logical stager children are declared directly under the plugin `<configuration>` element
+when configuration is kept in `pom.xml`. Do not wrap POM configuration in a `<stager>` element.
+The supported order is `<include src="..."/>`, `<properties>`, `<variables>`, then
+`<directories>`.
+
+```xml
+<configuration>
+    <include src="stager-common.xml"/>
+    <properties>
+        <property name="stage.path" value="${project.build.directory}/stage"/>
+    </properties>
+    <variables>
+        <variable name="channel" value="stable"/>
+    </variables>
+    <directories>
+        <directory target="${stage.path}">
+            <files>
+                <file target="{channel}/info.txt">Channel: {channel}</file>
+            </files>
+        </directory>
+    </directories>
+</configuration>
+```
+
+XML attributes and text in stager configuration are interpolated before task execution. `${...}`
+expressions are resolved from stager `<properties>` first, then Maven expressions. Expressions that
+cannot be resolved are left unchanged. Recursive property values are supported. Task variables such
+as `{version}` are resolved during task execution. See [Includes](#includes) for include-specific
+property and global variable precedence.
 
 ##### ExecutorConfig
 
@@ -195,8 +292,9 @@ This is a text file.
 
 ### General usage
 
-```xml
+#### pom.xml configuration
 
+```xml
 <project>
     <!-- ... -->
     <plugin>
@@ -204,28 +302,67 @@ This is a text file.
         <artifactId>helidon-stager-maven-plugin</artifactId>
         <version>${project.version}</version>
         <configuration>
+            <include src="stager-common.xml"/>
+            <properties>
+                <property name="stage.path" value="${project.build.directory}/stage"/>
+            </properties>
+            <variables>
+                <variable name="channel" value="stable"/>
+            </variables>
             <directories>
-                <directory target="${project.build.directory}/stage">
-                    <archives>
-                        <archive target="data/${version}/data.zip">
-                            <templates>
-                                <template source="versions.hbs" target="versions.json">
-                                    <variables>
-                                        <variable name="versions">
-                                            <value>2.5.0</value>
-                                            <value>2.4.2</value>
-                                            <value>2.4.0</value>
-                                            <value>2.0.1</value>
-                                            <value>2.0.0</value>
-                                        </variable>
-                                    </variables>
-                                </template>
-                            </templates>
-                        </archive>
-                    </archives>
+                <directory target="${stage.path}">
+                    <files>
+                        <file target="{channel}/info.txt">Channel: {channel}</file>
+                    </files>
                 </directory>
             </directories>
         </configuration>
     </plugin>
 </project>
 ```
+
+#### stager.xml configuration
+
+The `stage` goal can also read stager configuration from `stager.xml`:
+
+```xml
+<stager xmlns="https://helidon.io/stager/1.0"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="https://helidon.io/stager/1.0 https://helidon.io/xsd/stager-1.0.xsd">
+    <include src="stager-common.xml"/>
+    <properties>
+        <property name="stage.path" value="${project.build.directory}/stage"/>
+    </properties>
+    <variables>
+        <variable name="channel" value="stable"/>
+    </variables>
+    <directories>
+        <directory target="${stage.path}">
+            <files>
+                <file target="{channel}/info.txt">Channel: {channel}</file>
+            </files>
+        </directory>
+    </directories>
+</stager>
+```
+
+```shell
+mvn stager:{version}:stage -Dstager.configFile=stager.xml
+```
+
+This short invocation requires the plugin group in Maven `settings.xml`:
+
+```xml
+<pluginGroups>
+    <pluginGroup>io.helidon.build-tools</pluginGroup>
+</pluginGroups>
+```
+
+Without the plugin group, use the full plugin coordinate:
+
+```shell
+mvn io.helidon.build-tools:helidon-stager-maven-plugin:{version}:stage -Dstager.configFile=stager.xml
+```
+
+If both `configFile` and POM stager configuration are configured, `configFile` takes precedence.
+If none are configured, the goal does nothing.

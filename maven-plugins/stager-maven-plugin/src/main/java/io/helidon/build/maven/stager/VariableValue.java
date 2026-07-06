@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2022 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,10 +28,9 @@ import io.helidon.build.common.Strings;
  *
  * @see VariableValue.SimpleValue
  * @see VariableValue.ListValue
+ * @see VariableValue.EmptyValue
  */
 interface VariableValue extends StagingElement {
-
-    String ELEMENT_NAME = "value";
 
     /**
      * Convert this value to a plain object.
@@ -42,7 +41,24 @@ interface VariableValue extends StagingElement {
 
     @Override
     default String elementName() {
-        return ELEMENT_NAME;
+        return "value";
+    }
+
+    /**
+     * Empty variable value.
+     */
+    class EmptyValue implements VariableValue {
+
+        private final String name;
+
+        EmptyValue(String name) {
+            this.name = Strings.requireValid(name, "name is required");
+        }
+
+        @Override
+        public Object unwrap() {
+            throw new IllegalStateException("Variable '" + name + "' does not have a value");
+        }
     }
 
     /**
@@ -82,7 +98,9 @@ interface VariableValue extends StagingElement {
 
         @Override
         public List<Object> unwrap() {
-            return value.stream().map(VariableValue::unwrap).collect(Collectors.toList());
+            return value.stream()
+                    .map(VariableValue::unwrap)
+                    .collect(Collectors.toList());
         }
     }
 
@@ -106,7 +124,8 @@ interface VariableValue extends StagingElement {
 
         @Override
         public Map<String, Object> unwrap() {
-            return value.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().unwrap()));
+            return value.entrySet().stream()
+                    .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().unwrap()));
         }
     }
 }

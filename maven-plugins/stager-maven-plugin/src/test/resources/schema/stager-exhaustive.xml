@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Copyright (c) 2026 Oracle and/or its affiliates.
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+-->
+<stager xmlns="https://helidon.io/stager/1.0">
+    <include src="fragments/stager.xml"/>
+    <properties>
+        <property name="stage.path" value="target/stage"/>
+        <property name="version" value="1.0.0"/>
+    </properties>
+    <variables>
+        <variable name="channel" value="stable"/>
+    </variables>
+    <directories>
+        <variables>
+            <variable name="version">
+                <value>${version}</value>
+                <value>1.0.1</value>
+            </variable>
+            <variable name="platform" value="linux"/>
+        </variables>
+        <directory target="${stage.path}">
+            <downloads>
+                <download url="https://example.com/{version}/archive.zip"
+                          target="downloads/{version}/archive.zip">
+                    <iterators join="true">
+                        <variables>
+                            <variable ref="version"/>
+                        </variables>
+                    </iterators>
+                </download>
+            </downloads>
+            <copy-artifacts>
+                <copy-artifact groupId="io.helidon"
+                               artifactId="helidon-example"
+                               version="{version}"
+                               type="jar"
+                               classifier="sources"
+                               target="artifacts/{artifactId}-{version}-{classifier}.{type}">
+                    <iterators>
+                        <variables>
+                            <variable ref="version"/>
+                        </variables>
+                    </iterators>
+                </copy-artifact>
+            </copy-artifacts>
+            <archives>
+                <archive target="archives/site.zip" includes="**/*.html" excludes="tmp/**">
+                    <files>
+                        <file target="index.html">Hello</file>
+                        <file source="src/static/logo.txt" target="assets/logo.txt"/>
+                        <file target="sitemap.txt">
+                            <list-files dir="docs">
+                                <includes>
+                                    <include>**/*.html</include>
+                                </includes>
+                                <excludes>
+                                    <exclude>**/draft/**</exclude>
+                                </excludes>
+                                <substitutions>
+                                    <substitution match="^docs/(.*)$" replace="$1"/>
+                                    <substitution match="index.html" replace="" regex="false"/>
+                                </substitutions>
+                            </list-files>
+                        </file>
+                    </files>
+                    <templates>
+                        <template source="src/templates/page.mustache" target="docs/{version}/index.html">
+                            <variables>
+                                <variable name="title" value="Helidon"/>
+                                <variable name="releases">
+                                    <value>
+                                        <variable name="version" value="1.0.0"/>
+                                        <variable name="latest" value="false"/>
+                                    </value>
+                                    <value>
+                                        <variable name="version" value="1.0.1"/>
+                                        <variable name="latest" value="true"/>
+                                    </value>
+                                </variable>
+                            </variables>
+                            <iterators>
+                                <variables>
+                                    <variable ref="version"/>
+                                </variables>
+                            </iterators>
+                        </template>
+                    </templates>
+                </archive>
+            </archives>
+            <symlinks>
+                <symlink source="docs/${version}" target="docs/latest"/>
+            </symlinks>
+            <unpacks>
+                <unpack url="https://example.com/archive.tar.gz"
+                        ext="tar.gz"
+                        includes="docs/**"
+                        excludes="META-INF/**"
+                        target="unpacked">
+                    <mappers>
+                        <mapper match="^docs/(.*)$" replace="$1"/>
+                    </mappers>
+                </unpack>
+            </unpacks>
+            <unpack-artifacts>
+                <unpack-artifact groupId="io.helidon"
+                                 artifactId="helidon-docs"
+                                 version="{version}"
+                                 target="docs/{version}"
+                                 includes="apidocs/**"
+                                 excludes="META-INF/**">
+                    <mapper match="^apidocs/(.*)$" replace="$1"/>
+                    <iterators>
+                        <variables>
+                            <variable ref="version"/>
+                        </variables>
+                    </iterators>
+                </unpack-artifact>
+            </unpack-artifacts>
+            <list-files dir="docs">
+                <include>**/*.html</include>
+                <exclude>**/draft/**</exclude>
+                <substitution match="^docs/(.*)$" replace="$1"/>
+            </list-files>
+        </directory>
+    </directories>
+</stager>

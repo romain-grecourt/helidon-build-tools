@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2024 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,9 +30,11 @@ import io.helidon.build.archetype.engine.v1.ArchetypeDescriptor.Transformation;
 import io.helidon.build.archetype.engine.v1.ArchetypeDescriptor.Property;
 import io.helidon.build.archetype.engine.v1.ArchetypeDescriptor.TemplateSets;
 import io.helidon.build.common.Lists;
+import io.helidon.build.common.xml.XMLElement;
 
 import org.junit.jupiter.api.Test;
 
+import static io.helidon.build.archetype.engine.v1.ArchetypeEngine.DESCRIPTOR_RESOURCE_NAME;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.IsNull.notNullValue;
@@ -47,10 +49,10 @@ class ArchetypeDescriptorTest {
 
     @Test
     void testUnmarshall() {
-        InputStream is = getClass().getClassLoader().getResourceAsStream(ArchetypeEngine.DESCRIPTOR_RESOURCE_NAME);
+        InputStream is = getClass().getClassLoader().getResourceAsStream(DESCRIPTOR_RESOURCE_NAME);
         assertThat(is, is(notNullValue()));
 
-        ArchetypeDescriptor desc = ArchetypeDescriptor.read(is);
+        ArchetypeDescriptor desc = ArchetypeDescriptor.create(XMLElement.read(is, DESCRIPTOR_RESOURCE_NAME, true));
         assertThat(desc.modelVersion(), is(ArchetypeDescriptor.MODEL_VERSION));
         assertThat(desc.name(), is("helidon-quickstart-se"));
         Map<String, Property> properties = desc.properties();

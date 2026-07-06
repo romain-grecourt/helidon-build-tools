@@ -16,10 +16,8 @@
 package io.helidon.build.archetype.engine.v2;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.FileSystem;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -336,10 +334,6 @@ class VariationsTest {
     static XMLElement loadXml(String path) {
         Path targetDir = targetDir(VariationsTest.class);
         Path testClasses = targetDir.resolve("test-classes");
-        try (InputStream is = Files.newInputStream(testClasses.resolve(path))) {
-            return XMLElement.parse(is);
-        } catch (IOException ex) {
-            throw new UncheckedIOException(ex.getMessage(), ex);
-        }
+        return XMLElement.read(testClasses.resolve(path));
     }
 }

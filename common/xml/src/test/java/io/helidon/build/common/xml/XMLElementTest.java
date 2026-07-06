@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,10 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.sameInstance;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
@@ -108,5 +110,36 @@ class XMLElementTest {
             names.add(e.name());
         }
         assertThat(names, is(List.of("r", "a", "a1", "a2", "b", "b1", "b2")));
+    }
+
+    @Test
+    void testDetachSingleChild() {
+        XMLElement root = XMLElement.read("<root><child><leaf/></child></root>");
+        XMLElement child = root.child("child").orElseThrow();
+        XMLElement originalLeaf = child.child("leaf").orElseThrow();
+
+        XMLElement detached = child.detach();
+        XMLElement detachedLeaf = detached.child("leaf").orElseThrow();
+
+        assertThat(detached.name(), is("child"));
+        assertThat(detached.parent(), is(nullValue()));
+        assertThat(detachedLeaf.name(), is("leaf"));
+        assertThat(detachedLeaf.parent(), is(sameInstance(detached)));
+        assertThat(detached, is(not(sameInstance(child))));
+        assertThat(detachedLeaf, is(not(sameInstance(originalLeaf))));
+
+        assertThat(root.child("child").orElseThrow(), is(sameInstance(child)));
+        assertThat(child.parent(), is(sameInstance(root)));
+        assertThat(child.child("leaf").orElseThrow(), is(sameInstance(originalLeaf)));
+        assertThat(originalLeaf.parent(), is(sameInstance(child)));
+    }
+
+    @Test
+    void testLocation() {
+        XMLElement root = XMLElement.read("<root>\n    <child/>\n</root>", "test.xml", true);
+
+        assertThat(root.location().toString(), is("test.xml:1:5"));
+        assertThat(root.child("child").orElseThrow().location().toString(), is("test.xml:2:12"));
+        assertThat(XMLElement.builder().name("elt").location(), is(XMLElement.Location.UNKNOWN));
     }
 }

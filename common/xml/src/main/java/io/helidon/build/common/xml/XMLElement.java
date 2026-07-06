@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2024, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,14 @@
  */
 package io.helidon.build.common.xml;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringWriter;
+import java.io.UncheckedIOException;
+import java.nio.charset.Charset;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -54,6 +59,14 @@ public interface XMLElement {
     XMLElement parent();
 
     /**
+     * Set the parent.
+     *
+     * @param parent parent
+     * @return this instance
+     */
+    XMLElement parent(XMLElement parent);
+
+    /**
      * Get the name.
      *
      * @return name, never {@code null}
@@ -88,6 +101,13 @@ public interface XMLElement {
      * @return children, never {@code null}
      */
     List<XMLElement> children();
+
+    /**
+     * Get the source location.
+     *
+     * @return Location, never {@code null}
+     */
+    Location location();
 
     /**
      * Get children by name.
@@ -260,7 +280,7 @@ public interface XMLElement {
      * @return value
      */
     default boolean attributeBoolean(String key, boolean defaultValue) {
-        return parseBoolean(attribute(key, defaultValue ? "true" : "false"));
+        return parseBoolean(attribute(key, Boolean.toString(defaultValue)));
     }
 
     /**
@@ -338,16 +358,76 @@ public interface XMLElement {
     }
 
     /**
-     * Parse a document.
+     * Read a document.
+     *
+     * @param file file
+     * @return XMLElement, never null
+     */
+    static XMLElement read(Path file) {
+        return read(file, Objects.toString(file.getFileName(), file.toString()), true);
+    }
+
+    /**
+     * Read a document.
+     *
+     * @param file   file
+     * @param source source
+     * @param readOnly {@code true} to create a read-only document, {@code false} otherwise
+     * @return XMLElement, never null
+     */
+    static XMLElement read(Path file, String source, boolean readOnly) {
+        try (InputStream is = Files.newInputStream(file)) {
+            return read(is, source, readOnly);
+        } catch (IOException ex) {
+            throw new UncheckedIOException("Failed to read file: " + file, ex);
+        }
+    }
+
+    /**
+     * Read a document.
+     *
+     * @param str raw string
+     * @return XMLElement, never null
+     */
+    static XMLElement read(String str) {
+        return read(str, "unknown", true);
+    }
+
+    /**
+     * Read a document.
+     *
+     * @param str raw string
+     * @param source source
+     * @param readOnly {@code true} to create a read-only document, {@code false} otherwise
+     * @return XMLElement, never null
+     */
+    static XMLElement read(String str, String source, boolean readOnly) {
+        return read(new ByteArrayInputStream(str.getBytes(Charset.defaultCharset())), source, readOnly);
+    }
+
+    /**
+     * Read a document.
      *
      * @param is input stream
      * @return XMLElement, never null
-     * @throws IOException  if an IO error occurs
-     * @throws XMLException if a parsing error occurs
      */
-    static XMLElement parse(InputStream is) throws IOException {
-        try (XMLReader reader = new XMLReader(is)) {
-            return reader.readElement();
+    static XMLElement read(InputStream is) {
+        return read(is, "unknown", true);
+    }
+
+    /**
+     * Read a document.
+     *
+     * @param is     input stream
+     * @param source source
+     * @param readOnly {@code true} to create a read-only document, {@code false} otherwise
+     * @return XMLElement, never null
+     */
+    static XMLElement read(InputStream is, String source, boolean readOnly) {
+        try (XMLReader reader = new XMLReader(is, source)) {
+            return reader.readElement(readOnly);
+        } catch (IOException ex) {
+            throw new UncheckedIOException(ex.getMessage(), ex);
         }
     }
 
@@ -361,6 +441,73 @@ public interface XMLElement {
     }
 
     /**
+     * Create a builder copy of an element.
+     *
+     * @param elt element to copy
+     * @return Builder
+     */
+    static Builder builder(XMLElement elt) {
+        return (Builder) elt.visit(new CopyVisitor<>((e, b) -> b, XMLElement::parent)).element();
+    }
+
+    /**
+     * Source location.
+     */
+    final class Location {
+
+        /**
+         * Unknown location.
+         */
+        public static final Location UNKNOWN = new Location("[unknown]", 0, 0);
+
+        private final String source;
+        private final int lineNo;
+        private final int colNo;
+
+        /**
+         * Create a new instance.
+         *
+         * @param source source
+         * @param lineNo line number
+         * @param colNo  column number
+         */
+        public Location(String source, int lineNo, int colNo) {
+            this.source = Objects.requireNonNull(source, "source is null");
+            if (lineNo < 0) {
+                throw new IllegalArgumentException("Invalid line number: " + lineNo);
+            }
+            this.lineNo = lineNo;
+            if (colNo < 0) {
+                throw new IllegalArgumentException("Invalid line character number: " + colNo);
+            }
+            this.colNo = colNo;
+        }
+
+        /**
+         * Get the file name.
+         *
+         * @return file name
+         */
+        public String source() {
+            return source;
+        }
+
+        /**
+         * Get the line number.
+         *
+         * @return line number
+         */
+        public int lineNumber() {
+            return lineNo;
+        }
+
+        @Override
+        public String toString() {
+            return source + ":" + lineNo + ":" + colNo;
+        }
+    }
+
+    /**
      * {@link XMLElementImpl} implementation.
      */
     final class XMLElementImpl implements XMLElement {
@@ -370,18 +517,25 @@ public interface XMLElement {
         private final String name;
         private final Map<String, String> attributes;
         private final List<XMLElement> children;
+        private final Location location;
         private String value;
 
-        XMLElementImpl(XMLElementImpl parent, Builder builder) {
+        XMLElementImpl(XMLElementImpl parent, XMLElement builder) {
             this.parent = parent;
-            this.name = Objects.requireNonNull(builder.name, "name is null!");
-            this.attributes = unmodifiableMap(builder.attributes);
-            this.children = unmodifiableList(builder.children);
+            this.name = Objects.requireNonNull(builder.name(), "name is null!");
+            this.attributes = unmodifiableMap(builder.attributes());
+            this.children = unmodifiableList(builder.children());
+            this.location = builder.location();
         }
 
         @Override
         public XMLElementImpl parent() {
             return parent;
+        }
+
+        @Override
+        public XMLElement parent(XMLElement parent) {
+            throw new UnsupportedOperationException();
         }
 
         @Override
@@ -411,6 +565,11 @@ public interface XMLElement {
         @Override
         public Map<String, String> attributes() {
             return attributes;
+        }
+
+        @Override
+        public Location location() {
+            return location;
         }
 
         @Override
@@ -462,6 +621,7 @@ public interface XMLElement {
         private Builder parent;
         private String name;
         private String value;
+        private Location location = Location.UNKNOWN;
 
         private Builder() {
         }
@@ -471,14 +631,9 @@ public interface XMLElement {
             return parent;
         }
 
-        /**
-         * Set the parent.
-         *
-         * @param parent parent
-         * @return this builder
-         */
-        public Builder parent(Builder parent) {
-            this.parent = parent;
+        @Override
+        public Builder parent(XMLElement parent) {
+            this.parent = (Builder) parent;
             return this;
         }
 
@@ -511,11 +666,16 @@ public interface XMLElement {
         }
 
         @Override
+        public Location location() {
+            return location;
+        }
+
+        @Override
         public Builder detach() {
             if (parent == null) {
                 return this;
             }
-            return visit(new CopyVisitor<Builder>((p, b) -> b, Builder::parent)).element();
+            return visit(new CopyVisitor<Builder>((b, e) -> b, Builder::parent)).element();
         }
 
         @Override
@@ -530,7 +690,9 @@ public interface XMLElement {
          * @return this builder
          */
         public Builder name(String name) {
-            this.name = name;
+            if (name != null && !name.isBlank()) {
+                this.name = name;
+            }
             return this;
         }
 
@@ -542,6 +704,19 @@ public interface XMLElement {
          */
         public Builder attributes(Map<String, String> attributes) {
             this.attributes.putAll(attributes);
+            return this;
+        }
+
+        /**
+         * Set the element name.
+         *
+         * @param location location
+         * @return this builder
+         */
+        public Builder location(Location location) {
+            if (location != null) {
+                this.location = location;
+            }
             return this;
         }
 
@@ -576,13 +751,13 @@ public interface XMLElement {
      */
     final class CopyVisitor<T extends XMLElement> implements Visitor {
 
-        private Builder builder = null;
+        private XMLElement builder = null;
         private T node;
         private T last = null;
-        private final BiFunction<T, Builder, T> pushFunc;
+        private final BiFunction<T, XMLElement, T> pushFunc;
         private final Function<T, T> popFunc;
 
-        CopyVisitor(BiFunction<T, Builder, T> pushFunc, Function<T, T> popFunc) {
+        CopyVisitor(BiFunction<T, XMLElement, T> pushFunc, Function<T, T> popFunc) {
             this.pushFunc = pushFunc;
             this.popFunc = popFunc;
         }
@@ -593,11 +768,12 @@ public interface XMLElement {
                     .parent(builder)
                     .name(elt.name())
                     .value(elt.value())
-                    .attributes(elt.attributes());
+                    .attributes(elt.attributes())
+                    .location(elt.location());
             node = pushFunc.apply(node, builder);
             node.value(elt.value());
-            if (builder.parent != null) {
-                builder.parent.children.add(node);
+            if (builder.parent() != null) {
+                builder.parent().children().add(node);
             }
         }
 
@@ -605,11 +781,11 @@ public interface XMLElement {
         public void postVisitElement(XMLElement elt) {
             if (node != null) {
                 T parent = popFunc.apply(node);
-                if (parent != null) {
-                    last = parent;
+                if (parent == null) {
+                    last = node;
                 }
                 node = parent;
-                builder = builder.parent;
+                builder = builder.parent();
             }
         }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2025 Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2026 Oracle and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,6 @@
  */
 package io.helidon.build.archetype.engine.v1;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -69,18 +67,13 @@ public final class ArchetypeDescriptor {
     }
 
     /**
-     * Create an archetype descriptor instance from an input stream.
+     * Create an archetype descriptor.
      *
-     * @param is input stream
+     * @param elt elt
      * @return ArchetypeDescriptor
      */
-    public static ArchetypeDescriptor read(InputStream is) {
-        try {
-            XMLElement elt = XMLElement.parse(is);
-            return new ArchetypeDescriptor(elt);
-        } catch (IOException ex) {
-            throw new RuntimeException(ex);
-        }
+    public static ArchetypeDescriptor create(XMLElement elt) {
+        return new ArchetypeDescriptor(elt);
     }
 
     /**
