@@ -20,6 +20,9 @@
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:schemaLocation="https://helidon.io/stager/1.0 https://helidon.io/xsd/stager-1.0.xsd">
 
+    <properties>
+        <foo>bar</foo>
+    </properties>
     <directories>
         <variables>
             <variable name="version">

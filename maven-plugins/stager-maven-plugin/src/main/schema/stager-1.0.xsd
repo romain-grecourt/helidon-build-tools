@@ -61,32 +61,15 @@
                 Properties available to ${...} interpolation before staging tasks are created.
             </xs:documentation>
         </xs:annotation>
-        <xs:sequence>
-            <xs:element name="property" type="p:property-type" minOccurs="0" maxOccurs="unbounded">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:any namespace="##targetNamespace" processContents="skip">
                 <xs:annotation>
                     <xs:documentation source="description">
-                        Single property name and value for configuration interpolation.
+                        Property entry, either named property elements or Maven-style name elements.
                     </xs:documentation>
                 </xs:annotation>
-            </xs:element>
-        </xs:sequence>
-    </xs:complexType>
-
-    <xs:complexType name="property-type">
-        <xs:attribute name="name" type="xs:string" use="required">
-            <xs:annotation>
-                <xs:documentation source="description">
-                    Property name referenced by ${...} expressions.
-                </xs:documentation>
-            </xs:annotation>
-        </xs:attribute>
-        <xs:attribute name="value" type="xs:string" use="required">
-            <xs:annotation>
-                <xs:documentation source="description">
-                    Property value used for interpolation.
-                </xs:documentation>
-            </xs:annotation>
-        </xs:attribute>
+            </xs:any>
+        </xs:choice>
     </xs:complexType>
 
     <xs:group name="preprocessor-include">
@@ -424,10 +407,17 @@
                 </xs:annotation>
             </xs:element>
         </xs:sequence>
-        <xs:attribute name="name" type="xs:string" use="required">
+        <xs:attribute name="name" type="xs:string">
             <xs:annotation>
                 <xs:documentation source="description">
                     Variable name used by templates or task definitions.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="ref" type="xs:string">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Reference to an existing variable definition.
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
