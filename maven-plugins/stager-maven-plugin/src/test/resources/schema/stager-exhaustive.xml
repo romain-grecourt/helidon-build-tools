@@ -24,6 +24,12 @@
     </properties>
     <variables>
         <variable name="channel" value="stable"/>
+        <variable name="stable.channels">
+            <value>stable</value>
+        </variable>
+        <variable name="all.channels">
+            <variable ref="stable.channels"/>
+        </variable>
     </variables>
     <directories>
         <variables>
@@ -83,6 +89,7 @@
                             <variables>
                                 <variable name="title" value="Helidon"/>
                                 <variable ref="version"/>
+                                <variable name="templateVersions" ref="version"/>
                                 <variable name="releases">
                                     <value>
                                         <variable name="version" value="1.0.0"/>

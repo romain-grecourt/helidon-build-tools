@@ -31,6 +31,7 @@ import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.CoreMatchers.nullValue;
@@ -38,6 +39,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.hasItem;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Tests {@link StagingFactory}.
@@ -122,6 +124,193 @@ class StagingFactoryTest {
 
         FileTask file = firstFile(root);
         assertThat(iterators(file), is(List.of(List.of(Map.of("version", "1.0.0")))));
+    }
+
+    @Test
+    void testNamedAndUnnamedIteratorReferences() {
+        StagingTasks root = create("""
+                <configuration>
+                    <variables>
+                        <variable name="version" value="1.0.0"/>
+                    </variables>
+                    <directories>
+                        <directory target="target/stage">
+                            <files>
+                                <file target="{version}-{release}">
+                                    <iterators>
+                                        <variables>
+                                            <variable ref="version"/>
+                                            <variable name="release" ref="version"/>
+                                        </variables>
+                                    </iterators>
+                                </file>
+                            </files>
+                        </directory>
+                    </directories>
+                </configuration>
+                """);
+
+        FileTask file = firstFile(root);
+        assertThat(iterators(file), is(List.of(List.of(Map.of("version", "1.0.0", "release", "1.0.0")))));
+    }
+
+    @Test
+    void testReferenceTakesPrecedenceOverNestedContent() {
+        StagingTasks root = create("""
+                <configuration>
+                    <variables>
+                        <variable name="versions"><value>1.0.0</value></variable>
+                    </variables>
+                    <directories>
+                        <directory target="target/stage">
+                            <files>
+                                <file target="{release}">
+                                    <iterators>
+                                        <variables>
+                                            <variable name="release" ref="versions" value="ignored">
+                                                <variable ref="missing"/>
+                                            </variable>
+                                        </variables>
+                                    </iterators>
+                                </file>
+                            </files>
+                        </directory>
+                    </directories>
+                </configuration>
+                """);
+
+        assertThat(iterators(firstFile(root)), is(List.of(List.of(Map.of("release", "1.0.0")))));
+    }
+
+    @Test
+    void testAggregateListOfMapsInTemplateAndIterator() {
+        StagingTasks root = create("""
+                <configuration>
+                    <variables>
+                        <variable name="archetype.v2.versions">
+                            <value>
+                                <variable name="version" value="2.6.0"/>
+                                <variable name="generation" value="2"/>
+                            </value>
+                        </variable>
+                        <variable name="archetype.v3.versions">
+                            <value>
+                                <variable name="version" value="3.2.0"/>
+                                <variable name="generation" value="3"/>
+                            </value>
+                        </variable>
+                        <variable name="archetype.v4.versions">
+                            <value>
+                                <variable name="version" value="4.1.0"/>
+                                <variable name="generation" value="4"/>
+                            </value>
+                        </variable>
+                        <variable name="archetype.versions">
+                            <variable ref="archetype.v2.versions"/>
+                            <variable ref="archetype.v3.versions"/>
+                            <variable ref="archetype.v4.versions"/>
+                        </variable>
+                    </variables>
+                    <directories>
+                        <directory target="target/stage">
+                            <template source="versions.mustache" target="versions.txt">
+                                <variables>
+                                    <variable ref="archetype.versions"/>
+                                </variables>
+                                <iterators>
+                                    <variables>
+                                        <variable name="release" ref="archetype.versions"/>
+                                    </variables>
+                                </iterators>
+                            </template>
+                        </directory>
+                    </directories>
+                </configuration>
+                """);
+
+        StagingDirectory directory = (StagingDirectory) root.tasks().get(0);
+        TemplateTask template = (TemplateTask) directory.tasks().get(0);
+        List<Map<String, String>> releases = List.of(
+                Map.of("version", "2.6.0", "generation", "2"),
+                Map.of("version", "3.2.0", "generation", "3"),
+                Map.of("version", "4.1.0", "generation", "4"));
+        assertThat(variables(template), is(Map.of("archetype.versions", releases)));
+        assertThat(iterators(template), is(List.of(releases)));
+    }
+
+    @Test
+    void testAggregateRejectsNonListSources() {
+        IllegalArgumentException scalar = assertThrows(IllegalArgumentException.class, () -> create("""
+                <configuration>
+                    <variables>
+                        <variable name="version" value="1.0.0"/>
+                        <variable name="versions">
+                            <variable ref="version"/>
+                        </variable>
+                    </variables>
+                </configuration>
+                """));
+        assertThat(scalar.getMessage(), containsString("requires list-valued reference 'version'"));
+
+        IllegalArgumentException empty = assertThrows(IllegalArgumentException.class, () -> create("""
+                <configuration>
+                    <variables>
+                        <variable name="version"/>
+                        <variable name="versions">
+                            <variable ref="version"/>
+                        </variable>
+                    </variables>
+                </configuration>
+                """));
+        assertThat(empty.getMessage(), containsString("requires list-valued reference 'version'"));
+    }
+
+    @Test
+    void testAggregateRejectsMixedChildren() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> create("""
+                <configuration>
+                    <variables>
+                        <variable name="base"><value>1.0.0</value></variable>
+                        <variable name="versions">
+                            <value>2.0.0</value>
+                            <variable ref="base"/>
+                        </variable>
+                    </variables>
+                </configuration>
+                """));
+
+        assertThat(ex.getMessage(), containsString("cannot mix <value> and <variable> children"));
+    }
+
+    @Test
+    void testAggregateRejectsDirectDefinitions() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> create("""
+                <configuration>
+                    <variables>
+                        <variable name="versions">
+                            <variable name="inline"><value>1.0.0</value></variable>
+                        </variable>
+                    </variables>
+                </configuration>
+                """));
+
+        assertThat(ex.getMessage(), containsString("requires direct variable children to use ref"));
+    }
+
+    @Test
+    void testAggregateRejectsForwardReference() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> create("""
+                <configuration>
+                    <variables>
+                        <variable name="versions">
+                            <variable ref="later"/>
+                        </variable>
+                        <variable name="later"><value>1.0.0</value></variable>
+                    </variables>
+                </configuration>
+                """));
+
+        assertThat(ex.getMessage(), containsString("Unresolved variable: later"));
     }
 
     static Matcher<StagingElement> isUnpackArtifacts() {

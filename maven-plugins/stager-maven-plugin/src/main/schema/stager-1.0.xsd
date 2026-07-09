@@ -398,33 +398,40 @@
     </xs:complexType>
 
     <xs:complexType name="variable-type">
-        <xs:sequence>
-            <xs:element name="value" type="p:value-type" minOccurs="0" maxOccurs="unbounded">
+        <xs:choice minOccurs="0">
+            <xs:element name="value" type="p:value-type" maxOccurs="unbounded">
                 <xs:annotation>
                     <xs:documentation source="description">
-                        One value for the variable.
+                        One value for the variable; value children cannot be mixed with variable references.
                     </xs:documentation>
                 </xs:annotation>
             </xs:element>
-        </xs:sequence>
+            <xs:element name="variable" type="p:variable-type" maxOccurs="unbounded">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Reference to a previously declared list variable whose values are appended to this aggregate.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:choice>
         <xs:attribute name="name" type="xs:string">
             <xs:annotation>
                 <xs:documentation source="description">
-                    Variable name used by templates or task definitions.
+                    Variable name used by templates or task definitions, or an alias for a referenced variable.
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
         <xs:attribute name="ref" type="xs:string">
             <xs:annotation>
                 <xs:documentation source="description">
-                    Reference to an existing variable definition.
+                    Reference to an enclosing or earlier sibling variable; ref takes precedence over other content.
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
         <xs:attribute name="value" type="xs:string">
             <xs:annotation>
                 <xs:documentation source="description">
-                    Inline variable value used instead of nested value elements.
+                    Inline variable value used when ref and nested children are absent.
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
@@ -443,14 +450,14 @@
         <xs:attribute name="name" type="xs:string">
             <xs:annotation>
                 <xs:documentation source="description">
-                    Iterator variable name referenced with {name} syntax in task definitions.
+                    Iterator variable name referenced with {name} syntax, or an alias for a referenced variable.
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
         <xs:attribute name="ref" type="xs:string">
             <xs:annotation>
                 <xs:documentation source="description">
-                    Reference to an existing variable definition.
+                    Reference to an enclosing or earlier sibling variable; ref takes precedence over other content.
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>

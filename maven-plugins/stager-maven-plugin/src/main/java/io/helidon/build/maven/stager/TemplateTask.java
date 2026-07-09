@@ -20,13 +20,17 @@ import java.io.Reader;
 import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import io.helidon.build.common.Strings;
+import io.helidon.build.maven.stager.VariableValue.ListValue;
+import io.helidon.build.maven.stager.VariableValue.MapValue;
+import io.helidon.build.maven.stager.VariableValue.SimpleValue;
 
 import com.github.mustachejava.DefaultMustacheFactory;
 import com.github.mustachejava.reflect.ReflectionObjectHandler;
@@ -34,7 +38,8 @@ import com.github.mustachejava.util.DecoratedCollection;
 import com.github.mustachejava.util.GuardException;
 import com.github.mustachejava.util.Wrapper;
 
-import static java.util.stream.Collectors.toMap;
+import static java.nio.file.StandardOpenOption.CREATE;
+import static java.nio.file.StandardOpenOption.TRUNCATE_EXISTING;
 
 /**
  * Render a mustache template.
@@ -61,10 +66,9 @@ final class TemplateTask extends StagingTask {
         Path targetFile = dir.resolve(resolvedTarget).normalize();
         ctx.ensureDirectory(targetFile.getParent());
         try (Reader reader = Files.newBufferedReader(sourceFile);
-             Writer writer = Files.newBufferedWriter(targetFile,
-                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
+             Writer writer = Files.newBufferedWriter(targetFile, CREATE, TRUNCATE_EXISTING)) {
 
-            Map<String, Object> scope = variables.stream().collect(toMap(Variable::name, TemplateTask::mapValue));
+            Map<String, Object> scope = templateScope(variables);
             DefaultMustacheFactory factory = new DefaultMustacheFactory();
             factory.setObjectHandler(new TemplateObjectHandler());
             factory.compile(reader, resolvedSource)
@@ -81,10 +85,50 @@ final class TemplateTask extends StagingTask {
         return variables;
     }
 
-    private static Object mapValue(Variable variable) {
-        VariableValue value = variable.value();
-        if (value instanceof VariableValue.ListValue) {
-            return new DecoratedCollection<>(((VariableValue.ListValue) value).unwrap());
+    private static Map<String, Object> templateScope(List<Variable> variables) {
+        Map<String, VariableValue> values = new LinkedHashMap<>();
+        for (Variable variable : variables) {
+            values.merge(variable.name(), variable.value(), (l, r) -> mergeValue(variable.name(), l, r));
+        }
+        Map<String, Object> scope = new LinkedHashMap<>();
+        values.forEach((name, value) -> scope.put(name, mapValue(value)));
+        return scope;
+    }
+
+    private static VariableValue mergeValue(String path, VariableValue left, VariableValue right) {
+        if (left instanceof ListValue leftList && right instanceof ListValue rightList) {
+            return mergeValue(leftList, rightList);
+        }
+        if (left instanceof MapValue leftMap && right instanceof MapValue rightMap) {
+            return mergeValue(path, leftMap, rightMap);
+        }
+        if (left instanceof SimpleValue firstSimple
+            && right instanceof SimpleValue secondSimple
+            && firstSimple.unwrap().equals(secondSimple.unwrap())) {
+            return left;
+        }
+        if (left instanceof VariableValue.EmptyValue && right instanceof VariableValue.EmptyValue) {
+            return left;
+        }
+        throw new IllegalArgumentException("Conflicting template variable '%s'".formatted(path));
+    }
+
+    private static VariableValue mergeValue(ListValue left, ListValue right) {
+        List<VariableValue> merged = new ArrayList<>(left.values().size() + right.values().size());
+        merged.addAll(left.values());
+        merged.addAll(right.values());
+        return new ListValue(merged);
+    }
+
+    private static VariableValue mergeValue(String path, MapValue left, MapValue right) {
+        Map<String, VariableValue> merged = new LinkedHashMap<>(left.values());
+        right.values().forEach((name, value) -> merged.merge(name, value, (l, r) -> mergeValue(path + "." + name, l, r)));
+        return new MapValue(merged);
+    }
+
+    private static Object mapValue(VariableValue value) {
+        if (value instanceof ListValue) {
+            return new DecoratedCollection<>(((ListValue) value).unwrap());
         }
         return value.unwrap();
     }

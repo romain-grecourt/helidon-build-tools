@@ -189,6 +189,89 @@ class StagingTaskTest {
     }
 
     @Test
+    void testTemplateRepeatedListsConcatenateInOrder() throws Exception {
+        List<Variable> variables = List.of(
+                new Variable("versions", new VariableValue.ListValue("2.0.0", "3.0.0")),
+                new Variable("empty", new VariableValue.ListValue(List.of())),
+                new Variable("versions", new VariableValue.ListValue(List.of())),
+                new Variable("versions", new VariableValue.ListValue("4.0.0")),
+                new Variable("empty", new VariableValue.ListValue(List.of())));
+
+        String output = executeTemplate("{{#versions}}{{value}},{{/versions}}{{#empty}}unexpected{{/empty}}", variables);
+
+        assertThat(output, is("2.0.0,3.0.0,4.0.0,"));
+    }
+
+    @Test
+    void testTemplateRepeatedEqualScalarsCoalesce() throws Exception {
+        String output = executeTemplate("{{version}}", List.of(
+                new Variable("version", new VariableValue.SimpleValue("4.0.0")),
+                new Variable("version", new VariableValue.SimpleValue("4.0.0"))));
+
+        assertThat(output, is("4.0.0"));
+    }
+
+    @Test
+    void testTemplateRepeatedEmptyValuesRemainInvalid() {
+        ExecutionException ex = assertThrows(ExecutionException.class,
+                () -> executeTemplate("{{versions}}", List.of(
+                        new Variable("versions", new VariableValue.EmptyValue("versions")),
+                        new Variable("versions", new VariableValue.EmptyValue("versions")))));
+
+        assertThat(ex.getCause(), is(instanceOf(IllegalStateException.class)));
+        assertThat(ex.getCause().getMessage(), containsString("versions"));
+    }
+
+    @Test
+    void testTemplateRepeatedMapsMergeRecursively() throws Exception {
+        List<Variable> variables = List.of(
+                new Variable("release", new VariableValue.MapValue(List.of(
+                        new Variable("version", new VariableValue.SimpleValue("4.0.0")),
+                        new Variable("versions", new VariableValue.ListValue("2.0.0", "3.0.0")),
+                        new Variable("coordinates", new VariableValue.MapValue(List.of(
+                                new Variable("groupId", new VariableValue.SimpleValue("io.helidon")))))))),
+                new Variable("release", new VariableValue.MapValue(List.of(
+                        new Variable("version", new VariableValue.SimpleValue("4.0.0")),
+                        new Variable("channel", new VariableValue.SimpleValue("stable")),
+                        new Variable("versions", new VariableValue.ListValue("4.0.0")),
+                        new Variable("coordinates", new VariableValue.MapValue(List.of(
+                                new Variable("artifactId", new VariableValue.SimpleValue("helidon-bom")))))))));
+
+        String output = executeTemplate(
+                "{{release.version}}:{{release.channel}}:{{release.coordinates.groupId}}:"
+                        + "{{release.coordinates.artifactId}}:"
+                        + "{{#release.versions}}{{.}},{{/release.versions}}",
+                variables);
+
+        assertThat(output, is("4.0.0:stable:io.helidon:helidon-bom:2.0.0,3.0.0,4.0.0,"));
+    }
+
+    @Test
+    void testTemplateConflictingScalarsFail() {
+        assertRepeatedTemplateVariablesConflict("version",
+                new VariableValue.SimpleValue("1.0.0"),
+                new VariableValue.SimpleValue("2.0.0"));
+    }
+
+    @Test
+    void testTemplateNestedMapConflictsUseQualifiedName() {
+        assertRepeatedTemplateVariablesConflict("release.version",
+                new VariableValue.MapValue(List.of(
+                        new Variable("version", new VariableValue.SimpleValue("1.0.0")))),
+                new VariableValue.MapValue(List.of(
+                        new Variable("version", new VariableValue.SimpleValue("2.0.0")))));
+    }
+
+    @Test
+    void testTemplateMixedTypeConflictsUseQualifiedName() {
+        assertRepeatedTemplateVariablesConflict("release.version",
+                new VariableValue.MapValue(List.of(
+                        new Variable("version", new VariableValue.SimpleValue("1.0.0")))),
+                new VariableValue.MapValue(List.of(
+                        new Variable("version", new VariableValue.ListValue("2.0.0")))));
+    }
+
+    @Test
     void testHandleRetry() throws InterruptedException {
         StagingTask task = new StagingTask() {
 
@@ -361,6 +444,16 @@ class StagingTaskTest {
 
         task.execute(templateContext(), outputDir, Map.of()).toCompletableFuture().get();
         return Files.readString(outputDir.resolve("index.txt"));
+    }
+
+    void assertRepeatedTemplateVariablesConflict(String path, VariableValue first, VariableValue second) {
+        int separator = path.indexOf('.');
+        String name = separator < 0 ? path : path.substring(0, separator);
+        ExecutionException ex = assertThrows(ExecutionException.class,
+                () -> executeTemplate("unused", List.of(new Variable(name, first), new Variable(name, second))));
+
+        assertThat(ex.getCause(), is(instanceOf(IllegalArgumentException.class)));
+        assertThat(ex.getCause().getMessage(), containsString("Conflicting template variable '" + path + "'"));
     }
 
     StagingContext templateContext() {

@@ -204,6 +204,46 @@ definition. Because `<include>` appears before caller `<variables>` and `<direct
 variables override included fallback variables with the same name.
 Template-local and iterator-local variables are not part of this global precedence rule.
 
+Variable references retain the referenced name by default. Add `name` to
+expose the same value under an alias, which is useful for iterator
+placeholders:
+
+```xml
+<variable name="version" ref="release.versions"/>
+```
+
+An ordinary variable can aggregate previously declared lists by containing
+direct variable references. The referenced lists are appended in declaration
+order. Values are not deduplicated, and map values are appended as complete
+list elements rather than merged:
+
+```xml
+<variable name="archetype.versions">
+    <variable ref="archetype.v2.versions"/>
+    <variable ref="archetype.v3.versions"/>
+    <variable ref="archetype.v4.versions"/>
+</variable>
+```
+
+Each aggregate source must be a list. References may resolve variables in an
+enclosing scope or earlier siblings in the same collection; forward references
+are invalid. Nested `<value>` and aggregate `<variable>` children cannot be
+mixed. When `ref` is present, it takes precedence over inline and nested
+content.
+
+Templates may declare the same effective variable name more than once. Values
+are merged according to their type: lists are concatenated in declaration
+order without deduplication, maps are merged by key recursively, equal strings
+coalesce, and two empty values remain empty. Map keys that occur in only one
+definition are retained unchanged. Lists are appended as complete sequences;
+their elements are not merged pairwise.
+
+Repeated values conflict when scalar strings differ or their types differ.
+Conflicts fail the task rather than choosing the first or last value, and
+nested conflicts report the qualified variable path, such as
+`release.version`. An empty value remains invalid when used as a normal
+template value.
+
 Included files may declare optional fallback variables without a value, for example
 `<variable name="preview-versions"/>`. These empty variables are intended for iterator inputs:
 when an iterator references an empty variable, it contributes no values and the task runs zero

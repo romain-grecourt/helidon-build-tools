@@ -96,6 +96,10 @@ interface VariableValue extends StagingElement {
             this.value = value == null ? List.of() : value;
         }
 
+        List<VariableValue> values() {
+            return value;
+        }
+
         @Override
         public List<Object> unwrap() {
             return value.stream()
@@ -120,6 +124,14 @@ interface VariableValue extends StagingElement {
                     this.value.put(variable.name(), variable.value());
                 }
             }
+        }
+
+        MapValue(Map<String, VariableValue> value) {
+            this.value = value;
+        }
+
+        Map<String, VariableValue> values() {
+            return value;
         }
 
         @Override
