@@ -20,22 +20,24 @@ import java.io.Reader;
 import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.AbstractCollection;
+import java.util.AbstractMap;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import io.helidon.build.common.Strings;
 import io.helidon.build.maven.stager.VariableValue.ListValue;
 import io.helidon.build.maven.stager.VariableValue.MapValue;
-import io.helidon.build.maven.stager.VariableValue.SimpleValue;
 
 import com.github.mustachejava.DefaultMustacheFactory;
 import com.github.mustachejava.reflect.ReflectionObjectHandler;
-import com.github.mustachejava.util.DecoratedCollection;
-import com.github.mustachejava.util.GuardException;
 import com.github.mustachejava.util.Wrapper;
 
 import static java.nio.file.StandardOpenOption.CREATE;
@@ -66,14 +68,14 @@ final class TemplateTask extends StagingTask {
         Path targetFile = dir.resolve(resolvedTarget).normalize();
         ctx.ensureDirectory(targetFile.getParent());
         try (Reader reader = Files.newBufferedReader(sourceFile);
-             Writer writer = Files.newBufferedWriter(targetFile, CREATE, TRUNCATE_EXISTING)) {
+                Writer writer = Files.newBufferedWriter(targetFile, CREATE, TRUNCATE_EXISTING)) {
 
             Map<String, Object> scope = templateScope(variables);
             DefaultMustacheFactory factory = new DefaultMustacheFactory();
             factory.setObjectHandler(new TemplateObjectHandler());
             factory.compile(reader, resolvedSource)
-                   .execute(writer, scope)
-                   .flush();
+                    .execute(writer, scope)
+                    .flush();
         }
     }
 
@@ -88,49 +90,101 @@ final class TemplateTask extends StagingTask {
     private static Map<String, Object> templateScope(List<Variable> variables) {
         Map<String, VariableValue> values = new LinkedHashMap<>();
         for (Variable variable : variables) {
-            values.merge(variable.name(), variable.value(), (l, r) -> mergeValue(variable.name(), l, r));
+            values.merge(variable.name(), variable.value(), (l, r) -> l.merge(variable.name(), r));
         }
         Map<String, Object> scope = new LinkedHashMap<>();
         values.forEach((name, value) -> scope.put(name, mapValue(value)));
         return scope;
     }
 
-    private static VariableValue mergeValue(String path, VariableValue left, VariableValue right) {
-        if (left instanceof ListValue leftList && right instanceof ListValue rightList) {
-            return mergeValue(leftList, rightList);
-        }
-        if (left instanceof MapValue leftMap && right instanceof MapValue rightMap) {
-            return mergeValue(path, leftMap, rightMap);
-        }
-        if (left instanceof SimpleValue firstSimple
-            && right instanceof SimpleValue secondSimple
-            && firstSimple.unwrap().equals(secondSimple.unwrap())) {
-            return left;
-        }
-        if (left instanceof VariableValue.EmptyValue && right instanceof VariableValue.EmptyValue) {
-            return left;
-        }
-        throw new IllegalArgumentException("Conflicting template variable '%s'".formatted(path));
-    }
-
-    private static VariableValue mergeValue(ListValue left, ListValue right) {
-        List<VariableValue> merged = new ArrayList<>(left.values().size() + right.values().size());
-        merged.addAll(left.values());
-        merged.addAll(right.values());
-        return new ListValue(merged);
-    }
-
-    private static VariableValue mergeValue(String path, MapValue left, MapValue right) {
-        Map<String, VariableValue> merged = new LinkedHashMap<>(left.values());
-        right.values().forEach((name, value) -> merged.merge(name, value, (l, r) -> mergeValue(path + "." + name, l, r)));
-        return new MapValue(merged);
-    }
-
     private static Object mapValue(VariableValue value) {
-        if (value instanceof ListValue) {
-            return new DecoratedCollection<>(((ListValue) value).unwrap());
+        if (value instanceof ListValue lv) {
+            List<VariableValue> values = lv.values();
+            List<Object> list = new ArrayList<>(values.size());
+            for (VariableValue e : values) {
+                list.add(mapValue(e));
+            }
+            return new DecoratedCollection(list);
+        }
+        if (value instanceof MapValue mv) {
+            Map<String, VariableValue> values = mv.values();
+            Map<String, Object> map = new LinkedHashMap<>();
+            values.forEach((k, v) -> map.put(k, mapValue(v)));
+            return new DecoratedMap(map);
         }
         return value.unwrap();
+    }
+
+    static class DecoratedCollection extends AbstractCollection<Object> {
+
+        private final List<Object> elements;
+
+        DecoratedCollection(List<Object> delegate) {
+            elements = new ArrayList<>(delegate.size());
+            Iterator<Object> it = delegate.iterator();
+            for (int i = 0; it.hasNext(); i++) {
+                Object next = it.next();
+                elements.add(new Element(next, i, i == 0, !it.hasNext()));
+            }
+        }
+
+        @Override
+        public Iterator<Object> iterator() {
+            return elements.iterator();
+        }
+
+        @Override
+        public int size() {
+            return elements.size();
+        }
+
+        record Element(Object value, int index, boolean first, boolean last) {
+
+            @Override
+            public String toString() {
+                return String.valueOf(value);
+            }
+        }
+    }
+
+    static class DecoratedMap extends AbstractMap<String, Object> {
+
+        private final Set<Entry<String, Object>> entries = new LinkedHashSet<>();
+
+        DecoratedMap(Map<String, Object> delegate) {
+            Set<EntryImpl> decorated = new LinkedHashSet<>();
+            Iterator<Entry<String, Object>> it = delegate.entrySet().iterator();
+            for (int i = 0; it.hasNext(); i++) {
+                Entry<String, Object> entry = it.next();
+                decorated.add(new EntryImpl(entry.getKey(), entry.getValue(), i, i == 0, !it.hasNext()));
+            }
+            entries.add(Map.entry("entries", decorated));
+            entries.addAll(delegate.entrySet());
+        }
+
+        @Override
+        public Set<Entry<String, Object>> entrySet() {
+            return entries;
+        }
+
+        record EntryImpl(String key, Object value, int index, boolean first, boolean last)
+                implements Map.Entry<String, Object> {
+
+            @Override
+            public String getKey() {
+                return key;
+            }
+
+            @Override
+            public Object getValue() {
+                return value;
+            }
+
+            @Override
+            public Object setValue(Object value) {
+                throw new UnsupportedOperationException();
+            }
+        }
     }
 
     static final class TemplateObjectHandler extends ReflectionObjectHandler {
@@ -141,14 +195,15 @@ final class TemplateTask extends StagingTask {
 
         @Override
         public Wrapper find(String name, List<Object> scopes) {
-            if (!name.startsWith("replace ")) {
-                return super.find(name, scopes);
+            if (name.startsWith("replace ")) {
+                if (REPLACE_PATTERN.matcher(name).matches()) {
+                    Argument[] args = parse(name);
+                    return sc -> call(args, sc);
+                } else {
+                    throw new IllegalArgumentException("replace requires exactly 3 arguments");
+                }
             }
-            if (!REPLACE_PATTERN.matcher(name).matches()) {
-                throw new IllegalArgumentException("replace requires exactly 3 arguments");
-            }
-            Argument[] args = parse(name);
-            return sc -> call(args, sc);
+            return super.find(name, scopes);
         }
 
         String call(Argument[] args, List<Object> scopes) {
@@ -158,7 +213,7 @@ final class TemplateTask extends StagingTask {
             return value.replace(target, replacement);
         }
 
-        String resolve(Argument arg, List<Object> scopes) throws GuardException {
+        String resolve(Argument arg, List<Object> scopes) {
             if (arg.literal) {
                 return arg.value;
             }
