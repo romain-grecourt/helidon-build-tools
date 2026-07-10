@@ -180,10 +180,30 @@ This is a text file.
                         target="xsd/engine-1.0.xsd"
                 />
             </copy-artifacts>
+
+            <!-- copies is a container of copy tasks -->
+            <copies>
+
+                <!-- copy directory contents to a staging directory -->
+                <copy source="src/docs" target="docs">
+                    <includes>
+                        <include>**/*.html</include>
+                    </includes>
+                    <excludes>
+                        <exclude>draft/**</exclude>
+                    </excludes>
+                </copy>
+            </copies>
         </directory>
     </directories>
 </stager>
 ```
+
+The `<copy>` task copies the contents of a project directory into the target
+staging directory. The `source` value must be a directory path; it does not
+copy individual files, rename targets, or expand globs. Use nested
+`<include>` and `<exclude>` filters for glob-style selection relative to the
+copy source directory.
 
 ##### Includes
 

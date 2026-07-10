@@ -164,6 +164,13 @@
                     </xs:documentation>
                 </xs:annotation>
             </xs:element>
+            <xs:element name="copy" type="p:copy-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Copy project directory contents to a target directory.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
             <xs:element name="file" type="p:file-type">
                 <xs:annotation>
                     <xs:documentation source="description">
@@ -231,6 +238,13 @@
                 <xs:annotation>
                     <xs:documentation source="description">
                         Container for copy-artifact tasks.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="copies" type="p:copies-wrapper-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Container for copy tasks.
                     </xs:documentation>
                 </xs:annotation>
             </xs:element>
@@ -351,6 +365,46 @@
                 <xs:annotation>
                     <xs:documentation source="description">
                         Container for substitutions applied to each list-files result entry.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:choice>
+    </xs:group>
+
+    <xs:group name="copy-content">
+        <xs:choice>
+            <xs:element name="iterators" type="p:iterators-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Iterators nested under copy to create loops over {name} variable substitutions.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="include" type="p:text-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Glob-style include filter relative to the copy source directory.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="includes" type="p:includes-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Container for include filters relative to the copy source directory.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="exclude" type="p:text-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Glob-style exclude filter relative to the copy source directory.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="excludes" type="p:excludes-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Container for exclude filters relative to the copy source directory.
                     </xs:documentation>
                 </xs:annotation>
             </xs:element>
@@ -619,6 +673,33 @@
             <xs:annotation>
                 <xs:documentation source="description">
                     File path where the artifact is copied; defaults to {artifactId}-{version}.{type}.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes iterator-driven task invocations sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="copy-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:group ref="p:copy-content"/>
+        </xs:choice>
+        <xs:attribute name="source" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Project directory path whose contents are copied.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="target" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Target directory path relative to the current staging directory.
                 </xs:documentation>
             </xs:annotation>
         </xs:attribute>
@@ -1017,6 +1098,25 @@
                 <xs:annotation>
                     <xs:documentation source="description">
                         Copy a resolved Maven artifact to a target location.
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:choice>
+        <xs:attribute name="join" type="xs:boolean">
+            <xs:annotation>
+                <xs:documentation source="description">
+                    Executes nested joinable actions sequentially when true.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="copies-wrapper-type">
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:element name="copy" type="p:copy-type">
+                <xs:annotation>
+                    <xs:documentation source="description">
+                        Copy project directory contents to a target directory.
                     </xs:documentation>
                 </xs:annotation>
             </xs:element>

@@ -313,6 +313,48 @@ class StagingFactoryTest {
         assertThat(ex.getMessage(), containsString("Unresolved variable: later"));
     }
 
+    @Test
+    void testCopyParsesFiltersAndIterators() {
+        StagingTasks root = create("""
+                <configuration>
+                    <variables>
+                        <variable name="version">
+                            <value>1.0.0</value>
+                            <value>2.0.0</value>
+                        </variable>
+                    </variables>
+                    <directories>
+                        <directory target="target/stage">
+                            <copies>
+                                <copy source="src/{version}" target="assets/{version}">
+                                    <includes>
+                                        <include>**/*.txt</include>
+                                    </includes>
+                                    <exclude>**/draft/**</exclude>
+                                    <iterators>
+                                        <variables>
+                                            <variable ref="version"/>
+                                        </variables>
+                                    </iterators>
+                                </copy>
+                            </copies>
+                        </directory>
+                    </directories>
+                </configuration>
+                """);
+
+        StagingDirectory directory = (StagingDirectory) root.tasks().get(0);
+        StagingTasks copies = (StagingTasks) directory.tasks().get(0);
+        CopyTask copy = (CopyTask) copies.tasks().get(0);
+        assertThat(copy.source(), is("src/{version}"));
+        assertThat(copy.target(), is("assets/{version}"));
+        assertThat(copy.includes(), is(List.of("**/*.txt")));
+        assertThat(copy.excludes(), is(List.of("**/draft/**")));
+        assertThat(iterators(copy), is(List.of(List.of(
+                Map.of("version", "1.0.0"),
+                Map.of("version", "2.0.0")))));
+    }
+
     static Matcher<StagingElement> isUnpackArtifacts() {
         return isElement(StagingTasks.class, hasProperty("tasks", StagingTasks::tasks, contains(List.of(
                 isElement(UnpackArtifactTask.class,
@@ -405,8 +447,8 @@ class StagingFactoryTest {
                 isElement(ArchiveTask.class,
                         hasProperty("target", ArchiveTask::target, is("cli-data/${cli.data.latest.version}/cli-data.zip")),
                         hasProperty("tasks", ArchiveTask::tasks, contains(List.of(
-                                isCopyArtifacts(),
-                                isElement(StagingTasks.class, hasProperty("tasks", StagingTasks::tasks, contains(List.of(
+                                isCopyArtifacts(), isElement(StagingTasks.class,
+                                        hasProperty("tasks", StagingTasks::tasks, contains(List.of(
                                         isElement(TemplateTask.class,
                                                 hasProperty("source", TemplateTask::source,
                                                         is("src/cli-metadata.properties.mustache")),
@@ -416,18 +458,12 @@ class StagingFactoryTest {
                                                         "buildToolsVersion", "${cli.maven.plugin.version}",
                                                         "cliVersion", "${cli.latest.version}",
                                                         "cliUpdateMessages", List.of(
-                                                                Map.of(
-                                                                        "version", "2.0.0-M2",
-                                                                        "message", "Major dev command enhancements"
-                                                                ),
-                                                                Map.of(
-                                                                        "version", "2.0.0-M4",
-                                                                        "message", "Helidon archetype support"
-                                                                ),
-                                                                Map.of(
-                                                                        "version", "2.0.0-RC1",
-                                                                        "message", "Performance improvements"
-                                                                )
+                                                                Map.of("version", "2.0.0-M2",
+                                                                        "message", "Major dev command enhancements"),
+                                                                Map.of("version", "2.0.0-M4",
+                                                                        "message", "Helidon archetype support"),
+                                                                Map.of("version", "2.0.0-RC1",
+                                                                        "message", "Performance improvements")
                                                         )
                                                 )))
                                         )

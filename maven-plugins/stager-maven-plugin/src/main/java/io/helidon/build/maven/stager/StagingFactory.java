@@ -41,6 +41,7 @@ final class StagingFactory implements XMLElement.Visitor {
             "directory",
             "archive",
             "download",
+            "copy",
             "copy-artifact",
             "file",
             "symlink",
@@ -153,6 +154,8 @@ final class StagingFactory implements XMLElement.Visitor {
             case "directory" -> new StagingDirectory(filterChildren(children, StagingAction.class), attrs);
             case "unpack" -> new UnpackTask(iterators.get(), mappers.get(), attrs);
             case "unpack-artifact" -> new UnpackArtifactTask(iterators.get(), mappers.get(), attrs);
+            case "copy" -> new CopyTask(iterators.get(), filterChildren(children, Include.class),
+                    filterChildren(children, Exclude.class), attrs);
             case "copy-artifact" -> new CopyArtifactTask(iterators.get(), attrs);
             case "symlink" -> new SymlinkTask(iterators.get(), attrs);
             case "download" -> new DownloadTask(iterators.get(), attrs);

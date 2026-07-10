@@ -64,6 +64,21 @@
                     </iterators>
                 </copy-artifact>
             </copy-artifacts>
+            <copies>
+                <copy source="src/static" target="assets">
+                    <includes>
+                        <include>**/*.txt</include>
+                    </includes>
+                    <excludes>
+                        <exclude>**/draft/**</exclude>
+                    </excludes>
+                    <iterators>
+                        <variables>
+                            <variable ref="version"/>
+                        </variables>
+                    </iterators>
+                </copy>
+            </copies>
             <archives>
                 <archive target="archives/site.zip" includes="**/*.html" excludes="tmp/**">
                     <files>
