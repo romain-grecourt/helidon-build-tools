@@ -118,14 +118,26 @@ final class TemplateTask extends StagingTask {
     static class DecoratedCollection extends AbstractCollection<Object> {
 
         private final List<Object> elements;
+        private final Object entries;
 
         DecoratedCollection(List<Object> delegate) {
             elements = new ArrayList<>(delegate.size());
             Iterator<Object> it = delegate.iterator();
             for (int i = 0; it.hasNext(); i++) {
                 Object next = it.next();
-                elements.add(new Element(next, i, i == 0, !it.hasNext()));
+                boolean first = i == 0;
+                boolean last = !it.hasNext();
+                if (next instanceof DecoratedMap map) {
+                    elements.add(new MapElement(map, i, first, last));
+                } else {
+                    elements.add(new Element(next, i, first, last));
+                }
             }
+            entries = delegate.size() == 1 && delegate.get(0) instanceof DecoratedMap map ? map.get("entries") : List.of();
+        }
+
+        public Object entries() {
+            return entries;
         }
 
         @Override
@@ -143,6 +155,61 @@ final class TemplateTask extends StagingTask {
             @Override
             public String toString() {
                 return String.valueOf(value);
+            }
+        }
+
+        static class MapElement extends AbstractMap<String, Object> {
+
+            private final DecoratedMap value;
+            private final Map<String, Object> entries = new LinkedHashMap<>();
+
+            MapElement(DecoratedMap value, int index, boolean first, boolean last) {
+                this.value = value;
+                entries.put("index", index);
+                entries.put("first", first);
+                entries.put("last", last);
+                value.entrySet().stream()
+                        .filter(entry -> !syntheticListItemField(entry.getKey()))
+                        .forEach(entry -> entries.put(entry.getKey(), entry.getValue()));
+                entries.put("value", new ValueAlias(value));
+            }
+
+            @Override
+            public Set<Entry<String, Object>> entrySet() {
+                return entries.entrySet();
+            }
+
+            @Override
+            public String toString() {
+                return String.valueOf(value);
+            }
+
+            private static boolean syntheticListItemField(String key) {
+                return "entries".equals(key)
+                        || "first".equals(key)
+                        || "index".equals(key)
+                        || "last".equals(key)
+                        || "value".equals(key);
+            }
+        }
+
+        static class ValueAlias extends AbstractMap<String, Object> {
+
+            private final DecoratedMap delegate;
+
+            ValueAlias(DecoratedMap delegate) {
+                this.delegate = delegate;
+            }
+
+            @Override
+            public Set<Entry<String, Object>> entrySet() {
+                return delegate.entrySet();
+            }
+
+            @Override
+            public String toString() {
+                Object value = delegate.get("value");
+                return value == null ? "" : String.valueOf(value);
             }
         }
     }

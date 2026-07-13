@@ -161,6 +161,72 @@ class TemplateTaskTest {
     }
 
     @Test
+    void testTemplateListMapItemsExposeFieldsDirectly() throws Exception {
+        List<Variable> variables = List.of(new Variable("properties", new ListValue(List.of(
+                new MapValue(List.of(
+                        new Variable("key", new SimpleValue("cli.version")),
+                        new Variable("value", new SimpleValue("4.2.0")))),
+                new MapValue(List.of(
+                        new Variable("key", new SimpleValue("schemas.version")),
+                        new Variable("value", new SimpleValue("2026.07"))))))));
+
+        String output = execute("{{#properties}}-D{{key}}={{value}}\n{{/properties}}", variables);
+
+        assertThat(output, is("""
+                -Dcli.version=4.2.0
+                -Dschemas.version=2026.07
+                """));
+    }
+
+    @Test
+    void testTemplateListMapItemsKeepNestedValueAccess() throws Exception {
+        List<Variable> variables = List.of(new Variable("properties", new ListValue(List.of(
+                new MapValue(List.of(
+                        new Variable("key", new SimpleValue("cli.version")),
+                        new Variable("value", new SimpleValue("4.2.0")))),
+                new MapValue(List.of(
+                        new Variable("key", new SimpleValue("schemas.version")),
+                        new Variable("value", new SimpleValue("2026.07"))))))));
+
+        String output = execute("{{#properties}}-D{{value.key}}={{value.value}}\n{{/properties}}", variables);
+
+        assertThat(output, is("""
+                -Dcli.version=4.2.0
+                -Dschemas.version=2026.07
+                """));
+    }
+
+    @Test
+    void testTemplateSingleMapListEntriesProperty() throws Exception {
+        List<Variable> variables = List.of(new Variable("properties", new ListValue(List.of(
+                new MapValue(List.of(
+                        new Variable("cli.version", new SimpleValue("4.2.0")),
+                        new Variable("schemas.version", new SimpleValue("2026.07"))))))));
+
+        String output = execute("{{#properties.entries}}-D{{key}}={{value}}\n{{/properties.entries}}", variables);
+
+        assertThat(output, is("""
+                -Dcli.version=4.2.0
+                -Dschemas.version=2026.07
+                """));
+    }
+
+    @Test
+    void testTemplateListEntriesPropertySkipsScalarAndMultiMapLists() throws Exception {
+        List<Variable> variables = List.of(
+                new Variable("versions", new ListValue("4.2.0")),
+                new Variable("properties", new ListValue(List.of(
+                        new MapValue(List.of(new Variable("cli.version", new SimpleValue("4.2.0")))),
+                        new MapValue(List.of(new Variable("schemas.version", new SimpleValue("2026.07"))))))));
+
+        String output = execute(
+                "{{#versions.entries}}version{{/versions.entries}}{{#properties.entries}}property{{/properties.entries}}",
+                variables);
+
+        assertThat(output, is(""));
+    }
+
+    @Test
     void testTemplateRepeatedEqualScalarsCoalesce() throws Exception {
         String output = execute("{{version}}", List.of(
                 new Variable("version", new SimpleValue("4.0.0")),
