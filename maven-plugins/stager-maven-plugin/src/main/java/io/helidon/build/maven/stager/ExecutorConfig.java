@@ -29,8 +29,8 @@ import io.helidon.build.common.CurrentThreadExecutorService;
 @SuppressWarnings("unused")
 public class ExecutorConfig {
 
-    private ExecutorKind kind = ExecutorKind.DEFAULT;
-    private Map<String, String> parameters = Map.of();
+    private ExecutorKind kind;
+    private Map<String, String> parameters;
 
     /**
      * Create a new executor config.
@@ -47,6 +47,8 @@ public class ExecutorConfig {
      * Create a new executor config.
      */
     public ExecutorConfig() {
+        kind = ExecutorKind.DEFAULT;
+        parameters = Map.of();
     }
 
     /**

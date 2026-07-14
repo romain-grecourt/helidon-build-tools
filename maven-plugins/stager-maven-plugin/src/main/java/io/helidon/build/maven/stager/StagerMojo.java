@@ -195,7 +195,7 @@ public class StagerMojo extends AbstractMojo {
             return;
         }
 
-        ExecutorService executorService = executor().select();
+        ExecutorService executorService = executor();
         Path outputDir = outputDir();
         StagingContext context = new StagingContextImpl(
                 baseDir().toFile(),
@@ -223,7 +223,7 @@ public class StagerMojo extends AbstractMojo {
         }
     }
 
-    ExecutorConfig executor() {
+    ExecutorService executor() {
         if (executor == null) {
             Properties userProperties = session.getUserProperties();
             Map<String, String> parameters = new HashMap<>();
@@ -233,9 +233,10 @@ public class StagerMojo extends AbstractMojo {
                 }
             }
             ExecutorKind kind = ExecutorKind.valueOf(parameters.getOrDefault("kind", "DEFAULT"));
-            return new ExecutorConfig(kind, parameters);
+            ExecutorConfig config = new ExecutorConfig(kind, parameters);
+            return config.select();
         }
-        return executor;
+        return executor.select();
     }
 
     private XMLElement effectiveConfig() throws MojoExecutionException {
