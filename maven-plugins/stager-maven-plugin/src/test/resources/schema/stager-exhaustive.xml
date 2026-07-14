@@ -101,21 +101,14 @@
                     </files>
                     <templates>
                         <template source="src/templates/page.mustache" target="docs/{version}/index.html">
-                            <variables>
-                                <variable name="title" value="Helidon"/>
-                                <variable ref="version"/>
-                                <variable name="templateVersions" ref="version"/>
-                                <variable name="releases">
-                                    <value>
-                                        <variable name="version" value="1.0.0"/>
-                                        <variable name="latest" value="false"/>
-                                    </value>
-                                    <value>
-                                        <variable name="version" value="1.0.1"/>
-                                        <variable name="latest" value="true"/>
-                                    </value>
-                                </variable>
-                            </variables>
+                            <model>
+                                <title>Helidon</title>
+                                <templateVersions>{version}</templateVersions>
+                                <releases>
+                                    <first><version>1.0.0</version><latest>false</latest></first>
+                                    <second><version>1.0.1</version><latest>true</latest></second>
+                                </releases>
+                            </model>
                             <iterators>
                                 <variables>
                                     <variable ref="version"/>

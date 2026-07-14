@@ -99,7 +99,7 @@ final class StagingFactory implements XMLElement.Visitor {
     @Override
     public void postVisitElement(XMLElement elt) {
         XMLElement parent = elt.parent();
-        if (hasReferencedVariableAncestor(elt)) {
+        if (hasReferencedVariableAncestor(elt) || hasModelAncestor(elt)) {
             mappings.computeIfAbsent(elt, n -> new ArrayList<>());
             mappings.computeIfAbsent(parent, n -> new ArrayList<>());
             scopes.pop();
@@ -122,6 +122,7 @@ final class StagingFactory implements XMLElement.Visitor {
             case "variables" -> variables(elt.attributes(), children);
             case "variable" -> variable(elt, children, scope);
             case "value" -> variableValue(children, value);
+            case "model" -> TemplateModel.create(elt);
             case "iterators" -> actionIterators(children, elt.attributes());
             default -> createDefault(name, elt.attributes(), children, value);
         };
@@ -148,7 +149,7 @@ final class StagingFactory implements XMLElement.Visitor {
                                               String text) {
 
         Supplier<ActionIterators> iterators = () -> firstChild(children, ActionIterators.class, () -> null);
-        Supplier<Variables> variables = () -> firstChild(children, Variables.class, Variables::new);
+        Supplier<TemplateModel> model = () -> firstChild(children, TemplateModel.class, TemplateModel::empty);
         Supplier<List<Mapper>> mappers = () -> filterChildren(children, Mapper.class);
         return switch (name) {
             case "directory" -> new StagingDirectory(filterChildren(children, StagingAction.class), attrs);
@@ -160,7 +161,7 @@ final class StagingFactory implements XMLElement.Visitor {
             case "symlink" -> new SymlinkTask(iterators.get(), attrs);
             case "download" -> new DownloadTask(iterators.get(), attrs);
             case "archive" -> new ArchiveTask(iterators.get(), filterChildren(children, StagingAction.class), attrs);
-            case "template" -> new TemplateTask(iterators.get(), attrs, variables.get());
+            case "template" -> new TemplateTask(iterators.get(), attrs, model.get());
             case "file" -> new FileTask(iterators.get(), filterChildren(children, TextAction.class), attrs, text);
             case "list-files" -> {
                 List<Include> includes = filterChildren(children, Include.class);
@@ -255,6 +256,17 @@ final class StagingFactory implements XMLElement.Visitor {
                 return true;
             }
             p = p.parent();
+        }
+        return false;
+    }
+
+    private static boolean hasModelAncestor(XMLElement elt) {
+        XMLElement parent = elt.parent();
+        while (parent != null) {
+            if ("model".equals(parent.name())) {
+                return true;
+            }
+            parent = parent.parent();
         }
         return false;
     }

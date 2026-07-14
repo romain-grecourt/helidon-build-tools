@@ -29,6 +29,20 @@ This goal binds to the `package` phase by default.
 
 Scalar parameters are mapped to user properties of the form `stager.PROPERTY`, e.g. `-Dstager.skip=true`.
 
+When the POM does not provide an `<executor>` configuration, executor settings
+can be supplied as Maven user properties. A configured POM `<executor>` is
+used as a complete object and is not overridden by user properties.
+
+| Property | Applies to | Executor parameter |
+|---|---|---|
+| `stager.executor.kind` | all executors | `kind` |
+| `stager.executor.nThreads` | `FIXED` | `nThreads` |
+| `stager.executor.corePoolSize` | `SCHEDULED` | `corePoolSize` |
+| `stager.executor.parallelism` | `WORKSTEALINGPOOL` | `parallelism` |
+
+For example, run a standalone stager configuration with a fixed pool of four
+threads using `-Dstager.executor.kind=FIXED -Dstager.executor.nThreads=4`.
+
 #### Stager Configuration
 
 A stager XML configuration file is rooted at `<stager>` and supports top-level children in this
@@ -135,14 +149,13 @@ order: `<include src="..."/>`, `<properties>`, `<variables>`, then `<directories
 
                 <!-- a task to render a handlebar template (mustache) -->
                 <template source="index.html.hbs" target="docs/index.html">
-                    <!-- variables can be used to define variables referenced in the template -->
-                    <variables>
-                        <variable name="location" value="./latest/index.html"/>
-                        <variable name="title" value="Acme Documentation"/>
-                        <variable name="description" value="Acme Documentation"/>
-                        <variable name="og-url" value="https://acme.com/docs"/>
-                        <variable name="og-description" value="Documentation"/>
-                    </variables>
+                    <model>
+                        <location>./latest/index.html</location>
+                        <title>Acme Documentation</title>
+                        <description>Acme Documentation</description>
+                        <og-url>https://acme.com/docs</og-url>
+                        <og-description>Documentation</og-description>
+                    </model>
                 </template>
                 <!-- ... -->
             </templates>
@@ -222,7 +235,7 @@ configuration. Root-level variables are collected before direct `<directories><v
 within that collection order, duplicate global `<variable name="...">` entries use the last
 definition. Because `<include>` appears before caller `<variables>` and `<directories>`, caller
 variables override included fallback variables with the same name.
-Template-local and iterator-local variables are not part of this global precedence rule.
+Iterator-local variables are not part of this global precedence rule.
 
 Variable references retain the referenced name by default. Add `name` to
 expose the same value under an alias, which is useful for iterator
@@ -251,12 +264,40 @@ are invalid. Nested `<value>` and aggregate `<variable>` children cannot be
 mixed. When `ref` is present, it takes precedence over inline and nested
 content.
 
-Templates may declare the same effective variable name more than once. Values
-are merged according to their type: lists are concatenated in declaration
-order without deduplication, maps are merged by key recursively, equal strings
-coalesce, and two empty values remain empty. Map keys that occur in only one
-definition are retained unchanged. Lists are appended as complete sequences;
-their elements are not merged pairwise.
+### Template models
+
+Each `<template>` can contain one optional free-form `<model>`. Leaf elements
+are strings (including empty leaves); elements with children are ordered model
+collections. Template-local `<variables>` are no longer supported. Global and
+iterator variables remain available for task iteration and `{name}` task
+placeholders, but are not added to the Mustache model automatically.
+
+```xml
+<template source="properties.mustache" target="properties.txt">
+    <model>
+        <properties>
+            <cli.version>4.2.0</cli.version>
+            <schemas.version>2026.07</schemas.version>
+        </properties>
+        <docs><current>4.2.0</current></docs>
+    </model>
+</template>
+```
+
+`{{#properties}}` iterates its children in XML order. Each item provides
+`name`, `value`, `index`, `first`, and `last`; nested fields are available
+directly. For example, use `{{name}}={{value}}`, or for a nested child use
+`{{title}}` and `{{git.url}}`. Parent fields remain visible in the section,
+so `{{cli.version}}` is available while iterating `properties`. Dotted XML
+names are literal map keys when resolved within their containing section.
+
+Model leaf text can use iterator placeholders. The value is resolved for each
+template execution: `<version>{version}</version>`. Model siblings must have
+unique names and model elements cannot have attributes or mixed text and child
+content; errors report the qualified model path.
+
+The previous `.entries` decoration has been removed. Iterate the model
+collection directly.
 
 Repeated values conflict when scalar strings differ or their types differ.
 Conflicts fail the task rather than choosing the first or last value, and

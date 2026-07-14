@@ -214,9 +214,6 @@ class StagingFactoryTest {
                     <directories>
                         <directory target="target/stage">
                             <template source="versions.mustache" target="versions.txt">
-                                <variables>
-                                    <variable ref="archetype.versions"/>
-                                </variables>
                                 <iterators>
                                     <variables>
                                         <variable name="release" ref="archetype.versions"/>
@@ -234,7 +231,6 @@ class StagingFactoryTest {
                 Map.of("version", "2.6.0", "generation", "2"),
                 Map.of("version", "3.2.0", "generation", "3"),
                 Map.of("version", "4.1.0", "generation", "4"));
-        assertThat(variables(template), is(Map.of("archetype.versions", releases)));
         assertThat(iterators(template), is(List.of(releases)));
     }
 
@@ -453,18 +449,17 @@ class StagingFactoryTest {
                                                 hasProperty("source", TemplateTask::source,
                                                         is("src/cli-metadata.properties.mustache")),
                                                 hasProperty("target", TemplateTask::target, is("metadata.properties")),
-                                                hasProperty("variables", StagingFactoryTest::variables, is(Map.of(
+                                                hasProperty("model", StagingFactoryTest::model, is(Map.of(
                                                         "helidonVersion", "${cli.data.latest.version}",
                                                         "buildToolsVersion", "${cli.maven.plugin.version}",
                                                         "cliVersion", "${cli.latest.version}",
-                                                        "cliUpdateMessages", List.of(
-                                                                Map.of("version", "2.0.0-M2",
+                                                        "cliUpdateMessages", Map.of(
+                                                                "major", Map.of("version", "2.0.0-M2",
                                                                         "message", "Major dev command enhancements"),
-                                                                Map.of("version", "2.0.0-M4",
+                                                                "archetype", Map.of("version", "2.0.0-M4",
                                                                         "message", "Helidon archetype support"),
-                                                                Map.of("version", "2.0.0-RC1",
-                                                                        "message", "Performance improvements")
-                                                        )
+                                                                "performance", Map.of("version", "2.0.0-RC1",
+                                                                        "message", "Performance improvements"))
                                                 )))
                                         )
                                 ))))
@@ -478,7 +473,7 @@ class StagingFactoryTest {
                 isElement(TemplateTask.class,
                         hasProperty("source", TemplateTask::source, is("redirect.html.mustache")),
                         hasProperty("target", TemplateTask::target, is("docs/index.html")),
-                        hasProperty("variables", StagingFactoryTest::variables, is(Map.of(
+                        hasProperty("model", StagingFactoryTest::model, is(Map.of(
                                 "location", "./latest/index.html",
                                 "title", "Helidon Documentation",
                                 "description", "Helidon Documentation",
@@ -488,7 +483,7 @@ class StagingFactoryTest {
                 isElement(TemplateTask.class,
                         hasProperty("source", TemplateTask::source, is("redirect.html.mustache")),
                         hasProperty("target", TemplateTask::target, is("guides/index.html")),
-                        hasProperty("variables", StagingFactoryTest::variables, is(Map.of(
+                        hasProperty("model", StagingFactoryTest::model, is(Map.of(
                                 "location", "../docs/latest/index.html#/guides/01_overview",
                                 "title", "Helidon Guides",
                                 "description", "Helidon Guides",
@@ -498,7 +493,7 @@ class StagingFactoryTest {
                 isElement(TemplateTask.class,
                         hasProperty("source", TemplateTask::source, is("redirect.html.mustache")),
                         hasProperty("target", TemplateTask::target, is("javadocs/index.html")),
-                        hasProperty("variables", StagingFactoryTest::variables, is(Map.of(
+                        hasProperty("model", StagingFactoryTest::model, is(Map.of(
                                 "location", "../docs/latest/apidocs/index.html?overview-summary.html",
                                 "title", "Helidon Javadocs",
                                 "description", "Helidon Javadocs",
@@ -558,12 +553,8 @@ class StagingFactoryTest {
         ))));
     }
 
-    static Map<String, Object> variables(TemplateTask task) {
-        Map<String, Object> map = new HashMap<>();
-        for (Variable v : task.variables()) {
-            map.put(v.name(), v.value().unwrap());
-        }
-        return map;
+    static Map<String, Object> model(TemplateTask task) {
+        return task.model().root();
     }
 
     static List<List<Map<String, String>>> iterators(StagingTask task) {

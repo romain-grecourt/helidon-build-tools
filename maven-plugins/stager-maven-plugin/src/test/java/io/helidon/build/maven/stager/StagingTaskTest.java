@@ -46,6 +46,19 @@ import static org.hamcrest.Matchers.is;
 class StagingTaskTest {
 
     @Test
+    void testResolveVar() {
+        Map<String, String> vars = Map.of(
+                "version", "1.2.3",
+                "special", "$value\\path");
+
+        Assertions.assertEquals("1.2.3", StagingTask.resolveVar("{version}", vars));
+        Assertions.assertEquals("${version}", StagingTask.resolveVar("${version}", vars));
+        Assertions.assertEquals("stager-1.2.3-maven-${version}",
+                StagingTask.resolveVar("stager-{version}-maven-${version}", vars));
+        Assertions.assertEquals("$value\\path", StagingTask.resolveVar("{special}", vars));
+    }
+
+    @Test
     void testIterator() {
         Variables variables = new Variables();
         variables.add(new Variable("foo", new VariableValue.ListValue("foo1", "foo2")));
